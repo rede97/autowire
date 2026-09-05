@@ -1,0 +1,87 @@
+//! CLI 定义（docs/cli.md）。全局选项 global(true)，子命令前后均可。
+
+use clap::{Args, Parser, Subcommand};
+use std::path::PathBuf;
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// 层级分析：模块/参数/端口提取，导出 XML
+    Analysis(AnalysisArgs),
+}
+
+#[derive(Parser, Debug)]
+#[command(
+    version,
+    about = "hdxml — SystemVerilog RTL 分析器",
+    arg_required_else_help = true
+)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Commands,
+
+    /// 工作线程数（默认 CPU 核数）
+    #[arg(short, long, global = true)]
+    pub threads: Option<usize>,
+
+    /// 工作线程栈大小（MiB）
+    #[arg(long, default_value_t = 16, global = true)]
+    pub stack_size: usize,
+
+    /// 日志级别（-v=info, -vv=debug）
+    #[arg(short, long, action = clap::ArgAction::Count, global = true)]
+    pub verbose: u8,
+
+    /// 日志文件路径（默认不写文件）
+    #[arg(long, global = true)]
+    pub log_file: Option<PathBuf>,
+}
+
+/// 输入来源组（docs/cli.md §2）
+#[derive(Args, Debug, Default)]
+pub struct InputArgs {
+    /// 源文件列表（.f，支持 #/​// 注释、-f 嵌套、$ENV 展开）
+    #[arg(short, long, num_args = 1..)]
+    pub filelist: Vec<PathBuf>,
+
+    /// 散文件（.sv/.v）
+    #[arg(short, long, num_args = 1..)]
+    pub sources: Vec<PathBuf>,
+
+    /// 递归遍历目录收集 *.sv/*.v
+    #[arg(short, long, num_args = 1..)]
+    pub walk_dirs: Vec<PathBuf>,
+
+    /// 按文件名（不含目录）排除
+    #[arg(long, num_args = 1..)]
+    pub exclude_filenames: Vec<String>,
+
+    /// 宏定义（NAME=VALUE；无值视为 NAME=1）
+    #[arg(short = 'D', long, num_args = 1..)]
+    pub defines: Vec<String>,
+
+    /// 宏定义头文件（提取其中的 `define）
+    #[arg(long, num_args = 1..)]
+    pub define_headers: Vec<PathBuf>,
+
+    /// include 搜索路径（+incdir）
+    #[arg(short = 'I', long, num_args = 1..)]
+    pub incdirs: Vec<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct AnalysisArgs {
+    #[command(flatten)]
+    pub input: InputArgs,
+
+    /// 打印依赖树
+    #[arg(long)]
+    pub tree: bool,
+
+    /// 导出 RtlIndex XML 到目录（每源文件一个 XML + index.xml）
+    #[arg(long)]
+    pub xml: Option<PathBuf>,
+
+    /// 存在黑盒（undef）模块时退出码 1
+    #[arg(long)]
+    pub fail_on_undef: bool,
+}

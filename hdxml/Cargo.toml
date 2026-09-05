@@ -1,0 +1,21 @@
+[package]
+name = "hdxml"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.97"
+blake3 = "1.5"
+clap = { version = "4.5.23", features = ["derive"] }
+dashmap = "6.1.0"
+indicatif = "0.17.9"
+rayon = "1.10.0"
+sv-parser = "=0.13.4"
+termtree = "0.5.1"
+walkdir = "2.5"
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
