@@ -22,6 +22,10 @@ export interface HierNode {
 export interface RtlIndex {
   tool: string;
   generated: number;
+  /** 宏定义指纹：消费方宏集合不一致 ⇒ 整个索引作废（rtlindex-xml.md §6） */
+  definesFp: string;
+  /** 分析时使用的宏定义（按名称字典序） */
+  defines: Record<string, string>;
   files: FileEntry[];
   /** 模块名 → 源文件路径 */
   moduleSource: Map<string, string>;
@@ -67,6 +71,14 @@ export async function loadRtlIndex(dir: string): Promise<RtlIndex> {
     throw new Error(`${dir}/index.xml 不是有效的 RtlIndex（缺少 <rtlIndex>）`);
   }
 
+  const defines: Record<string, string> = {};
+  const definesEl = isObj(root.defines) ? root.defines : undefined;
+  for (const d of arr(definesEl?.define)) {
+    if (!isObj(d)) continue;
+    defines[str(d["@name"])] = str(d["@value"]);
+  }
+
+
   const files: FileEntry[] = [];
   const filesEl = isObj(root.files) ? root.files : undefined;
   for (const f of arr(filesEl?.file)) {
@@ -97,6 +109,8 @@ export async function loadRtlIndex(dir: string): Promise<RtlIndex> {
   return {
     tool: str(root["@tool"]) || "unknown",
     generated: Number(root["@generated"] ?? 0),
+    definesFp: str(root["@definesFp"]),
+    defines,
     files,
     moduleSource,
     tops,
