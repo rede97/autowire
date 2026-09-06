@@ -1,175 +1,129 @@
 # Autowire v2.0
 
-从零设计的 RTL 寄存器与连接工具：一份内存 IR，TypeScript / Bun 实现；**mcp / script / repl 三种入口互斥**；stdio MCP 给 Agent，本机页给调试。不依赖 emacs，不用 class/装饰器当硬件类型，Excel 只出文档。
+连接描述是一份 **HTML + script**。浏览器跑完 script，活 DOM 就是连接关系。把渲染结果交给 autowire，由它写成 RTL，后面走 DV。
 
-本分支只保留这份说明。实现另开。
+前期 autowire 就是一个 **Web 前端库**（自定义元素 + 页面）。隔离和调试交给 **Playwright**（无头 + Playwright MCP）。等页面用例够多，用这些用例约束再做完全无头的 `cli`。不为连接层自研 MCP。
 
----
-
-## 产品
-
-设计师用构造器描述 **功能寄存器（Block）** 和 **连接意图**。存量叶子 RTL 由独立分析器扫出端口与参数；工具按 rewrite / connect 展开连接，打印可综合的 SystemVerilog。Agent 通过 MCP 查询与修改同一棵 IR，不把展开后的网表塞进上下文。
-
-交付物是一个可执行文件：`autowire gen-reg`、`gen-conn`、`mcp`、`run`、`repl`、`ui`。
+**Agent 接手：先跑 `bun index.ts help`（或 `autowire help`）。那就是用法和思路，不要另写项目提示词。改行为时同步改 `src/help.ts`。**
 
 ---
 
-## 事实源
+## 为什么简单
 
-| 层 | 唯一作者输入 | 派生（不可手改） |
-|---|---|---|
-| 寄存器 | `Table` + `Block` / `Cell` 构造器 | Cell IR、SV、RAL、C 头、Excel |
-| 连接 | 紧凑连接 IR（可存 XML）：层级、例化、`connect`、`rewrite`、参数表达式 | 已连接 wrap SV |
-| 叶子 RTL | 仓库里已有的 `.v` / `.sv` | RtlIndex（端口、参数、例化；分析器落盘产物） |
+| 问题 | 做法 |
+|---|---|
+| 作者输入 | 一份可嵌多层的 HTML，静态标签 + `<script>` |
+| 渲染 | 真浏览器跑 `aw.js`（Custom Elements） |
+| 调试 / 隔离 | Playwright 无头打开本机页；Agent 用 Playwright MCP，和调普通前端一样 |
+| 安全 | 浏览器沙箱 + `127.0.0.1`；页面不直接写盘 |
+| 落盘 | `POST` 渲染结果 → autowire Web API → 写工作区 RTL → DV |
+| 谁写 script | 不管（人或 Agent） |
+| 无头 CLI | **后做**；必须通过已有 Web 测试 / golden |
 
-宽度、宏、parameter 一律存 **源码表达式**，第一版不求值。HTML/XML 只描述摊平后的树和连接规则，不描述 Block 打包算法。RtlIndex 落盘产物对 autowire **只读**。
+没有平行连接 IR，没有 emacs 进程，没有连接专用 MCP 工具表。
 
 ---
 
-## 寄存器
+## 流水线
 
-类型是数据。`uint(8)` 是函数，返回 `{ k: "uint", w: 8 }`。两个构造器代替 `kind` 字段。`append` 代替装饰器。
-
-```ts
-const master = Table("master");
-
-master.append(
-  "pll",
-  Block({
-    en: rw(bool(), 0),
-    input_div: rw(uint(8), 1),
-    rg_set: rw(uint(24), 0),
-    post_div: rw(uint(8), 1),
-    inner_cfg: rw(uint(48), 0),
-  }),
-);
-
-master.append(
-  "ctrl",
-  Cell({
-    go: w1p(bool()),
-    busy: ro(bool()),
-    mode: rw(uint(4), 0).at(8),
-  }),
-);
+```text
+HTML + script
+    →  浏览器 / Playwright 渲染（elaboration）
+    →  活 DOM = 连接关系
+    →  POST /api/dump（结构化结果或 SV）
+    →  autowire 写 .sv
+    →  DV
 ```
 
-- **Block**：功能结构，packer 切成多个 32bit Cell；可用 `.layout(...)` 覆盖。
-- **Cell**：一块总线字；字段总宽超过字宽则报错。
-- **打包默认**：字段不跨 cell；`uint48` 占两格。策略必须有 golden，否则地址与验证代码会漂。
-
-验证 / 软件 API 从 Cell IR 生成，与 RTL、Excel 同级。
+打印机看的是 **script 跑完的 DOM**，不是源文件原文。
 
 ---
 
-## 连接
+## 前期：Web 前端库
 
-树节点是模块与例化。规则是一等公民：一对一 `connect`，批量 `rewrite`（emacs 风格捕获、`@`、`[]`）。匿名子模块只声明层级；具名 `inst` 才带连线。
+`aw.js` + 约束 HTML，完全跑在浏览器里。
 
-内部引擎做连线。对外兼容 AUTO 子集，便于对照旧 wrap，**默认输出已连接 SV**，不是 AUTO 骨架。
+- 标签：`aw-mod`、`aw-inst`、`aw-connect`、`aw-rewrite`、`aw-param`（小写、属性加引号）
+- 一份文件可嵌套多层；`id` 在路径下唯一
+- 静态规则对齐 emacs Verilog-mode 心智（rewrite 捕获、`@`、`[]`、AUTO 子集语义）
+- `<script>` 做复杂例化（clone、改 id）
+- 脚本只用 DOM / `aw.*`，不要依赖 layout、不要对外 `fetch`
+- 节点带可访问名字，方便 Playwright snapshot
 
-兼容子集：`AUTO_TEMPLATE`、`AUTOINST`、`AUTOINSTPARAM`、`AUTOINPUT` / `OUTPUT` / `INOUT`、`AUTOWIRE`、library-directories。不做完整 verilog-mode，不做 slang 级 elaboration。
+```html
+<aw-mod name="master_cfg_wrap">
+  <aw-inst id="u_decoder" mod="m2_ddrphy_master_decoder">
+    <aw-param name="PIPE_NUM" expr="BUS_PIPE_NUM"></aw-param>
+    <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
+    <aw-rewrite port="dec_in_(.*)" to="mst_blk_reg_$1[]"></aw-rewrite>
+  </aw-inst>
+  <script type="module">
+    // 复杂例化
+  </script>
+</aw-mod>
+```
 
----
-
-## RTL 索引
-
-语法索引，不是 LSP，不是验证分析器。与连接 / 寄存器 IR **相对独立**：单独业务启动分析任务，产物供 autowire 只读消费。
-
-每条模块记录：参数名与默认表达式、端口方向与宽度原文、例化（依赖图）。`` `define `` / `` `ifdef `` 只做浅处理；失败列入 `unmatched` / 分析失败队列。
-
-不索引 always 语义、UVM、SVA，不展开 generate，不求参数值。
-
-### Producer
-
-- **主路径**：现成 **Rust** 分析二进制（增量、多线程/多进程）。扫描叶子 RTL，把参数、端口声明、依赖写入索引目录（多份 XML 等结构化文件 + `manifest` / `generation`）。
-- **契约**：稳定 RtlIndex schema；autowire 只绑契约，不绑分析器私有 DOM。
-- **一致性**：写 staging → 写 generation → 原子切换。内存里按 generation **整棵 RtlIndex 一次 swap**。禁止边写边读半成品。
-- **监视**：分析器监视源 `.v` / `.sv` 做增量更新；autowire 监视索引 `generation`，刷新内部 IR。连接 IR / 寄存器 IR **不因重索引而丢弃**。
-- **隔离**：SV 语法不全兼容、分析器崩溃时，失败按文件/模块入队（路径、错误、分析器版本），可优先排队定位。sidecar 退出不得拖垮 mcp / ui；可继续使用上一份可用 index。
-- **生命周期**：分析是独立任务。mcp **不**因全量落盘而整会话复位或长期挂死；启动可等待首次 ready，之后重分析异步完成再原子切换。可选同步工具（见下）显式等待某次任务结束。
-- **兜底**（可选）：无 sidecar 时可用 tree-sitter-systemverilog（WASM）做弱索引；不替代主路径。
+`autowire web [html]`：本机起服务，给人用有头浏览器，给 Agent 用无头。
 
 ---
 
-## 生成 Verilog
+## Playwright：隔离 + 调试
 
-连接层：遍历 IR 的 printer（TypeScript 模板字符串）。重复的 CSR 行为（W1C、shadow）用小函数或短模板。不用整文件 Jinja。
+全程无头 Chromium 打开 `web` 的 URL，首屏渲染完成后再让 Agent 介入（Playwright MCP：navigate / snapshot / evaluate / click）。
 
----
+- 隔离：独立浏览器上下文，只打本机页  
+- 调试：即浏览器调试，不另做 outline/inspect MCP  
+- 安全：渲染在浏览器里；**写文件只经 autowire API**
 
-## 运行时与发布
-
-TypeScript + Bun。执行时剥类型交给 JavaScriptCore，不是 `tsc` 出 ES。CI 与编辑器跑 `tsc --noEmit`。
-
-`bun build --compile` 打成单文件。核心依赖纯 JS 与 WASM（校验、Excel、MCP SDK；可选 tree-sitter.wasm）。不上 `.node`、不上进程内嵌 Rust/JS 解释器。
-
-Rtl 分析 **sidecar**（Rust 二进制）按可选 native 后端发布：本机路径配置或随发行附带；缺省时明确报错或降级兜底，不假装已索引。
+启动可以是：先 `autowire web`，再挂 Playwright MCP；或一条脚本两个都拉起。
 
 ---
 
-## 入口：mcp / script / repl（互斥）
+## 写回
 
-同一工作区同一时刻 **一个写者**。`mcp`、`run`（script）、`repl` 互斥，用 workspace lock（lockfile）仲裁；抢不到锁则退出并提示对方模式与 PID。`ui` 第一版只读，不占写锁（或共享读）。
+浏览器不碰磁盘。页面或 Playwright 把渲染结果 `POST` 到同源 `/api/dump`，autowire 校验工作区路径后写 RTL。对错由 DV 测文件，不靠禁止 dump。
 
-| 模式 | 入口 | 驱动方 | 用途 |
+---
+
+## 后期：`autowire cli`
+
+等 Web 测试用例和 golden 稳定，再做完全无头 CLI（同一套抽取逻辑，进程内或无头浏览器）。
+
+```text
+autowire cli phy.html --dump gen/
+```
+
+**用例约束后端**：cli 必须通过现有 Web / Playwright 测试（同一 HTML → 同一 RTL）。先做 cli、再补测试，不允许。
+
+`deps` 等 RtlIndex 查询可另挂在 cli 上，与连接渲染分开。
+
+---
+
+## 入口
+
+| | `autowire help` | `autowire web` | `autowire cli` |
 |---|---|---|---|
-| **mcp** | `autowire mcp` | Agent（结构化工具） | 有界查询与单步修改 |
-| **script** | `autowire run path.js` | 本机信任脚本 | 整树批量：层级搬迁、重命名、迁移后落盘 |
-| **repl** | `autowire repl` | 人 | 本机试探同一套 IR API |
-
-- **script**：进程内 load IR → 脚本改树 → 校验 → 落盘 → 退出；与 MCP 工具共用构造器 / IR API。大批量操作走此模式，不靠 Agent 往返拼工具。
-- **repl**：给人用的 CLI；**不**做成 Agent 开放 `eval`。
-- **从 mcp 触发脚本（可选）**：工具 `run_script` 同步拉起受控子进程执行指定脚本，父进程持锁等待；成功后热加载新 generation，失败不切换。不是 mcp 与 script 并行写树。不把「暂停到 IDLE 再另起进程」当作主路径；需要大改时优先结束写会话后直接 `autowire run`。
+| 作用 | Agent 接手说明（用法 + 思路） | 本机页渲染 | 后期无头 |
+| 何时做 | **现在** | **现在** | 用例够了以后 |
+| 渲染 | — | 浏览器 | 无头，被测试锁死 |
+| Agent | 先跑这个再干活 | Playwright MCP | 无浏览器时直接出 RTL |
+| 落盘 | — | Web API → autowire 写文件 | `--dump`，同一写盘代码 |
 
 ---
 
-## Agent：MCP
+## 寄存器与叶子索引（并列，不堵连接）
 
-协议是 JSON-RPC。本地用 **stdio**：宿主启动 `autowire mcp`。不是 REST。
-
-第一阶段工具（结果必须有界）：
-
-`load` · `outline` · `port_groups` · `unmatched` · `deps` · `trace` · `rewrite` / `connect` / `set_param` · `preview` · `apply`
-
-可选：`run_script`（见上）、分析失败队列查询。
-
-`trace` / `deps` 带 `maxHops`、`limit`、`cursor`。`why` 返回命中的规则，不返回整张网表。
-
-嵌入式 JS 沙箱（快照 + changeset + generation 门禁）**不做**到结构化工具与 `run` 成为瓶颈之后；`run` / `repl` 先按 **信任本机脚本** 落地。
-
-配置各宿主通用：
-
-```json
-{
-  "mcpServers": {
-    "autowire": {
-      "command": "/path/to/autowire",
-      "args": ["mcp"],
-      "env": { "AUTOWIRE_ROOT": "/path/to/rtl/workspace" }
-    }
-  }
-}
-```
-
-写入位置：Cursor（`.cursor/mcp.json`）、Claude Desktop、Claude Code、Pi（项目 `.mcp.json` 或 `~/.config/mcp/mcp.json`）。可用 `autowire mcp install` 合并。
+- 寄存器：`Table` + `Block` / `Cell`，类型是数据；Excel 只出文档。  
+- 叶子 RTL：Rust sidecar 出 RtlIndex，连接页只读端口表。  
 
 ---
 
-## 调试页
+## 不做
 
-`autowire ui` 只绑 `127.0.0.1`。页面与 MCP 共用 query，懒加载树、trace 路径、generation、unmatched / 分析失败。第一版只读。静态资源打进同一二进制。
-
----
-
-## 第一阶段顺序
-
-1. Bun 骨架与单文件编译  
-2. Block / Cell / Table 与 packer  
-3. RtlIndex 契约 + Rust sidecar 对接（只读落盘、generation 原子切换、失败队列）  
-4. 连接 IR 与 SV printer  
-5. CLI（含 workspace lock）  
-6. `run` / `repl` 与 stdio MCP（互斥入口）  
-7. 本机 UI  
-
-后置：WASM 弱索引兜底、嵌入 JS 沙箱门禁、HTTP MCP、更细的增量调度。
+- XML / 一层一份连接文件当 SoT  
+- 连接专用 MCP（`outline`、`apply`、`rewrite`…）  
+- `mcp` / `run` / `repl` 当主入口  
+- 浏览器直接写工作区  
+- 先做 cli 再补 Web 用例  
+- 两套连线语义（Web 与 cli 必须同一 `aw.js` + 同一 golden）  
+- 为每个芯片项目复制一份连接提示词（改 `src/help.ts`）  

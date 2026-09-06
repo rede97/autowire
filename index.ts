@@ -1,9 +1,11 @@
 // autowire CLI 入口（bun）。当前命令：
-//   deps <path>  打印 RTL 模块依赖树（path 为 RtlIndex 目录；若是 RTL 源码目录则先调 hdxml sidecar 分析）
+//   help [topic]  Agent 接手说明（无参数时也打印全文）
+//   deps <path>   打印 RTL 模块依赖树（path 为 RtlIndex 目录；若是 RTL 源码目录则先调 hdxml sidecar 分析）
 
 import { Command } from "commander";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { renderHelp } from "./src/help.js";
 import { loadRtlIndex } from "./src/rtlindex.js";
 import { renderSummary, renderTrees } from "./src/tree.js";
 
@@ -36,7 +38,24 @@ function analyzeWithSidecar(rtlDir: string, hdxmlBin: string, incdirs: string[])
 }
 
 const program = new Command();
-program.name("autowire").description("RTL 寄存器与连接工具");
+program
+  .name("autowire")
+  .description("RTL 寄存器与连接工具。Agent 先跑 help，不要另写项目提示词。")
+  .addHelpText("after", "\n接手说明（用法 + 思路）：  bun index.ts help\n切片：  bun index.ts help topics\n");
+
+program.addHelpCommand(false);
+program
+  .command("help")
+  .description("打印 Agent 接手说明（用法 + 思路）；topic 见 help topics")
+  .argument("[topic]", "agent | status | connect | web | dump | cli | deps | dont | topics")
+  .action((topic?: string) => {
+    try {
+      console.log(renderHelp(topic));
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : e);
+      process.exit(1);
+    }
+  });
 
 program
   .command("deps")
@@ -55,4 +74,8 @@ program
     for (const line of renderTrees(index, { top: opts.top, depth: opts.depth })) console.log(line);
   });
 
-program.parse();
+if (process.argv.slice(2).length === 0) {
+  console.log(renderHelp());
+} else {
+  program.parse();
+}

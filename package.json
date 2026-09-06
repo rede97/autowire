@@ -3,6 +3,13 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "bin": {
+    "autowire": "./index.ts"
+  },
+  "scripts": {
+    "help": "bun index.ts help",
+    "test": "bun test"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
