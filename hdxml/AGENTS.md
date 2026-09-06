@@ -6,7 +6,7 @@ autowire 的 RTL 分析 sidecar 子项目（由 stune 迁移裁剪而来，历�
 
 | 文档 | 内容 |
 |---|---|
-| `docs/module-info.md` | ModuleInfo v2 数据模型（PortInfo/ParamInfo/InstanceInfo、interface_sig、TOML schema v2） |
+| `docs/rtlindex-xml.md` | **RtlIndex XML 格式约束（契约草案，与 autowire 的唯一格式约定）** |
 | `docs/cli.md` | CLI 选项与行为 |
 
 ## 开发命令

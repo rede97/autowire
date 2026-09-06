@@ -24,7 +24,19 @@ fn main() -> Result<()> {
 
 fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter) -> Result<()> {
     let defines = db::build_defines(&a.input.defines, &a.input.define_headers)?;
-
+    // 供 index.xml 记录：排序的 (名称, 值文本) 列表；宏变更 → 指纹变 → 整库作废
+    let mut define_pairs: Vec<(String, String)> = defines
+        .iter()
+        .map(|(n, d)| {
+            (
+                n.clone(),
+                d.as_ref()
+                    .and_then(|d| d.text.as_ref().map(|t| t.text.clone()))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    define_pairs.sort();
     let files = FilesSet::collect(&a.input)?.files;
     if files.is_empty() {
         anyhow::bail!("输入集合为空（-f/-s/-w 至少需要一项）");
@@ -63,7 +75,7 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
 
     // XML 导出（--xml）
     if let Some(dir) = &a.xml {
-        let stats = XmlExport::new(&db, &files).write(dir)?;
+        let stats = XmlExport::new(&db, &files, &define_pairs).write(dir)?;
         pc.println(&format!(
             "XML 已写入: {}（文件 {}，模块 {}）",
             dir.display(),

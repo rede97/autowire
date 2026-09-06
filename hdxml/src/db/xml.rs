@@ -3,10 +3,10 @@
 //! 固定排序规则（每次序列化结果一致）：
 //! - `<files>`：按源文件路径字典序
 //! - 文件内 `<module>`：按模块名字典序
-//! - `<param>`/`<port>`/`<instance>`/`<conn>`：按源码声明序
+//! - `<module>` 子结构固定次序：`<params>` → `<ports>` → `<instances>`；组内按源码声明序
 //! - `<hierarchy>` 子节点：按目标模块名字典序（去重，DAG 边集）
 
-use super::{ConnText, DesignDb, ExprText, ModuleDecl, PortInfo};
+use super::{DesignDb, ExprText, ModuleDecl, PortInfo, short_hash};
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -21,27 +21,37 @@ pub struct ExportStats {
 pub struct XmlExport<'a> {
     db: &'a DesignDb,
     files: &'a [PathBuf],
+    /// 分析时使用的宏定义（名称, 值文本），按名称字典序
+    defines: &'a [(String, String)],
     /// 生成时间戳（unix 秒）；测试可注入固定值保证字节级确定性
     generated: u64,
 }
 
 impl<'a> XmlExport<'a> {
-    pub fn new(db: &'a DesignDb, files: &'a [PathBuf]) -> Self {
+    pub fn new(db: &'a DesignDb, files: &'a [PathBuf], defines: &'a [(String, String)]) -> Self {
         Self {
             db,
             files,
+            defines,
             generated: now_unix(),
         }
     }
 
     #[cfg(test)]
-    fn with_generated(db: &'a DesignDb, files: &'a [PathBuf], generated: u64) -> Self {
+    fn with_generated(
+        db: &'a DesignDb,
+        files: &'a [PathBuf],
+        defines: &'a [(String, String)],
+        generated: u64,
+    ) -> Self {
         Self {
             db,
             files,
+            defines,
             generated,
         }
     }
+
 
     /// 写出整个索引目录：manifest 驱动 GC（旧 index.xml 产物集 − 本次产物集 = 删除），
     /// index.xml 最后写入——中途崩溃旧 manifest 仍在，下次 GC 依然正确。
@@ -129,7 +139,6 @@ impl<'a> XmlExport<'a> {
                 ("name", m.name.clone()),
                 ("kind", m.kind.as_str().to_string()),
                 ("span", span_text(m.span)),
-                ("timestamp", mtime.to_string()),
                 ("contentHash", m.content_hash.clone()),
                 ("interfaceSig", m.interface_sig.clone()),
             ];
@@ -138,27 +147,49 @@ impl<'a> XmlExport<'a> {
                 continue;
             }
             w.open("module", &attrs);
-            for p in &m.params {
-                let mut a = vec![
-                    ("name", p.name.clone()),
-                    ("kind", p.kind.as_str().to_string()),
-                ];
-                if let Some(t) = &p.data_type {
-                    a.push(("dataType", t.clone()));
+            if !m.params.is_empty() {
+                w.open("params", &[]);
+                for p in &m.params {
+                    let mut a = vec![
+                        ("name", p.name.clone()),
+                        ("kind", p.kind.as_str().to_string()),
+                    ];
+                    if let Some(t) = &p.data_type {
+                        a.push(("dataType", t.clone()));
+                    }
+                    if let Some(d) = &p.default {
+                        a.push(("default", d.text.clone()));
+                        push_deps(&mut a, d);
+                    }
+                    a.push(("span", span_text(p.span)));
+                    w.empty("param", &a);
                 }
-                if let Some(d) = &p.default {
-                    a.push(("default", d.text.clone()));
-                    push_deps(&mut a, d);
+                w.close("params");
+            }
+            if !m.ports.is_empty() {
+                w.open("ports", &[]);
+                for p in &m.ports {
+                    // 方向即标签名（<input>/<output>/…）；方向未知（非 ANSI 未补全）退回 <port>
+                    let tag = p.dir.map_or("port", |d| d.as_str());
+                    w.empty(tag, &port_attrs(p));
                 }
-                a.push(("span", span_text(p.span)));
-                w.empty("param", &a);
+                w.close("ports");
             }
-            for p in &m.ports {
-                w.empty("port", &port_attrs(p));
-            }
-            for i in &m.instances {
-                if i.params.is_empty() && i.conns.is_empty() {
-                    w.empty(
+            if !m.instances.is_empty() {
+                w.open("instances", &[]);
+                for i in &m.instances {
+                    if i.params.is_empty() {
+                        w.empty(
+                            "instance",
+                            &[
+                                ("name", i.inst.clone()),
+                                ("target", i.target.clone()),
+                                ("span", span_text(i.span)),
+                            ],
+                        );
+                        continue;
+                    }
+                    w.open(
                         "instance",
                         &[
                             ("name", i.inst.clone()),
@@ -166,23 +197,17 @@ impl<'a> XmlExport<'a> {
                             ("span", span_text(i.span)),
                         ],
                     );
-                    continue;
+                    for c in &i.params {
+                        let mut a = Vec::new();
+                        if let Some(n) = &c.name {
+                            a.push(("name", n.clone()));
+                        }
+                        a.push(("value", c.value.clone()));
+                        w.empty("param", &a);
+                    }
+                    w.close("instance");
                 }
-                w.open(
-                    "instance",
-                    &[
-                        ("name", i.inst.clone()),
-                        ("target", i.target.clone()),
-                        ("span", span_text(i.span)),
-                    ],
-                );
-                for c in &i.params {
-                    w.empty("param", &conn_attrs(c));
-                }
-                for c in &i.conns {
-                    w.empty("conn", &conn_attrs(c));
-                }
-                w.close("instance");
+                w.close("instances");
             }
             w.close("module");
         }
@@ -211,6 +236,15 @@ impl<'a> XmlExport<'a> {
         index_of: &BTreeMap<&PathBuf, String>,
     ) -> String {
         let mut w = XmlWriter::new();
+        // 宏指纹：排序后 name=value 逐行哈希；消费方不一致即整库作废
+        let defines_fp = short_hash(
+            self.defines
+                .iter()
+                .map(|(n, v)| format!("{n}={v}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .as_bytes(),
+        );
         w.open(
             "rtlIndex",
             &[
@@ -219,8 +253,16 @@ impl<'a> XmlExport<'a> {
                 ("files", inputs.len().to_string()),
                 ("modules", self.db.defs.len().to_string()),
                 ("errorFiles", self.db.errors.len().to_string()),
+                ("definesFp", defines_fp),
             ],
         );
+        if !self.defines.is_empty() {
+            w.open("defines", &[]);
+            for (n, v) in self.defines {
+                w.empty("define", &[("name", n.clone()), ("value", v.clone())]);
+            }
+            w.close("defines");
+        }
         w.open("files", &[]);
         for f in inputs {
             let xml = &index_of[f];
@@ -313,10 +355,8 @@ fn dims_text(dims: &[ExprText]) -> String {
 }
 
 fn port_attrs(p: &PortInfo) -> Vec<(&'static str, String)> {
+    // 方向由标签名承载（<input>/<output>/…），不再重复 dir 属性
     let mut a = vec![("name", p.name.clone())];
-    if let Some(d) = &p.dir {
-        a.push(("dir", d.as_str().to_string()));
-    }
     if let Some(t) = &p.data_type {
         a.push(("dataType", t.clone()));
     }
@@ -339,14 +379,6 @@ fn port_attrs(p: &PortInfo) -> Vec<(&'static str, String)> {
     a
 }
 
-fn conn_attrs(c: &ConnText) -> Vec<(&'static str, String)> {
-    let mut a = Vec::new();
-    if let Some(n) = &c.name {
-        a.push(("name", n.clone()));
-    }
-    a.push(("text", c.text.clone()));
-    a
-}
 
 /// 每文件 XML 相对路径：镜像源码相对 CWD 的路径并追加 .xml（`src/foo.sv` → `src/foo.sv.xml`）。
 /// CWD 之外的路径剥掉根/父级分量，保留可辨识层级；按构造唯一，无需哈希。
@@ -492,11 +524,10 @@ mod tests {
         top.instances = vec![InstanceInfo {
             inst: "u0".into(),
             target: "sub".into(),
-            params: vec![ConnText {
+            params: vec![crate::db::ParamConn {
                 name: Some("W".into()),
-                text: "8".into(),
+                value: "8".into(),
             }],
-            conns: vec![],
             span: [60, 70],
         }];
         top.content_hash = "h_top".into();
@@ -526,8 +557,8 @@ mod tests {
         let files = vec![f.clone()];
         let d1 = tmpdir("det1");
         let d2 = tmpdir("det2");
-        XmlExport::with_generated(&db, &files, 0).write(&d1).unwrap();
-        XmlExport::with_generated(&db, &files, 0).write(&d2).unwrap();
+        XmlExport::with_generated(&db, &files, &[], 0).write(&d1).unwrap();
+        XmlExport::with_generated(&db, &files, &[], 0).write(&d2).unwrap();
         let i1 = std::fs::read_to_string(d1.join("index.xml")).unwrap();
         let i2 = std::fs::read_to_string(d2.join("index.xml")).unwrap();
         assert_eq!(i1, i2, "index.xml 两次导出必须字节一致");
@@ -558,7 +589,7 @@ mod tests {
         let db = DesignDb::new(BTreeMap::new(), errors);
         let files = vec![f.clone()];
         let dir = tmpdir("err");
-        XmlExport::with_generated(&db, &files, 0).write(&dir).unwrap();
+        XmlExport::with_generated(&db, &files, &[], 0).write(&dir).unwrap();
         let body = std::fs::read_to_string(dir.join("nonexistent/bad.sv.xml")).unwrap();
         assert!(body.contains("<error message=\"解析失败: boom\" offset=\"42\" line=\"4\" column=\"10\"/>"), "{body}");
         let index = std::fs::read_to_string(dir.join("index.xml")).unwrap();
@@ -583,12 +614,50 @@ mod tests {
         .unwrap();
         std::fs::write(dir.join("keep.txt"), "user data").unwrap();
 
-        XmlExport::with_generated(&db, &files, 0).write(&dir).unwrap();
+        XmlExport::with_generated(&db, &files, &[], 0).write(&dir).unwrap();
 
         assert!(!dir.join("stale/old.sv.xml").exists(), "失效 XML 必须被清理");
         assert!(!dir.join("stale").exists(), "空目录必须被修剪");
         assert!(dir.join("keep.txt").exists(), "非产物文件不得被误删");
         assert!(dir.join("nonexistent/top.sv.xml").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn defines_recorded_and_fingerprint_changes_with_macros() {
+        let f = PathBuf::from("/nonexistent/top.sv");
+        let db = demo_db(&f);
+        let files = vec![f.clone()];
+        let defs_a = vec![
+            ("ADDR_W".to_string(), "32".to_string()),
+            ("DATA_W".to_string(), "64".to_string()),
+        ];
+        let dir = tmpdir("defs");
+        XmlExport::with_generated(&db, &files, &defs_a, 0)
+            .write(&dir)
+            .unwrap();
+        let index = std::fs::read_to_string(dir.join("index.xml")).unwrap();
+        // 清单按名称字典序、指纹属性存在
+        let da = index.find("name=\"ADDR_W\"").unwrap();
+        let dw = index.find("name=\"DATA_W\"").unwrap();
+        assert!(da < dw, "define 必须按名称字典序: {index}");
+        assert!(index.contains("definesFp=\""), "{index}");
+
+        // 宏集合变化 → 指纹必须变化（整库作废判定依据）
+        let defs_b = vec![
+            ("ADDR_W".to_string(), "32".to_string()),
+            ("DATA_W".to_string(), "128".to_string()),
+        ];
+        let fp_of = |defs: &[(String, String)]| {
+            let dir = tmpdir("defs_fp");
+            XmlExport::with_generated(&db, &files, defs, 0)
+                .write(&dir)
+                .unwrap();
+            let body = std::fs::read_to_string(dir.join("index.xml")).unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
+            body.split("definesFp=\"").nth(1).unwrap()[..32].to_string()
+        };
+        assert_ne!(fp_of(&defs_a), fp_of(&defs_b), "宏值变化必须改变指纹");
+        assert_eq!(fp_of(&defs_a), fp_of(&defs_a), "同宏集指纹必须稳定");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

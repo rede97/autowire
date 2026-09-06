@@ -144,20 +144,20 @@ pub struct PortInfo {
     pub span: [usize; 2],
 }
 
-/// 实例端口/参数连接（v1 存原文文本）
+/// 实例参数覆盖（v1 存表达式原文，不含 `.name(...)` 包裹与注释；不求值）
 #[derive(Debug, Clone)]
-pub struct ConnText {
-    /// 命名连接的名字；位置连接为 None
+pub struct ParamConn {
+    /// 命名覆盖的参数名；位置连接为 None
     pub name: Option<String>,
-    pub text: String,
+    /// 覆盖表达式原文（如 `1`、`W`）
+    pub value: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct InstanceInfo {
     pub inst: String,
     pub target: String,
-    pub params: Vec<ConnText>,
-    pub conns: Vec<ConnText>,
+    pub params: Vec<ParamConn>,
     pub span: [usize; 2],
 }
 

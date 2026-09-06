@@ -2,7 +2,7 @@
 //! 名称用节点字段直取（XxxIdentifier.nodes.0），文本用窗口 min/max offset 切原文。
 
 use super::{
-    ConnText, ExprText, InstanceInfo, ModKind, ModuleDecl, ParamInfo, ParamKind, PortDir, PortInfo,
+    ExprText, InstanceInfo, ModKind, ModuleDecl, ParamConn, ParamInfo, ParamKind, PortDir, PortInfo,
     short_hash,
 };
 use std::path::Path;
@@ -52,10 +52,8 @@ enum Cap {
     DataType,
     /// 默认/覆盖值表达式（维度窗口开启时不捕获）
     Expr,
-    /// 参数连接（NamedParameterAssignment/OrderedParameterAssignment 整体文本）
+    /// 参数连接（NamedParameterAssignment/OrderedParameterAssignment 整体文本，取参数名用）
     ParamConn,
-    /// 端口连接（NamedPortConnection/OrderedPortConnection 整体文本）
-    PortConn,
 }
 
 #[derive(Default)]
@@ -100,14 +98,15 @@ struct ParamB {
 #[derive(Default)]
 struct InstB {
     target: String,
-    params: Vec<ConnText>,
+    params: Vec<ParamConn>,
+    /// 当前参数连接的表达式值（嵌套 Expr 窗口在 ParamConn 收尾前写入）
+    pending_value: Option<String>,
     win: Win,
 }
 
 #[derive(Default)]
 struct HierB {
     name: String,
-    conns: Vec<ConnText>,
     win: Win,
 }
 
@@ -300,15 +299,7 @@ impl<'a> Extractor<'a> {
             }
             RefNode::PortIdentifier(id) => {
                 let name = ident_text(self.src, &id.nodes.0);
-                // 端口声明帧内收集端口名；连接窗口内由 ParamConn/PortConn 处理
-                if self
-                    .stack
-                    .iter()
-                    .rev()
-                    .any(|f| matches!(f, Frame::Cap(Cap::PortConn, _)))
-                {
-                    // NamedPortConnection 的端口名，leave 时从文本切，跳过
-                } else if let Some(p) = self.cur_port() {
+                if let Some(p) = self.cur_port() {
                     p.names.push(name);
                 }
             }
@@ -342,11 +333,17 @@ impl<'a> Extractor<'a> {
                 self.stack.push(Frame::Cap(Cap::DataType, Win::new()))
             }
             RefNode::ConstantExpression(_) | RefNode::ConstantParamExpression(_) => {
-                if !self.dim_open() && self.in_param_decl() || self.in_port_decl() {
-                    // 参数/端口默认值（维度内表达式已被 dim_open 抑制）
-                    if !self.dim_open() {
-                        self.stack.push(Frame::Cap(Cap::Expr, Win::new()));
-                    }
+                // 参数/端口默认值、实例参数覆盖值（维度内表达式已被 dim_open 抑制）
+                if !self.dim_open()
+                    && (self.in_param_decl() || self.in_port_decl() || self.in_param_conn())
+                {
+                    self.stack.push(Frame::Cap(Cap::Expr, Win::new()));
+                }
+            }
+            RefNode::ParamExpression(_) => {
+                // 实例参数覆盖的表达式节点（NamedParameterAssignment 内不是 ConstantExpression）
+                if !self.dim_open() && self.in_param_conn() {
+                    self.stack.push(Frame::Cap(Cap::Expr, Win::new()));
                 }
             }
             RefNode::ModuleInstantiation(_) | RefNode::InterfaceInstantiation(_) => {
@@ -381,9 +378,6 @@ impl<'a> Extractor<'a> {
             RefNode::NamedParameterAssignment(_) | RefNode::OrderedParameterAssignment(_) => {
                 self.stack.push(Frame::Cap(Cap::ParamConn, Win::new()));
             }
-            RefNode::NamedPortConnection(_) | RefNode::OrderedPortConnection(_) => {
-                self.stack.push(Frame::Cap(Cap::PortConn, Win::new()));
-            }
             RefNode::Locate(l) => self.feed_locate(l),
             _ => {}
         }
@@ -391,6 +385,13 @@ impl<'a> Extractor<'a> {
 
     fn in_port_decl(&self) -> bool {
         self.stack.iter().any(|f| matches!(f, Frame::Port(_)))
+    }
+
+    /// 是否处于实例参数连接窗口内（覆盖值表达式需要捕获）
+    fn in_param_conn(&self) -> bool {
+        self.stack
+            .iter()
+            .any(|f| matches!(f, Frame::Cap(Cap::ParamConn, _)))
     }
 
     fn leave(&mut self, node: RefNode<'a>) {
@@ -477,7 +478,6 @@ impl<'a> Extractor<'a> {
                             inst: h.name,
                             target,
                             params,
-                            conns: h.conns,
                             span: h.win.span(),
                         });
                     }
@@ -488,16 +488,15 @@ impl<'a> Extractor<'a> {
                 self.pop_cap(Cap::UnpackedDim)
             }
             RefNode::DataType(_) | RefNode::DataTypeOrImplicit(_) => self.pop_cap(Cap::DataType),
-            RefNode::ConstantExpression(_) | RefNode::ConstantParamExpression(_) => {
+            RefNode::ConstantExpression(_)
+            | RefNode::ConstantParamExpression(_)
+            | RefNode::ParamExpression(_) => {
                 if matches!(self.stack.last(), Some(Frame::Cap(Cap::Expr, _))) {
                     self.pop_cap(Cap::Expr);
                 }
             }
             RefNode::NamedParameterAssignment(_) | RefNode::OrderedParameterAssignment(_) => {
                 self.pop_cap(Cap::ParamConn)
-            }
-            RefNode::NamedPortConnection(_) | RefNode::OrderedPortConnection(_) => {
-                self.pop_cap(Cap::PortConn)
             }
             _ => {}
         }
@@ -544,6 +543,13 @@ impl<'a> Extractor<'a> {
                 }
             }
             Cap::Expr => {
+                // 实例参数覆盖值：写入 InstB.pending_value，ParamConn 收尾时取用
+                if self.in_param_conn() {
+                    if let Some(i) = self.cur_inst() {
+                        i.pending_value = Some(text.to_string());
+                    }
+                    return;
+                }
                 let e = ExprText::new(text);
                 if let Some(p) = self.cur_param()
                     && p.default.is_none()
@@ -560,19 +566,8 @@ impl<'a> Extractor<'a> {
             Cap::ParamConn => {
                 let name = parse_conn_name(text);
                 if let Some(i) = self.cur_inst() {
-                    i.params.push(ConnText {
-                        name,
-                        text: text.to_string(),
-                    });
-                }
-            }
-            Cap::PortConn => {
-                let name = parse_conn_name(text);
-                if let Some(h) = self.cur_hier() {
-                    h.conns.push(ConnText {
-                        name,
-                        text: text.to_string(),
-                    });
+                    let value = i.pending_value.take().unwrap_or_default();
+                    i.params.push(ParamConn { name, value });
                 }
             }
         }
@@ -710,7 +705,24 @@ endmodule
         assert_eq!(m.instances[0].target, "sub");
         assert_eq!(m.instances[0].inst, "u_sub");
         assert_eq!(m.instances[0].params[0].name.as_deref(), Some("W"));
-        assert_eq!(m.instances[0].conns.len(), 3);
+        assert_eq!(m.instances[0].params[0].value, "W");
+    }
+
+    #[test]
+    fn 实例参数覆盖值剥离包裹与注释() {
+        let src = r#"module top;
+  sub #(.IS_FUNCTIONAL(1) // The gate is required to prevent glitches
+        ) u0 ();
+  sub #(8, 16) u1 ();
+endmodule
+"#;
+        let (mods, _) = extract_src("top", src);
+        let m = &mods[0];
+        assert_eq!(m.instances[0].params[0].name.as_deref(), Some("IS_FUNCTIONAL"));
+        assert_eq!(m.instances[0].params[0].value, "1");
+        assert_eq!(m.instances[1].params[0].name, None);
+        assert_eq!(m.instances[1].params[0].value, "8");
+        assert_eq!(m.instances[1].params[1].value, "16");
     }
 
     #[test]

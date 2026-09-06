@@ -121,36 +121,41 @@ interface_sig = blake3(canonical)
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <fileIndex source="src/cc_cdc_2phase.sv" mtime="1788325458">
-  <module name="cc_cdc_2phase" kind="module" span="17692:19347" timestamp="1788325458"
+  <module name="cc_cdc_2phase" kind="module" span="17692:19347"
           contentHash="ca4d…" interfaceSig="c67e…">
-    <param name="SyncStages" kind="parameter" dataType="int unsigned" default="2" span="…"/>
-    <param name="data_t" kind="type" span="…"/>
-    <port name="src_data_i" dir="input" dataType="data_t" packed="[W-1:0]" span="…"/>
-    <port name="s_axi" dir="interface" interface="axi_if" modport="slave" span="…"/>
-    <instance name="i_src" target="cc_cdc_2phase_src" span="…">
-      <param name="SyncStages" text=".SyncStages ( SyncStages )"/>
-      <conn name="clk_i" text=".clk_i ( src_clk_i )"/>
-    </instance>
+    <params>
+      <param name="SyncStages" kind="parameter" dataType="int unsigned" default="2" span="…"/>
+      <param name="data_t" kind="type" span="…"/>
+    </params>
+    <ports>
+      <input name="src_data_i" dataType="data_t" packed="[W-1:0]" span="…"/>
+      <interface name="s_axi" interface="axi_if" modport="slave" span="…"/>
+    </ports>
+    <instances>
+      <instance name="i_src" target="cc_cdc_2phase_src" span="…">
+        <param name="SyncStages" value="SYNC_STAGES"/>
+      </instance>
+    </instances>
   </module>
   <!-- 解析失败的文件：无 module，错误带行列定位（定位机制移植自 ipchecker） -->
   <error message="解析失败: Parse error: …" offset="48" line="2" column="3"/>
 </fileIndex>
 ```
 
-- `timestamp` = 源文件 mtime（unix 秒），与 `contentHash` 共同支撑消费方的修改追踪；`span` 即模块地址。
+- 端口方向以标签名表达（`<input>`/`<output>`/`<inout>`/`<ref>`/`<interface>`）；`span` 即模块地址，修改追踪见 `contentHash`/`interfaceSig`。格式权威定义见 `rtlindex-xml.md`。
 - `packed`/`unpacked` 多维时拼接为 `[d0][d1]`；表达式原文保真，deps 以 `deps="A,B"` 随 `default` 给出。
 
 index.xml：
-
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<rtlIndex tool="hdxml 0.1.0" generated="1788627786" files="168" modules="200" errorFiles="0">
+<rtlIndex tool="hdxml 0.1.0" generated="1788627786" files="168" modules="200" errorFiles="0" definesFp="6c76cc6a…">
+  <defines><define name="SYNTHESIS" value="1"/></defines>
   <files>
-    <file source="src/bad.sv" index="bad_214f09bf.xml" status="error" modules="0" mtime="…"/>
-    <file source="src/top.sv" index="top_a1b2c3d4.xml" status="ok" modules="2" mtime="…"/>
+    <file source="src/bad.sv" index="src/bad.sv.xml" status="error" modules="0" mtime="…"/>
+    <file source="src/top.sv" index="src/top.sv.xml" status="ok" modules="2" mtime="…"/>
   </files>
   <modules>
-    <module name="cc_cdc_2phase" index="cc_cdc_2phase_bf61cb0d.xml"/>
+    <module name="cc_cdc_2phase" index="src/cc_cdc_2phase.sv.xml"/>
   </modules>
   <hierarchy>
     <top module="cc_cdc_2phase">
