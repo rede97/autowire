@@ -29,10 +29,9 @@
 ```text
 autowire.toml（.f + svh/宏）
     →  hdxml → RtlIndex（只读）
-    →  HTML + script
-    →  ① 顶→底 param  ② 底→顶连线（elaboration）
-    →  活 DOM = 连接关系
-    →  POST /api/dump（结构化结果或 SV）
+    →  HTML（aw-content + aw-submods）
+    →  elaboration → aw-render
+    →  POST /api/dump（读 aw-render）
     →  autowire 写 .sv
     →  DV
 ```
@@ -49,18 +48,15 @@ autowire.toml（.f + svh/宏）
 
 **两层（完整约束：[`docs/connect-html.md`](docs/connect-html.md)；示例：[`docs/examples/connect/`](docs/examples/connect/)）**
 
-| | 作者 HTML（源） | 渲染后活 DOM（结果） |
+| | `aw-content`（作者） | `aw-render`（结果） |
 |---|---|---|
-| 内容 | 模块名 + 可选参数；例化 / 连线 / param **模板** | 具体 instance、连线、**导出端口**（生成物） |
-| 像什么 | 带 rewrite / script 的模板 | elaborated XML：生成的 port、生成的实例 |
-| 谁看 | 人 / Agent 编辑 | 打印机、`/api/dump`、golden |
+| 内容 | param / 显式 port；`aw-template`；例化 + `base`/patch | 具体 instance、signals、导出 port、逐条 connect |
+| 像什么 | 声明 + 类 style 的连接规则 | elaborated 生成物（dump 只认这里） |
+| 依赖 | — | `aw-submods` 嵌套子 `aw-mod`（递归） |
 
-- 作者标签：`aw-mod`、`aw-inst`、`aw-connect`、`aw-rewrite`、`aw-param`
-- Elaboration：**顶→底**推 param，**底→顶**连线 / 导出 port
-- 渲染后多出生成的：`aw-port`、展开后的 `aw-inst` / `aw-connect`（rewrite 落成逐条 connect）
-- 一份文件可嵌多层；`id` 在父路径下唯一
-- 静态规则对齐 emacs Verilog-mode 心智（rewrite 捕获、`@`、`[]`、AUTO 子集）
-- `<script>` 做复杂例化（clone、改 id）；只用 DOM / `aw.*`
+- 根 `<autowire>`；每模：`aw-content` → `aw-submods` → `aw-render`
+- `aw-template`：定义一次、多实例复用，例化上可 patch（取代 data-template clone）
+- Elaboration：顶→底 param → 展开 template → 底→顶连线写入 `aw-render`
 - **先文档约束，未实现前不要假装能渲染或 dump**
 
 `autowire web [html]`：本机起服务，给人用有头浏览器，给 Agent 用无头。

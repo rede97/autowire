@@ -1,0 +1,44 @@
+<!doctype html>
+<!--
+  渲染后示意：lane_tpl 已展开；id=u_lane0/u_lane1；无 aw-rewrite/aw-template。
+  禁止当作者 SoT。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>03-rendered-template-reuse</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-mod name="lane_wrap">
+        <aw-content></aw-content>
+        <aw-submods></aw-submods>
+        <aw-render>
+          <aw-params>
+            <aw-param name="N" value="2"></aw-param>
+          </aw-params>
+          <aw-ports>
+            <aw-port name="lane_clk" dir="input"></aw-port>
+            <aw-port name="lane_data" dir="inout" width="16"></aw-port>
+          </aw-ports>
+          <aw-signals>
+            <aw-signal name="lane_clk"></aw-signal>
+            <aw-signal name="lane_data" width="16"></aw-signal>
+            <aw-signal name="lane_1_dbg"></aw-signal>
+          </aw-signals>
+          <aw-insts>
+            <aw-inst id="u_lane0" mod="lane_slice">
+              <aw-connect port="clk" to="lane_clk"></aw-connect>
+              <aw-connect port="data" to="lane_data"></aw-connect>
+            </aw-inst>
+            <aw-inst id="u_lane1" mod="lane_slice">
+              <aw-connect port="clk" to="lane_clk"></aw-connect>
+              <aw-connect port="data" to="lane_data"></aw-connect>
+              <aw-connect port="dbg" to="lane_1_dbg"></aw-connect>
+            </aw-inst>
+          </aw-insts>
+        </aw-render>
+      </aw-mod>
+    </autowire>
+  </body>
+</html>

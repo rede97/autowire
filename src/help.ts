@@ -60,10 +60,9 @@ web 落地后怎么干活（连接）
 流水线
   autowire.toml（.f + svh/宏）
       →  hdxml → RtlIndex（只读）
-      →  HTML + script
-      →  ① 顶→底 param  ② 底→顶连线（elaboration）
-      →  活 DOM = 连接关系
-      →  POST /api/dump
+      →  HTML（aw-content + aw-submods）
+      →  elaboration → aw-render（顶→底 param；template；底→顶连线）
+      →  POST /api/dump（读 aw-render）
       →  autowire 写 .sv
       →  DV
 `,
@@ -122,29 +121,30 @@ HTML 方言（连接 SoT）— 草稿
   docs/workspace-toml.md   （.f / 宏；与连接衔接）
 
 两层，不要混
-  作者 HTML（源）     模块名 + 可选参数；例化 / 连线 / param 的模板
-  渲染后活 DOM（结果） 具体 instance、连线、导出端口（生成物）
-                       类似 elaborated XML：生成的 port、生成的实例
+  aw-content（作者）   本模 param/port；aw-template；例化 + base/patch
+  aw-render（结果）    具体 instance / signals / 导出 port / 逐条 connect
+  aw-submods           子 aw-mod 依赖（递归），与 content 内含分开
 
-打印机 / dump / golden 只认渲染后 DOM，不认源文件原文。
-静态规则对齐 emacs Verilog-mode 心智（rewrite 捕获、@、[]、AUTO 子集），
-不对齐 emacs 进程。属性名未冻结；改 docs/connect-html.md 时同步本段。
+打印机 / dump / golden 只认各 aw-mod 下的 aw-render，不认 content/templates 原文。
+静态规则对齐 emacs Verilog-mode 心智（rewrite、AUTO_TEMPLATE）；不对齐 emacs 进程。
 
-作者标签
-  aw-mod / aw-param / aw-inst / aw-connect / aw-rewrite
-  嵌套 aw-mod = 层次；aw-inst@id 在父路径下唯一
-  <script type="module">：clone 模板、改 id；只用 DOM / aw.*
+骨架
+  <autowire>
+    <aw-mod name="…">
+      <aw-content>  aw-params / aw-ports / aw-templates / aw-insts  </aw-content>
+      <aw-submods>  嵌套 aw-mod …  </aw-submods>
+      <aw-render>   aw-params / aw-ports / aw-signals / aw-insts  </aw-render>
+    </aw-mod>
+  </autowire>
 
-Elaboration（引擎顺序，语义冻结）
-  ① 顶 → 底：绑定/求值 aw-param（expr → value）
-  ② 底 → 顶：叶子端口表展开 rewrite → aw-connect，再推导导出 aw-port
-  宏（toml/.svh）≠ 模块 param；先固定宏再推 param
-  连接顶不必是全芯片 RTL top；子树内部仍按上述顺序
+aw-template（类 style）
+  aw-templates 内 name= 定义；aw-inst 内 base= 引用
+  先展开 base，再应用例化子节点（patch；同 port 后写覆盖）
+  模板不进 dump；常规阵列优先 template，少用 script
 
-渲染后（dump 输入）
-  保留 aw-mod / aw-inst；rewrite 落成逐条 aw-connect
-  生成 aw-port（导出）；模板 clone 生成具体实例
-  详见 docs/examples/connect/*-rendered-*.html
+Elaboration
+  ① 顶→底 param  ② 展开 template+patch  ③ 底→顶连线写入 aw-render
+  宏（toml/.svh）≠ 模块 param；详见 docs/connect-html.md
 `,
 
   web: `\
@@ -166,8 +166,8 @@ Agent 只用 Playwright MCP（navigate / snapshot / evaluate / click），
   dump: `\
 写回
 
-浏览器不碰磁盘。页面或 Playwright 把「渲染后活 DOM」POST 到同源 /api/dump
-（具体 instance / aw-connect / 导出 aw-port，不是作者源 HTML）。
+浏览器不碰磁盘。页面或 Playwright 把各 aw-mod 的「aw-render」POST 到同源 /api/dump
+（具体 instance / aw-connect / 导出 aw-port / aw-signals，不是 aw-content 原文）。
 autowire 校验工作区路径后写 RTL。对错由 DV 测文件，不靠禁止 dump。
 
 web 与将来的 cli 必须走同一套写盘代码。

@@ -6,13 +6,15 @@ test("无 topic 打印全文，含接手约定", () => {
   expect(text).toContain("本输出即工作约定");
   expect(text).toContain("不要另写项目提示词");
   expect(text).toContain("aw-mod");
+  expect(text).toContain("aw-content");
+  expect(text).toContain("aw-render");
+  expect(text).toContain("aw-template");
   expect(text).toContain("Playwright MCP");
   expect(text).toContain("POST /api/dump");
   expect(text).toContain("先做 cli、再补测试，不允许");
   expect(text).toContain("autowire deps");
   expect(text).toContain("当前状态");
   expect(text).toContain("autowire.toml");
-  expect(text).toContain("顶→底");
 });
 
 test("每个切片都能独立打印", () => {
@@ -22,13 +24,14 @@ test("每个切片都能独立打印", () => {
   expect(renderHelp("workspace")).toContain("docs/workspace-toml.md");
   expect(renderHelp("connect")).toContain("aw-mod");
   expect(renderHelp("connect")).toContain("docs/connect-html.md");
-  expect(renderHelp("connect")).toContain("顶 → 底");
-  expect(renderHelp("connect")).toContain("底 → 顶");
-  expect(renderHelp("connect")).toContain("aw-port");
-  expect(renderHelp("connect")).toContain("渲染后");
+  expect(renderHelp("connect")).toContain("aw-content");
+  expect(renderHelp("connect")).toContain("aw-render");
+  expect(renderHelp("connect")).toContain("aw-template");
+  expect(renderHelp("connect")).toContain("<autowire>");
   expect(renderHelp("dont")).toContain("autowire.toml");
   expect(renderHelp("web")).toContain("Playwright MCP");
   expect(renderHelp("dump")).toContain("/api/dump");
+  expect(renderHelp("dump")).toContain("aw-render");
   expect(renderHelp("cli")).toContain("先做 cli");
   expect(renderHelp("deps")).toContain("RtlIndex");
   expect(renderHelp("dont")).toContain("连接专用 MCP");

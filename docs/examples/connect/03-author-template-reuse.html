@@ -1,0 +1,45 @@
+<!doctype html>
+<!--
+  作者面：aw-template 复用 + 例化 patch（取代 data-template clone）。
+  对应渲染：03-rendered-template-reuse.html
+  约束：docs/connect-html.md §3.4
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>03-author-template-reuse</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-mod name="lane_wrap">
+        <aw-content>
+          <aw-params>
+            <aw-param name="N" expr="2"></aw-param>
+          </aw-params>
+          <aw-ports></aw-ports>
+          <aw-templates>
+            <aw-template name="lane_tpl" inst_name_expr="${id}${idx}">
+              <aw-rewrite port="(.*)" to="lane_$1"></aw-rewrite>
+            </aw-template>
+          </aw-templates>
+          <aw-insts>
+            <aw-inst id="u_lane" mod="lane_slice" idx="0">
+              <aw-template base="lane_tpl"></aw-template>
+            </aw-inst>
+            <aw-inst id="u_lane" mod="lane_slice" idx="1">
+              <aw-template base="lane_tpl"></aw-template>
+              <aw-connect port="dbg" to="lane_1_dbg"></aw-connect>
+            </aw-inst>
+          </aw-insts>
+        </aw-content>
+        <aw-submods></aw-submods>
+        <aw-render>
+          <aw-params></aw-params>
+          <aw-ports></aw-ports>
+          <aw-signals></aw-signals>
+          <aw-insts></aw-insts>
+        </aw-render>
+      </aw-mod>
+    </autowire>
+  </body>
+</html>

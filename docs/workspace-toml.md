@@ -79,14 +79,12 @@ dir = "tmp/rtlindex"
 ```text
 autowire.toml（.f + svh/宏 + incdir …）
     →  hdxml analysis → RtlIndex（叶子端口/参数声明，只读）
-    →  作者 HTML
-    →  ① 顶 → 底：绑定/求值 aw-param（expr → value，含例化覆盖）
-    →  ② 底 → 顶：按叶子端口表展开 rewrite → aw-connect，
-                   再推导本层 net / 导出 aw-port
-    →  渲染后活 DOM → dump → .sv → DV
+    →  作者 HTML（aw-content + aw-submods）
+    →  ① 顶→底 param  ② 展开 aw-template+patch  ③ 底→顶连线 → aw-render
+    →  dump（读 aw-render）→ .sv → DV
 ```
 
-细节与作者/渲染两层见 [`connect-html.md`](./connect-html.md) §5。
+细节见 [`connect-html.md`](./connect-html.md)。
 
 ## 6. 开放项（实现前裁定）
 

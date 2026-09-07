@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
-  作者面：嵌套 aw-mod 表达层次；路径 top/blk_a/u0 与 top/u_b。
-  约束：docs/connect-html.md §3.1
+  作者面：aw-submods 表达依赖嵌套；content 内含本层例化。
+  路径：top / top.blk_a；约束：docs/connect-html.md
 -->
 <html lang="zh-CN">
   <head>
@@ -9,18 +9,48 @@
     <title>02-author-nested</title>
   </head>
   <body>
-    <aw-mod name="top">
-      <aw-mod name="blk_a">
-        <aw-inst id="u0" mod="leaf_x">
-          <aw-connect port="clk" to="clk"></aw-connect>
-          <aw-connect port="data_i" to="a_data"></aw-connect>
-        </aw-inst>
+    <autowire>
+      <aw-mod name="top">
+        <aw-content>
+          <aw-params></aw-params>
+          <aw-ports></aw-ports>
+          <aw-templates></aw-templates>
+          <aw-insts>
+            <aw-inst id="u_b" mod="leaf_y">
+              <aw-connect port="clk" to="clk"></aw-connect>
+              <aw-connect port="data_i" to="b_data"></aw-connect>
+            </aw-inst>
+          </aw-insts>
+        </aw-content>
+        <aw-submods>
+          <aw-mod name="blk_a">
+            <aw-content>
+              <aw-params></aw-params>
+              <aw-ports></aw-ports>
+              <aw-templates></aw-templates>
+              <aw-insts>
+                <aw-inst id="u0" mod="leaf_x">
+                  <aw-connect port="clk" to="clk"></aw-connect>
+                  <aw-connect port="data_i" to="a_data"></aw-connect>
+                </aw-inst>
+              </aw-insts>
+            </aw-content>
+            <aw-submods></aw-submods>
+            <aw-render>
+              <aw-params></aw-params>
+              <aw-ports></aw-ports>
+              <aw-signals></aw-signals>
+              <aw-insts></aw-insts>
+            </aw-render>
+          </aw-mod>
+        </aw-submods>
+        <aw-render>
+          <aw-params></aw-params>
+          <aw-ports></aw-ports>
+          <aw-signals></aw-signals>
+          <aw-insts></aw-insts>
+        </aw-render>
       </aw-mod>
-
-      <aw-inst id="u_b" mod="leaf_y">
-        <aw-connect port="clk" to="clk"></aw-connect>
-        <aw-connect port="data_i" to="b_data"></aw-connect>
-      </aw-inst>
-    </aw-mod>
+    </autowire>
   </body>
 </html>
