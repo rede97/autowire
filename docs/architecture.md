@@ -45,6 +45,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 ### 2.3 `autowire web [html]`
 
 本机起服务：给人用有头浏览器，给 Agent 用无头。`127.0.0.1` 同源。
+页面布局（header 动作按钮 + 左栏 dep tree / DB 摘要 + 右栏模块预览）与 GET 参数自动动作链见 [web-ui.md](./web-ui.md)：无参打开不执行任何动作（人工），带参按 `select → render → dump` 自动执行并落 `#aw-status`（Agent）。
 
 ### 2.4 写回（`/api/dump`）
 
