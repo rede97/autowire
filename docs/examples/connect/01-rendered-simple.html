@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   渲染后示意：对应 01-author-simple 展开结果（实现目标，非作者 SoT）。
-  rewrite 已落成 aw-connect；无 aw-rewrite / aw-template。
+  含 aw-localparams（Mod__Inst__Param）；rewrite 已落成 aw-connect。
 -->
 <html lang="zh-CN">
   <head>
@@ -17,6 +17,29 @@
           <aw-params>
             <aw-param name="BUS_PIPE_NUM" value="2"></aw-param>
           </aw-params>
+          <aw-localparams>
+            <aw-localparam
+              name="master_cfg_wrap__u_decoder__PIPE_NUM"
+              value="2"
+              folded="true"
+              for-inst="u_decoder"
+              for-param="PIPE_NUM"
+            ></aw-localparam>
+            <aw-localparam
+              name="master_cfg_wrap__u_slice_0__SLICE_IDX"
+              value="0"
+              folded="true"
+              for-inst="u_slice_0"
+              for-param="SLICE_IDX"
+            ></aw-localparam>
+            <aw-localparam
+              name="master_cfg_wrap__u_slice_1__SLICE_IDX"
+              value="1"
+              folded="true"
+              for-inst="u_slice_1"
+              for-param="SLICE_IDX"
+            ></aw-localparam>
+          </aw-localparams>
           <aw-ports>
             <aw-port name="export_share_clk" dir="output"></aw-port>
             <aw-port name="dfi_clk" dir="input"></aw-port>
@@ -31,17 +54,17 @@
           </aw-signals>
           <aw-insts>
             <aw-inst id="u_decoder" mod="master_decoder">
-              <aw-param name="PIPE_NUM" value="2"></aw-param>
+              <aw-param name="PIPE_NUM" value="master_cfg_wrap__u_decoder__PIPE_NUM"></aw-param>
               <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
               <aw-connect port="dec_in_data" to="mst_blk_reg_data"></aw-connect>
             </aw-inst>
             <aw-inst id="u_slice_0" mod="test_slice">
-              <aw-param name="SLICE_IDX" value="0"></aw-param>
+              <aw-param name="SLICE_IDX" value="master_cfg_wrap__u_slice_0__SLICE_IDX"></aw-param>
               <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
               <aw-connect port="slice_en" to="slice_en_0"></aw-connect>
             </aw-inst>
             <aw-inst id="u_slice_1" mod="test_slice">
-              <aw-param name="SLICE_IDX" value="1"></aw-param>
+              <aw-param name="SLICE_IDX" value="master_cfg_wrap__u_slice_1__SLICE_IDX"></aw-param>
               <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
               <aw-connect port="slice_en" to="slice_en_alt_1"></aw-connect>
               <aw-connect port="slice_dbg" to="slice_1_dbg"></aw-connect>

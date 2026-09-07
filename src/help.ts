@@ -1,5 +1,5 @@
-// Agent 接手说明。改行为时同步改这里，不要另写项目提示词。
-// 打印：`bun index.ts help` 或 `autowire help [topic]`
+// Agent onboarding text. Keep in sync when behavior changes; do not invent a second prompt.
+// Print: `bun index.ts help` or `autowire help [topic]`
 
 export const HELP_TOPICS = [
   "agent",
@@ -17,214 +17,224 @@ export type HelpTopic = (typeof HELP_TOPICS)[number];
 
 const SECTIONS: Record<HelpTopic, string> = {
   agent: `\
-Autowire — Agent 接手说明
+Autowire — Agent onboarding
 
-先读完再动手。本输出即工作约定，不要另写项目提示词。
-切片：autowire help <topic>   topic = ${HELP_TOPICS.join(" | ")}
+Read this before editing. This output is the working contract; do not invent a separate project prompt.
+Slices: autowire help <topic>   topic = ${HELP_TOPICS.join(" | ")}
 
-这是什么
-  连接描述是一份 HTML + <script>。浏览器跑完 script，活 DOM 就是连接关系。
-  把渲染结果交给 autowire，由它写成 RTL，后面走 DV。
+What it is
+  Connectivity is one HTML + <script>. After the browser runs the script, the live DOM is the netlist.
+  Hand the render result to autowire; it writes RTL, then DV.
 
-  前期 autowire 是 Web 前端库（aw.js 自定义元素 + 本机页）。
-  隔离和调试交给 Playwright（无头 + Playwright MCP）。
-  等页面用例和 golden 够了，再用这些用例约束完全无头的 cli。
-  不为连接层自研 MCP。
+  Early autowire is a Web front-end library (aw.js custom elements + local page).
+  Isolation and debug go through Playwright (headless + Playwright MCP).
+  Once page cases and goldens exist, they constrain a fully headless cli.
+  Do not build a connection-specific MCP.
 
-为什么这样
-  作者输入     一份可嵌多层的 HTML，静态标签 + <script>
-  渲染         真浏览器跑 aw.js（Custom Elements）
-  调试 / 隔离  Playwright 无头打开本机页；Agent 用 Playwright MCP
-  安全         浏览器沙箱 + 127.0.0.1；页面不直接写盘
-  落盘         POST 渲染结果 → autowire Web API → 写工作区 RTL → DV
-  谁写 script  不管（人或 Agent）
-  无头 CLI     后做；必须通过已有 Web / Playwright 测试与 golden
+Why
+  Author input    nested HTML, static tags + <script>
+  Render          real browser runs aw.js (Custom Elements)
+  Debug / isolate Playwright headless on the local page; Agent uses Playwright MCP
+  Safety          browser sandbox + 127.0.0.1; page must not write the workspace
+  Dump            POST render → autowire Web API → write workspace RTL → DV
+  Who writes script  either human or Agent
+  Headless CLI    later; must pass existing Web / Playwright tests and goldens
 
-  没有平行连接 IR，没有 emacs 进程，没有连接专用 MCP 工具表。
+  No parallel connection IR, no emacs process, no connection-specific MCP tool table.
 
-你现在就能做
-  1. 读本 help，按「禁止」约束自己。
-  2. 用 deps 看叶子 RTL 层级（RtlIndex / hdxml）。
-  3. 按 connect 方言写或改 HTML（完整约束 docs/connect-html.md；即便 aw.js 还没落地）。
-  4. web / dump / cli 未落地时：不要假装已经能渲染或写盘；先补库和测试。
+You can do now
+  1. Read this help; follow the dont rules.
+  2. Use deps for leaf RTL hierarchy (RtlIndex / hdxml).
+  3. Author connect HTML per docs/connect-html.md (even if aw.js is not landed yet).
+  4. Until web / dump / cli land: do not pretend render or dump works; build library + tests first.
 
-web 落地后怎么干活（连接）
-  1. 在工作区启动：autowire web [html]
-  2. 等本机页首屏渲染完成（aw.js 定义完、script 跑完）。
-  3. 用 Playwright MCP 挂无头 Chromium：navigate / snapshot / evaluate。
-     看的是活 DOM（可访问名字），不是源 HTML 原文。
-  4. 需要落盘时，从页面或 Playwright POST 同源 /api/dump。
-     浏览器不写磁盘；autowire 校验工作区路径后写 .sv；对错由 DV 测文件。
-  5. 没有浏览器的机器等 cli；cli 必须先通过现有 Web 用例，禁止先做 cli。
+After web lands (connect flow)
+  1. Start in the workspace: autowire web [html]
+  2. Wait for first paint (aw.js defined, scripts finished).
+  3. Attach Playwright MCP headless Chromium: navigate / snapshot / evaluate.
+     Inspect the live DOM (accessible names), not the source HTML text.
+  4. To dump: POST same-origin /api/dump from the page or Playwright.
+     Browser does not write disk; autowire checks workspace paths and writes .sv; DV checks files.
+  5. Machines without a browser wait for cli; cli must pass existing Web cases first—do not build cli first.
 
-流水线
-  autowire.toml（.f + svh/宏）
-      →  hdxml → RtlIndex（只读）
-      →  HTML（aw-content + aw-submods）
-      →  elaboration → aw-render（顶→底 param；template；底→顶连线）
-      →  POST /api/dump（读 aw-render）
-      →  autowire 写 .sv
+Pipeline
+  autowire.toml (.f + svh / macros)
+      →  hdxml → RtlIndex (read-only)
+      →  HTML (aw-content + aw-submods)
+      →  elaboration → aw-render (params top-down; template; wires bottom-up)
+      →  POST /api/dump (read aw-render)
+      →  autowire writes .sv
       →  DV
 `,
 
   status: `\
-当前状态（以代码为准，不要臆造已完成的命令）
+Current status (code is truth; do not invent finished commands)
 
-已落地
-  autowire help [topic]     本说明
-  autowire deps <path>      RTL 模块依赖树
-                            path = RtlIndex 目录（含 index.xml）
-                                 或 RTL 源码目录（先调 hdxml sidecar 分析）
-  hdxml sidecar             Rust；analysis → RtlIndex XML；只读消费
-  Playwright 环境           无头 Chromium（headless shell）已装；Playwright MCP 经 .mcp.json
-                            提供（--headless --isolated，只放行 127.0.0.1/localhost 源）
+Landed
+  autowire help [topic]     this text
+  autowire deps <path>      RTL module dependency tree
+                            path = RtlIndex dir (with index.xml)
+                                 or RTL source dir (hdxml sidecar analysis first)
+  hdxml sidecar             Rust; analysis → RtlIndex XML; read-only consumer
+  Playwright env            headless Chromium installed; Playwright MCP via .mcp.json
+                            (--headless --isolated; only 127.0.0.1/localhost origins)
 
-未落地（按此顺序做，不要跳）
-  autowire.toml 读取        工作区 .f / 宏 / .svh → 喂 hdxml（约束见 docs/workspace-toml.md）
-  aw.js + 约束 HTML 自定义元素
-  autowire web [html]       本机 HTTP，渲染页
-  POST /api/dump            浏览器不写盘，autowire 写工作区 RTL
-  Playwright 用例 / golden  同一 HTML → 同一 RTL
-  autowire cli              完全无头；必须被上述用例锁死
+Not landed (do in this order; do not skip)
+  autowire.toml load        workspace .f / macros / .svh → feed hdxml (docs/workspace-toml.md)
+  aw.js + constrained HTML custom elements
+  autowire web [html]       local HTTP render page
+  POST /api/dump            browser does not write disk; autowire writes workspace RTL
+  Playwright cases / golden same HTML → same RTL
+  autowire cli              fully headless; must be locked by the cases above
 
-并列、不堵连接
-  寄存器 Table + Block/Cell（类型是数据；Excel 只出文档）
-  叶子端口表从 RtlIndex 只读喂给连接页
+Parallel, does not block connect
+  Register Table + Block/Cell (types are data; Excel is docs only)
+  Leaf port tables from RtlIndex feed the connect page read-only
 `,
 
   workspace: `\
-工作区配置 autowire.toml（草稿，未实现）
+Workspace config autowire.toml (draft; not implemented)
 
-完整约束：docs/workspace-toml.md
+Full constraints: docs/workspace-toml.md
 
-同一份顶层配置，供 deps / web / cli 共享 RTL 宇宙：
-  源码入口 .f（及 walk/sources）
-  宏 defines + define .svh（对齐 hdxml --define-headers）
-  incdir、RtlIndex 输出目录等
+One top-level config shared by deps / web / cli for the RTL universe:
+  source entry .f (and walk/sources)
+  macros: defines + define .svh (aligns with hdxml --define-headers)
+  incdirs, RtlIndex output dir, etc.
 
-边界
-  toml = 工程配置（喂 hdxml / 校验 definesFp）
-  HTML = 连接 SoT（禁止把连线写进 toml）
-  不是旧 stune mods_info.toml 缓存的回归
+Boundaries
+  toml = project config (feed hdxml / check definesFp)
+  HTML = connectivity SoT (do not put wiring in toml)
+  not a return of the old stune mods_info.toml cache
 
-衔接 elaboration
-  toml 固定宏与 filelist → RtlIndex
-  → 顶→底推 aw-param → 底→顶连线（见 help connect / docs/connect-html.md）
+Hooks into elaboration
+  toml fixes macros + filelist → RtlIndex
+  → params top-down → wires bottom-up (see help connect / docs/connect-html.md)
 `,
 
   connect: `\
-HTML 方言（连接 SoT）— 草稿
+HTML dialect (connectivity SoT) — draft
 
-完整约束与示例（后续实现必须遵守，先不要当已落地）：
-  docs/connect-html.md      （骨架 / 流水线）
-  docs/connect-rules.md     （template / rewrite / inst_name 细则小结）
+Full constraints and examples (must follow for later impl; not landed yet):
+  docs/connect-html.md         (skeleton / pipeline)
+  docs/connect-rules.md        (template / rewrite / inst_name / param rules summary)
+  docs/connect-lifecycle.md    (advanced: scripts on render lifecycle; no aw-rewrite@fn)
   docs/examples/connect/
-  docs/workspace-toml.md    （.f / 宏；与连接衔接）
+  docs/workspace-toml.md       (.f / macros; hooks into connect)
 
-两层，不要混
-  aw-content（作者）   本模 param/port；aw-template；例化 + base/patch
-  aw-render（结果）    具体 instance / signals / 导出 port / 逐条 connect
-  aw-submods           子 aw-mod 依赖（递归），与 content 内含分开
+Two layers; do not mix
+  aw-content (author)   module params/ports; aw-template; inst + base/overwrite
+  aw-render (result)    localparams / instances / signals / export ports / connects
+  aw-submods            nested aw-mod deps (recursive); separate from content containment
 
-打印机 / dump / golden 只认各 aw-mod 下的 aw-render，不认 content/templates 原文。
-rewrite 按 Web 惯例：JS RegExp match + String.replace（$1 / $<name>），或 fn= 函数；
-不对齐 emacs []/@ 语法。inst_name 默认透传 \${id}。
+Printer / dump / golden only accept each aw-mod's aw-render, not content/templates source.
+rewrite is Web-style: JS RegExp match + String.replace ($1 / $<name>) only — no fn=;
+not emacs []/@ syntax. aw-template@inst_name defaults to passthrough \${id}.
+aw-connect@to, aw-param@expr, and aw-template@inst_name: variable expressions only
+(e.g. \${idx}, module params); do not use regex capture placeholders ($1 / $<name>) there.
+Advanced / irregular logic: embed scripts on elaboration lifecycle
+(docs/connect-lifecycle.md); do not put callbacks on aw-rewrite.
 
-骨架
+Skeleton
   <autowire>
     <aw-mod name="…">
-      <aw-content>  aw-params / aw-ports / aw-templates / aw-insts  </aw-content>
-      <aw-submods>  嵌套 aw-mod …  </aw-submods>
-      <aw-render>   aw-params / aw-ports / aw-signals / aw-insts  </aw-render>
+      <aw-content>  aw-params / aw-localparams / aw-ports / aw-templates / aw-insts  </aw-content>
+      <aw-submods>  nested aw-mod …  </aw-submods>
+      <aw-render>   aw-params / aw-imports / aw-localparams / aw-ports / aw-signals / aw-insts  </aw-render>
     </aw-mod>
   </autowire>
 
-aw-template（类 style；aw-inst 下唯一规则容器）
-  库内 name= 定义；例化内只能放 aw-template（禁止直接挂 connect/rewrite）
-  overwrite：同一标签 <aw-template base>…子规则…</aw-template>（base 后再覆盖）
-  多模板组合：多个 aw-template 兄弟按序展开、后写覆盖（也允许）
-  inst_name 默认 \${id}；aw-rewrite match+to 或 fn=；模板不进 dump
+aw-template (style-like; only rule container under aw-inst)
+  define with name= in library; under inst only aw-template (no bare connect/rewrite)
+  overwrite: same tag <aw-template base>…child rules…</aw-template> (apply after base)
+  multi-template: sibling aw-templates expand in order; later wins (also allowed)
+  aw-template@inst_name defaults to \${id}; aw-rewrite match+to only; templates do not dump
+  aw-param → aw-localparams (Mod__Inst__Param); fold constants / inherited module params
+            / matching module-internal localparams; do not fold expressions or macros
 
 Elaboration
-  ① 顶→底 param + inst_name  ② template/rewrite  ③ 底→顶写入 aw-render
-  细则速查 docs/connect-rules.md；全文 docs/connect-html.md
+  1) params top-down (classify fold + uniquify localparam) + aw-template@inst_name
+  2) template/rewrite (match+to)  3) wires bottom-up / width rewrite → aw-render
+  optional lifecycle hooks: docs/connect-lifecycle.md
+  Quick rules: docs/connect-rules.md; full: docs/connect-html.md
 `,
 
   web: `\
-autowire web（前期主入口，尚未落地）
+autowire web (early main entry; not landed)
 
   autowire web [html]
 
-本机起 HTTP，给人用有头浏览器，给 Agent 用无头。
-全程无头 Chromium 打开 web 的 URL，首屏完成后再让 Agent 介入。
+Local HTTP for headed browsers and for Agents headless.
+Open the web URL with headless Chromium; Agent joins after first paint.
 
-Agent 只用 Playwright MCP（navigate / snapshot / evaluate / click），
-和调普通前端一样。不要为连接层加 outline / apply / rewrite MCP。
+Agent uses only Playwright MCP (navigate / snapshot / evaluate / click),
+like any front-end. Do not add outline / apply / rewrite MCP for connect.
 
-启动可以是：先 web，再挂 Playwright MCP；或一条脚本两个都拉起。
-隔离：独立浏览器上下文，只打本机页。
-安全：渲染在浏览器里；写文件只经 autowire API。
+Startup may be: web first, then Playwright MCP; or one script starts both.
+Isolation: separate browser context; local page only.
+Safety: render in the browser; file writes only via autowire API.
 `,
 
   dump: `\
-写回
+Dump / write-back
 
-浏览器不碰磁盘。页面或 Playwright 把各 aw-mod 的「aw-render」POST 到同源 /api/dump
-（具体 instance / aw-connect / 导出 aw-port / aw-signals，不是 aw-content 原文）。
-autowire 校验工作区路径后写 RTL。对错由 DV 测文件，不靠禁止 dump。
+Browser does not touch disk. Page or Playwright POSTs each aw-mod's aw-render
+to same-origin /api/dump (instances / aw-connect / export aw-port / aw-signals /
+aw-localparams — not aw-content source).
+autowire checks workspace paths then writes RTL. Correctness is DV on files, not by banning dump.
 
-web 与将来的 cli 必须走同一套写盘代码。
-未落地前不要手写「假装 dump」的旁路脚本当正式路径。
+web and future cli must share the same write path.
+Until landed, do not treat hand-rolled "fake dump" side scripts as the official path.
 `,
 
   cli: `\
-autowire cli（后期，禁止现在做）
+autowire cli (later; do not build now)
 
   autowire cli phy.html --dump gen/
 
-等 Web / Playwright 测试和 golden 稳定，再做完全无头 CLI。
-同一套 aw.js 抽取逻辑（进程内或无头浏览器）。
+After Web / Playwright tests and goldens are stable, build fully headless CLI.
+Same aw.js extract logic (in-process or headless browser).
 
-用例约束后端：cli 必须通过现有 Web 测试（同一 HTML → 同一 RTL）。
-先做 cli、再补测试，不允许。
+Cases constrain the backend: cli must pass existing Web tests (same HTML → same RTL).
+Building cli before tests is not allowed.
 
-deps 等 RtlIndex 查询可挂在 cli 上，与连接渲染分开。
+deps and other RtlIndex queries may hang off cli, separate from connect render.
 `,
 
   deps: `\
-autowire deps — RTL 模块依赖树（已落地）
+autowire deps — RTL module dependency tree (landed)
 
   bun index.ts deps <path>
   bun index.ts deps <path> --top <name> --depth <n>
   bun index.ts deps <rtl-dir> -I <incdir> --hdxml <bin>
 
 <path>
-  RtlIndex 目录（含 index.xml）直接读
-  否则当作 RTL 源码目录，调 hdxml sidecar 分析到 tmp/rtlindex
+  RtlIndex dir (with index.xml): read directly
+  else treat as RTL source dir; run hdxml sidecar into tmp/rtlindex
 
-hdxml 查找顺序
-  --hdxml > $HDXML_BIN > 仓库 hdxml/target/{release,debug}/hdxml > PATH
+hdxml lookup order
+  --hdxml > $HDXML_BIN > repo hdxml/target/{release,debug}/hdxml > PATH
 
-输出
-  摘要行：tool / files / modules / tops；错误文件标红
-  每顶层一棵树：顶层青、普通绿、blackbox 黄、环红
+Output
+  summary line: tool / files / modules / tops; error files in red
+  one tree per top: top cyan, normal green, blackbox yellow, cycle red
 
-连接页只读端口表，不在 deps 里改 RTL。
+Connect page reads port tables only; deps must not rewrite RTL.
 `,
 
   dont: `\
-禁止
+Do not
 
-  XML / 一层一份连接文件当 SoT
-  连接专用 MCP（outline、apply、rewrite …）
-  mcp / run / repl 当主入口
-  浏览器直接写工作区
-  先做 cli 再补 Web 用例
-  两套连线语义（Web 与 cli 必须同一 aw.js + 同一 golden）
-  为每个芯片项目复制一份连接提示词（改本 help）
-  把 README 写成第二套约定却不改 help
-  在 hdxml/docs/ 再放文档（统一 docs/）
-  把连接关系写进 autowire.toml（toml 只做工程配置）
+  XML / one-file-per-level connectivity as SoT
+  connection-specific MCP (outline, apply, rewrite, …)
+  mcp / run / repl as the main entry
+  browser writing the workspace directly
+  build cli before Web cases
+  two wiring semantics (Web and cli must share aw.js + goldens)
+  copy a per-chip connect prompt (edit this help instead)
+  make README a second contract without updating help
+  put docs back under hdxml/docs/ (keep docs/)
+  put connectivity into autowire.toml (toml is project config only)
 `,
 };
 
@@ -232,15 +242,15 @@ function topicsIndex(): string {
   return [
     "autowire help [topic]",
     "",
-    "  agent     接手说明（默认；无 topic 时打印全文）",
-    "  status    已落地 / 未落地",
-    "  workspace 顶层 autowire.toml（.f / 宏）",
-    "  connect   HTML 方言（作者模板 vs 渲染结果）",
-    "  web       本机页 + Playwright",
-    "  dump      写回 RTL",
-    "  cli       后期无头（先测后做）",
-    "  deps      RtlIndex 依赖树",
-    "  dont      禁止事项",
+    "  agent     onboarding (default; full text when no topic)",
+    "  status    landed / not landed",
+    "  workspace top-level autowire.toml (.f / macros)",
+    "  connect   HTML dialect (author template vs render)",
+    "  web       local page + Playwright",
+    "  dump      write-back RTL",
+    "  cli       later headless (tests first)",
+    "  deps      RtlIndex dependency tree",
+    "  dont      forbidden items",
     "",
   ].join("\n");
 }
@@ -253,5 +263,5 @@ export function renderHelp(topic?: string): string {
   if ((HELP_TOPICS as readonly string[]).includes(topic)) {
     return SECTIONS[topic as HelpTopic].trimEnd() + "\n";
   }
-  throw new Error(`未知 help topic: ${topic}\n\n${topicsIndex()}`);
+  throw new Error(`unknown help topic: ${topic}\n\n${topicsIndex()}`);
 }

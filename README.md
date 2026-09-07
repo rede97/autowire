@@ -56,7 +56,8 @@ autowire.toml（.f + svh/宏）
 
 - 根 `<autowire>`；每模：`aw-content` → `aw-submods` → `aw-render`
 - `aw-template`：`aw-inst` 下规则**必须**用其包裹；同标签 `base`+子规则 = overwrite；也可多个 template 组合
-- `aw-rewrite`：Web 向 `match`+`to`，或 `fn`——**不对齐** emacs `[]`/`@` 语法
+- `aw-rewrite`：仅 Web 向 `match`+`to`（**无** `fn`）——**不对齐** emacs `[]`/`@` 语法
+- 高级处理：渲染生命周期嵌入脚本（`docs/connect-lifecycle.md`），不挂在 rewrite 属性上
 - Elaboration：顶→底 param → template/rewrite → 底→顶写入 `aw-render`
 - **先文档约束，未实现前不要假装能渲染或 dump**
 

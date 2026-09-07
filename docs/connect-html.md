@@ -4,7 +4,8 @@
 > 摘要切片：`bun index.ts help connect`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
 > 结构以 [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) 为准。  
-> **细则速查**（template / rewrite / inst_name / overwrite）：[`connect-rules.md`](./connect-rules.md)。
+> **细则速查**（template / rewrite / inst_name / overwrite）：[`connect-rules.md`](./connect-rules.md)。  
+> **高级脚本**（渲染生命周期）：[`connect-lifecycle.md`](./connect-lifecycle.md)。
 
 ## 1. 目标与边界
 
@@ -17,8 +18,9 @@
 
 打印机、`/api/dump`、Playwright golden **必须**只认各 `aw-mod` 下的 **`<aw-render>`**（或与之结构等价的快照），**禁止**把 `aw-content` / `aw-templates` 原文当 netlist。
 
-对齐：**Web 平台惯例**（JS `RegExp` + `String.replace`、具名捕获、可选 rename 函数）。  
-可借鉴 Verilog-mode「批量改名连线」的**意图**，**不对齐** emacs 的 `[]` / `@` / AUTO 替换语法，也不对齐 emacs 进程。
+对齐：**Web 平台惯例**（JS `RegExp` + `String.replace`、具名捕获）。  
+可借鉴 Verilog-mode「批量改名连线」的**意图**，**不对齐** emacs 的 `[]` / `@` / AUTO 替换语法，也不对齐 emacs 进程。  
+非常规生成 **禁止**挂在 `aw-rewrite@fn`；见 [`connect-lifecycle.md`](./connect-lifecycle.md)。
 
 ## 2. 两层，禁止混淆
 
@@ -35,6 +37,7 @@
   <aw-mod name="…">
     <aw-content>                    # 内含：本模作者声明
       <aw-params>…</aw-params>
+      <aw-localparams>…</aw-localparams>  # 可选：本模内部 localparam
       <aw-ports>…</aw-ports>        # 显式导出（不仅是内部 net）
       <aw-templates>…</aw-templates># 可复用连接规则（类 style）
       <aw-insts>…</aw-insts>        # 例化；可 base 引用 template + patch
@@ -43,7 +46,9 @@
       <aw-mod name="…">…</aw-mod>
     </aw-submods>
     <aw-render>                     # 生成物；dump 读这里
-      <aw-params>…</aw-params>
+      <aw-params>…</aw-params>      # 本模 parameter（对外）
+      <aw-imports>…</aw-imports>    # 预留（语义见开放项）
+      <aw-localparams>…</aw-localparams>  # 本模内部 + 例化 uniquify
       <aw-ports>…</aw-ports>
       <aw-signals>…</aw-signals>
       <aw-insts>…</aw-insts>
@@ -72,6 +77,7 @@
 | 子组 | 含义 |
 |---|---|
 | `aw-params` | 本模参数模板 |
+| `aw-localparams` | 可选：本模**内部** localparam（`name`+`expr`）；可供例化 `aw-param@expr` 引用并参与折叠（[`connect-rules.md`](./connect-rules.md) §7.2） |
 | `aw-ports` | **显式要导出**的端口（不只是内部连线用到的信号） |
 | `aw-templates` | 具名连接规则库（类 stylesheet） |
 | `aw-insts` | 例化列表；每个 `aw-inst` 下**只能**放 `aw-template`（`base` 或匿名）；`mod` 引用已有模块，**禁止**在此定义子模体 |
@@ -140,13 +146,13 @@
 </aw-inst>
 ```
 
-#### `inst_name`（实例名表达式）
+#### `aw-template@inst_name`（实例名表达式）
 
-- 出现在 **`aw-template`**（定义侧）或可被 patch 覆盖。  
+- 出现在 **`aw-template`**（定义侧）或可被 overwrite 覆盖。  
 - 语义：求值后得到渲染实例名。  
 - **默认**：未写时等价于透传例化槽名，即 `inst_name="${id}"`（就是 `aw-inst@id`）。  
-- 表达式可用上下文绑定（§3.4.1）；例如 `${id}_${idx}` → `u_slice_0`。  
-- 作者面可多个 `aw-inst` 共用同一 `id`、靠不同 `idx` + `inst_name` 在 render 中得到唯一名。
+- 表达式可用变量绑定（§3.4.1）；例如 `${id}_${idx}` → `u_slice_0`。  
+- 作者面可多个 `aw-inst` 共用同一 `id`、靠不同 `idx` + `aw-template@inst_name` 在 render 中得到唯一名。
 
 #### 规则（template 复用）
 
@@ -157,9 +163,15 @@
 5. 模板名默认在本 `aw-mod` 的 `aw-content` 内可见。  
 6. 定义侧 `aw-templates` **禁止**进 dump；只进入 `aw-render`。
 
-### 3.4.1 上下文绑定（表达式共用）
+### 3.4.1 变量表达式与正则捕获
 
-在 `inst_name`、`aw-rewrite@to`、`aw-param@expr` 等字符串中，**`${…}`** 表示上下文插值（类 JS 模板字面量占位，**不是** RegExp 替换）：
+| 种类 | 写法 | 哪里可用 |
+|---|---|---|
+| 变量 / 上下文 | `` `${id}` `` `` `${idx}` `` `` `${mod}` ``、本模 param 名等 | `aw-template@inst_name`、`aw-param@expr`、`aw-connect@to`、`aw-rewrite@to` |
+| 正则捕获 | `$1`、`$&`、`$<name>` | **仅** `aw-rewrite@to` |
+
+- `aw-connect@to`、`aw-param@expr`、`aw-template@inst_name`：**支持变量表达式**；**禁止**正则匹配结果表达式。  
+- `aw-rewrite@to`：两者都可；顺序为先 RegExp 替换，再 `` `${…}` ``（见 [`connect-rules.md`](./connect-rules.md) §4）。
 
 | 绑定 | 含义 |
 |---|---|
@@ -167,22 +179,18 @@
 | `${idx}` | `aw-inst@idx`（未写则为空或 `0`，实现钉死一种） |
 | `${mod}` | `aw-inst@mod` |
 
-另：`aw-rewrite@to` 中还可出现 **JS `String.replace` 捕获**（§3.5），与 `${…}` 可共存。推荐顺序：**先 RegExp `$1`/`$<name>`，再 `${id}` 等**（golden 锁死）。
-
-### 3.5 `<aw-rewrite>`（Web 匹配：RegExp + 可选函数）
+### 3.5 `<aw-rewrite>`（Web 匹配：RegExp + `to`）
 
 > 细则小结：[`connect-rules.md`](./connect-rules.md) §4–5。
 
-**不对齐** emacs `port=…_(.*) … $1[]` 方言。匹配与替换按浏览器 **`RegExp` + `String.prototype.replace`**。
+**不对齐** emacs `port=…_(.*) … $1[]` 方言。匹配与替换按浏览器 **`RegExp` + `String.prototype.replace`**。  
+**禁止** `fn=`；模板 `match`+`to` 覆盖常规改名。超出模板能力的处理走渲染生命周期嵌入脚本（[`connect-lifecycle.md`](./connect-lifecycle.md)）。
 
 | 属性 | 必须 | 含义 |
 |---|---|---|
-| `match` | 字符串路径建议必填 | JS RegExp **源模式**（对整个端口名；作者 **应当**写 `^…$`） |
+| `match` | 是 | JS RegExp **源模式**（对整个端口名；作者 **应当**写 `^…$`） |
 | `flags` | 否 | RegExp flags，默认 `""`；常见 `i` |
-| `to` | 与 `fn` 互斥 | 替换串：`$1`、`$&`、`$<name>`（JS 标准）及 `${id}` 等上下文 |
-| `fn` | 与 `to` 互斥 | 具名 rename 函数；见下 |
-
-**字符串路径（默认）**
+| `to` | 是 | 替换串：`$1`、`$&`、`$<name>`（仅 rewrite）及 `` `${id}` `` 等变量；顺序见 §3.4.1 |
 
 ```html
 <aw-rewrite match="^dec_clk$" to="dfi_clk"></aw-rewrite>
@@ -194,25 +202,6 @@
 
 **同一 `aw-template` 展开列表内**：多条 rewrite / connect 对同一 `port` **后写覆盖**。
 
-**函数路径（复杂重命名）**
-
-```html
-<script type="module">
-  aw.rewrite.define("sliceBus", (port, ctx) => {
-    const m = /^slice_out_(.+)$/.exec(port);
-    if (!m) return null;
-    return `slice_${ctx.idx}_out_${m[1]}`;
-  });
-</script>
-<aw-rewrite match="^slice_out_" fn="sliceBus"></aw-rewrite>
-```
-
-- `fn`：已注册名，或 `./file.js#exportName`（同页模块；**禁止**对外网 `fetch`）。  
-- 签名：`(port: string, ctx: { id, idx, mod, instName }) => string | null`  
-  - `string` = net 名；`null` = 本规则跳过该端口。  
-- `to` 与 `fn` **互斥**。  
-- 有 `match` 时先预过滤；仅有 `fn` 时可对例化全部端口调用。
-
 **显式 `aw-connect`** 与 rewrite 冲突时：按展开列表 **后写覆盖**（与上一致）。
 
 ### 3.6 其余标签
@@ -221,18 +210,19 @@
 
 | 标签 | 出现位置 | 关键属性 |
 |---|---|---|
-| `aw-param` | params / template | `name`；作者面 `expr`；渲染后宜有 `value` |
+| `aw-param` | content params / template；render params 与 inst 下 | `name`；作者面 `expr`（变量表达式；**禁止**正则捕获）；渲染后宜有 `value` |
+| `aw-localparam` | 作者面 `aw-content`/`aw-localparams`；或 `aw-render`/`aw-localparams` | 作者：`name`+`expr`；render：`name`+`value`，宜有 `folded` / `for-inst` / `for-param` |
 | `aw-port` | content 显式导出；render 导出结果 | `name`；`dir`；可选 `width` |
 | `aw-inst` | content / render `aw-insts` | `id`；`mod`；可选 `idx` |
-| `aw-connect` | 仅 template 内 / render | `port`；`to` |
-| `aw-rewrite` | 仅作者面 template 内 | `match`；`to` **或** `fn`；可选 `flags` |
+| `aw-connect` | 仅 template 内 / render | `port`；`to`（变量表达式；**禁止** `$1` / `$<name>`） |
+| `aw-rewrite` | 仅作者面 template 内 | `match` + `to`（可含捕获 + 变量）；可选 `flags`；**禁止** `fn` |
 | `aw-signal` | 仅 `aw-render` / `aw-signals` | `name`；可选 `width` |
 
-### 3.7 脚本
+### 3.7 脚本（摘要）
 
-- `<script type="module">` **可以**注册 `aw.rewrite.define` 或做不规则生成。  
-- **必须**只用 DOM / `aw.*`；**禁止** layout / 对外 `fetch`。  
-- 常规改名 **应当**优先 `match`+`to`；复杂逻辑再用 `fn`。
+- 常规连接 **应当**只用 `aw-template` / `aw-rewrite@match`+`to` / `aw-connect`。  
+- 高级、不规则处理 **必须**挂在渲染生命周期钩子上，见 [`connect-lifecycle.md`](./connect-lifecycle.md)。  
+- `<script type="module">` **必须**只用 DOM / `aw.*`；**禁止** layout / 对外 `fetch` / 写工作区磁盘。
 
 ### 3.8 可访问性
 
@@ -240,14 +230,30 @@
 
 ## 4. `<aw-render>`（生成物 / dump 输入）
 
-每个 `aw-mod` 在 elaboration 后 **必须**填好自己的 `<aw-render>`：
+每个 `aw-mod` 在 elaboration 后 **必须**填好自己的 `<aw-render>`。子组顺序 **应当**为：
+
+`aw-params` → `aw-imports` → `aw-localparams` → `aw-ports` → `aw-signals` → `aw-insts`
 
 | 子组 | 含义 |
 |---|---|
-| `aw-params` | 本模最终参数（宜 `value`） |
+| `aw-params` | 本模 **parameter**（模块接口参数；宜 `value`） |
+| `aw-imports` | **预留**槽（见 §9 开放项）；未裁定前 **禁止**当连接 SoT |
+| `aw-localparams` | 本模 **localparam**：作者面内部声明的落盘 + 例化 uniquify 的 `Mod__Inst__Param`（见 [`connect-rules.md`](./connect-rules.md) §7）；dump 写成 SV `localparam` |
 | `aw-ports` | 导出端口（显式 ∪ 推导） |
 | `aw-signals` | 本层内部 net（由 connect/`to` 等汇总） |
-| `aw-insts` | 具体实例；每实例下为展开后的 `aw-param` / `aw-connect`（**无** `aw-rewrite` / `aw-template`） |
+| `aw-insts` | 具体实例；每实例下为展开后的 `aw-param`（指向对应 localparam 名或 value）/ `aw-connect`（**无** `aw-rewrite` / `aw-template`） |
+
+`<aw-localparam>`：
+
+| 属性 | 必须 | 含义 |
+|---|---|---|
+| `name` | 是 | 作者内部名，或 uniquify 名如 `master_cfg_wrap__u_decoder__PIPE_NUM` |
+| `expr` | 作者面 | 变量表达式（折叠分类用）；**禁止**正则捕获 |
+| `value` | render | 按折叠规则：字面量，或未折叠的表达式/宏文本 |
+| `folded` | render 应当 | `true` = 已折成常量；`false` = 表达式或宏未折 |
+| `for-inst` / `for-param` | uniquify 应当 | 对应最终实例名 / 子模形参名 |
+
+作者面 **可以**声明本模内部 `aw-localparams`；**禁止**手写 uniquify `Mod__Inst__Param` 当 SoT（由 elaboration 写入 `aw-render`）。
 
 嵌套：`aw-submods` 内子 `aw-mod` 各自有自己的 `aw-render`；父 dump 可递归收集或只序列化顶层（实现选一种，golden 锁死）。
 
@@ -256,12 +262,14 @@
 ### 5.1 引擎顺序（语义冻结）
 
 1. **顶 → 底（param）**  
-   绑定/求值 `aw-param`；求值 `inst_name`（默认 `${id}`）。  
+   绑定/求值本模内部 `aw-localparam` 与例化 `aw-param`（按 [`connect-rules.md`](./connect-rules.md) §7.2：常量、继承本模 param、**匹配本模内部 localparam** → **折叠**；表达式与宏 **不折**）；求值 `inst_name`；  
+   写入 `aw-render`/`aw-localparams`（本模内部 + `Mod__Inst__Param`）。  
 2. **展开 template**  
-   `base` + 内联/patch；展开 `aw-rewrite`（`match`+`to` 或 `fn`）。  
+   `base` + 内联/overwrite；展开 `aw-rewrite`（仅 `match`+`to`）。  
 3. **底 → 顶（连线）**  
-   生成 `aw-connect`；填 `aw-signals` / 导出 `aw-ports`；写入 `aw-render`。  
-4. **递归** `aw-submods`。
+   生成 `aw-connect`；端口宽度 deps 中的形参 **必须**换成对应 `Mod__Inst__Param`（或与之锁定的折叠值）；填 `aw-signals` / 导出 `aw-ports`；写入 `aw-render`。  
+4. **递归** `aw-submods`。  
+5. **生命周期钩子**（可选嵌入脚本）穿插于上述阶段；约定见 [`connect-lifecycle.md`](./connect-lifecycle.md)。
 
 边界：宏（toml / `.svh`）≠ 模块 param；连接顶不必是全芯片 RTL top。
 
@@ -298,16 +306,22 @@ autowire.toml（.f + svh/宏）
 | [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) | 完整骨架：content / templates / insts / submods / render 槽 |
 | [`examples/connect/01-rendered-simple.html`](./examples/connect/01-rendered-simple.html) | 上例 `aw-render` 示意（实现目标） |
 | [`examples/connect/02-author-nested.html`](./examples/connect/02-author-nested.html) | `aw-submods` 嵌套依赖 |
-| [`examples/connect/03-author-template-reuse.html`](./examples/connect/03-author-template-reuse.html) | `match`+`to` 复用 / patch，以及 `fn` 示意 |
+| [`examples/connect/03-author-template-reuse.html`](./examples/connect/03-author-template-reuse.html) | `match`+`to` 复用 / overwrite patch |
 | [`examples/connect/03-rendered-template-reuse.html`](./examples/connect/03-rendered-template-reuse.html) | 复用展开后的 render 示意 |
 
-## 8. 开放项（实现前裁定）
+## 8. 渲染生命周期与嵌入脚本
+
+高级处理（不规则生成、后处理 `aw-render` 等）**单开**：[`connect-lifecycle.md`](./connect-lifecycle.md)。  
+`aw-rewrite` **不再**提供 `fn`；脚本按 elaboration 阶段挂钩，产物仍须落在各 `aw-mod` 的 `aw-render`。
+
+## 9. 开放项（实现前裁定）
 
 1. 未在 `aw-ports` 声明、但被连线用到的信号：是否自动升为导出 port，还是只进 `aw-signals`？  
-2. `aw-param@expr` → `value`：常量折叠 vs 原文透传进 SV？  
+2. ~~`aw-param` 折叠策略~~ **已定**：自动检查——常量、继承本模 param、**匹配本模内部 localparam** → 折叠；表达式 → 不折；**宏不可折叠**（`connect-rules.md` §7.2）。uniquify 名 `Mod__Inst__Param`。  
 3. dump：序列化顶层 `aw-render` 子树 vs 含全部嵌套 render？  
-4. 跨 `aw-mod` 引用 `aw-template` / `aw.rewrite` 函数是否允许？  
+4. 跨 `aw-mod` 引用 `aw-template` 是否允许？生命周期钩子作用域见 [`connect-lifecycle.md`](./connect-lifecycle.md) 开放项。  
 5. overwrite：同标签内「base + 子规则」与「多 template 兄弟」两种都允许；禁止规则直接挂在 `aw-inst` 下。  
-6. 工作区 toml 开放项见 [`workspace-toml.md`](./workspace-toml.md) §6。
+6. `aw-imports`（render 预留槽）语义与 dump 行为？  
+7. 工作区 toml 开放项见 [`workspace-toml.md`](./workspace-toml.md) §6。
 
 裁定后改本文 + `help connect`，再动代码。
