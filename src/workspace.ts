@@ -26,6 +26,8 @@ export interface WorkspaceConfig {
 	indexDir: string;
 	/** Dump RTL output dir ([dump] dir, default gen) */
 	dumpDir: string;
+	/** Connect HTML file list ([connect] html — paths only, filelist semantics; no top, no wiring details) */
+	connectHtml: string[];
 }
 
 /** Find autowire.toml upward from startDir; returns the file path or null */
@@ -64,6 +66,7 @@ export async function loadWorkspace(
 	const rtl = isObj(analysis.rtl) ? analysis.rtl : {};
 	const index = isObj(analysis.index) ? analysis.index : {};
 	const dump = isObj(doc.dump) ? doc.dump : {};
+	const connect = isObj(doc.connect) ? doc.connect : {};
 
 	const defines: Record<string, string> = {};
 	if (analysis.defines !== undefined) {
@@ -106,6 +109,7 @@ export async function loadWorkspace(
 			typeof index.dir === "string" ? index.dir : ".autowire/hdxml",
 		),
 		dumpDir: rel(typeof dump.dir === "string" ? dump.dir : "gen"),
+		connectHtml: strList(connect.html, "connect.html").map(rel),
 	};
 }
 
@@ -169,7 +173,6 @@ dir = ".autowire/hdxml"
 dir = "gen"
 
 [connect]
-# Optional: default author HTML / logical connect top
-# html = "connect/phy_wrap.html"
-# top = "phy_wrap"
+# Connect HTML file list (paths only, filelist semantics; no top, no wiring details)
+# html = ["connect/phy_wrap.html"]
 `;

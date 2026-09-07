@@ -24,7 +24,7 @@ RtlIndex 用 `definesFp` 把宏集合绑进索引有效性（见 `rtlindex-xml.m
 | 源码入口 `.f` / walk / sources | 连接关系、rewrite、例化模板 |
 | 宏：`defines` 与 define `.svh`（对齐 hdxml `--define-headers`） | 生成 `.sv` 的逐端口细节 |
 | `-I` incdirs、排除文件名等分析选项 | 平行模块 IR / 旧 stune `mods_info.toml` 缓存 |
-| RtlIndex 索引目录（固定 `.autowire/hdxml`）、dump RTL 输出目录、默认连接顶（可选） | HTML 方言本身 |
+| RtlIndex 索引目录（固定 `.autowire/hdxml`）、dump RTL 输出目录、连接 HTML 文件清单（仅路径） | HTML 方言本身 |
 
 - 连接 SoT **只有** HTML（`connect-html.md`）。  
 - 本文件是 **autowire 工程配置**：喂给 hdxml `analysis` 与连接页只读索引，**不是** hdxml 内部缓存格式的回归。
@@ -67,9 +67,8 @@ dir = ".autowire/hdxml"
 dir = "gen"
 
 [connect]
-# 可选：默认作者 HTML / 连接树逻辑顶（不必是全芯片 RTL top）
-# html = "connect/phy_wrap.html"
-# top = "phy_wrap"
+# 连接 HTML 文件清单（filelist 语义：仅路径数组；禁止 top、禁止任何连线细节）
+html = ["connect/phy_wrap.html"]
 ```
 
 说明：
@@ -77,7 +76,7 @@ dir = "gen"
 - **hdxml 不读 toml**：`autowire analysis` 把 `[analysis.*]` 映射为 hdxml CLI 参数（映射表见 `help analysis`）；hdxml 侧只认 CLI 旗标。
 - **宏集合** = `[analysis.defines]`（展开）+ `keep_raw`（保原文哨兵）；二者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。覆盖顺序 `[analysis.defines]` → `keep_raw`。空串保原文约定已**废弃**（空串值直接报错）。哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。
 - **宏作用域**：CLI/toml 宏作为 pre_defines 对**每个文件**一致生效（编译单元级种子）；各文件内 `` `define `` 不外泄（按文件独立预处理）。跨文件一致的宏**必须**走本表，禁止依赖文件间宏传递。
-- **`[connect]`** 只点到 HTML 入口，**不**描述连线。
+- **`[connect] html`** 只是连接页文件清单（路径数组，filelist 语义）；**禁止** `top` 及任何连线细节（连接 SoT 在 HTML 内）。  
 
 - **`.autowire/`** 是工作区**生成临时目录**（索引等缓存），可整体删除重建；**禁止**放入手写内容或任何 SoT。dump RTL 是**产物**目录（默认 `gen/`），供 DV 使用，与临时目录分开。
 

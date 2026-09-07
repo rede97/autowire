@@ -27,6 +27,20 @@ describe("workspace", () => {
 		expect(hdxmlArgs(cfg)).toEqual(["--xml", join(dir, ".autowire/hdxml")]);
 	});
 
+	test("[connect] html parses as a resolved path list", async () => {
+		const dir = tempWorkspace(
+			DEFAULT_TOML.replace(
+				'# html = ["connect/phy_wrap.html"]',
+				'html = ["connect/a.html", "connect/b.html"]',
+			),
+		);
+		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
+		expect(cfg.connectHtml).toEqual([
+			join(dir, "connect/a.html"),
+			join(dir, "connect/b.html"),
+		]);
+	});
+
 	test("analysis.* mapping: valued defines -> -D, keep_raw -> --keep-raw, numbers stringified", async () => {
 		const dir = tempWorkspace(`
 [analysis]

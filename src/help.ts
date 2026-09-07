@@ -119,6 +119,7 @@ Full constraints: docs/workspace-toml.md
 
 One top-level config shared by deps / web / cli for the RTL universe:
   source entry .f (and walk/sources)
+  [connect] html = [...] connect HTML file list (paths only; no top, no wiring details)
   macros: defines + define .svh (aligns with hdxml --define-headers)
   incdirs, dump RTL out dir, etc.
 
@@ -281,6 +282,7 @@ Do not
   two wiring semantics (Web and cli must share aw.js + goldens)
   copy a per-chip connect prompt (edit this help instead)
   make README a second contract without updating help
+  put connectivity details into autowire.toml ([connect] html is a path-only file list — no top, no wiring)
 `,
 };
 

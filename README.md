@@ -48,5 +48,5 @@ autowire.toml（.f + svh/宏）
 - 浏览器直接写工作区
 - 先做 cli 再补 Web 用例
 - 两套连线语义（Web 与 cli 必须同一 `aw.js` + 同一 golden）
-- 把连接关系写进 `autowire.toml`（toml 只做工程 / RTL 宇宙配置）
 - 为每个芯片项目复制一份连接提示词（改 `src/help.ts`）
+- 把连接细节写进 `autowire.toml`（toml 里连接只有 `[connect] html` 文件清单：仅路径，无 top、无连线语义）
