@@ -1,27 +1,34 @@
 import { expect, test } from "bun:test";
 import { HELP_TOPICS, renderHelp } from "./help.ts";
 
-test("no topic prints full text with onboarding contract", () => {
+test("no topic prints command index and one-line agent pointer", () => {
 	const text = renderHelp();
-	expect(text).toContain("This output is the working contract");
+	expect(text).toContain("Autowire — commands");
+	expect(text).toContain("help [topic]");
+	expect(text).toContain("init");
+	expect(text).toContain("analysis");
+	expect(text).toContain("deps");
+	expect(text).toContain("help agent");
+	expect(text).toContain("do not invent a project prompt");
+	expect(text).not.toContain("Pipeline");
+	expect(text).not.toContain("aw-template@inst_name");
+});
+
+test("agent topic holds the working contract", () => {
+	const text = renderHelp("agent");
+	expect(text).toContain("Agent contract");
 	expect(text).toContain("do not invent a separate project prompt");
-	expect(text).toContain("aw-mod");
-	expect(text).toContain("aw-content");
-	expect(text).toContain("aw-render");
-	expect(text).toContain("aw-template");
 	expect(text).toContain("Playwright MCP");
 	expect(text).toContain("POST /api/dump");
-	expect(text).toContain("Building cli before tests is not allowed");
-	expect(text).toContain("autowire deps");
-	expect(text).toContain("Current status");
-	expect(text).toContain("autowire.toml");
+	expect(text).toContain("help status");
+	expect(text).toContain("docs/connect-html.md");
 });
 
 test("each slice prints independently", () => {
-	expect(renderHelp("agent")).toContain("Agent onboarding");
 	expect(renderHelp("status")).toContain("Landed");
 	expect(renderHelp("workspace")).toContain("autowire.toml");
 	expect(renderHelp("workspace")).toContain("docs/workspace-toml.md");
+	expect(renderHelp("analysis")).toContain("autowire init");
 	expect(renderHelp("connect")).toContain("aw-mod");
 	expect(renderHelp("connect")).toContain("aw-template@inst_name");
 	expect(renderHelp("connect")).toContain("variable expressions only");
@@ -33,13 +40,11 @@ test("each slice prints independently", () => {
 	expect(renderHelp("connect")).toContain("aw-content");
 	expect(renderHelp("connect")).toContain("aw-render");
 	expect(renderHelp("connect")).toContain("overwrite");
-	expect(renderHelp("connect")).toContain("aw-template");
 	expect(renderHelp("connect")).toContain("aw-rewrite");
-	expect(renderHelp("connect")).toContain("match");
-	expect(renderHelp("connect")).toContain("inst_name");
 	expect(renderHelp("connect")).toContain("<autowire>");
 	expect(renderHelp("dont")).toContain("autowire.toml");
-	expect(renderHelp("web")).toContain("Playwright MCP");
+	expect(renderHelp("web")).toContain("autowire web");
+	expect(renderHelp("web")).toContain("help agent");
 	expect(renderHelp("dump")).toContain("/api/dump");
 	expect(renderHelp("dump")).toContain("aw-render");
 	expect(renderHelp("cli")).toContain("do not build now");
@@ -53,6 +58,7 @@ test("each slice prints independently", () => {
 test("topics lists every slice", () => {
 	const text = renderHelp("topics");
 	for (const topic of HELP_TOPICS) expect(text).toContain(topic);
+	expect(text).toContain("command index");
 });
 
 test("unknown topic throws with topic list", () => {

@@ -24,7 +24,8 @@ RtlIndex 用 `definesFp` 把宏集合绑进索引有效性（见 `rtlindex-xml.m
 | 源码入口 `.f` / walk / sources | 连接关系、rewrite、例化模板 |
 | 宏：`defines` 与 define `.svh`（对齐 hdxml `--define-headers`） | 生成 `.sv` 的逐端口细节 |
 | `-I` incdirs、排除文件名等分析选项 | 平行模块 IR / 旧 stune `mods_info.toml` 缓存 |
-| RtlIndex 索引目录（固定 `.autowire/hdxml`）、dump RTL 输出目录、连接 HTML 文件清单（仅路径） | HTML 方言本身 |
+| RtlIndex 索引目录（固定 `.autowire/hdxml`）、dump RTL 输出目录、**具名连接单元** `[connect.<id>]`（路径 + `deps`） | HTML 方言 / 连线细节本身 |
+
 
 - 连接 SoT **只有** HTML（`connect-html.md`）。  
 - 本文件是 **autowire 工程配置**：喂给 hdxml `analysis` 与连接页只读索引，**不是** hdxml 内部缓存格式的回归。
@@ -71,10 +72,31 @@ dir = ".autowire/hdxml"
 # dump 写出的 RTL 目录（产物，交给 DV；不放 .autowire）
 dir = "gen"
 
-[connect]
-# 连接 HTML 文件清单（filelist 语义：仅路径数组；禁止 top、禁止任何连线细节）
-html = ["connect/phy_wrap.html"]
+# 具名连接单元（禁止旧式 [connect] html = [...] 扁平列表）
+# id 仅用于 toml 依赖图；连线细节仍只在 HTML 内
+[connect.phy_wrap]
+html = "connect/phy_wrap.html"
+
+[connect.phy_wrap_tb]
+html = "connect/phy_wrap_tb.html"
+deps = ["phy_wrap"]
 ```
+
+### 4.1 `[connect.<id>]`（连接单元 DAG）
+
+| 字段 | 必须 | 含义 |
+|---|---|---|
+| `html` | 是 | 该单元的连接 HTML 路径（相对工作区根）；**禁止**在此写 top / 连线 |
+| `deps` | 否 | 其它连接单元 **id** 列表（不是路径、不是 `aw-mod@name`）；缺省 = `[]` |
+
+规则：
+
+1. **显式依赖才允许跨单元引用**：单元 A 的 HTML 若引用单元 B 中定义的包装模 / 符号，则 A 的 `deps` **必须**列出 `B`（建议先只认**直接** deps，要传递闭包须把边写全）。未声明 → **非法引用，报错**。  
+2. **多余 deps → 警告**：单元 A 的 `deps` 列出了 B，但 elaborate 后 A 的 HTML **未实际引用** B 中任何符号 → **警告**（不失败；提示删掉死边，以免假依赖阻塞并行）。检查发生在 **elaborate**（需对照引用图），不是 toml 加载时。  
+3. **`deps` 图必须无环**：加载 toml 时做拓扑检查；成环 → **报错**。未知 id / 重复 id / 自依赖 → **报错**。  
+4. **并行 elaborate**：DAG 就绪后，**无依赖边的单元可以并行**处理；仅列表、无 deps 时只能保守串行——这是具名 `deps` 相对扁平 `html = []` 的结构优势。  
+5. toml **仍然禁止**连线细节；`deps` 只表达**包级**依赖。单文件内层级见 [`connect-html.md`](./connect-html.md)（`aw-submods`）。  
+6. dump / `.autowire/connect/` 快照 **应当**按单元 id（或 html 路径镜像）落盘（生成物，可删重建）。
 
 说明：
 
@@ -82,9 +104,11 @@ html = ["connect/phy_wrap.html"]
 - **`[hdxml] bin`** 只给 autowire 定位二进制用，**不**映射为 hdxml 参数；设置了但文件不存在 ⇒ analysis 直接报错（不静默回退）。未设置时按默认链查找，最终落到 PATH。  
 - **宏集合** = `[analysis.defines]`（展开）+ `keep_raw`（保原文哨兵）；二者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。覆盖顺序 `[analysis.defines]` → `keep_raw`。空串保原文约定已**废弃**（空串值直接报错）。哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。
 - **宏作用域**：CLI/toml 宏作为 pre_defines 对**每个文件**一致生效（编译单元级种子）；各文件内 `` `define `` 不外泄（按文件独立预处理）。跨文件一致的宏**必须**走本表，禁止依赖文件间宏传递。
-- **`[connect] html`** 只是连接页文件清单（路径数组，filelist 语义）；**禁止** `top` 及任何连线细节（连接 SoT 在 HTML 内）。  
 
-- **`.autowire/`** 是工作区**生成临时目录**（索引等缓存），可整体删除重建；**禁止**放入手写内容或任何 SoT。dump RTL 是**产物**目录（默认 `gen/`），供 DV 使用，与临时目录分开。
+- **`.autowire/`** 是工作区**生成临时目录**（索引等缓存），可整体删除重建；**禁止**放入手写内容或任何 SoT。  
+  - `.autowire/hdxml/` — RtlIndex  
+  - `.autowire/connect/` — 各连接单元 elaborate 后的 `aw-render` 快照（dump/cli 读此印 SV，**禁止** dump 直接 load 作者 HTML）  
+  - dump RTL 产物目录（默认 `gen/`）与临时目录分开。
 
 - **`.svh` 不进 filelist**（hdxml 跳过并警告）：宏头文件只有两条合法路径——源内 `` `include ``（预处理）或 `define_headers`（独立加载，等价 EDA「.f 头部 svh」的全局宏）。降级方案：EDA 侧用 `eda_load.f`（头部 svh + 共享 `rtl.f`），分析器只用纯源码 `rtl.f`，两侧行为一致。  
 ## 5. 与 elaboration 的衔接（总流水线）
@@ -92,17 +116,18 @@ html = ["connect/phy_wrap.html"]
 宏 ≠ 模块 `aw-param`。顺序 **必须**为：
 
 ```text
-autowire.toml（.f + svh/宏 + incdir …）
+autowire.toml（.f + svh/宏 + [connect.<id>] DAG）
     →  hdxml → RtlIndex（叶子端口/参数声明，只读）
-    →  作者 HTML（aw-content + aw-submods）
-    →  ① 顶→底 param  ② 展开 aw-template+patch  ③ 底→顶连线 → aw-render
-    →  dump（读 aw-render）→ .sv → DV
+    →  按 deps 拓扑（可并行）elaborate 各连接 HTML
+    →  写入 .autowire/connect/ 快照
+    →  dump（读快照 / aw-render）→ .sv → DV
 ```
 
 细节见 [`connect-html.md`](./connect-html.md)。
 
 ## 6. 开放项（实现前裁定）
 
-1. 多包/多 chip 是否允许多份 toml，还是单工作区单文件 + profile 表？
+1. 多包/多 chip 是否允许多份 toml，还是单工作区单文件 + profile 表？  
+2. 跨单元引用是否允许 `deps` 传递闭包，还是必须显式写全直接边？（草稿默认：**仅直接 deps**）
 
 裁定后改本文 + `help workspace`，再动代码。

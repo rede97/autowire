@@ -18,3 +18,11 @@ exclude_filenames = []
 [analysis.index]
 # RtlIndex XML dir; fixed generated temp dir (deletable)
 dir = ".autowire/hdxml"
+
+[connect.phy_wrap]
+html = "connect/phy_wrap.html"
+
+[connect.phy_wrap_tb]
+html = "connect/phy_wrap_tb.html"
+deps = ["phy_wrap"]
+

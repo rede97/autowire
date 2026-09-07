@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
-  作者面规范示例：docs/connect-html.md §3.4–3.5
-  rewrite：JS RegExp match（宜 ^…$）+ String.replace 的 to（$1 / $<name>）+ ${idx}
+  作者面规范示例：docs/connect-html.md §3.4–3.5.1
+  rewrite：match+to；packed=auto / part= 切片（to 仅为净网名）
   对应渲染示意：01-rendered-simple.html
 -->
 <html lang="zh-CN">
@@ -24,26 +24,37 @@
           <aw-templates>
             <aw-template name="slice_template" inst_name="${id}_${idx}">
               <aw-param name="SLICE_IDX" expr="${idx}"></aw-param>
-              <!-- 精确端口：用 aw-connect，不必走 rewrite -->
               <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
-              <!-- 精确名改写：match 全锚定 -->
-              <aw-rewrite match="^slice_en$" to="slice_en_${idx}"></aw-rewrite>
-              <!-- 捕获组：$1 为 JS String.replace；${idx} 为上下文插值 -->
-              <aw-rewrite match="^slice_out_(.+)$" to="slice_${idx}_out_$1"></aw-rewrite>
-              <!-- 具名捕获：$<suf> -->
+              <aw-rewrite match="^slice_en$" to="slice_en_${idx}" packed="auto"></aw-rewrite>
+              <aw-rewrite
+                match="^slice_out_(.+)$"
+                to="slice_${idx}_out_$1"
+                packed="auto"
+              ></aw-rewrite>
+              <!-- 共享总线：显式 width 声明整网；part 按 idx 选位 -->
+              <aw-rewrite
+                match="^slice_data$"
+                to="slice_data_bus"
+                width="15:0"
+                part="8*${idx}+7:8*${idx}"
+              ></aw-rewrite>
               <aw-rewrite
                 match="^slice_stat_(?<suf>.+)$"
                 to="slice_${idx}_stat_$<suf>"
+                packed="auto"
               ></aw-rewrite>
             </aw-template>
           </aw-templates>
           <aw-insts>
             <aw-inst id="u_decoder" mod="master_decoder">
-              <!-- 匿名内联；inst_name 默认 ${id} → u_decoder -->
               <aw-template>
                 <aw-param name="PIPE_NUM" expr="BUS_PIPE_NUM"></aw-param>
                 <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
-                <aw-rewrite match="^dec_in_(?<rest>.+)$" to="mst_blk_reg_$<rest>"></aw-rewrite>
+                <aw-rewrite
+                  match="^dec_in_(?<rest>.+)$"
+                  to="mst_blk_reg_$<rest>"
+                  packed="auto"
+                ></aw-rewrite>
               </aw-template>
             </aw-inst>
 
@@ -51,11 +62,9 @@
               <aw-template base="slice_template"></aw-template>
             </aw-inst>
             <aw-inst id="u_slice" mod="test_slice" idx="1">
-              <!-- 同标签 overwrite：base 展开后再应用子规则 -->
               <aw-template base="slice_template">
-                <aw-connect port="slice_dbg" to="slice_1_dbg"></aw-connect>
-                <!-- 覆盖 base 里对 slice_en 的改写 -->
-                <aw-rewrite match="^slice_en$" to="slice_en_alt_${idx}"></aw-rewrite>
+                <aw-connect port="slice_dbg" to="slice_1_dbg" packed="auto"></aw-connect>
+                <aw-rewrite match="^slice_en$" to="slice_en_alt_${idx}" packed="auto"></aw-rewrite>
               </aw-template>
             </aw-inst>
           </aw-insts>

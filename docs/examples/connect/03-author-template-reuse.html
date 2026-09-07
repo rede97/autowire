@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  作者面：match+to 复用与 overwrite patch。
+  作者面：match+to 复用 / overwrite；packed=auto 与共享 bus + part 切片。
   对应渲染：03-rendered-template-reuse.html
 -->
 <html lang="zh-CN">
@@ -18,7 +18,15 @@
           <aw-ports></aw-ports>
           <aw-templates>
             <aw-template name="lane_tpl" inst_name="${id}${idx}">
-              <aw-rewrite match="^(.+)$" to="lane_$1"></aw-rewrite>
+              <!-- 先通配，再精确覆盖（后写覆盖） -->
+              <aw-rewrite match="^(.+)$" to="lane_$1" packed="auto"></aw-rewrite>
+              <aw-rewrite match="^clk$" to="lane_clk" packed="auto"></aw-rewrite>
+              <aw-rewrite
+                match="^data$"
+                to="lane_data_bus"
+                width="15:0"
+                part="8*${idx}+7:8*${idx}"
+              ></aw-rewrite>
             </aw-template>
           </aw-templates>
           <aw-insts>
@@ -27,7 +35,7 @@
             </aw-inst>
             <aw-inst id="u_lane" mod="lane_slice" idx="1">
               <aw-template base="lane_tpl">
-                <aw-connect port="dbg" to="lane_1_dbg"></aw-connect>
+                <aw-connect port="dbg" to="lane_1_dbg" packed="auto"></aw-connect>
               </aw-template>
             </aw-inst>
           </aw-insts>

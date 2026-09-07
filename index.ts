@@ -1,5 +1,5 @@
 // autowire CLI entry (bun). Commands:
-//   help [topic]  Agent onboarding (full text when no topic)
+//   help [topic]  command index (default); Agent contract: help agent
 //   init          create default autowire.toml in CWD
 //   analysis      run hdxml analysis with args from autowire.toml
 //   deps <path>   print RTL module dependency tree (RtlIndex dir, or RTL sources via hdxml sidecar)
@@ -64,17 +64,17 @@ const program = new Command();
 program
 	.name("autowire")
 	.description(
-		"RTL register and connectivity tool. Agents: run help first; do not invent a project prompt.",
+		"RTL register and connectivity tool. Agents: run `help agent`; do not invent a project prompt.",
 	)
 	.addHelpText(
 		"after",
-		"\nAgent onboarding:  bun index.ts help\nSlices:  bun index.ts help topics\n",
+		"\nCommands:  bun index.ts help\nAgent contract:  bun index.ts help agent\nTopics:  bun index.ts help topics\n",
 	);
 
 program.addHelpCommand(false);
 program
 	.command("help")
-	.description("Print Agent onboarding (usage + design); see help topics")
+	.description("Command index (default) or topic help; Agents: help agent")
 	.argument(
 		"[topic]",
 		"agent | status | workspace | analysis | connect | web | dump | cli | deps | dont | topics",

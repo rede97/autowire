@@ -28,8 +28,17 @@ export interface WorkspaceConfig {
 	indexDir: string;
 	/** Dump RTL output dir ([dump] dir, default gen) */
 	dumpDir: string;
-	/** Connect HTML file list ([connect] html — paths only, filelist semantics; no top, no wiring details) */
-	connectHtml: string[];
+	/** Named connect units ([connect.<id>] html + deps); DAG validated at load */
+	connectUnits: ConnectUnit[];
+}
+
+/** One [connect.<id>] entry (docs/workspace-toml.md §4.1) */
+export interface ConnectUnit {
+	id: string;
+	/** Absolute path to the connect HTML */
+	html: string;
+	/** Direct dependency ids (other connect unit ids) */
+	deps: string[];
 }
 
 /** Find autowire.toml upward from startDir; returns the file path or null */
@@ -54,6 +63,86 @@ function strList(v: unknown, key: string): string[] {
 		throw new Error(`autowire.toml: ${key} must be a list of strings`);
 	}
 	return v as string[];
+}
+
+/** Parse [connect.<id>] tables; reject flat [connect] html=…; validate deps DAG (no cycles). */
+export function parseConnectUnits(
+	connect: Record<string, unknown>,
+	rel: (p: string) => string,
+): ConnectUnit[] {
+	if (Object.hasOwn(connect, "html")) {
+		throw new Error(
+			"autowire.toml: flat [connect] html = [...] is removed — use [connect.<id>] with html= and optional deps=",
+		);
+	}
+	const units: ConnectUnit[] = [];
+	for (const [id, raw] of Object.entries(connect)) {
+		if (!isObj(raw)) {
+			throw new Error(
+				`autowire.toml: [connect.${id}] must be a table (html=…, optional deps=)`,
+			);
+		}
+		if (typeof raw.html !== "string" || raw.html.length === 0) {
+			throw new Error(
+				`autowire.toml: [connect.${id}] html must be a non-empty string`,
+			);
+		}
+		const deps = strList(raw.deps, `connect.${id}.deps`);
+		units.push({ id, html: rel(raw.html), deps });
+	}
+	units.sort((a, b) => a.id.localeCompare(b.id));
+	assertConnectDepsDag(units);
+	return units;
+}
+
+/** Fail on unknown dep ids, self-deps, or cycles. */
+export function assertConnectDepsDag(units: ConnectUnit[]): void {
+	const ids = new Set(units.map((u) => u.id));
+	for (const u of units) {
+		for (const d of u.deps) {
+			if (d === u.id) {
+				throw new Error(
+					`autowire.toml: [connect.${u.id}] deps must not include itself`,
+				);
+			}
+			if (!ids.has(d)) {
+				throw new Error(
+					`autowire.toml: [connect.${u.id}] deps unknown id "${d}"`,
+				);
+			}
+		}
+	}
+	// Kahn topological sort — leftover nodes imply a cycle
+	const indeg = new Map<string, number>();
+	for (const id of ids) indeg.set(id, 0);
+	for (const u of units) {
+		for (const _d of u.deps) {
+			// edge dep → u (u depends on dep; dep must come first)
+			indeg.set(u.id, (indeg.get(u.id) ?? 0) + 1);
+		}
+	}
+	const q = [...ids].filter((id) => indeg.get(id) === 0).sort();
+	let seen = 0;
+	while (q.length > 0) {
+		const id = q.shift();
+		if (id === undefined) break;
+		seen++;
+		for (const u of units) {
+			if (!u.deps.includes(id)) continue;
+			const n = (indeg.get(u.id) ?? 0) - 1;
+			indeg.set(u.id, n);
+			if (n === 0) {
+				q.push(u.id);
+				q.sort();
+			}
+		}
+	}
+	if (seen !== ids.size) {
+		const cyclic = [...ids].filter((id) => (indeg.get(id) ?? 0) > 0).sort();
+		throw new Error(
+			`autowire.toml: [connect.*] deps form a cycle involving: ${cyclic.join(", ")}`,
+		);
+	}
 }
 
 export async function loadWorkspace(
@@ -115,7 +204,7 @@ export async function loadWorkspace(
 			typeof index.dir === "string" ? index.dir : ".autowire/hdxml",
 		),
 		dumpDir: rel(typeof dump.dir === "string" ? dump.dir : "gen"),
-		connectHtml: strList(connect.html, "connect.html").map(rel),
+		connectUnits: parseConnectUnits(connect, rel),
 	};
 }
 
@@ -183,7 +272,12 @@ dir = ".autowire/hdxml"
 # Dumped RTL output dir (product for DV; not under .autowire)
 dir = "gen"
 
-[connect]
-# Connect HTML file list (paths only, filelist semantics; no top, no wiring details)
-# html = ["connect/phy_wrap.html"]
+# Named connect units (DAG). Do not use flat [connect] html = [...].
+# Cross-unit references require deps=; cycles / unknown ids fail at load.
+# Ready units with no pending deps can elaborate in parallel.
+# [connect.phy_wrap]
+# html = "connect/phy_wrap.html"
+# [connect.phy_wrap_tb]
+# html = "connect/phy_wrap_tb.html"
+# deps = ["phy_wrap"]
 `;

@@ -1,16 +1,12 @@
 # Autowire
 
-接手前先跑，不要另写项目提示词：
+接手前先跑：`bun index.ts help agent`（工作约定；不要另写项目提示词）。
 
-```bash
-bun index.ts help
-```
-
-切片：`bun index.ts help topics`。改行为时同步改 `src/help.ts`。
+命令总览：`bun index.ts help`；切片：`bun index.ts help topics`。改行为时同步改 `src/help.ts`。
 
 一律用 Bun（`bun` / `bun test` / `bunx`），不用 Node/npm/npx 等价物。
 
-格式与实现约束统一在 [`docs/`](docs/README.md)（`autowire.toml`、连接 HTML、RtlIndex、hdxml CLI）。改约束同步改对应文档与 help 摘要；**先不要实现**未在 help status 中开放的步骤。
+格式与实现约束统一在 [`docs/`](docs/README.md)。改约束同步改对应文档与 help 摘要；**先不要实现**未在 `help status` 中开放的步骤。
 
 ## 规则
 

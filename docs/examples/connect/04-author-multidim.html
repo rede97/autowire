@@ -1,0 +1,61 @@
+<!doctype html>
+<!--
+  作者面：多维 packed + unpacked（对齐 RtlIndex）；packed=auto 跟端口。
+  对应渲染：04-rendered-multidim.html
+  约束：docs/connect-html.md §3.5.1–3.5.2
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>04-author-multidim</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-mod name="mem_wrap">
+        <aw-content>
+          <aw-params>
+            <aw-param name="DEPTH" expr="256"></aw-param>
+          </aw-params>
+          <aw-ports></aw-ports>
+          <aw-templates>
+            <aw-template name="bank_tpl" inst_name="${id}_${idx}">
+              <!-- 跟叶子端口维（含 unpacked） -->
+              <aw-rewrite match="^rdata$" to="bank_${idx}_rdata" packed="auto"></aw-rewrite>
+              <!-- 共享二维 packed 网 + part 选一段 -->
+              <aw-rewrite
+                match="^lane$"
+                to="lane_matrix"
+                packed="[7:0][3:0]"
+                part="[${idx}]"
+              ></aw-rewrite>
+              <!-- 存储数组：packed 字宽 + unpacked 深度 -->
+              <aw-connect
+                port="word"
+                to="scratch_mem"
+                packed="[31:0]"
+                unpacked="[0:255]"
+                part="[${idx}]"
+              ></aw-connect>
+            </aw-template>
+          </aw-templates>
+          <aw-insts>
+            <aw-inst id="u_bank" mod="mem_bank" idx="0">
+              <aw-template base="bank_tpl"></aw-template>
+            </aw-inst>
+            <aw-inst id="u_bank" mod="mem_bank" idx="1">
+              <aw-template base="bank_tpl"></aw-template>
+            </aw-inst>
+          </aw-insts>
+        </aw-content>
+        <aw-submods></aw-submods>
+        <aw-render>
+          <aw-params></aw-params>
+          <aw-localparams></aw-localparams>
+          <aw-ports></aw-ports>
+          <aw-signals></aw-signals>
+          <aw-insts></aw-insts>
+        </aw-render>
+      </aw-mod>
+    </autowire>
+  </body>
+</html>

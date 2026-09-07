@@ -1,5 +1,5 @@
-// Agent onboarding text. Keep in sync when behavior changes; do not invent a second prompt.
-// Print: `bun index.ts help` or `autowire help [topic]`
+// Command and topic help. Keep in sync when behavior changes; do not invent a second prompt.
+// Print: `bun index.ts help` | `bun index.ts help agent` | `autowire help <topic>`
 
 export const HELP_TOPICS = [
 	"agent",
@@ -18,160 +18,141 @@ export type HelpTopic = (typeof HELP_TOPICS)[number];
 
 const SECTIONS: Record<HelpTopic, string> = {
 	agent: `\
-Autowire — Agent onboarding
+Autowire — Agent contract
 
-Read this before editing. This output is the working contract; do not invent a separate project prompt.
-Slices: autowire help <topic>   topic = ${HELP_TOPICS.join(" | ")}
+This topic is the working contract; do not invent a separate project prompt.
+Other topics are command/dialect reference: autowire help topics
 
 What it is
   Connectivity is one HTML + <script>. After the browser runs the script, the live DOM is the netlist.
   Hand the render result to autowire; it writes RTL, then DV.
-
-  Early autowire is a Web front-end library (aw.js custom elements + local page).
-  Isolation and debug go through Playwright (headless + Playwright MCP).
-  Once page cases and goldens exist, they constrain a fully headless cli.
-  Do not build a connection-specific MCP.
-
-Why
-  Author input    nested HTML, static tags + <script>
-  Render          real browser runs aw.js (Custom Elements)
-  Debug / isolate Playwright headless on the local page; Agent uses Playwright MCP
-  Safety          browser sandbox + 127.0.0.1; page must not write the workspace
-  Dump            POST render → autowire Web API → write workspace RTL → DV
-  Who writes script  either human or Agent
-  Headless CLI    later; must pass existing Web / Playwright tests and goldens
-
-  No parallel connection IR, no emacs process, no connection-specific MCP tool table.
-
-You can do now
-  1. Read this help; follow the dont rules.
-  2. Use deps for leaf RTL hierarchy (RtlIndex / hdxml).
-  3. Author connect HTML per docs/connect-html.md (even if aw.js is not landed yet).
-  4. Until web / dump / cli land: do not pretend render or dump works; build library + tests first.
-
-After web lands (connect flow)
-  1. Start in the workspace: autowire web [html]
-  2. Wait for first paint (aw.js defined, scripts finished).
-  3. Attach Playwright MCP headless Chromium: navigate / snapshot / evaluate.
-     Inspect the live DOM (accessible names), not the source HTML text.
-  4. To dump: POST same-origin /api/dump from the page or Playwright.
-     Browser does not write disk; autowire checks workspace paths and writes .sv; DV checks files.
-  5. Machines without a browser wait for cli; cli must pass existing Web cases first—do not build cli first.
+  Early path: aw.js + local web page; debug via Playwright (headless + Playwright MCP).
+  Later: headless cli, locked by Web / Playwright goldens. No connection-specific MCP.
 
 Pipeline
   autowire.toml (.f + svh / macros)
       →  hdxml → RtlIndex (read-only)
       →  HTML (aw-content + aw-submods)
-      →  elaboration → aw-render (params top-down; template; wires bottom-up)
-      →  POST /api/dump (read aw-render)
-      →  autowire writes .sv
-      →  DV
-`,
+      →  elaboration → aw-render
+      →  POST /api/dump (every related aw-render)
+      →  autowire writes .sv → DV
 
-	analysis: `\
-autowire init / autowire analysis (landed)
+You can do now
+  1. Follow help dont; use help status for landed vs not landed.
+  2. autowire init / analysis / deps for workspace + RtlIndex.
+  3. Author connect HTML per docs/connect-html.md (even if aw.js is not landed).
+  4. Until web / dump / cli land: do not pretend render or dump works.
 
-  autowire init                 create default autowire.toml in CWD (refuses to overwrite)
-  autowire analysis [--workspace dir|file] [--hdxml bin] [--sub-bars]
+After web lands
+  1. autowire web [html]; wait for first paint (or #aw-status when GET params auto-run).
+  2. Playwright MCP: navigate / snapshot / evaluate / click — inspect live DOM, not source HTML.
+  3. Dump via same-origin POST /api/dump; browser must not write the workspace.
+  4. Do not build cli before Web cases and goldens exist.
 
-analysis loads autowire.toml (upward from CWD, or --workspace) and runs hdxml
-analysis with mapped args (contract: docs/workspace-toml.md):
-  [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames -> -f / -s / -w / --exclude-filenames
-  [analysis.defines] NAME="v" -> -D NAME=v  (expanding macros only)
-  [analysis] keep_raw = [...] -> --keep-raw (raw macros; empty-string convention removed)
-  [analysis.index] dir -> --xml (default .autowire/hdxml under workspace root)
-  [hdxml] bin -> binary path only (not an hdxml arg; must exist if set)
-hdxml binary lookup: --hdxml > toml [hdxml] bin > $HDXML_BIN
-  > repo hdxml/target/{release,debug} > PATH
-hdxml never reads the toml itself; autowire maps and passes everything.
-Macro scope: toml/CLI defines are a uniform pre_defines seed for every file;
-per-file \`define does not leak across files (each file preprocessed independently).
-Paths in toml are relative to the workspace root (toml location).
-No [rtl] sources configured -> error. Error files keep the index usable but
-the hdxml exit code is passed through (CI can gate on it).
+Rules of engagement
+  Edit this help (src/help.ts) when behavior changes; format constraints live in docs/.
+  Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
 `,
 
 	status: `\
-Current status (code is truth; do not invent finished commands)
+Status (code is truth; do not invent finished commands)
 
 Landed
-  autowire help [topic]     this text
+  autowire help [topic]
+  autowire init / analysis   workspace autowire.toml → hdxml
   autowire deps <path>      RTL module dependency tree
-                            path = RtlIndex dir (with index.xml)
-                                 or RTL source dir (hdxml sidecar analysis first)
-  autowire init / analysis  workspace autowire.toml → hdxml (docs/workspace-toml.md)
-  hdxml sidecar             Rust; analysis → RtlIndex XML; read-only consumer
-  Playwright env            headless Chromium installed; Playwright MCP via .mcp.json
-                            (--headless --isolated; only 127.0.0.1/localhost origins)
+  hdxml sidecar             analysis → RtlIndex XML
+  Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
 
 Not landed (do in this order; do not skip)
   aw.js + constrained HTML custom elements
-  autowire web [html]       local HTTP render page
-  POST /api/dump            browser does not write disk; autowire writes workspace RTL
-  Playwright cases / golden same HTML → same RTL
-  autowire cli              fully headless; must be locked by the cases above
+  autowire web [html]
+  POST /api/dump
+  Playwright cases / golden
+  autowire cli
 
-Parallel, does not block connect
-  Register Table + Block/Cell (types are data; Excel is docs only)
-  Leaf port tables from RtlIndex feed the connect page read-only
+Parallel (does not block connect)
+  Register Table + Block/Cell
+  Leaf port tables from RtlIndex (read-only on the connect page)
 `,
 
 	workspace: `\
-Workspace config autowire.toml (landed: init / analysis; see help analysis)
-Full constraints: docs/workspace-toml.md
+autowire.toml — workspace config
 
-One top-level config shared by deps / web / cli for the RTL universe:
-  [hdxml] bin = hdxml binary path (unset: --hdxml > $HDXML_BIN > repo target > PATH)
-  source entry .f (and walk/sources)
-  [connect] html = [...] connect HTML file list (paths only; no top, no wiring details)
-  macros: defines + define .svh (aligns with hdxml --define-headers)
-  incdirs, dump RTL out dir, etc.
+Full constraints: docs/workspace-toml.md
+Commands: autowire init | autowire analysis  (see help analysis)
+
+Shared by deps / web / cli for the RTL universe:
+  [hdxml] bin="…"       hdxml binary path (unset: --hdxml > $HDXML_BIN > repo target > PATH)
+  [analysis.*]  .f / sources / walk / incdirs / defines / keep_raw / index dir
+  [connect.<id>]        named HTML unit: html= + optional deps= (DAG; no wiring)
+  [dump] dir="gen"      dumped RTL output (not under .autowire)
 
 Dirs
-  .autowire/          fixed generated temp dir (deletable; never hand-authored)
-  .autowire/hdxml/    RtlIndex XML index lives here
-  [dump] dir="gen"    dumped RTL output (product for DV; not under .autowire)
+  .autowire/          generated temp (deletable; never hand-authored)
+  .autowire/hdxml/    RtlIndex XML
+  .autowire/connect/  elaborated aw-render snapshots (dump/cli input; not author HTML)
 
 Macro policy (hdxml)
-  only explicitly-valued macros expand: -D NAME=VALUE / toml [analysis.defines] NAME="v"
-  keep_raw macros stay raw: sentinel __MACRO__DEFINE__NAME,
-  \`ifdef still true; dump restores via strip_prefix; override: keep_raw beats -D
-  toml: [analysis] keep_raw=[...] is the only raw channel (empty-string removed)
-  undeclared macro = DefineNotFound error (strict; no auto-registration)
+  expanding: -D / [analysis.defines] NAME="v"
+  keep_raw: [analysis] keep_raw=[...] only (empty-string removed)
+  undeclared macro = DefineNotFound (strict)
 
 Boundaries
-  toml = project config (feed hdxml / check definesFp)
-  HTML = connectivity SoT (do not put wiring in toml)
-  not a return of the old stune mods_info.toml cache
+  toml = project config; HTML = connectivity SoT (no wiring in toml)
+  connect deps: missing ref = error; unused dep = warn (at elaborate); cycle = error; DAG enables parallel elaborate
+`,
 
-Hooks into elaboration
-  toml fixes macros + filelist → RtlIndex
-  → params top-down → wires bottom-up (see help connect / docs/connect-html.md)
+	analysis: `\
+autowire init / analysis (landed)
+
+  autowire init
+  autowire analysis [--workspace dir|file] [--hdxml bin] [--sub-bars]
+
+init: create default autowire.toml in CWD (refuses to overwrite).
+analysis: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
+(docs/workspace-toml.md):
+  [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames
+      → -f / -s / -w / --exclude-filenames
+  [analysis.defines] NAME="v" → -D NAME=v
+  [analysis] keep_raw = [...] → --keep-raw
+  [analysis.index] dir → --xml (default .autowire/hdxml)
+  [hdxml] bin → binary path only (not an hdxml arg; must exist if set)
+
+hdxml binary lookup: --hdxml > toml [hdxml] bin > $HDXML_BIN
+  > repo hdxml/target/{release,debug} > PATH
+hdxml never reads toml; autowire maps everything.
+Paths in toml are relative to the workspace root (toml location).
+No [analysis.rtl] sources configured → error.
+Error files keep the index usable; hdxml exit code is passed through.
 `,
 
 	connect: `\
-HTML dialect (connectivity SoT) — draft
+Connect HTML dialect (draft; not landed as aw.js)
 
-Full constraints and examples (must follow for later impl; not landed yet):
-  docs/connect-html.md         (skeleton / pipeline / dump & multi-mod rules)
-  docs/connect-rules.md        (template / rewrite / inst_name / param)
-  docs/connect-lifecycle.md    (advanced: scripts on render lifecycle)
+Constraints:
+  docs/connect-html.md
+  docs/connect-rules.md
+  docs/connect-lifecycle.md
   docs/examples/connect/
-  docs/workspace-toml.md       (.f / macros / [connect] html list)
+  docs/workspace-toml.md   ([connect.<id>] html + deps DAG;
+                           missing cross-unit ref = error; unused dep = warn at elaborate)
 
 Two layers; do not mix
-  aw-content (author)   imports / params / localparams / ports; aw-template; inst + overwrite
-  aw-render (result)    imports / localparams / instances / signals / export ports / connects
-  aw-submods            nested aw-mod deps (recursive); sibling forward-refs by document order only
+  aw-content   imports / params / localparams / ports; aw-template; inst + overwrite
+  aw-render    imports / localparams / instances / signals / export ports / connects
+  aw-submods   nested aw-mod; sibling forward-refs by document order only
 
-Printer / dump / golden only accept each aw-mod's aw-render, not content/templates source.
-Dump collects every related aw-mod aw-render (nested + multi-HTML), not top-only.
-rewrite: JS RegExp match + String.replace ($1 / $<name>) + \${…}; attributes match+to only.
-aw-connect@to, aw-param@expr, aw-template@inst_name: variable expressions only (no $1 / $<name>).
-Advanced logic: lifecycle scripts (docs/connect-lifecycle.md).
-aw-template names are per-aw-mod only (no cross-mod template import).
-Connected nets stay in aw-signals; only unconnected signals may auto-export as ports.
-aw-imports dump as SV import at module head (deduped).
+Dump / golden only accept aw-render (every related mod; nested + multi-HTML).
+aw-rewrite: RegExp match + String.replace ($1 / $<name>) + \${…}; match+to only.
+aw-connect@to / aw-param@expr / aw-template@inst_name: variable expressions only (no $1).
+aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlIndex form),
+  unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; default wire);
+  to is net name only — no [] suffix. See docs/connect-html.md §3.5.1–3.5.2;
+  multidim example: docs/examples/connect/04-author-multidim.html.
+Lifecycle scripts: docs/connect-lifecycle.md.
+Templates are per-aw-mod only. Connected nets → aw-signals; unconnected may auto-export ports.
+aw-imports → SV import at module head (deduped).
 
 Skeleton
   <autowire>
@@ -182,65 +163,52 @@ Skeleton
     </aw-mod>
   </autowire>
 
-aw-template (style-like; only rule container under aw-inst)
-  define with name= in library; under inst only aw-template (no bare connect/rewrite)
-  overwrite: same tag <aw-template base>…child rules…</aw-template> (apply after base)
-  multi-template: sibling aw-templates expand in order; later wins
-  aw-template@inst_name defaults to \${id}; aw-rewrite match+to only; templates do not dump
-  aw-imports: package imports auto-inherited bottom-up when interfaces reference packages
-  aw-port: dir=input/output/inout/interface; dir=interface requires interface= type, optional modport=
-  aw-param → aw-localparams (Mod__Inst__Param); fold constants / inherited module params
-            / matching module-internal localparams; do not fold expressions or macros
+aw-template: only rule container under aw-inst; overwrite / multi-template later wins.
+aw-template@inst_name defaults to \${id}.
+aw-port: dir=input|output|inout|interface; interface requires interface=, optional modport=.
+aw-param → Mod__Inst__Param; fold constants / inherited params / internal localparams;
+           do not fold expressions or macros.
 
-Elaboration
-  1) params top-down (classify fold + uniquify localparam) + aw-template@inst_name
-  2) template/rewrite (match+to)  3) wires bottom-up / width rewrite → aw-render
-  optional lifecycle hooks: docs/connect-lifecycle.md
-  Quick rules: docs/connect-rules.md; full: docs/connect-html.md
+Elaboration: params top-down → template/rewrite → wires bottom-up → aw-render.
 `,
 
 	web: `\
-autowire web (early main entry; not landed)
+autowire web (not landed)
 
   autowire web [html]
 
-Local HTTP for headed browsers and for Agents headless.
-Layout and GET action contract: docs/web-ui.md.
+Local HTTP page for headed browsers and headless Chromium.
+Layout / GET action contract: docs/web-ui.md.
 
-Page: header (title + [Render] [Dump] [Reset]); left = dep tree (RtlIndex
-hierarchy, blackbox marked) + db summary (files/modules/packages/definesFp);
-right = selected module info (RtlIndex params/imports/ports/instances;
-aw-render preview only after render). Left/right data is RtlIndex read-only.
+Page: header [Render] [Dump] [Reset]; left = dep tree + db summary;
+right = selected module (RtlIndex read-only; aw-render preview after render).
 
-Two modes:
-  no GET params   load only; NO action runs; buttons are the only trigger (human)
-  with GET params auto-run fixed chain select=MODULE -> render=1 -> dump=1
-                  (dump implies render; order fixed regardless of param order)
-  completion: #aw-status[data-state=done|error] + document.title suffix;
-              idle when no params. Playwright joins: no-param = first paint,
-              with-params = wait for #aw-status[data-state].
+GET
+  no params     load only; buttons trigger actions (human)
+  with params   auto-run select=MODULE → render=1 → dump=1
+                (dump implies render; order fixed)
+  done signal   #aw-status[data-state=done|error]
 
-Endpoints: GET /api/rtlindex, GET /api/module?name=, POST /api/dump (only write).
-
-Agent uses only Playwright MCP (navigate / snapshot / evaluate / click),
-like any front-end. Do not add outline / apply / rewrite MCP for connect.
-
-Startup may be: web first, then Playwright MCP; or one script starts both.
-Isolation: separate browser context; local page only.
-Safety: render in the browser; file writes only via autowire API.
+Endpoints: GET /api/rtlindex, GET /api/module?name=, POST /api/dump (only write path).
+Isolation: 127.0.0.1 / localhost only. File writes only via autowire API.
+Agent workflow: help agent.
 `,
 
 	dump: `\
-Dump / write-back
+Dump / write-back (not landed; pairs with autowire web)
 
-Browser does not touch disk. Page or Playwright POSTs every related aw-mod's aw-render
-(nested submods + multi-HTML) to same-origin /api/dump (instances / aw-connect /
-export aw-port / aw-signals / aw-localparams / aw-imports — not aw-content source).
-SV import from aw-imports is emitted at module head and deduped.
-autowire checks workspace paths then writes RTL. Correctness is DV on files, not by banning dump.
+  POST same-origin /api/dump
 
-web and future cli must share the same write path.
-Until landed, do not treat hand-rolled "fake dump" side scripts as the official path.
+Browser does not touch disk. Body = every related aw-mod aw-render
+(nested submods + multi-HTML units per [connect.<id>] deps): instances / aw-connect /
+export aw-port / aw-signals / aw-localparams / aw-imports — not aw-content.
+Server should persist snapshots under .autowire/connect/ then emit SV; dump must not
+re-load author HTML as the netlist.
+SV import from aw-imports at module head, deduped.
+autowire checks workspace paths then writes RTL; DV checks files.
+
+web and future cli must share this write path.
+Do not treat hand-rolled fake-dump scripts as the official path.
 `,
 
 	cli: `\
@@ -248,17 +216,14 @@ autowire cli (later; do not build now)
 
   autowire cli phy.html --dump gen/
 
-After Web / Playwright tests and goldens are stable, build fully headless CLI.
+Build only after Web / Playwright tests and goldens are stable.
 Same aw.js extract logic (in-process or headless browser).
-
-Cases constrain the backend: cli must pass existing Web tests (same HTML → same RTL).
+cli must pass existing Web tests (same HTML → same RTL).
 Building cli before tests is not allowed.
-
-deps and other RtlIndex queries may hang off cli, separate from connect render.
 `,
 
 	deps: `\
-autowire deps — RTL module dependency tree (landed)
+autowire deps (landed)
 
   bun index.ts deps <path>
   bun index.ts deps <path> --top <name> --depth <n>
@@ -266,16 +231,15 @@ autowire deps — RTL module dependency tree (landed)
 
 <path>
   RtlIndex dir (with index.xml): read directly
-  else treat as RTL source dir; run hdxml sidecar into .autowire/hdxml
+  else RTL source dir → hdxml sidecar into .autowire/hdxml
 
-hdxml lookup order
-  --hdxml > $HDXML_BIN > repo hdxml/target/{release,debug}/hdxml > PATH
+hdxml lookup: --hdxml > $HDXML_BIN > repo hdxml/target/{release,debug}/hdxml > PATH
 
 Output
-  summary line: tool / files / modules / tops; error files in red
-  one tree per top: top cyan, normal green, blackbox yellow, cycle red
+  summary: tool / files / modules / tops; error files in red
+  trees: top cyan, normal green, blackbox yellow, cycle red
 
-Connect page reads port tables only; deps must not rewrite RTL.
+deps must not rewrite RTL; connect page reads port tables read-only.
 `,
 
 	dont: `\
@@ -286,35 +250,55 @@ Do not
   browser writing the workspace directly
   build cli before Web cases
   two wiring semantics (Web and cli must share aw.js + goldens)
-  copy a per-chip connect prompt (edit this help instead)
+  copy a per-chip connect prompt (edit help agent / src/help.ts instead)
   make README a second contract without updating help
-  put connectivity details into autowire.toml ([connect] html is a path-only file list — no top, no wiring)
+  put wiring into autowire.toml ([connect.<id>] allows only html= + deps= — no top, no wiring)
 `,
 };
+
+/** Default `autowire help` — command index + one-line Agent pointer. */
+function commandIndex(): string {
+	return [
+		"Autowire — commands",
+		"",
+		"  help [topic]              topic reference (see help topics)",
+		"  init                      create default autowire.toml in CWD",
+		"  analysis [options]        run hdxml from autowire.toml   → help analysis | workspace",
+		"  deps <path> [options]     RTL module dependency tree     → help deps",
+		"  web [html]                local render page (not landed) → help web | dump",
+		"  cli …                     headless later (not landed)    → help cli",
+		"",
+		"Also: help status | connect | dont",
+		"Docs: docs/   (format constraints; keep in sync with help)",
+		"",
+		"Agents: run `bun index.ts help agent` — that is the working contract; do not invent a project prompt.",
+		"",
+	].join("\n");
+}
 
 function topicsIndex(): string {
 	return [
 		"autowire help [topic]",
 		"",
-		"  agent     onboarding (default; full text when no topic)",
-		"  status    landed / not landed",
-		"  workspace top-level autowire.toml (.f / macros)",
-		"  analysis  init + run hdxml with autowire.toml",
-		"  connect   HTML dialect (author template vs render)",
-		"  web       local page + Playwright",
-		"  dump      write-back RTL",
-		"  cli       later headless (tests first)",
-		"  deps      RtlIndex dependency tree",
-		"  dont      forbidden items",
+		"  agent      Agent contract (read this before editing)",
+		"  status     landed / not landed",
+		"  workspace  autowire.toml",
+		"  analysis   init + analysis",
+		"  connect    HTML dialect",
+		"  web        local page",
+		"  dump       write-back RTL",
+		"  cli        later headless",
+		"  deps       dependency tree",
+		"  dont       forbidden items",
+		"",
+		"Default (no topic): command index.",
 		"",
 	].join("\n");
 }
 
 export function renderHelp(topic?: string): string {
 	if (topic === "topics") return topicsIndex();
-	if (!topic) {
-		return HELP_TOPICS.map((t) => SECTIONS[t].trimEnd()).join("\n\n");
-	}
+	if (!topic) return commandIndex();
 	if ((HELP_TOPICS as readonly string[]).includes(topic)) {
 		return `${SECTIONS[topic as HelpTopic].trimEnd()}\n`;
 	}

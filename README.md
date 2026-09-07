@@ -2,7 +2,7 @@
 
 连接描述是一份 **HTML + script**。浏览器跑完 script，活 DOM 就是连接关系。把渲染结果交给 autowire，由它写成 RTL，后面走 DV。
 
-**Agent 接手：先跑 `bun index.ts help`（或 `autowire help`）。那就是用法和思路，不要另写项目提示词。改行为时同步改 `src/help.ts`。格式约束见 [`docs/`](docs/README.md)。**
+**Agent 接手：先跑 `bun index.ts help agent`（工作约定；不要另写项目提示词）。命令总览：`bun index.ts help`。改行为时同步改 `src/help.ts`。格式约束见 [`docs/`](docs/README.md)。**
 
 ---
 

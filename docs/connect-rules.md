@@ -12,7 +12,7 @@
    `aw-templates` 与作者面 `aw-rewrite` 不进 netlist；展开后是逐条 `aw-connect`。
 
 3. **rewrite = JS `RegExp` + `String.replace`**  
-   属性仅为 `match` + `to`（可选 `flags`）。超出能力走 [`connect-lifecycle.md`](./connect-lifecycle.md)。
+   核心属性 `match` + `to`（可选 `flags` / `width` / `part`）。`to` 仅为净网名。超出能力走 [`connect-lifecycle.md`](./connect-lifecycle.md)。
 
 ## 2. `aw-template`：放哪、怎么叠
 
@@ -43,6 +43,7 @@
 |---|---|---|
 | `aw-rewrite@to` | 允许 | 允许（先捕获，再 `${…}`） |
 | `aw-connect@to` | 允许 | 禁止 |
+| `packed`/`width`（非 `auto`）、`unpacked`、`part` | 允许 | 禁止 |
 | `aw-param@expr` | 允许 | 禁止 |
 | `aw-template@inst_name` | 允许 | 禁止 |
 
@@ -52,22 +53,40 @@
 | `${idx}` | `aw-inst@idx` |
 | `${mod}` | `aw-inst@mod` |
 
-## 5. `aw-rewrite`
+## 5. `aw-rewrite` / `aw-connect` 连线
 
 | 属性 | 说明 |
 |---|---|
-| `match` | 必须；RegExp 源；应当 `^…$` |
+| `match` | rewrite 必须；RegExp 源；应当 `^…$` |
 | `flags` | 可选；默认 `""` |
-| `to` | 必须；替换串（捕获 + 变量） |
+| `to` | 必须；**净网名**；禁止 `[]` / part-select |
+| `packed` | 可选；默认 `auto`（跟端口 packed[/unpacked]）。多维用 RtlIndex 形 `[d0][d1]` |
+| `unpacked` | 可选；非打包维 |
+| `width` | 一维 packed 简写（`auto` \| `15:0`）；与 `packed` 冲突则报错 |
+| `part` | 可选；连线 part-select；省略 = 整网 |
+| `nettype` | 可选；`wire`\|`logic`；默认 dump `wire`（auto 时可继承端口） |
 
 ```html
 <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
-<aw-rewrite match="^slice_en$" to="slice_en_${idx}"></aw-rewrite>
-<aw-rewrite match="^slice_out_(.+)$" to="slice_${idx}_out_$1"></aw-rewrite>
-<aw-rewrite match="^dec_in_(?<rest>.+)$" to="mst_blk_reg_$<rest>"></aw-rewrite>
+<aw-rewrite match="^slice_en$" to="slice_en_${idx}" packed="auto"></aw-rewrite>
+<aw-rewrite match="^dec_in_(?<rest>.+)$" to="mst_blk_reg_$<rest>" packed="auto"></aw-rewrite>
+<aw-rewrite
+  match="^slice_data$"
+  to="slice_data_bus"
+  packed="15:0"
+  part="8*${idx}+7:8*${idx}"
+></aw-rewrite>
+<aw-connect
+  port="word"
+  to="mem"
+  packed="[31:0]"
+  unpacked="[0:255]"
+  part="[0]"
+></aw-connect>
 ```
 
-`net = port.replace(new RegExp(match, flags), to)`，再 `${…}` → `aw-connect`。
+`net = port.replace(…)` → `aw-connect`（继承维 / `part` / `nettype`）。  
+细则：[`connect-html.md`](./connect-html.md) §3.5.1–3.5.2。多维示例：[`examples/connect/04-author-multidim.html`](./examples/connect/04-author-multidim.html)。
 
 ## 6. Overwrite 速记
 
@@ -159,9 +178,13 @@ master_decoder #(.PIPE_NUM(master_cfg_wrap__u_decoder__PIPE_NUM)) u_decoder (…
 
 - 规则直接挂在 `aw-inst` 下  
 - 手写 uniquify `Mod__Inst__Param` 当作者 SoT  
-- 在 `aw-connect@to` / `aw-param@expr` / `aw-template@inst_name` 写正则捕获占位  
+- 在 `aw-connect@to` / `aw-param@expr` / `aw-template@inst_name` / `packed`/`width`/`unpacked`/`part` 写正则捕获占位  
+- 在 `to` 里夹 `[]` 或 part-select（用 `packed`/`unpacked`/`part`）  
+- 用 `width` 塞多维 / unpacked（多维必须用 `packed`/`unpacked`）  
 - 用 `$` 分隔 uniquify 名  
 - 静默覆盖同名 localparam / 信号  
 - 把宏或表达式当常量折叠  
 - 跨 `aw-mod` 引用 `aw-template`  
-- 同级 submods 环依赖或向后引用
+- 同级 submods 环依赖、向后引用、或引用旁系孙子（共享须上提）  
+- 跨 HTML 单元引用却未写入 toml `deps`（或 `deps` 成环）  
+- 在 `deps` 里挂死边却忽略警告（写了依赖、elaborate 未引用 → 应删边）

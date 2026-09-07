@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  渲染后示意：对应 04-author-multidim（非作者 SoT）。
+  aw-signal 使用 packed/unpacked；aw-connect 保留求值后的 part；默认 nettype=wire。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>04-rendered-multidim</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-mod name="mem_wrap">
+        <aw-content></aw-content>
+        <aw-submods></aw-submods>
+        <aw-render>
+          <aw-params>
+            <aw-param name="DEPTH" value="256"></aw-param>
+          </aw-params>
+          <aw-localparams></aw-localparams>
+          <aw-ports></aw-ports>
+          <aw-signals>
+            <aw-signal name="bank_0_rdata" packed="[63:0]" nettype="wire"></aw-signal>
+            <aw-signal name="bank_1_rdata" packed="[63:0]" nettype="wire"></aw-signal>
+            <aw-signal name="lane_matrix" packed="[7:0][3:0]" nettype="wire"></aw-signal>
+            <aw-signal
+              name="scratch_mem"
+              packed="[31:0]"
+              unpacked="[0:255]"
+              nettype="wire"
+            ></aw-signal>
+          </aw-signals>
+          <aw-insts>
+            <aw-inst id="u_bank_0" mod="mem_bank">
+              <aw-connect port="rdata" to="bank_0_rdata"></aw-connect>
+              <aw-connect port="lane" to="lane_matrix" part="[0]"></aw-connect>
+              <aw-connect port="word" to="scratch_mem" part="[0]"></aw-connect>
+            </aw-inst>
+            <aw-inst id="u_bank_1" mod="mem_bank">
+              <aw-connect port="rdata" to="bank_1_rdata"></aw-connect>
+              <aw-connect port="lane" to="lane_matrix" part="[1]"></aw-connect>
+              <aw-connect port="word" to="scratch_mem" part="[1]"></aw-connect>
+            </aw-inst>
+          </aw-insts>
+        </aw-render>
+      </aw-mod>
+    </autowire>
+  </body>
+</html>

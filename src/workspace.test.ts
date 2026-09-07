@@ -27,18 +27,52 @@ describe("workspace", () => {
 		expect(hdxmlArgs(cfg)).toEqual(["--xml", join(dir, ".autowire/hdxml")]);
 	});
 
-	test("[connect] html parses as a resolved path list", async () => {
-		const dir = tempWorkspace(
-			DEFAULT_TOML.replace(
-				'# html = ["connect/phy_wrap.html"]',
-				'html = ["connect/a.html", "connect/b.html"]',
-			),
-		);
+	test("[connect.<id>] parses html + deps and resolves paths", async () => {
+		const dir = tempWorkspace(`
+[connect.a]
+html = "connect/a.html"
+
+[connect.b]
+html = "connect/b.html"
+deps = ["a"]
+`);
 		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
-		expect(cfg.connectHtml).toEqual([
-			join(dir, "connect/a.html"),
-			join(dir, "connect/b.html"),
+		expect(cfg.connectUnits).toEqual([
+			{ id: "a", html: join(dir, "connect/a.html"), deps: [] },
+			{ id: "b", html: join(dir, "connect/b.html"), deps: ["a"] },
 		]);
+	});
+
+	test("flat [connect] html= list is rejected", async () => {
+		const dir = tempWorkspace('[connect]\nhtml = ["a.html"]\n');
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"flat [connect] html",
+		);
+	});
+
+	test("[connect.*] deps cycle is rejected", async () => {
+		const dir = tempWorkspace(`
+[connect.a]
+html = "a.html"
+deps = ["b"]
+[connect.b]
+html = "b.html"
+deps = ["a"]
+`);
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"cycle",
+		);
+	});
+
+	test("[connect.*] unknown deps id is rejected", async () => {
+		const dir = tempWorkspace(`
+[connect.a]
+html = "a.html"
+deps = ["missing"]
+`);
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"unknown id",
+		);
 	});
 
 	test("analysis.* mapping: valued defines -> -D, keep_raw -> --keep-raw, numbers stringified", async () => {

@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
-  渲染后示意：对应 01-author-simple 展开结果（实现目标，非作者 SoT）。
-  含 aw-localparams（Mod__Inst__Param）；rewrite 已落成 aw-connect。
+  渲染后示意：对应 01-author-simple（实现目标，非作者 SoT）。
+  packed=auto → aw-signal@packed；part 留在 aw-connect；无 aw-rewrite/aw-template。
 -->
 <html lang="zh-CN">
   <head>
@@ -47,10 +47,11 @@
           </aw-ports>
           <aw-signals>
             <aw-signal name="dfi_clk"></aw-signal>
-            <aw-signal name="mst_blk_reg_data" width="32"></aw-signal>
+            <aw-signal name="mst_blk_reg_data" packed="31:0"></aw-signal>
             <aw-signal name="slice_en_0"></aw-signal>
             <aw-signal name="slice_en_alt_1"></aw-signal>
             <aw-signal name="slice_1_dbg"></aw-signal>
+            <aw-signal name="slice_data_bus" packed="15:0"></aw-signal>
           </aw-signals>
           <aw-insts>
             <aw-inst id="u_decoder" mod="master_decoder">
@@ -62,12 +63,14 @@
               <aw-param name="SLICE_IDX" value="master_cfg_wrap__u_slice_0__SLICE_IDX"></aw-param>
               <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
               <aw-connect port="slice_en" to="slice_en_0"></aw-connect>
+              <aw-connect port="slice_data" to="slice_data_bus" part="7:0"></aw-connect>
             </aw-inst>
             <aw-inst id="u_slice_1" mod="test_slice">
               <aw-param name="SLICE_IDX" value="master_cfg_wrap__u_slice_1__SLICE_IDX"></aw-param>
               <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
               <aw-connect port="slice_en" to="slice_en_alt_1"></aw-connect>
               <aw-connect port="slice_dbg" to="slice_1_dbg"></aw-connect>
+              <aw-connect port="slice_data" to="slice_data_bus" part="15:8"></aw-connect>
             </aw-inst>
           </aw-insts>
         </aw-render>

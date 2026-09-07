@@ -1,6 +1,6 @@
 # Autowire 文档
 
-统一放在本目录。Agent 接手仍以 `bun index.ts help` 为准；**格式与实现约束**以本目录文档为准（改约定时同步改 help 摘要）。
+统一放在本目录。Agent 接手以 `bun index.ts help agent` 为准；命令总览 `bun index.ts help`。**格式与实现约束**以本目录文档为准（改约定时同步改 help 摘要）。
 
 | 文档 | 内容 | 状态 |
 |---|---|---|

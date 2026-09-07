@@ -75,9 +75,9 @@ autowire cli phy.html --dump gen/
 
 ## 4. 入口与阶段
 
-| | `autowire help` | `autowire web` | `autowire cli` |
+| | `autowire help` / `help agent` | `autowire web` | `autowire cli` |
 |---|---|---|---|
-| 作用 | Agent 接手说明（用法 + 思路） | 本机页渲染 | 后期无头 |
+| 作用 | 命令索引 / Agent 约定 | 本机页渲染 | 后期无头 |
 | 何时做 | **现在** | **现在** | 用例够了以后 |
 | 渲染 | — | 浏览器 | 无头，被测试锁死 |
 | Agent | 先跑这个再干活 | Playwright MCP | 无浏览器时直接出 RTL |

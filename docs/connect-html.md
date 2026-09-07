@@ -84,7 +84,8 @@
 ### 3.3 `<aw-submods>`（依赖）
 
 - 子级为嵌套 **`aw-mod`**，递归 elaboration。  
-- 除引用自身子树外，**同级** `aw-submods` 之间 **可以**互相引用，但 **必须**按文档定义顺序**向前引用**（后者可引用先声明者）；**禁止**环。
+- **可见性（单文件内）**：`aw-inst@mod` 只能解析到 RtlIndex 叶子、**本**模直接 `aw-submods` 孩子、或**同一父**下文档序更早的兄弟；**禁止**引用旁系的孙子（共享模须上提到平行层，即使本层不例化）。  
+- **禁止**环。跨 HTML 包级依赖见 toml `[connect.<id>] deps`（§6）。
 
 ### 3.4 `<aw-template>`（复用 + overwrite）
 
@@ -103,14 +104,14 @@
 <aw-template name="slice_template" inst_name="${id}_${idx}">
   <aw-param name="SLICE_IDX" expr="${idx}"></aw-param>
   <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
-  <aw-rewrite match="^slice_en$" to="slice_en_${idx}"></aw-rewrite>
-  <aw-rewrite match="^slice_out_(.+)$" to="slice_${idx}_out_$1"></aw-rewrite>
+  <aw-rewrite match="^slice_en$" to="slice_en_${idx}" packed="auto"></aw-rewrite>
+  <aw-rewrite match="^slice_out_(.+)$" to="slice_${idx}_out_$1" packed="auto"></aw-rewrite>
 </aw-template>
 
 <aw-inst id="u_slice" mod="test_slice" idx="1">
   <aw-template base="slice_template">
-    <aw-connect port="slice_dbg" to="slice_1_dbg"></aw-connect>
-    <aw-rewrite match="^slice_en$" to="slice_en_alt_${idx}"></aw-rewrite>
+    <aw-connect port="slice_dbg" to="slice_1_dbg" packed="auto"></aw-connect>
+    <aw-rewrite match="^slice_en$" to="slice_en_alt_${idx}" packed="auto"></aw-rewrite>
   </aw-template>
 </aw-inst>
 ```
@@ -132,10 +133,11 @@
 
 | 种类 | 写法 | 哪里可用 |
 |---|---|---|
-| 变量 / 上下文 | `` `${id}` `` `` `${idx}` `` `` `${mod}` ``、本模 param / 内部 localparam 名等 | `aw-template@inst_name`、`aw-param@expr`、`aw-connect@to`、`aw-rewrite@to` |
+| 变量 / 上下文 | `` `${id}` `` `` `${idx}` `` `` `${mod}` ``、本模 param / 内部 localparam 名等 | `aw-template@inst_name`、`aw-param@expr`、`aw-connect@to`、`aw-rewrite@to`、`packed`/`width`（非 `auto` 时）、`unpacked`、`part` |
 | 正则捕获 | `$1`、`$&`、`$<name>` | **仅** `aw-rewrite@to` |
 
-`aw-rewrite@to` 若同时含两类：**先** RegExp 替换，**再** `` `${…}` ``。
+`aw-rewrite@to` 若同时含两类：**先** RegExp 替换，**再** `` `${…}` ``。  
+`packed` / `width` / `unpacked` / `part`：**禁止**正则捕获；**禁止**把 `[]` / part-select 写进 `to` 名字里。
 
 | 绑定 | 含义 |
 |---|---|
@@ -151,26 +153,89 @@
 |---|---|---|
 | `match` | 是 | JS RegExp 源（对整个端口名；**应当**写 `^…$`） |
 | `flags` | 否 | 默认 `""` |
-| `to` | 是 | 替换串（捕获 + 变量；顺序见 §3.4.1） |
+| `to` | 是 | 替换得到的**净网名**（捕获 + 变量；顺序见 §3.4.1）；**禁止**夹带 `[]` / part-select |
+| `packed` / `width` | 否 | 见 §3.5.1；默认 `auto`（`width` = 一维 packed 简写） |
+| `unpacked` | 否 | 见 §3.5.1 |
+| `part` | 否 | 见 §3.5.1 |
+| `nettype` | 否 | 见 §3.5.2 |
 
 ```html
-<aw-rewrite match="^dec_in_(.+)$" to="mst_blk_reg_$1"></aw-rewrite>
-<aw-rewrite match="^slice_out_(?<suf>.+)$" to="slice_${idx}_out_$<suf>"></aw-rewrite>
+<aw-rewrite match="^dec_in_(.+)$" to="mst_blk_reg_$1" packed="auto"></aw-rewrite>
+<aw-rewrite match="^slice_out_(?<suf>.+)$" to="slice_${idx}_out_$<suf>" packed="auto"></aw-rewrite>
+<aw-rewrite
+  match="^slice_data$"
+  to="slice_data_bus"
+  packed="15:0"
+  part="8*${idx}+7:8*${idx}"
+></aw-rewrite>
 ```
 
-展开：`net = port.replace(new RegExp(match, flags), to)`，再做 `${…}` → `aw-connect`。未匹配则本条不连线。
+展开：`net = port.replace(new RegExp(match, flags), to)`，再做 `${…}` → `aw-connect`（带上求值后的维 / `part` / `nettype` 语义）。未匹配则本条不连线。
+
+### 3.5.1 `packed` / `unpacked` / `width` / `part`（声明维 vs 连线选位）
+
+`aw-connect` 与 `aw-rewrite` 共用。对齐 RtlIndex：`packed` / `unpacked` 分列（见 [`hdxml/rtlindex-xml.md`](./hdxml/rtlindex-xml.md)）。**不对齐** emacs 名字后缀 `signal[]`。
+
+| 属性 | 含义 | 落地 |
+|---|---|---|
+| `packed` | 打包维：`auto` \| 范围（`31:0`）\| 多维拼接（`[7:0][3:0]`，与 RtlIndex 同形） | → `aw-signal@packed` |
+| `unpacked` | 非打包维：同形（如 `[0:255]`、`[0:${N}-1]`） | → `aw-signal@unpacked` |
+| `width` | **一维 packed 简写**：`auto` \| `15:0`；等价于只写 `packed` 且无方括号多维 | → 同上 `packed` |
+| `part` | 本端口连到该网的 **part-select**（如 `8*${idx}+7:8*${idx}`） | 留在 render `aw-connect@part`；dump 成 `.port(net[…])` |
+
+规则：
+
+- **`to`**：只有网名（+ 变量插值）。  
+- **`packed` / `width` 省略**：视为 `auto`——从叶子端口 RtlIndex 抄 `packed`（及若有则 `unpacked`）；形参经 `Mod__Inst__Param` 改写。标量 → 可不写维。  
+- **`packed="auto"` / `width="auto"`**：同上。  
+- **多维**：**必须**用 `packed` / `unpacked`（RtlIndex 形）；不要把 unpack 维塞进 `width`。  
+- **`part` 省略**：整网连接。  
+- 维表达式与 `part` 用 §3.4.1 变量方言；**禁止** `$1` / `$<name>`。  
+- 同时写 `width` 与 `packed` 且不一致 → **报错**。
+
+冲突：
+
+| 情况 | 要求 |
+|---|---|
+| 同名 `aw-signal` 已有 `packed`/`unpacked`，与新来的不一致 | **报错** |
+| `part` 与已声明维明显冲突 | **报错** |
+| 有 `part`、信号尚不存在、且无法确定声明维 | **报错** |
+
+```html
+<!-- 全自动：跟端口 packed（及 unpacked） -->
+<aw-connect port="data" to="mst_data" packed="auto"></aw-connect>
+
+<!-- 一维简写 -->
+<aw-connect port="lane" to="bus" width="31:0" part="8*${idx}+7:8*${idx}"></aw-connect>
+
+<!-- 多维数组网 -->
+<aw-connect
+  port="word"
+  to="mem"
+  packed="[31:0]"
+  unpacked="[0:255]"
+  part="[0]"
+></aw-connect>
+```
+
+### 3.5.2 `nettype`（`wire` / `logic`）
+
+- dump 默认 **`wire`**（互联网）。  
+- `packed="auto"` 时 **可以**继承叶子端口 `dataType` 若为 `wire`/`logic`；否则用默认。  
+- 可选 `nettype="wire|logic"` 覆盖；**不是**必填。  
+- 自定义类型 / interface 不靠本属性（见 `aw-port` / RtlIndex `dataType`）。
 
 ### 3.6 其余标签
 
 | 标签 | 出现位置 | 关键属性 |
 |---|---|---|
-| `aw-param` | content / template；render params 与 inst 下 | `name`；作者面 `expr`（变量表达式；禁止正则捕获）；render 宜有 `value` |
+| `aw-param` | content / template；render params 与 inst 下 | `name`；作者面 `expr`；render 宜有 `value` |
 | `aw-localparam` | content 或 render 的 `aw-localparams` | 作者：`name`+`expr`；render：`name`+`value`，宜有 `folded` / `for-inst` / `for-param` |
-| `aw-port` | content 显式导出；render 导出结果 | `name`；`dir`（`input`/`output`/`inout`/`interface`）；可选 `width`；`dir="interface"` 时**必须** `interface=`，可选 `modport=` |
+| `aw-port` | content 显式导出；render 导出结果 | `name`；`dir`；可选维信息；`dir="interface"` 时**必须** `interface=`，可选 `modport=` |
 | `aw-inst` | content / render `aw-insts` | `id`；`mod`；可选 `idx` |
-| `aw-connect` | template 内 / render | `port`；`to`（变量表达式；禁止 `$1` / `$<name>`） |
-| `aw-rewrite` | 仅作者面 template 内 | `match` + `to`；可选 `flags` |
-| `aw-signal` | 仅 `aw-render` / `aw-signals` | `name`；可选 `width` |
+| `aw-connect` | template 内 / render | `port`；`to`；可选 `packed`/`width`/`unpacked`/`part`/`nettype`；render 宜保留求值后的 `part` |
+| `aw-rewrite` | 仅作者面 template 内 | `match` + `to`；可选 `flags` 与上列维/选位/`nettype` |
+| `aw-signal` | 仅 `aw-render` / `aw-signals` | `name`；可选 `packed`/`unpacked`/`nettype`（`width` 仅作一维简写输入，render **应当**规范成 `packed`） |
 
 ### 3.7 脚本
 
@@ -215,16 +280,15 @@
    求值本模内部 localparam 与例化 `aw-param`（常量 / 继承本模 param / 匹配本模内部 localparam → 折叠；表达式与宏不折）；求值 `inst_name`；写入 `aw-localparams`。  
 2. **展开 template**（`match`+`to` → connect）。  
 3. **底 → 顶（连线）**  
-   生成 `aw-connect`；宽度 deps 形参换成 `Mod__Inst__Param`；填 `aw-signals` / `aw-ports`（按 §4.1）；写 `aw-render`。  
+   生成 `aw-connect`；应用 `packed`/`unpacked`/`width`/`part`/`nettype`（§3.5.1–3.5.2）写入 `aw-signals`；宽度 deps 形参换成 `Mod__Inst__Param`；填 `aw-ports`（按 §4.1）；写 `aw-render`。  
 4. **递归** `aw-submods`（同级向前引用，§3.3）。  
 5. **生命周期钩子**（可选）：[`connect-lifecycle.md`](./connect-lifecycle.md)。
 
 ```text
-autowire.toml（.f + svh/宏 + [connect] html）
+autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
     →  hdxml → RtlIndex（只读）
-    →  作者 HTML（可多份互引）
-    →  elaboration → 各 aw-mod/aw-render
-    →  POST /api/dump（全部相关 aw-render）
+    →  按 deps 拓扑 elaborate（无边单元可并行）→ .autowire/connect/ 快照
+    →  POST /api/dump（读快照 / 全部相关 aw-render）
     →  autowire 写 .sv → DV
 ```
 
@@ -235,8 +299,11 @@ autowire.toml（.f + svh/宏 + [connect] html）
 | 规则 | 要求 |
 |---|---|
 | 跨 `aw-mod` 的 `aw-template` | **禁止**；各模自写 template |
-| 同级 `aw-submods` 互引 | **允许**；仅文档序向前引用；**禁止**环 |
-| 多份连接 HTML | **允许**互引（按模名 / toml 清单解析）；连线细节仍只在 HTML，不在 toml |
+| 同级 `aw-submods` 互引 | **仅前向**；**禁止**够旁系孙子；共享上提；**禁止**环 |
+| 多份连接 HTML | 必须在 `autowire.toml` 注册为 `[connect.<id>]`；跨单元引用 **必须**写在 `deps` 里，否则非法引用报错；`deps` 写了但未实际引用 → **警告**；`deps` 图无环；就绪单元可**并行** elaborate |
+| toml | **禁止**连线细节；只允许 `html` + `deps` |
+
+详见 [`workspace-toml.md`](./workspace-toml.md) §4.1。
 
 ## 7. 与 RtlIndex / 工作区
 
@@ -248,11 +315,13 @@ autowire.toml（.f + svh/宏 + [connect] html）
 
 | 文件 | 说明 |
 |---|---|
-| [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) | 完整骨架 |
-| [`examples/connect/01-rendered-simple.html`](./examples/connect/01-rendered-simple.html) | render 示意 |
+| [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) | 完整骨架；`packed=auto` / `part` 切片 |
+| [`examples/connect/01-rendered-simple.html`](./examples/connect/01-rendered-simple.html) | render 示意（含 `slice_data_bus` + `part`） |
 | [`examples/connect/02-author-nested.html`](./examples/connect/02-author-nested.html) | `aw-submods` 嵌套 |
-| [`examples/connect/03-author-template-reuse.html`](./examples/connect/03-author-template-reuse.html) | template 复用 / overwrite |
-| [`examples/connect/03-rendered-template-reuse.html`](./examples/connect/03-rendered-template-reuse.html) | 复用后 render |
+| [`examples/connect/03-author-template-reuse.html`](./examples/connect/03-author-template-reuse.html) | template 复用 / overwrite + `packed`/`part` |
+| [`examples/connect/03-rendered-template-reuse.html`](./examples/connect/03-rendered-template-reuse.html) | 复用后 render（共享 bus + part） |
+| [`examples/connect/04-author-multidim.html`](./examples/connect/04-author-multidim.html) | 多维：`packed` + `unpacked`；`packed=auto` |
+| [`examples/connect/04-rendered-multidim.html`](./examples/connect/04-rendered-multidim.html) | 多维 render 示意 |
 
 ## 9. 渲染生命周期
 

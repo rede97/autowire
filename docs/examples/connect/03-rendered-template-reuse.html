@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  渲染后示意：lane_tpl 已展开；id=u_lane0/u_lane1；无 aw-rewrite/aw-template。
+  渲染后示意：lane_tpl 已展开；共享 lane_data_bus + part；无 aw-rewrite/aw-template。
   禁止当作者 SoT。
 -->
 <html lang="zh-CN">
@@ -20,21 +20,21 @@
           <aw-localparams></aw-localparams>
           <aw-ports>
             <aw-port name="lane_clk" dir="input"></aw-port>
-            <aw-port name="lane_data" dir="inout" width="16"></aw-port>
+            <aw-port name="lane_data_bus" dir="inout" width="15:0"></aw-port>
           </aw-ports>
           <aw-signals>
             <aw-signal name="lane_clk"></aw-signal>
-            <aw-signal name="lane_data" width="16"></aw-signal>
+            <aw-signal name="lane_data_bus" packed="15:0"></aw-signal>
             <aw-signal name="lane_1_dbg"></aw-signal>
           </aw-signals>
           <aw-insts>
             <aw-inst id="u_lane0" mod="lane_slice">
               <aw-connect port="clk" to="lane_clk"></aw-connect>
-              <aw-connect port="data" to="lane_data"></aw-connect>
+              <aw-connect port="data" to="lane_data_bus" part="7:0"></aw-connect>
             </aw-inst>
             <aw-inst id="u_lane1" mod="lane_slice">
               <aw-connect port="clk" to="lane_clk"></aw-connect>
-              <aw-connect port="data" to="lane_data"></aw-connect>
+              <aw-connect port="data" to="lane_data_bus" part="15:8"></aw-connect>
               <aw-connect port="dbg" to="lane_1_dbg"></aw-connect>
             </aw-inst>
           </aw-insts>
