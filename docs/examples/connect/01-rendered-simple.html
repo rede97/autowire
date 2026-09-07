@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
-  渲染后示意：aw-render 已填满；template/rewrite 已展开。
-  禁止当作者 SoT。约束：docs/connect-html.md §4
+  渲染后示意：对应 01-author-simple 展开结果（实现目标，非作者 SoT）。
+  rewrite 已落成 aw-connect；无 aw-rewrite / aw-template。
 -->
 <html lang="zh-CN">
   <head>
@@ -11,9 +11,7 @@
   <body>
     <autowire>
       <aw-mod name="master_cfg_wrap">
-        <aw-content>
-          <!-- 作者声明可仍保留；dump 以 aw-render 为准 -->
-        </aw-content>
+        <aw-content></aw-content>
         <aw-submods></aw-submods>
         <aw-render>
           <aw-params>
@@ -27,7 +25,8 @@
           <aw-signals>
             <aw-signal name="dfi_clk"></aw-signal>
             <aw-signal name="mst_blk_reg_data" width="32"></aw-signal>
-            <aw-signal name="slice_en"></aw-signal>
+            <aw-signal name="slice_en_0"></aw-signal>
+            <aw-signal name="slice_en_alt_1"></aw-signal>
             <aw-signal name="slice_1_dbg"></aw-signal>
           </aw-signals>
           <aw-insts>
@@ -39,12 +38,12 @@
             <aw-inst id="u_slice_0" mod="test_slice">
               <aw-param name="SLICE_IDX" value="0"></aw-param>
               <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
-              <aw-connect port="slice_en" to="slice_en[0]"></aw-connect>
+              <aw-connect port="slice_en" to="slice_en_0"></aw-connect>
             </aw-inst>
             <aw-inst id="u_slice_1" mod="test_slice">
               <aw-param name="SLICE_IDX" value="1"></aw-param>
               <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
-              <aw-connect port="slice_en" to="slice_en[1]"></aw-connect>
+              <aw-connect port="slice_en" to="slice_en_alt_1"></aw-connect>
               <aw-connect port="slice_dbg" to="slice_1_dbg"></aw-connect>
             </aw-inst>
           </aw-insts>

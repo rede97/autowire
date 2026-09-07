@@ -23,10 +23,15 @@ test("每个切片都能独立打印", () => {
   expect(renderHelp("workspace")).toContain("autowire.toml");
   expect(renderHelp("workspace")).toContain("docs/workspace-toml.md");
   expect(renderHelp("connect")).toContain("aw-mod");
+  expect(renderHelp("connect")).toContain("docs/connect-rules.md");
   expect(renderHelp("connect")).toContain("docs/connect-html.md");
   expect(renderHelp("connect")).toContain("aw-content");
   expect(renderHelp("connect")).toContain("aw-render");
+  expect(renderHelp("connect")).toContain("overwrite");
   expect(renderHelp("connect")).toContain("aw-template");
+  expect(renderHelp("connect")).toContain("aw-rewrite");
+  expect(renderHelp("connect")).toContain("match");
+  expect(renderHelp("connect")).toContain("inst_name");
   expect(renderHelp("connect")).toContain("<autowire>");
   expect(renderHelp("dont")).toContain("autowire.toml");
   expect(renderHelp("web")).toContain("Playwright MCP");

@@ -1,8 +1,7 @@
 <!doctype html>
 <!--
-  作者面：aw-template 复用 + 例化 patch（取代 data-template clone）。
+  作者面：match+to 复用；以及 fn 复杂重命名示意。
   对应渲染：03-rendered-template-reuse.html
-  约束：docs/connect-html.md §3.4
 -->
 <html lang="zh-CN">
   <head>
@@ -18,8 +17,12 @@
           </aw-params>
           <aw-ports></aw-ports>
           <aw-templates>
-            <aw-template name="lane_tpl" inst_name_expr="${id}${idx}">
-              <aw-rewrite port="(.*)" to="lane_$1"></aw-rewrite>
+            <aw-template name="lane_tpl" inst_name="${id}${idx}">
+              <aw-rewrite match="^(.+)$" to="lane_$1"></aw-rewrite>
+            </aw-template>
+            <aw-template name="lane_fn_tpl" inst_name="${id}${idx}">
+              <!-- 复杂重命名走函数；match 作预过滤 -->
+              <aw-rewrite match="^dbg_" fn="laneDbgRename"></aw-rewrite>
             </aw-template>
           </aw-templates>
           <aw-insts>
@@ -27,10 +30,21 @@
               <aw-template base="lane_tpl"></aw-template>
             </aw-inst>
             <aw-inst id="u_lane" mod="lane_slice" idx="1">
-              <aw-template base="lane_tpl"></aw-template>
-              <aw-connect port="dbg" to="lane_1_dbg"></aw-connect>
+              <aw-template base="lane_tpl">
+                <aw-connect port="dbg" to="lane_1_dbg"></aw-connect>
+              </aw-template>
+            </aw-inst>
+            <aw-inst id="u_lane" mod="lane_slice" idx="2">
+              <aw-template base="lane_fn_tpl"></aw-template>
             </aw-inst>
           </aw-insts>
+          <script type="module">
+            // 示意：aw.js 提供 aw.rewrite.define
+            // aw.rewrite.define("laneDbgRename", (port, ctx) => {
+            //   if (!port.startsWith("dbg_")) return null;
+            //   return `lane_${ctx.idx}_${port}`;
+            // });
+          </script>
         </aw-content>
         <aw-submods></aw-submods>
         <aw-render>

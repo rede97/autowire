@@ -116,9 +116,10 @@ web 落地后怎么干活（连接）
 HTML 方言（连接 SoT）— 草稿
 
 完整约束与示例（后续实现必须遵守，先不要当已落地）：
-  docs/connect-html.md
+  docs/connect-html.md      （骨架 / 流水线）
+  docs/connect-rules.md     （template / rewrite / inst_name 细则小结）
   docs/examples/connect/
-  docs/workspace-toml.md   （.f / 宏；与连接衔接）
+  docs/workspace-toml.md    （.f / 宏；与连接衔接）
 
 两层，不要混
   aw-content（作者）   本模 param/port；aw-template；例化 + base/patch
@@ -126,7 +127,8 @@ HTML 方言（连接 SoT）— 草稿
   aw-submods           子 aw-mod 依赖（递归），与 content 内含分开
 
 打印机 / dump / golden 只认各 aw-mod 下的 aw-render，不认 content/templates 原文。
-静态规则对齐 emacs Verilog-mode 心智（rewrite、AUTO_TEMPLATE）；不对齐 emacs 进程。
+rewrite 按 Web 惯例：JS RegExp match + String.replace（$1 / $<name>），或 fn= 函数；
+不对齐 emacs []/@ 语法。inst_name 默认透传 \${id}。
 
 骨架
   <autowire>
@@ -137,14 +139,15 @@ HTML 方言（连接 SoT）— 草稿
     </aw-mod>
   </autowire>
 
-aw-template（类 style）
-  aw-templates 内 name= 定义；aw-inst 内 base= 引用
-  先展开 base，再应用例化子节点（patch；同 port 后写覆盖）
-  模板不进 dump；常规阵列优先 template，少用 script
+aw-template（类 style；aw-inst 下唯一规则容器）
+  库内 name= 定义；例化内只能放 aw-template（禁止直接挂 connect/rewrite）
+  overwrite：同一标签 <aw-template base>…子规则…</aw-template>（base 后再覆盖）
+  多模板组合：多个 aw-template 兄弟按序展开、后写覆盖（也允许）
+  inst_name 默认 \${id}；aw-rewrite match+to 或 fn=；模板不进 dump
 
 Elaboration
-  ① 顶→底 param  ② 展开 template+patch  ③ 底→顶连线写入 aw-render
-  宏（toml/.svh）≠ 模块 param；详见 docs/connect-html.md
+  ① 顶→底 param + inst_name  ② template/rewrite  ③ 底→顶写入 aw-render
+  细则速查 docs/connect-rules.md；全文 docs/connect-html.md
 `,
 
   web: `\

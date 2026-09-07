@@ -36,7 +36,7 @@ autowire.toml（.f + svh/宏）
     →  DV
 ```
 
-工作区配置：[`docs/workspace-toml.md`](docs/workspace-toml.md)。连接方言：[`docs/connect-html.md`](docs/connect-html.md)。
+工作区配置：[`docs/workspace-toml.md`](docs/workspace-toml.md)。连接方言：[`docs/connect-html.md`](docs/connect-html.md)。细则小结：[`docs/connect-rules.md`](docs/connect-rules.md)。
 
 打印机看的是 **script 跑完的 DOM**，不是源文件原文。
 
@@ -55,8 +55,9 @@ autowire.toml（.f + svh/宏）
 | 依赖 | — | `aw-submods` 嵌套子 `aw-mod`（递归） |
 
 - 根 `<autowire>`；每模：`aw-content` → `aw-submods` → `aw-render`
-- `aw-template`：定义一次、多实例复用，例化上可 patch（取代 data-template clone）
-- Elaboration：顶→底 param → 展开 template → 底→顶连线写入 `aw-render`
+- `aw-template`：`aw-inst` 下规则**必须**用其包裹；同标签 `base`+子规则 = overwrite；也可多个 template 组合
+- `aw-rewrite`：Web 向 `match`+`to`，或 `fn`——**不对齐** emacs `[]`/`@` 语法
+- Elaboration：顶→底 param → template/rewrite → 底→顶写入 `aw-render`
 - **先文档约束，未实现前不要假装能渲染或 dump**
 
 `autowire web [html]`：本机起服务，给人用有头浏览器，给 Agent 用无头。

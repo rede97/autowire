@@ -17,8 +17,10 @@
           <aw-templates></aw-templates>
           <aw-insts>
             <aw-inst id="u_b" mod="leaf_y">
-              <aw-connect port="clk" to="clk"></aw-connect>
-              <aw-connect port="data_i" to="b_data"></aw-connect>
+              <aw-template>
+                <aw-connect port="clk" to="clk"></aw-connect>
+                <aw-connect port="data_i" to="b_data"></aw-connect>
+              </aw-template>
             </aw-inst>
           </aw-insts>
         </aw-content>
@@ -30,8 +32,10 @@
               <aw-templates></aw-templates>
               <aw-insts>
                 <aw-inst id="u0" mod="leaf_x">
-                  <aw-connect port="clk" to="clk"></aw-connect>
-                  <aw-connect port="data_i" to="a_data"></aw-connect>
+                  <aw-template>
+                    <aw-connect port="clk" to="clk"></aw-connect>
+                    <aw-connect port="data_i" to="a_data"></aw-connect>
+                  </aw-template>
                 </aw-inst>
               </aw-insts>
             </aw-content>

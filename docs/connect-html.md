@@ -3,7 +3,8 @@
 > 状态：**草稿，先约束后实现**。禁止据此假装 `aw.js` / `web` / `dump` 已落地。  
 > 摘要切片：`bun index.ts help connect`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
-> 结构以 [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) 为准。
+> 结构以 [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) 为准。  
+> **细则速查**（template / rewrite / inst_name / overwrite）：[`connect-rules.md`](./connect-rules.md)。
 
 ## 1. 目标与边界
 
@@ -16,8 +17,8 @@
 
 打印机、`/api/dump`、Playwright golden **必须**只认各 `aw-mod` 下的 **`<aw-render>`**（或与之结构等价的快照），**禁止**把 `aw-content` / `aw-templates` 原文当 netlist。
 
-对齐：emacs Verilog-mode **心智**（rewrite 捕获、`@`、`[]`、AUTO_TEMPLATE 子集）。  
-不对齐：emacs 进程、平行连接 IR、连接专用 MCP。
+对齐：**Web 平台惯例**（JS `RegExp` + `String.replace`、具名捕获、可选 rename 函数）。  
+可借鉴 Verilog-mode「批量改名连线」的**意图**，**不对齐** emacs 的 `[]` / `@` / AUTO 替换语法，也不对齐 emacs 进程。
 
 ## 2. 两层，禁止混淆
 
@@ -73,70 +74,167 @@
 | `aw-params` | 本模参数模板 |
 | `aw-ports` | **显式要导出**的端口（不只是内部连线用到的信号） |
 | `aw-templates` | 具名连接规则库（类 stylesheet） |
-| `aw-insts` | 例化列表；`mod` **引用**已有模块名，**禁止**在此定义子模体 |
+| `aw-insts` | 例化列表；每个 `aw-inst` 下**只能**放 `aw-template`（`base` 或匿名）；`mod` 引用已有模块，**禁止**在此定义子模体 |
 
 ### 3.3 `<aw-submods>`（依赖）
 
 - 子级为嵌套 **`aw-mod`**，可再含 content / submods / render，**递归** elaboration。  
 - 表达的是模块依赖树，不是 content 里的「内含声明」。
 
-### 3.4 `<aw-template>`（类 style：复用 + patch）
+### 3.4 `<aw-template>`（类 style：复用 + overwrite）
+
+> 细则小结：[`connect-rules.md`](./connect-rules.md) §1–3、§6。
+
+例化下的连接规则（`aw-param` / `aw-connect` / `aw-rewrite`）**禁止**作为 `aw-inst` 的直接子节点，**必须**包在 **`<aw-template>`** 里。
+
+`aw-inst` 的作者面子节点 **只能**是一个或多个 `<aw-template>`（可匿名、可 `base`、可组合）。
+
+| 形式 | 写法 | 含义 |
+|---|---|---|
+| 具名引用 | `<aw-template base="…"></aw-template>` | 只用库模板 |
+| 匿名内联 | `<aw-template>…规则…</aw-template>` | 无 `name` / 无 `base`，规则全写里边 |
+| 同标签 overwrite | `<aw-template base="…">…额外规则…</aw-template>` | 先展开 `base`，再应用本标签子规则（**后写覆盖**） |
+| 多模板组合 | 多个 `<aw-template>` 兄弟 | 按文档序依次展开，后者覆盖前者 |
 
 **定义**（在 `aw-templates` 内）：
 
 ```html
-<aw-template name="slice_template" inst_name_expr="${id}_${idx}">
-  <aw-param name="SLICE_IDX" expr="$idx"></aw-param>
+<aw-template name="slice_template" inst_name="${id}_${idx}">
+  <aw-param name="SLICE_IDX" expr="${idx}"></aw-param>
   <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
-  <aw-rewrite port="slice_en" to="slice_en[${idx}]"></aw-rewrite>
-  <aw-rewrite port="slice_out_(.*)" to="slice_${idx}_out_$1[]"></aw-rewrite>
+  <aw-rewrite match="^slice_en$" to="slice_en_${idx}"></aw-rewrite>
+  <aw-rewrite match="^slice_out_(.+)$" to="slice_${idx}_out_$1"></aw-rewrite>
+  <aw-rewrite match="^slice_stat_(?<suf>.+)$" to="slice_${idx}_stat_$<suf>"></aw-rewrite>
 </aw-template>
 ```
 
-**引用**（在 `aw-inst` 内）：
+**引用 / 内联 / overwrite**（在 `aw-inst` 内）：
 
 ```html
+<aw-inst id="u_decoder" mod="master_decoder">
+  <aw-template>
+    <aw-param name="PIPE_NUM" expr="BUS_PIPE_NUM"></aw-param>
+    <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
+    <aw-rewrite match="^dec_in_(?<rest>.+)$" to="mst_blk_reg_$<rest>"></aw-rewrite>
+  </aw-template>
+</aw-inst>
+
 <aw-inst id="u_slice" mod="test_slice" idx="0">
   <aw-template base="slice_template"></aw-template>
 </aw-inst>
+
+<!-- 推荐：overwrite 写在同一个 aw-template 内 -->
 <aw-inst id="u_slice" mod="test_slice" idx="1">
+  <aw-template base="slice_template">
+    <aw-connect port="slice_dbg" to="slice_1_dbg"></aw-connect>
+    <aw-rewrite match="^slice_en$" to="slice_en_alt_${idx}"></aw-rewrite>
+  </aw-template>
+</aw-inst>
+
+<!-- 也可以：多个 aw-template 组合（后一个覆盖前一个） -->
+<aw-inst id="u_slice" mod="test_slice" idx="2">
   <aw-template base="slice_template"></aw-template>
-  <!-- patch：同 port 覆盖 base；新 port 追加 -->
-  <aw-connect port="slice_dbg" to="slice_1_dbg"></aw-connect>
+  <aw-template>
+    <aw-connect port="slice_dbg" to="slice_2_dbg"></aw-connect>
+  </aw-template>
 </aw-inst>
 ```
 
-规则（语义冻结）：
+#### `inst_name`（实例名表达式）
 
-1. 像 CSS：`name` 定义一次，多个 `aw-inst` 用 `base` 引用。  
-2. **应用顺序**：先展开 `base` 模板，再应用例化上的子节点（**patch**）。同 `port`（或同 `param@name`）**后写覆盖前写**；未冲突则合并。  
-3. 模板参数：`idx`、`id`、`mod` 及 `inst_name_expr` 中的占位（如 `${idx}`、`$idx`）在应用时绑定到该例化。  
-4. 若写了 `inst_name_expr`，渲染后实例名 **应当**按表达式生成（保证唯一）；作者面可保留相同 `id` + 不同 `idx` 作为模板槽。  
-5. 模板名默认在**本 `aw-mod` 的 `aw-content`** 内可见；跨 mod 复用另定（开放项）。  
-6. `aw-templates` / 定义侧 `aw-template` **禁止**作为 dump 语义来源；只进入 `aw-render`。
+- 出现在 **`aw-template`**（定义侧）或可被 patch 覆盖。  
+- 语义：求值后得到渲染实例名。  
+- **默认**：未写时等价于透传例化槽名，即 `inst_name="${id}"`（就是 `aw-inst@id`）。  
+- 表达式可用上下文绑定（§3.4.1）；例如 `${id}_${idx}` → `u_slice_0`。  
+- 作者面可多个 `aw-inst` 共用同一 `id`、靠不同 `idx` + `inst_name` 在 render 中得到唯一名。
 
-此模型 **取代**旧的 `data-template` + clone 假例化；不规则生成仍可用 script。
+#### 规则（template 复用）
 
-### 3.5 其余标签
+1. 像 CSS：`name` 定义一次，多个 `aw-inst` 用 `base` 引用；无 `name`、无 `base` 的为**匿名内联**。  
+2. `aw-inst` 下 **只允许** `aw-template` 子节点；**禁止**直接挂 `aw-param` / `aw-connect` / `aw-rewrite`。  
+3. **Overwrite**：同一 `<aw-template base>` 内的子规则，在 `base` 展开之后应用，同键后写覆盖。  
+4. **多模板组合**：同一 `aw-inst` 下多个 `aw-template` 按文档序展开，后者覆盖前者（与同标签 overwrite 等价，只是拆成多个标签）。  
+5. 模板名默认在本 `aw-mod` 的 `aw-content` 内可见。  
+6. 定义侧 `aw-templates` **禁止**进 dump；只进入 `aw-render`。
+
+### 3.4.1 上下文绑定（表达式共用）
+
+在 `inst_name`、`aw-rewrite@to`、`aw-param@expr` 等字符串中，**`${…}`** 表示上下文插值（类 JS 模板字面量占位，**不是** RegExp 替换）：
+
+| 绑定 | 含义 |
+|---|---|
+| `${id}` | 作者面 `aw-inst@id`（槽名） |
+| `${idx}` | `aw-inst@idx`（未写则为空或 `0`，实现钉死一种） |
+| `${mod}` | `aw-inst@mod` |
+
+另：`aw-rewrite@to` 中还可出现 **JS `String.replace` 捕获**（§3.5），与 `${…}` 可共存。推荐顺序：**先 RegExp `$1`/`$<name>`，再 `${id}` 等**（golden 锁死）。
+
+### 3.5 `<aw-rewrite>`（Web 匹配：RegExp + 可选函数）
+
+> 细则小结：[`connect-rules.md`](./connect-rules.md) §4–5。
+
+**不对齐** emacs `port=…_(.*) … $1[]` 方言。匹配与替换按浏览器 **`RegExp` + `String.prototype.replace`**。
+
+| 属性 | 必须 | 含义 |
+|---|---|---|
+| `match` | 字符串路径建议必填 | JS RegExp **源模式**（对整个端口名；作者 **应当**写 `^…$`） |
+| `flags` | 否 | RegExp flags，默认 `""`；常见 `i` |
+| `to` | 与 `fn` 互斥 | 替换串：`$1`、`$&`、`$<name>`（JS 标准）及 `${id}` 等上下文 |
+| `fn` | 与 `to` 互斥 | 具名 rename 函数；见下 |
+
+**字符串路径（默认）**
+
+```html
+<aw-rewrite match="^dec_clk$" to="dfi_clk"></aw-rewrite>
+<aw-rewrite match="^dec_in_(.+)$" to="mst_blk_reg_$1"></aw-rewrite>
+<aw-rewrite match="^slice_out_(?<suf>.+)$" to="slice_${idx}_out_$<suf>"></aw-rewrite>
+```
+
+展开：对叶子端口名 `p`，`net = p.replace(new RegExp(match, flags), to)`，再做 `${…}` 插值 → `aw-connect port="p" to="net"`。未匹配则本条不连线。
+
+**同一 `aw-template` 展开列表内**：多条 rewrite / connect 对同一 `port` **后写覆盖**。
+
+**函数路径（复杂重命名）**
+
+```html
+<script type="module">
+  aw.rewrite.define("sliceBus", (port, ctx) => {
+    const m = /^slice_out_(.+)$/.exec(port);
+    if (!m) return null;
+    return `slice_${ctx.idx}_out_${m[1]}`;
+  });
+</script>
+<aw-rewrite match="^slice_out_" fn="sliceBus"></aw-rewrite>
+```
+
+- `fn`：已注册名，或 `./file.js#exportName`（同页模块；**禁止**对外网 `fetch`）。  
+- 签名：`(port: string, ctx: { id, idx, mod, instName }) => string | null`  
+  - `string` = net 名；`null` = 本规则跳过该端口。  
+- `to` 与 `fn` **互斥**。  
+- 有 `match` 时先预过滤；仅有 `fn` 时可对例化全部端口调用。
+
+**显式 `aw-connect`** 与 rewrite 冲突时：按展开列表 **后写覆盖**（与上一致）。
+
+### 3.6 其余标签
 
 标签小写；属性加引号。
 
 | 标签 | 出现位置 | 关键属性 |
 |---|---|---|
-| `aw-param` | params / template / inst | `name`；作者面 `expr`；渲染后宜有 `value` |
+| `aw-param` | params / template | `name`；作者面 `expr`；渲染后宜有 `value` |
 | `aw-port` | content 显式导出；render 导出结果 | `name`；`dir`；可选 `width` |
-| `aw-inst` | content `aw-insts`；render `aw-insts` | `id`；`mod`；可选 `idx` |
-| `aw-connect` | template / inst / render | `port`；`to` |
-| `aw-rewrite` | 仅作者面（template / inst patch） | `port`（匹配）；`to`（替换） |
-| `aw-signal` | 仅 `aw-render` / `aw-signals` | `name`；可选 `width`（本层内部 net） |
+| `aw-inst` | content / render `aw-insts` | `id`；`mod`；可选 `idx` |
+| `aw-connect` | 仅 template 内 / render | `port`；`to` |
+| `aw-rewrite` | 仅作者面 template 内 | `match`；`to` **或** `fn`；可选 `flags` |
+| `aw-signal` | 仅 `aw-render` / `aw-signals` | `name`；可选 `width` |
 
-### 3.6 脚本
+### 3.7 脚本
 
-- `<script type="module">` **可以**放在 `aw-content` 内做不规则生成。  
+- `<script type="module">` **可以**注册 `aw.rewrite.define` 或做不规则生成。  
 - **必须**只用 DOM / `aw.*`；**禁止** layout / 对外 `fetch`。  
-- 常规阵列 **应当**优先 `aw-template`，不要先上 script。
+- 常规改名 **应当**优先 `match`+`to`；复杂逻辑再用 `fn`。
 
-### 3.7 可访问性
+### 3.8 可访问性
 
 节点 **应当**带可访问名字（`name` / `id`），便于 Playwright snapshot。
 
@@ -158,12 +256,12 @@
 ### 5.1 引擎顺序（语义冻结）
 
 1. **顶 → 底（param）**  
-   绑定/求值 `aw-param`（本模 → 例化 → template 内 param）；再应用 `inst_name_expr`。  
+   绑定/求值 `aw-param`；求值 `inst_name`（默认 `${id}`）。  
 2. **展开 template**  
-   对每个 `aw-inst`：`base` 展开 + 本地 patch。  
+   `base` + 内联/patch；展开 `aw-rewrite`（`match`+`to` 或 `fn`）。  
 3. **底 → 顶（连线）**  
-   叶子端口表展开 rewrite → `aw-connect`；填 `aw-signals` / 导出 `aw-ports`；写入本模 `aw-render`。  
-4. **递归** `aw-submods` 中子 `aw-mod`（同样 1–3）。
+   生成 `aw-connect`；填 `aw-signals` / 导出 `aw-ports`；写入 `aw-render`。  
+4. **递归** `aw-submods`。
 
 边界：宏（toml / `.svh`）≠ 模块 param；连接顶不必是全芯片 RTL top。
 
@@ -200,7 +298,7 @@ autowire.toml（.f + svh/宏）
 | [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) | 完整骨架：content / templates / insts / submods / render 槽 |
 | [`examples/connect/01-rendered-simple.html`](./examples/connect/01-rendered-simple.html) | 上例 `aw-render` 示意（实现目标） |
 | [`examples/connect/02-author-nested.html`](./examples/connect/02-author-nested.html) | `aw-submods` 嵌套依赖 |
-| [`examples/connect/03-author-template-reuse.html`](./examples/connect/03-author-template-reuse.html) | template 复用 + patch |
+| [`examples/connect/03-author-template-reuse.html`](./examples/connect/03-author-template-reuse.html) | `match`+`to` 复用 / patch，以及 `fn` 示意 |
 | [`examples/connect/03-rendered-template-reuse.html`](./examples/connect/03-rendered-template-reuse.html) | 复用展开后的 render 示意 |
 
 ## 8. 开放项（实现前裁定）
@@ -208,7 +306,8 @@ autowire.toml（.f + svh/宏）
 1. 未在 `aw-ports` 声明、但被连线用到的信号：是否自动升为导出 port，还是只进 `aw-signals`？  
 2. `aw-param@expr` → `value`：常量折叠 vs 原文透传进 SV？  
 3. dump：序列化顶层 `aw-render` 子树 vs 含全部嵌套 render？  
-4. 跨 `aw-mod` 引用 `aw-template` 是否允许？  
-5. 工作区 toml 开放项见 [`workspace-toml.md`](./workspace-toml.md) §6。
+4. 跨 `aw-mod` 引用 `aw-template` / `aw.rewrite` 函数是否允许？  
+5. overwrite：同标签内「base + 子规则」与「多 template 兄弟」两种都允许；禁止规则直接挂在 `aw-inst` 下。  
+6. 工作区 toml 开放项见 [`workspace-toml.md`](./workspace-toml.md) §6。
 
 裁定后改本文 + `help connect`，再动代码。
