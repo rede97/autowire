@@ -276,7 +276,6 @@ Do not
 
   connectivity SoT in XML / one-file-per-level files (RtlIndex XML is an index, not connectivity)
   connection-specific MCP (outline, apply, rewrite, …)
-  mcp / run / repl as the main entry
   browser writing the workspace directly
   build cli before Web cases
   two wiring semantics (Web and cli must share aw.js + goldens)

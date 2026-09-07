@@ -45,7 +45,6 @@ autowire.toml（.f + svh/宏）
 
 - 连接关系用 XML / 一层一份文件当 SoT（RtlIndex XML 是只读索引，不是连接 SoT）
 - 连接专用 MCP（`outline`、`apply`、`rewrite`…）
-- `mcp` / `run` / `repl` 当主入口
 - 浏览器直接写工作区
 - 先做 cli 再补 Web 用例
 - 两套连线语义（Web 与 cli 必须同一 `aw.js` + 同一 golden）
