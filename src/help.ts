@@ -281,8 +281,6 @@ Do not
   two wiring semantics (Web and cli must share aw.js + goldens)
   copy a per-chip connect prompt (edit this help instead)
   make README a second contract without updating help
-  put docs back under hdxml/docs/ (keep docs/)
-  put connectivity into autowire.toml (toml is project config only)
 `,
 };
 
