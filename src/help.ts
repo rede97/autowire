@@ -80,6 +80,9 @@ analysis with mapped args (contract: docs/workspace-toml.md):
   [analysis.defines] NAME="v" -> -D NAME=v  (expanding macros only)
   [analysis] keep_raw = [...] -> --keep-raw (raw macros; empty-string convention removed)
   [analysis.index] dir -> --xml (default .autowire/hdxml under workspace root)
+  [hdxml] bin -> binary path only (not an hdxml arg; must exist if set)
+hdxml binary lookup: --hdxml > toml [hdxml] bin > $HDXML_BIN
+  > repo hdxml/target/{release,debug} > PATH
 hdxml never reads the toml itself; autowire maps and passes everything.
 Macro scope: toml/CLI defines are a uniform pre_defines seed for every file;
 per-file \`define does not leak across files (each file preprocessed independently).
@@ -118,6 +121,7 @@ Workspace config autowire.toml (landed: init / analysis; see help analysis)
 Full constraints: docs/workspace-toml.md
 
 One top-level config shared by deps / web / cli for the RTL universe:
+  [hdxml] bin = hdxml binary path (unset: --hdxml > $HDXML_BIN > repo target > PATH)
   source entry .f (and walk/sources)
   [connect] html = [...] connect HTML file list (paths only; no top, no wiring details)
   macros: defines + define .svh (aligns with hdxml --define-headers)

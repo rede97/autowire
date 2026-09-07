@@ -14,7 +14,7 @@ fn main() -> Result<()> {
         .num_threads(threads)
         .stack_size(cli.stack_size * 1024 * 1024)
         .build()
-        .context("线程池初始化失败")?;
+        .context("thread pool init failed")?;
     let pc = ProgressCenter::new();
 
     cmd_analysis(&cli.analysis, &pool, &pc)
@@ -48,15 +48,15 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
     }
     let files = fs.files;
     if files.is_empty() {
-        anyhow::bail!("输入集合为空（-f/-s/-w 至少需要一项）");
+        anyhow::bail!("input set is empty (need at least one of -f/-s/-w)");
     }
-    pc.println(&format!("输入文件: {}", files.len()));
+    pc.println(&format!("input files: {}", files.len()));
 
     let db = db::analyze_files(&files, &defines, &a.input.incdirs, pool, &pc, a.sub_bars)?;
 
     // 摘要
     pc.println(&format!(
-        "模块: {}  顶层: {}  黑盒: {}  错误文件: {}",
+        "modules: {}  tops: {}  blackbox: {}  error files: {}",
         db.defs.len(),
         db.tops.len(),
         db.undef.len(),
@@ -84,7 +84,7 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
     if let Some(dir) = &a.xml {
         let stats = XmlExport::new(&db, &files, &define_pairs).write(dir)?;
         pc.println(&format!(
-            "XML 已写入: {}（文件 {}，模块 {}）",
+            "XML written: {} (files {}, modules {})",
             dir.display(),
             stats.files,
             stats.modules

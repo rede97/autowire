@@ -1,0 +1,20 @@
+# autowire workspace config (contract: docs/workspace-toml.md)
+# This repo's own workspace: RtlIndex over the hdxml test sample (common_cells).
+# Refresh via ./gen_index.sh (calls `bun index.ts analysis`).
+
+[hdxml]
+# hdxml binary path (relative to this file). Unset = default lookup:
+# --hdxml CLI > $HDXML_BIN > repo hdxml/target/{release,debug} > PATH
+# bin = "hdxml/target/release/hdxml"
+
+[analysis.rtl]
+walk_dirs = ["hdxml/tests/projects/common_cells/src"]
+incdirs = ["hdxml/tests/projects/common_cells/include"]
+exclude_filenames = []
+
+[analysis.defines]
+# With value = expand (same as -D); raw macros go to [analysis] keep_raw
+
+[analysis.index]
+# RtlIndex XML dir; fixed generated temp dir (deletable)
+dir = ".autowire/hdxml"

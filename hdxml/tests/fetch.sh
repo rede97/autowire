@@ -11,12 +11,12 @@ fetch() {
     name=$1; url=$2; branch=$3; dest=$4; shift 4
     # 剩余参数: sparse 路径
     if [ -d "$dest/.git" ]; then
-        echo "== $name: 已存在，跳过（删除后重拉）"
+        echo "== $name: already present, skipping (delete to re-fetch)"
         return 0
     fi
     echo "== $name -> $dest"
     if ! git clone -q --depth 1 --filter=blob:none --sparse --branch "$branch" "$url" "$dest"; then
-        echo "!! $name 克隆失败" >&2
+        echo "!! $name clone failed" >&2
         return 1
     fi
     (cd "$dest" && git sparse-checkout set "$@" >/dev/null 2>&1)
@@ -71,15 +71,15 @@ else
             veer-el2)     project veer-el2     https://github.com/chipsalliance/Cores-VeeR-EL2.git main design ;;
             opentitan)    project opentitan    https://github.com/lowRISC/opentitan.git         master \
                               hw/ip/uart hw/ip/tlul hw/ip/prim ;;
-            *) echo "未知目标: $t（可选: $targets_corpus $targets_projects）" >&2; exit 2 ;;
+            *) echo "unknown target: $t (choices: $targets_corpus $targets_projects)" >&2; exit 2 ;;
         esac
     done
 fi
 
 echo
-echo "== 完成，统计:"
+echo "== done, stats:"
 for d in "$ROOT/corpus"/* "$ROOT/projects"/*; do
     [ -d "$d" ] || continue
     n=$(find "$d" -name '*.sv' -o -name '*.v' -o -name '*.svh' 2>/dev/null | wc -l)
-    printf '   %-40s %s 个 SV 相关文件\n' "${d#"$ROOT"/}" "$n"
+    printf '   %-40s %s SV-related files\n' "${d#"$ROOT"/}" "$n"
 done

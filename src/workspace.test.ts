@@ -86,6 +86,23 @@ DEPTH = 16
 		);
 	});
 
+	test("[hdxml] bin resolves against the workspace root; unset is null", async () => {
+		const withBin = tempWorkspace('[hdxml]\nbin = "tools/hdxml"\n');
+		const cfg = await loadWorkspace(join(withBin, "autowire.toml"));
+		expect(cfg.hdxmlBin).toBe(join(withBin, "tools/hdxml"));
+		const without = tempWorkspace("[analysis.rtl]\n");
+		expect(
+			(await loadWorkspace(join(without, "autowire.toml"))).hdxmlBin,
+		).toBeNull();
+	});
+
+	test("[hdxml] bin must be a string", async () => {
+		const dir = tempWorkspace("[hdxml]\nbin = 42\n");
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"[hdxml] bin",
+		);
+	});
+
 	test("findWorkspace searches upward from a subdirectory", () => {
 		const dir = tempWorkspace("[analysis.rtl]\n");
 		mkdirSync(join(dir, "a/b"), { recursive: true });

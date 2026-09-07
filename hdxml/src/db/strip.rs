@@ -173,7 +173,7 @@ endmodule
         let defines: sv_parser::Defines = Default::default();
         let (tree, _) =
             sv_parser::parse_sv_str(&stripped, "<test>", &defines, &[] as &[&std::path::Path], false, false)
-                .expect("剥离后解析失败");
+                .expect("parse failed after stripping");
         // 解析树文本与剥离结果一致（span 基准）
         let _ = tree;
         assert_eq!(stripped.len(), src.len());

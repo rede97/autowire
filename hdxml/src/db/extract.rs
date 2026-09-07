@@ -582,7 +582,7 @@ impl<'a> Extractor<'a> {
         let span = m.win.span();
         if span[1] > self.src.len() {
             eprintln!(
-                "警告: 模块 {} span {:?} 超出预处理后文本长度 {}",
+                "warning: module {} span {:?} exceeds preprocessed text length {}",
                 m.name,
                 span,
                 self.src.len()
@@ -654,9 +654,9 @@ mod tests {
         let defines = HashMap::new();
         let (pp, pp_defines) =
             sv_parser::preprocess(&path, &defines, &[] as &[&Path], false, false)
-                .expect("测试源预处理失败");
+                .expect("test source preprocess failed");
         let pp_text = pp.text().to_string();
-        let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false).expect("测试源解析失败");
+        let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false).expect("test source parse failed");
         let mods = Extractor::new(&pp_text).run(&tree);
         (mods, pp_text)
     }
@@ -671,7 +671,7 @@ mod tests {
         assert_eq!(
             short_hash(slice.as_bytes()),
             m.content_hash,
-            "span 切片哈希必须等于 content_hash；slice={slice:?}"
+            "span slice hash must equal content_hash; slice={slice:?}"
         );
     }
 
@@ -731,8 +731,8 @@ endmodule
         let b = "module m(\n  input   logic [7:0] d\n);\nendmodule\n";
         let c = "module m(input logic [8:0] d);\nendmodule\n";
         let sig = |s: &str| extract_src("sig", s).0[0].interface_sig.clone();
-        assert_eq!(sig(a), sig(b), "空白差异不应改变签名");
-        assert_ne!(sig(a), sig(c), "位宽差异必须改变签名");
+        assert_eq!(sig(a), sig(b), "whitespace differences must not change the signature");
+        assert_ne!(sig(a), sig(c), "width differences must change the signature");
     }
 
     #[test]
@@ -747,25 +747,25 @@ endmodule
             crate::db::build_defines(&[], &[], &["WIDTH".to_string()], &[]).unwrap();
         let (pp, pp_defines) =
             sv_parser::preprocess(&path, &defines, &[] as &[&Path], false, false)
-                .expect("预处理失败");
+                .expect("preprocess failed");
         let pp_text = pp.text().to_string();
         assert!(
             pp_text.contains(crate::db::MACRO_RAW_PREFIX),
-            "预处理文本必须含哨兵: {pp_text}"
+            "preprocessed text must contain the sentinel: {pp_text}"
         );
-        let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false).expect("解析失败");
+        let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false).expect("parse failed");
         let mods = Extractor::new(&pp_text).run(&tree);
         let p = &mods[0].ports[0];
         assert_eq!(
             p.packed[0].text,
             format!("{}-1:0", crate::db::MACRO_RAW_PREFIX.to_string() + "WIDTH"),
-            "维度必须保留哨兵: {:?}",
+            "dimension must keep the sentinel: {:?}",
             p.packed[0].text
         );
         assert_eq!(
             p.packed[0].deps,
             vec![format!("{}WIDTH", crate::db::MACRO_RAW_PREFIX)],
-            "deps 必须含哨兵名"
+            "deps must contain the sentinel name"
         );
     }
 }

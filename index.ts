@@ -17,10 +17,15 @@ import {
 	loadWorkspace,
 } from "./src/workspace.js";
 
-/** Resolve hdxml binary: --hdxml > $HDXML_BIN > repo target/{release,debug} > PATH */
-function findHdxml(explicit?: string): string {
+/** Resolve hdxml binary: --hdxml > toml [hdxml] bin > $HDXML_BIN > repo target/{release,debug} > PATH */
+function findHdxml(explicit?: string, tomlBin?: string | null): string {
+	if (tomlBin && !existsSync(tomlBin)) {
+		console.error(`autowire.toml: [hdxml] bin not found: ${tomlBin}`);
+		process.exit(1);
+	}
 	const candidates = [
 		explicit,
+		tomlBin ?? undefined,
 		process.env.HDXML_BIN,
 		join(import.meta.dir, "hdxml/target/release/hdxml"),
 		join(import.meta.dir, "hdxml/target/debug/hdxml"),
@@ -166,7 +171,7 @@ program
 			const args = hdxmlArgs(cfg);
 			if (opts.subBars) args.push("--sub-bars");
 			const proc = Bun.spawnSync({
-				cmd: [findHdxml(opts.hdxml), ...args],
+				cmd: [findHdxml(opts.hdxml, cfg.hdxmlBin), ...args],
 				stdout: "inherit",
 				stderr: "inherit",
 			});

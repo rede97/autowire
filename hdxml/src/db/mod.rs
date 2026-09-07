@@ -397,7 +397,7 @@ pub fn build_defines(
         // 头文件可再 `include 其他头文件：与源文件分析共用同一组 -I 搜索路径
         // （注意 sv_parser::preprocess 形参序为 strip_comments, ignore_include，与 preprocess_str 相反）
         let (_, hdr_defs) = sv_parser::preprocess(h, &defines, incdirs, true, false)
-            .map_err(|e| anyhow::anyhow!("define header 预处理失败 {}: {}", h.display(), e))?;
+            .map_err(|e| anyhow::anyhow!("define header preprocess failed {}: {}", h.display(), e))?;
         for (name, def) in hdr_defs {
             if name.starts_with("SV_COV") {
                 continue;
@@ -460,14 +460,14 @@ pub fn analyze_files(
                 // PreprocessedText（parse_sv_str 会二次预处理，宏文本再展开导致 locate 漂移）。
                 // SyntaxTree.text 私有，提取器用同字节副本。
                 let raw = std::fs::read_to_string(path)
-                    .map_err(|e| FileError::new(format!("读取失败: {e}")))?;
+                    .map_err(|e| FileError::new(format!("read failed: {e}")))?;
                 let stripped = strip::strip_specify_blocks(&raw);
                 let (pp, pp_defines) =
                     sv_parser::preprocess_str(&stripped, path, defines, incdirs, false, false, 0, 0)
-                        .map_err(|e| FileError::new(format!("预处理失败: {e}")))?;
+                        .map_err(|e| FileError::new(format!("preprocess failed: {e}")))?;
                 let src = pp.text().to_string();
                 let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false).map_err(|e| {
-                    FileError::located(format!("解析失败: {e}"), &format!("{e:?}"), &src)
+                    FileError::located(format!("parse failed: {e}"), &format!("{e:?}"), &src)
                 })?;
                 let mut mods = extract::Extractor::new(&src).run(&tree);
                 for m in &mut mods {
@@ -481,7 +481,7 @@ pub fn analyze_files(
                         if let Some(prev) = collected.insert(m.name.clone(), m) {
                             errors.entry(path.clone()).or_default().push(FileError::new(
                                 format!(
-                                    "模块重复定义: {}（另见 {}）",
+                                    "module redefined: {} (also see {})",
                                     prev.name,
                                     prev.file.display()
                                 ),
@@ -551,13 +551,13 @@ mod tests {
         assert_eq!(
             w.text.as_ref().unwrap().text,
             format!("{MACRO_RAW_PREFIX}WIDTH"),
-            "keep_raw 必须覆盖 -D 展开值"
+            "keep_raw must override the -D expanded value"
         );
         assert!(defs.get("DEPTH").unwrap().is_some());
         assert_eq!(
             defs.get("SYNTH").unwrap().as_ref().unwrap().text.as_ref().unwrap().text,
             "1",
-            "裸名 -D 仍按 EDA 惯例展开为 1"
+            "bare -D NAME still expands to 1 per EDA convention"
         );
     }
 
@@ -579,11 +579,11 @@ mod tests {
         let text = pp.text();
         assert!(
             text.contains(&format!("{MACRO_RAW_PREFIX}WIDTH")),
-            "raw 宏必须展开为哨兵占位符: {text}"
+            "raw macro must expand to the sentinel placeholder: {text}"
         );
         assert!(
             text.contains("localparam int K"),
-            "`ifdef 对 keep_raw 宏必须判真: {text}"
+            "`ifdef on a keep_raw macro must stay true: {text}"
         );
     }
 
@@ -605,7 +605,7 @@ mod tests {
         .unwrap();
         assert!(
             pp.text().contains(&format!("{MACRO_RAW_PREFIX}H_MIN(3, 5)")),
-            "实参表必须原样接回: {}",
+            "actual args must be appended verbatim: {}",
             pp.text()
         );
     }
@@ -623,15 +623,15 @@ mod tests {
         assert_eq!(
             w.text.as_ref().unwrap().text,
             format!("{MACRO_RAW_PREFIX}H_WIDTH"),
-            "header 宏必须默认转哨兵"
+            "header macros must default to sentinel"
         );
         let m = defs.get("H_MIN").unwrap().as_ref().unwrap();
         assert_eq!(
             m.text.as_ref().unwrap().text,
             format!("{MACRO_RAW_PREFIX}H_MIN(a,b)"),
-            "带参宏哨兵必须保留形参表"
+            "sentinel of a parameterized macro must keep the formal list"
         );
-        assert_eq!(m.arguments.len(), 2, "形参必须保留（pp 实参替换依赖）");
+        assert_eq!(m.arguments.len(), 2, "formals must be kept (pp actual substitution relies on them)");
 
         // -D 显式给值 → 覆盖 header 哨兵，真展开
         let defs =
@@ -669,7 +669,7 @@ mod tests {
         assert!(build_defines(&[], std::slice::from_ref(&hdr), &[], &[]).is_err());
         // 有 -I：两个头文件的宏都登记（默认哨兵）
         let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[inc]).unwrap();
-        assert!(defs.contains_key("BASE_W"), "include 进来的宏必须登记");
+        assert!(defs.contains_key("BASE_W"), "macros from `include must be registered");
         assert!(defs.contains_key("TOP_W"));
     }
 }

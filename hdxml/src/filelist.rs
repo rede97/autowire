@@ -24,7 +24,7 @@ pub enum FileEntry {
 impl FileList {
     pub fn from_file<P: AsRef<Path>>(p: P) -> Result<Self> {
         let content = std::fs::read_to_string(p.as_ref())
-            .with_context(|| format!("读取 filelist 失败: {}", p.as_ref().display()))?;
+            .with_context(|| format!("failed to read filelist: {}", p.as_ref().display()))?;
         Ok(Self { content, idx: 0 })
     }
 
@@ -56,7 +56,7 @@ impl FileList {
             match seg.strip_prefix('$') {
                 Some(var) => {
                     let val = env::var(var)
-                        .map_err(|_| anyhow!("filelist 中环境变量 `${var}` 未定义"))?;
+                        .map_err(|_| anyhow!("environment variable `${var}` in filelist is not defined"))?;
                     out.push(val);
                 }
                 None => out.push(seg),
@@ -120,7 +120,7 @@ impl FilesSet {
         for s in &input.sources {
             let c = s
                 .canonicalize()
-                .with_context(|| format!("源文件不存在: {}", s.display()))?;
+                .with_context(|| format!("source file not found: {}", s.display()))?;
             files.insert(c);
         }
         let exclude: HashSet<&str> = input.exclude_filenames.iter().map(String::as_str).collect();
@@ -146,7 +146,7 @@ impl FilesSet {
                     // 与分析器共享纯源码 rtl.f）。
                     if s.extension().and_then(|e| e.to_str()) == Some("svh") {
                         warnings.push(format!(
-                            "filelist {}: 跳过 .svh 条目 {}（宏头文件请用 --define-headers 或源内 `include）",
+                            "filelist {}: skipping .svh entry {} (macro headers belong in --define-headers or in-source `include)",
                             p.display(),
                             s.display()
                         ));
@@ -154,7 +154,7 @@ impl FilesSet {
                     }
                     let c = s
                         .canonicalize()
-                        .with_context(|| format!("filelist 中的文件不存在: {}", s.display()))?;
+                        .with_context(|| format!("file in filelist not found: {}", s.display()))?;
                     files.insert(c);
                 }
             }
@@ -164,7 +164,7 @@ impl FilesSet {
 
     fn walk_directory(files: &mut HashSet<PathBuf>, dir: &Path) -> Result<()> {
         for entry in WalkDir::new(dir).follow_links(false) {
-            let entry = entry.with_context(|| format!("遍历目录失败: {}", dir.display()))?;
+            let entry = entry.with_context(|| format!("failed to walk dir: {}", dir.display()))?;
             let p = entry.path();
             if !p.is_file() {
                 continue;
@@ -187,7 +187,7 @@ mod tests {
             let entries = parse_lines(&format!("sub/defs.{ext}\n"));
             assert!(
                 matches!(&entries[0], Ok(FileEntry::Nested(_))),
-                ".{ext} 必须按后缀推断为嵌套列表"
+                ".{ext} must be inferred as a nested list by extension"
             );
         }
     }
@@ -203,7 +203,7 @@ mod tests {
         let entries = parse_lines("/tmp/ws/rtl/top.sv\n");
         assert!(
             matches!(&entries[0], Ok(FileEntry::Source(p)) if p == Path::new("/tmp/ws/rtl/top.sv")),
-            "绝对路径前导 / 不得丢失"
+            "leading / of an absolute path must not be lost"
         );
     }
 
@@ -220,9 +220,9 @@ mod tests {
             ..Default::default()
         };
         let fs = FilesSet::collect(&input).unwrap();
-        assert_eq!(fs.files.len(), 1, ".svh 必须被跳过");
+        assert_eq!(fs.files.len(), 1, ".svh must be skipped");
         assert!(fs.files[0].ends_with("top.sv"));
-        assert_eq!(fs.warnings.len(), 1, "必须产出一条警告");
+        assert_eq!(fs.warnings.len(), 1, "exactly one warning must be produced");
         assert!(fs.warnings[0].contains("defs.svh"));
     }
 
@@ -235,14 +235,14 @@ mod tests {
     }
 
     #[test]
-    fn 注释与空行被跳过() {
+    fn comments_and_blank_lines_are_skipped() {
         let entries = parse_lines("# comment\n// c2\n\nfoo.sv\n");
         assert_eq!(entries.len(), 1);
         assert!(matches!(&entries[0], Ok(FileEntry::Source(p)) if p == Path::new("foo.sv")));
     }
 
     #[test]
-    fn f嵌套与按后缀推断() {
+    fn f_nesting_and_extension_inference() {
         let entries = parse_lines("a.sv\n-f sub/list.f\nother.f\n");
         assert!(matches!(entries[0], Ok(FileEntry::Source(_))));
         assert!(matches!(entries[1], Ok(FileEntry::Nested(_))));
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn 环境变量整段展开() {
+    fn env_var_segment_expansion() {
         unsafe { env::set_var("STUNE_TEST_WS", "/tmp/ws") };
         let entries = parse_lines("$STUNE_TEST_WS/rtl/top.sv\n");
         assert!(
@@ -260,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn 未定义环境变量报错而非panic() {
+    fn undefined_env_var_errors_instead_of_panic() {
         let entries = parse_lines("$STUNE_NO_SUCH_VAR_XYZ/x.sv\n");
         assert!(entries[0].is_err());
     }

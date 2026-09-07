@@ -11,6 +11,8 @@ import { parse } from "smol-toml";
 export interface WorkspaceConfig {
 	/** Directory containing autowire.toml (the workspace root) */
 	root: string;
+	/** hdxml binary path ([hdxml] bin; null = default lookup: env/repo/PATH) */
+	hdxmlBin: string | null;
 	filelists: string[];
 	walkDirs: string[];
 	sources: string[];
@@ -67,6 +69,9 @@ export async function loadWorkspace(
 	const index = isObj(analysis.index) ? analysis.index : {};
 	const dump = isObj(doc.dump) ? doc.dump : {};
 	const connect = isObj(doc.connect) ? doc.connect : {};
+	const hdxml = isObj(doc.hdxml) ? doc.hdxml : {};
+	if (hdxml.bin !== undefined && typeof hdxml.bin !== "string")
+		throw new Error("autowire.toml: [hdxml] bin must be a string");
 
 	const defines: Record<string, string> = {};
 	if (analysis.defines !== undefined) {
@@ -90,6 +95,7 @@ export async function loadWorkspace(
 
 	const rel = (p: string) => (isAbsolute(p) ? p : join(root, p));
 	return {
+		hdxmlBin: typeof hdxml.bin === "string" ? rel(hdxml.bin) : null,
 		root,
 		filelists: strList(rtl.filelists, "analysis.rtl.filelists").map(rel),
 		walkDirs: strList(rtl.walk_dirs, "analysis.rtl.walk_dirs").map(rel),
@@ -139,6 +145,11 @@ export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
 /** Default config written by init (aligned with docs/workspace-toml.md §4) */
 export const DEFAULT_TOML = `# autowire workspace config (contract: docs/workspace-toml.md)
 # hdxml never reads this file: autowire analysis maps it to hdxml CLI args.
+
+[hdxml]
+# hdxml binary path (relative to this file). Unset = default lookup:
+# --hdxml CLI > $HDXML_BIN > repo hdxml/target/{release,debug} > PATH
+# bin = "hdxml/target/release/hdxml"
 
 [analysis]
 # Macro define headers (same as hdxml --define-headers): replaces the traditional EDA

@@ -57,8 +57,8 @@ impl<'a> XmlExport<'a> {
     /// index.xml 最后写入——中途崩溃旧 manifest 仍在，下次 GC 依然正确。
     pub fn write(&self, out_dir: &Path) -> Result<ExportStats> {
         std::fs::create_dir_all(out_dir)
-            .with_context(|| format!("创建输出目录失败 {}", out_dir.display()))?;
-        let cwd = std::env::current_dir().context("获取当前目录失败")?;
+            .with_context(|| format!("failed to create output dir {}", out_dir.display()))?;
+        let cwd = std::env::current_dir().context("failed to get current dir")?;
 
         // 模块按源文件分组（BTreeMap：路径字典序）；组内按模块名排序
         let mut by_file: BTreeMap<&PathBuf, Vec<&ModuleDecl>> = BTreeMap::new();
@@ -106,11 +106,11 @@ impl<'a> XmlExport<'a> {
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::write(&dest, body).with_context(|| format!("写入失败 {}", dest.display()))?;
+            std::fs::write(&dest, body).with_context(|| format!("write failed {}", dest.display()))?;
         }
 
         let index = self.render_index_xml(&inputs, &by_file, &index_of);
-        std::fs::write(out_dir.join("index.xml"), index).context("写入失败 index.xml")?;
+        std::fs::write(out_dir.join("index.xml"), index).context("write failed index.xml")?;
 
         Ok(ExportStats {
             files: inputs.len(),
@@ -568,7 +568,7 @@ mod tests {
         XmlExport::with_generated(&db, &files, &[], 0).write(&d2).unwrap();
         let i1 = std::fs::read_to_string(d1.join("index.xml")).unwrap();
         let i2 = std::fs::read_to_string(d2.join("index.xml")).unwrap();
-        assert_eq!(i1, i2, "index.xml 两次导出必须字节一致");
+        assert_eq!(i1, i2, "two index.xml exports must be byte-identical");
         let x1 = std::fs::read_to_string(d1.join("nonexistent/top.sv.xml")).unwrap();
         let x2 = std::fs::read_to_string(d2.join("nonexistent/top.sv.xml")).unwrap();
         assert_eq!(x1, x2);
@@ -588,7 +588,7 @@ mod tests {
         errors.insert(
             f.clone(),
             vec![FileError::located(
-                "解析失败: boom".into(),
+                "parse failed: boom".into(),
                 "Parse(Some((\"Description\", 42)))",
                 "aaaaaaaaaa\naaaaaaaaaa\naaaaaaaaaa\naaaaaaaaaa\naaaaaaaaaa\n",
             )],
@@ -598,7 +598,7 @@ mod tests {
         let dir = tmpdir("err");
         XmlExport::with_generated(&db, &files, &[], 0).write(&dir).unwrap();
         let body = std::fs::read_to_string(dir.join("nonexistent/bad.sv.xml")).unwrap();
-        assert!(body.contains("<error message=\"解析失败: boom\" offset=\"42\" line=\"4\" column=\"10\"/>"), "{body}");
+        assert!(body.contains("<error message=\"parse failed: boom\" offset=\"42\" line=\"4\" column=\"10\"/>"), "{body}");
         let index = std::fs::read_to_string(dir.join("index.xml")).unwrap();
         assert!(index.contains("status=\"error\""), "{index}");
         assert!(index.contains("errorFiles=\"1\""), "{index}");
@@ -623,9 +623,9 @@ mod tests {
 
         XmlExport::with_generated(&db, &files, &[], 0).write(&dir).unwrap();
 
-        assert!(!dir.join("stale/old.sv.xml").exists(), "失效 XML 必须被清理");
-        assert!(!dir.join("stale").exists(), "空目录必须被修剪");
-        assert!(dir.join("keep.txt").exists(), "非产物文件不得被误删");
+        assert!(!dir.join("stale/old.sv.xml").exists(), "stale XML must be collected");
+        assert!(!dir.join("stale").exists(), "empty dirs must be pruned");
+        assert!(dir.join("keep.txt").exists(), "non-artifact files must not be deleted");
         assert!(dir.join("nonexistent/top.sv.xml").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -646,7 +646,7 @@ mod tests {
         // 清单按名称字典序、指纹属性存在
         let da = index.find("name=\"ADDR_W\"").unwrap();
         let dw = index.find("name=\"DATA_W\"").unwrap();
-        assert!(da < dw, "define 必须按名称字典序: {index}");
+        assert!(da < dw, "defines must be sorted by name: {index}");
         assert!(index.contains("definesFp=\""), "{index}");
 
         // 宏集合变化 → 指纹必须变化（整库作废判定依据）
@@ -663,8 +663,8 @@ mod tests {
             let _ = std::fs::remove_dir_all(&dir);
             body.split("definesFp=\"").nth(1).unwrap()[..32].to_string()
         };
-        assert_ne!(fp_of(&defs_a), fp_of(&defs_b), "宏值变化必须改变指纹");
-        assert_eq!(fp_of(&defs_a), fp_of(&defs_a), "同宏集指纹必须稳定");
+        assert_ne!(fp_of(&defs_a), fp_of(&defs_b), "a macro value change must change the fingerprint");
+        assert_eq!(fp_of(&defs_a), fp_of(&defs_a), "same macro set must give a stable fingerprint");
         // raw 宏（None）：XML 记 raw="true" 且无 value；与空值展开宏指纹必须可区分
         let defs_raw = vec![
             ("ADDR_W".to_string(), Some("32".to_string())),
@@ -677,10 +677,10 @@ mod tests {
         let index_raw = std::fs::read_to_string(dir_raw.join("index.xml")).unwrap();
         assert!(
             index_raw.contains("name=\"DATA_W\" raw=\"true\""),
-            "raw 宏必须带 raw 属性: {index_raw}"
+            "raw macros must carry the raw attribute: {index_raw}"
         );
         let _ = std::fs::remove_dir_all(&dir_raw);
-        assert_ne!(fp_of(&defs_a), fp_of(&defs_raw), "展开与 raw 必须可区分");
+        assert_ne!(fp_of(&defs_a), fp_of(&defs_raw), "expanded and raw must be distinguishable");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

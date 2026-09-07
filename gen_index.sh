@@ -1,21 +1,12 @@
 #!/usr/bin/env bash
-# 用既有测试样本（hdxml/tests/projects/common_cells）刷新 RtlIndex 索引。
-# 输出目录由 autowire 指定为固定临时目录 .autowire/hdxml（docs/workspace-toml.md）。
-# 用法: ./gen_index.sh [额外 hdxml 参数，如 --keep-raw WIDTH]
+# Refresh the RtlIndex from the bundled test sample (hdxml/tests/projects/common_cells).
+# Goes through the autowire entry: config lives in the repo-root autowire.toml
+# (walk_dirs / incdirs / index dir); the hdxml binary is resolved by autowire
+# (--hdxml > toml [hdxml] bin > $HDXML_BIN > repo target > PATH).
+# Output dir is the fixed temp dir .autowire/hdxml (docs/workspace-toml.md).
+# To change macros/incdirs etc., edit autowire.toml — hdxml args are no longer passed through.
+# Usage: ./gen_index.sh [extra autowire analysis flags, e.g. --sub-bars]
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")" && pwd)
 
-BIN="$ROOT/hdxml/target/release/hdxml"
-[ -x "$BIN" ] || BIN="$ROOT/hdxml/target/debug/hdxml"
-if [ ! -x "$BIN" ]; then
-    echo "hdxml 未构建，先执行: cargo build --manifest-path hdxml/Cargo.toml" >&2
-    exit 1
-fi
-
-SAMPLE="$ROOT/hdxml/tests/projects/common_cells"
-exec "$BIN" \
-    -w "$SAMPLE/src" \
-    -I "$SAMPLE/include" \
-    --xml "$ROOT/.autowire/hdxml" \
-    --sub-bars \
-    "$@"
+exec bun "$ROOT/index.ts" analysis --workspace "$ROOT" --sub-bars "$@"
