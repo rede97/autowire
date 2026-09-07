@@ -21,7 +21,7 @@ fn main() -> Result<()> {
 }
 
 fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter) -> Result<()> {
-    let defines = db::build_defines(&a.input.defines, &a.input.keep_raw)?;
+    let defines = db::build_defines(&a.input.defines, &a.input.define_headers, &a.input.keep_raw, &a.input.incdirs)?;
     // 供 index.xml 记录：排序的 (名称, 值文本) 列表；宏变更 → 指纹变 → 整库作废
     let mut define_pairs: Vec<(String, Option<String>)> = defines
         .iter()
@@ -42,7 +42,11 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
         })
         .collect();
     define_pairs.sort();
-    let files = FilesSet::collect(&a.input)?.files;
+    let fs = FilesSet::collect(&a.input)?;
+    for w in &fs.warnings {
+        pc.println(&format!("warning: {w}"));
+    }
+    let files = fs.files;
     if files.is_empty() {
         anyhow::bail!("输入集合为空（-f/-s/-w 至少需要一项）");
     }

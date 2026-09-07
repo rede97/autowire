@@ -356,7 +356,6 @@ impl DesignDb {
 // 分析驱动
 
 use std::collections::HashMap;
-use std::path::Path;
 use sv_parser::{Define, DefineText};
 
 /// 保原文宏的展开哨兵前缀（svo `__MACRO__DEFINE__` 同式）：
@@ -380,17 +379,33 @@ fn sentinel_define(name: &str, args: &[(String, Option<String>)]) -> Option<Defi
     ))
 }
 
-/// 构建宏定义表（K-2 修复：无 `=VALUE` 视为 `NAME=1`）
+/// 构建宏定义表（K-2 修复：无 `=VALUE` 视为 `NAME=1`；SV_COV* 过滤保留）
 ///
-/// 两通道：`defs`（-D / toml `[analysis.defines]` 带值）真展开；`keep_raw` 转哨兵保原文。
+/// 三通道：`defs`（-D / toml 带值）真展开；`headers`（.svh 头文件，替代 EDA「.f 头部 svh」
+/// 的全局宏——逐文件并行预处理无法传递宏）与 `keep_raw` 转哨兵保原文。
 /// 宏表值语义（sv-parser-pp `HashMap<String, Option<Define>>`）：
 /// `Some` = 展开（哨兵也是一种展开）；`None` = 删除宏引用；未登记 = 预处理报 `DefineNotFound`。
-/// 覆盖顺序：`defs` → `keep_raw`（显式保原文最强）。
+/// 覆盖顺序：headers（哨兵）→ `defs`（真值，显式展开优先）→ `keep_raw`（哨兵，显式保原文最强）。
 pub fn build_defines(
     defs: &[String],
+    headers: &[PathBuf],
     keep_raw: &[String],
+    incdirs: &[PathBuf],
 ) -> Result<HashMap<String, Option<Define>>> {
     let mut defines: HashMap<String, Option<Define>> = HashMap::new();
+    for h in headers {
+        // 头文件可再 `include 其他头文件：与源文件分析共用同一组 -I 搜索路径
+        // （注意 sv_parser::preprocess 形参序为 strip_comments, ignore_include，与 preprocess_str 相反）
+        let (_, hdr_defs) = sv_parser::preprocess(h, &defines, incdirs, true, false)
+            .map_err(|e| anyhow::anyhow!("define header 预处理失败 {}: {}", h.display(), e))?;
+        for (name, def) in hdr_defs {
+            if name.starts_with("SV_COV") {
+                continue;
+            }
+            let args = def.as_ref().map(|d| d.arguments.clone()).unwrap_or_default();
+            defines.insert(name.clone(), sentinel_define(&name, &args));
+        }
+    }
     for d in defs {
         let (name, value) = match d.split_once('=') {
             Some((n, v)) => (n.trim(), v.trim().to_string()),
@@ -527,7 +542,9 @@ mod tests {
     fn keep_raw_registers_sentinel_and_overrides() {
         let defs = build_defines(
             &["WIDTH=32".to_string(), "SYNTH".to_string()],
+            &[],
             &["WIDTH".to_string(), "DEPTH".to_string()],
+            &[],
         )
         .unwrap();
         let w = defs.get("WIDTH").unwrap().as_ref().unwrap();
@@ -546,7 +563,7 @@ mod tests {
 
     #[test]
     fn keep_raw_expands_sentinel_and_ifdef_true() {
-        let defs = build_defines(&[], &["WIDTH".to_string()]).unwrap();
+        let defs = build_defines(&[], &[], &["WIDTH".to_string()], &[]).unwrap();
         let src = "module m(output logic [`WIDTH-1:0] o);\n`ifdef WIDTH\n  localparam int K = 1;\n`endif\nendmodule\n";
         let (pp, _) = sv_parser::preprocess_str(
             src,
@@ -573,7 +590,7 @@ mod tests {
     /// 端到端：keep_raw 零参宏带实参使用时，pp 将实参表原样接回哨兵后
     #[test]
     fn keep_raw_fn_usage_keeps_actual_args() {
-        let defs = build_defines(&[], &["H_MIN".to_string()]).unwrap();
+        let defs = build_defines(&[], &[], &["H_MIN".to_string()], &[]).unwrap();
         let src = "module m;\n  localparam int K = `H_MIN(3, 5);\nendmodule\n";
         let (pp, _) = sv_parser::preprocess_str(
             src,
@@ -591,5 +608,68 @@ mod tests {
             "实参表必须原样接回: {}",
             pp.text()
         );
+    }
+
+    /// 默认保原文：headers 宏转哨兵（带参宏保留形参）；-D 显式展开优先；keep_raw 最强
+    #[test]
+    fn headers_default_raw_and_override_order() {
+        let dir = std::env::temp_dir().join(format!("hdxml_test_hdr_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let hdr = dir.join("defs.svh");
+        std::fs::write(&hdr, "`define H_WIDTH 32\n`define H_MIN(a,b) ((a)<(b)?(a):(b))\n").unwrap();
+
+        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[]).unwrap();
+        let w = defs.get("H_WIDTH").unwrap().as_ref().unwrap();
+        assert_eq!(
+            w.text.as_ref().unwrap().text,
+            format!("{MACRO_RAW_PREFIX}H_WIDTH"),
+            "header 宏必须默认转哨兵"
+        );
+        let m = defs.get("H_MIN").unwrap().as_ref().unwrap();
+        assert_eq!(
+            m.text.as_ref().unwrap().text,
+            format!("{MACRO_RAW_PREFIX}H_MIN(a,b)"),
+            "带参宏哨兵必须保留形参表"
+        );
+        assert_eq!(m.arguments.len(), 2, "形参必须保留（pp 实参替换依赖）");
+
+        // -D 显式给值 → 覆盖 header 哨兵，真展开
+        let defs =
+            build_defines(&["H_WIDTH=64".to_string()], std::slice::from_ref(&hdr), &[], &[])
+                .unwrap();
+        assert_eq!(
+            defs.get("H_WIDTH").unwrap().as_ref().unwrap().text.as_ref().unwrap().text,
+            "64"
+        );
+        // keep_raw → 覆盖 -D，回到哨兵
+        let defs = build_defines(
+            &["H_WIDTH=64".to_string()],
+            std::slice::from_ref(&hdr),
+            &["H_WIDTH".to_string()],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            defs.get("H_WIDTH").unwrap().as_ref().unwrap().text.as_ref().unwrap().text,
+            format!("{MACRO_RAW_PREFIX}H_WIDTH")
+        );
+    }
+
+    /// 头文件可再 `include 其他头文件：经 -I 搜索路径解析（与源文件分析共用）
+    #[test]
+    fn header_include_resolved_via_incdirs() {
+        let dir = std::env::temp_dir().join(format!("hdxml_test_inc_{}", std::process::id()));
+        let inc = dir.join("include");
+        std::fs::create_dir_all(&inc).unwrap();
+        std::fs::write(inc.join("base.svh"), "`define BASE_W 8\n").unwrap();
+        let hdr = dir.join("defs.svh");
+        std::fs::write(&hdr, "`include \"base.svh\"\n`define TOP_W 16\n").unwrap();
+
+        // 无 -I：被 include 的文件找不到 → 预处理报错（ignore_include=false）
+        assert!(build_defines(&[], std::slice::from_ref(&hdr), &[], &[]).is_err());
+        // 有 -I：两个头文件的宏都登记（默认哨兵）
+        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[inc]).unwrap();
+        assert!(defs.contains_key("BASE_W"), "include 进来的宏必须登记");
+        assert!(defs.contains_key("TOP_W"));
     }
 }

@@ -53,6 +53,10 @@ pub struct InputArgs {
     #[arg(short = 'D', long, num_args = 1..)]
     pub defines: Vec<String>,
 
+    /// 宏定义头文件（提取其中的 `define，默认转哨兵保原文；替代传统 EDA「.f 头部放 .svh」的全局宏机制——逐文件并行预处理不支持宏跨文件传递）
+    #[arg(long, num_args = 1..)]
+    pub define_headers: Vec<PathBuf>,
+
     /// 登记宏保原文（哨兵展开）：表达式保留 `NAME 原文，`ifdef NAME 仍判真（autowire.toml keep_raw 经此传入）
     #[arg(long, num_args = 1..)]
     pub keep_raw: Vec<String>,

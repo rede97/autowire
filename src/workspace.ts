@@ -1,6 +1,7 @@
-// autowire.toml 加载与 hdxml 参数映射（契约见 docs/workspace-toml.md）。
-// hdxml 不读 toml：一切配置经本模块映射为 hdxml CLI 参数传递。
-// 查找：从 CWD（或 --workspace）向上取最近一份 autowire.toml；toml 内相对路径相对其所在目录（工作区根）。
+// autowire.toml loading and hdxml argument mapping (contract: docs/workspace-toml.md).
+// hdxml never reads the toml: everything is mapped to hdxml CLI args by this module.
+// Lookup: nearest autowire.toml upward from CWD (or --workspace); relative paths in the
+// toml resolve against its own directory (the workspace root).
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -8,141 +9,167 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { parse } from "smol-toml";
 
 export interface WorkspaceConfig {
-  /** autowire.toml 所在目录（工作区根） */
-  root: string;
-  filelists: string[];
-  walkDirs: string[];
-  sources: string[];
-  incdirs: string[];
-  excludeFilenames: string[];
-  /** 展开宏（[analysis.defines] 带值项）→ -D NAME=VALUE */
-  defines: Record<string, string>;
-  /** 保原文宏（[analysis].keep_raw）→ --keep-raw */
-  keepRaw: string[];
-  /** RtlIndex 输出目录（[analysis.index] dir，默认 .autowire/hdxml） */
-  indexDir: string;
-  /** dump RTL 输出目录（[dump] dir，默认 gen） */
-  dumpDir: string;
+	/** Directory containing autowire.toml (the workspace root) */
+	root: string;
+	filelists: string[];
+	walkDirs: string[];
+	sources: string[];
+	incdirs: string[];
+	excludeFilenames: string[];
+	/** Expanding macros ([analysis.defines] with values) → -D NAME=VALUE */
+	defines: Record<string, string>;
+	/** Raw macros ([analysis].keep_raw) → --keep-raw */
+	keepRaw: string[];
+	/** Macro define headers (.svh; replaces the EDA ".f-head svh" global-macro trick) → --define-headers */
+	defineHeaders: string[];
+	/** RtlIndex output dir ([analysis.index] dir, default .autowire/hdxml) */
+	indexDir: string;
+	/** Dump RTL output dir ([dump] dir, default gen) */
+	dumpDir: string;
 }
 
-/** 自 startDir 向上查找 autowire.toml，返回文件路径；找不到返回 null */
+/** Find autowire.toml upward from startDir; returns the file path or null */
 export function findWorkspace(startDir: string): string | null {
-  let dir = resolve(startDir);
-  for (;;) {
-    const candidate = join(dir, "autowire.toml");
-    if (existsSync(candidate)) return candidate;
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
+	let dir = resolve(startDir);
+	for (;;) {
+		const candidate = join(dir, "autowire.toml");
+		if (existsSync(candidate)) return candidate;
+		const parent = dirname(dir);
+		if (parent === dir) return null;
+		dir = parent;
+	}
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
+	return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function strList(v: unknown, key: string): string[] {
-  if (v === undefined) return [];
-  if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) {
-    throw new Error(`autowire.toml: ${key} 必须是字符串数组`);
-  }
-  return v as string[];
+	if (v === undefined) return [];
+	if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) {
+		throw new Error(`autowire.toml: ${key} must be a list of strings`);
+	}
+	return v as string[];
 }
 
-export async function loadWorkspace(tomlPath: string): Promise<WorkspaceConfig> {
-  const root = dirname(tomlPath);
-  const doc: unknown = parse(await readFile(tomlPath, "utf8"));
-  if (!isObj(doc)) throw new Error(`autowire.toml: 解析失败（非 TOML 表）`);
+export async function loadWorkspace(
+	tomlPath: string,
+): Promise<WorkspaceConfig> {
+	const root = dirname(tomlPath);
+	const doc: unknown = parse(await readFile(tomlPath, "utf8"));
+	if (!isObj(doc))
+		throw new Error("autowire.toml: parse failed (not a TOML table)");
 
-  const analysis = isObj(doc.analysis) ? doc.analysis : {};
-  const rtl = isObj(analysis.rtl) ? analysis.rtl : {};
-  const index = isObj(analysis.index) ? analysis.index : {};
-  const dump = isObj(doc.dump) ? doc.dump : {};
+	const analysis = isObj(doc.analysis) ? doc.analysis : {};
+	const rtl = isObj(analysis.rtl) ? analysis.rtl : {};
+	const index = isObj(analysis.index) ? analysis.index : {};
+	const dump = isObj(doc.dump) ? doc.dump : {};
 
-  const defines: Record<string, string> = {};
-  if (analysis.defines !== undefined) {
-    if (!isObj(analysis.defines)) throw new Error("autowire.toml: [analysis.defines] 必须是表");
-    for (const [k, v] of Object.entries(analysis.defines)) {
-      if (typeof v === "string" && v.length > 0) defines[k] = v;
-      else if (typeof v === "number" || typeof v === "boolean") defines[k] = String(v);
-      else if (v === "") {
-        throw new Error(
-          `autowire.toml: [analysis.defines] ${k} 空串已废弃——保原文宏请列入 analysis.keep_raw`,
-        );
-      } else {
-        throw new Error(`autowire.toml: [analysis.defines] ${k} 的值必须是字符串/数字/布尔`);
-      }
-    }
-  }
+	const defines: Record<string, string> = {};
+	if (analysis.defines !== undefined) {
+		if (!isObj(analysis.defines))
+			throw new Error("autowire.toml: [analysis.defines] must be a table");
+		for (const [k, v] of Object.entries(analysis.defines)) {
+			if (typeof v === "string" && v.length > 0) defines[k] = v;
+			else if (typeof v === "number" || typeof v === "boolean")
+				defines[k] = String(v);
+			else if (v === "") {
+				throw new Error(
+					`autowire.toml: [analysis.defines] ${k} empty value is removed — list raw macros under analysis.keep_raw`,
+				);
+			} else {
+				throw new Error(
+					`autowire.toml: [analysis.defines] ${k} must be a string/number/boolean`,
+				);
+			}
+		}
+	}
 
-  const rel = (p: string) => (isAbsolute(p) ? p : join(root, p));
-  return {
-    root,
-    filelists: strList(rtl.filelists, "analysis.rtl.filelists").map(rel),
-    walkDirs: strList(rtl.walk_dirs, "analysis.rtl.walk_dirs").map(rel),
-    sources: strList(rtl.sources, "analysis.rtl.sources").map(rel),
-    incdirs: strList(rtl.incdirs, "analysis.rtl.incdirs").map(rel),
-    excludeFilenames: strList(rtl.exclude_filenames, "analysis.rtl.exclude_filenames"),
-    defines,
-    keepRaw: strList(analysis.keep_raw, "analysis.keep_raw"),
-    indexDir: rel(typeof index.dir === "string" ? index.dir : ".autowire/hdxml"),
-    dumpDir: rel(typeof dump.dir === "string" ? dump.dir : "gen"),
-  };
+	const rel = (p: string) => (isAbsolute(p) ? p : join(root, p));
+	return {
+		root,
+		filelists: strList(rtl.filelists, "analysis.rtl.filelists").map(rel),
+		walkDirs: strList(rtl.walk_dirs, "analysis.rtl.walk_dirs").map(rel),
+		sources: strList(rtl.sources, "analysis.rtl.sources").map(rel),
+		incdirs: strList(rtl.incdirs, "analysis.rtl.incdirs").map(rel),
+		excludeFilenames: strList(
+			rtl.exclude_filenames,
+			"analysis.rtl.exclude_filenames",
+		),
+		defines,
+		keepRaw: strList(analysis.keep_raw, "analysis.keep_raw"),
+		defineHeaders: strList(
+			analysis.define_headers,
+			"analysis.define_headers",
+		).map(rel),
+		indexDir: rel(
+			typeof index.dir === "string" ? index.dir : ".autowire/hdxml",
+		),
+		dumpDir: rel(typeof dump.dir === "string" ? dump.dir : "gen"),
+	};
 }
 
-/** WorkspaceConfig → hdxml argv（hdxml 无子命令，参数平铺顶层；顺序稳定便于测试） */
+/** WorkspaceConfig → hdxml argv (hdxml has no subcommand; order is stable for tests) */
 export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
-  const args: string[] = [];
-  const group = (flag: string, values: string[]) => {
-    if (values.length > 0) args.push(flag, ...values);
-  };
-  group("-f", cfg.filelists);
-  group("-s", cfg.sources);
-  group("-w", cfg.walkDirs);
-  group("--exclude-filenames", cfg.excludeFilenames);
-  group("-I", cfg.incdirs);
-  group(
-    "-D",
-    Object.entries(cfg.defines)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([n, v]) => `${n}=${v}`),
-  );
-  group("--keep-raw", [...cfg.keepRaw].sort());
-  args.push("--xml", cfg.indexDir);
-  return args;
+	const args: string[] = [];
+	const group = (flag: string, values: string[]) => {
+		if (values.length > 0) args.push(flag, ...values);
+	};
+	group("-f", cfg.filelists);
+	group("-s", cfg.sources);
+	group("-w", cfg.walkDirs);
+	group("--exclude-filenames", cfg.excludeFilenames);
+	group("-I", cfg.incdirs);
+	group("--define-headers", cfg.defineHeaders);
+	group(
+		"-D",
+		Object.entries(cfg.defines)
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([n, v]) => `${n}=${v}`),
+	);
+	group("--keep-raw", [...cfg.keepRaw].sort());
+	args.push("--xml", cfg.indexDir);
+	return args;
 }
 
-/** init 写入的默认配置（对齐 docs/workspace-toml.md §4） */
-export const DEFAULT_TOML = `# autowire 工作区配置（契约见 docs/workspace-toml.md）
-# hdxml 不读本文件：autowire analysis 负责把配置映射为 hdxml CLI 参数。
+/** Default config written by init (aligned with docs/workspace-toml.md §4) */
+export const DEFAULT_TOML = `# autowire workspace config (contract: docs/workspace-toml.md)
+# hdxml never reads this file: autowire analysis maps it to hdxml CLI args.
 
 [analysis]
-# 保原文宏（端口表达式保留 \`NAME 原文，\`ifdef 判真，dump 时还原；经 --keep-raw 传入）
+# Macro define headers (same as hdxml --define-headers): replaces the traditional EDA
+# ".f-head .svh" global-macro trick — per-file parallel preprocessing cannot carry
+# macros across files. Extracted macros stay RAW (sentinel) by default; override
+# per-name with an expanding entry in [analysis.defines].
+# define_headers = ["rtl/include/project_defines.svh"]
+
+# Raw macros (port expressions keep \`NAME verbatim, \`ifdef stays true,
+# restored at dump; passed as --keep-raw)
 # keep_raw = ["WIDTH", "ENV_MACRO"]
 
 [analysis.rtl]
-# 三种来源可并存，并集去重
+# All three sources may coexist; union-deduplicated
 filelists = []
 walk_dirs = ["rtl"]
 sources = []
-# include 搜索路径（+incdir）
+# include search paths (+incdir)
 incdirs = []
 exclude_filenames = []
 
 [analysis.defines]
-# 带值 = 展开（等价 -D）；保原文宏不要写在这里，列入上方 keep_raw
+# With value = expand (same as -D); do NOT put raw macros here — use keep_raw above
 # SYNTHESIS = "1"
 
 [analysis.index]
-# RtlIndex XML 目录；固定在工作区生成临时目录 .autowire 下
+# RtlIndex XML dir; lives under the fixed generated temp dir .autowire
 dir = ".autowire/hdxml"
 
 [dump]
-# dump 写出的 RTL 目录（产物，交给 DV；不放 .autowire）
+# Dumped RTL output dir (product for DV; not under .autowire)
 dir = "gen"
 
 [connect]
-# 可选：默认作者 HTML / 连接树逻辑顶
+# Optional: default author HTML / logical connect top
 # html = "connect/phy_wrap.html"
 # top = "phy_wrap"
 `;

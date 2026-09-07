@@ -43,10 +43,6 @@ RtlIndex 用 `definesFp` 把宏集合绑进索引有效性（见 `rtlindex-xml.m
 # hdxml 不读本文件：autowire analysis 负责把配置映射为 hdxml CLI 参数。
 
 [analysis]
-# 从头文件提取 `define（等价 --define-headers）；
-# 默认保原文：头文件宏一律转哨兵不展开，需展开时用 [analysis.defines] 带值项覆盖同名
-define_headers = ["rtl/include/project_defines.svh"]
-
 # 保原文宏（端口表达式保留 `NAME 原文，`ifdef 判真，dump 时还原；经 --keep-raw 传入）
 keep_raw = ["WIDTH", "ENV_MACRO"]
 
@@ -55,7 +51,7 @@ keep_raw = ["WIDTH", "ENV_MACRO"]
 filelists = ["rtl/chip.f"]
 walk_dirs = []
 sources = []
-incdirs = ["rtl/include"]  # 源文件与 define_headers 提取共用（头文件内 `include 同规则）
+incdirs = ["rtl/include"]  # include 搜索路径（+incdir）
 exclude_filenames = []
 
 [analysis.defines]
@@ -79,12 +75,13 @@ dir = "gen"
 说明：
 
 - **hdxml 不读 toml**：`autowire analysis` 把 `[analysis.*]` 映射为 hdxml CLI 参数（映射表见 `help analysis`）；hdxml 侧只认 CLI 旗标。
-- **宏集合** = `[analysis.defines]`（展开）+ `define_headers`（默认保原文哨兵）+ `keep_raw`（保原文哨兵）；三者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。覆盖顺序 headers → `[analysis.defines]` → `keep_raw`。空串保原文约定已**废弃**（空串值直接报错）。哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。
+- **宏集合** = `[analysis.defines]`（展开）+ `keep_raw`（保原文哨兵）；二者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。覆盖顺序 `[analysis.defines]` → `keep_raw`。空串保原文约定已**废弃**（空串值直接报错）。哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。
 - **宏作用域**：CLI/toml 宏作为 pre_defines 对**每个文件**一致生效（编译单元级种子）；各文件内 `` `define `` 不外泄（按文件独立预处理）。跨文件一致的宏**必须**走本表，禁止依赖文件间宏传递。
 - **`[connect]`** 只点到 HTML 入口，**不**描述连线。
 
 - **`.autowire/`** 是工作区**生成临时目录**（索引等缓存），可整体删除重建；**禁止**放入手写内容或任何 SoT。dump RTL 是**产物**目录（默认 `gen/`），供 DV 使用，与临时目录分开。
 
+- **`.svh` 不进 filelist**（hdxml 跳过并警告）：宏头文件只有两条合法路径——源内 `` `include ``（预处理）或 `define_headers`（独立加载，等价 EDA「.f 头部 svh」的全局宏）。降级方案：EDA 侧用 `eda_load.f`（头部 svh + 共享 `rtl.f`），分析器只用纯源码 `rtl.f`，两侧行为一致。  
 ## 5. 与 elaboration 的衔接（总流水线）
 
 宏 ≠ 模块 `aw-param`。顺序 **必须**为：
