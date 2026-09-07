@@ -76,11 +76,14 @@ autowire init / autowire analysis (landed)
 
 analysis loads autowire.toml (upward from CWD, or --workspace) and runs hdxml
 analysis with mapped args (contract: docs/workspace-toml.md):
-  [rtl] filelists / sources / walk_dirs / exclude_filenames -> -f / -s / -w / --exclude-filenames
-  [rtl] incdirs -> -I;  define_headers -> --define-headers
-  [defines] NAME="v" -> -D NAME=v;  NAME="" -> --keep-raw NAME
-  top-level keep_raw = [...] -> --keep-raw (union with empty-string defines)
-  [index] dir -> --xml (default .autowire/hdxml under workspace root)
+  [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames -> -f / -s / -w / --exclude-filenames
+  [analysis.rtl] incdirs -> -I;  [analysis] define_headers -> --define-headers
+  [analysis.defines] NAME="v" -> -D NAME=v  (expanding macros only)
+  [analysis] keep_raw = [...] -> --keep-raw (raw macros; empty-string convention removed)
+  [analysis.index] dir -> --xml (default .autowire/hdxml under workspace root)
+hdxml never reads the toml itself; autowire maps and passes everything.
+Macro scope: toml/CLI defines are a uniform pre_defines seed for every file;
+per-file \`define does not leak across files (each file preprocessed independently).
 Paths in toml are relative to the workspace root (toml location).
 No [rtl] sources configured -> error. Error files keep the index usable but
 the hdxml exit code is passed through (CI can gate on it).
@@ -126,10 +129,10 @@ Dirs
   [dump] dir="gen"    dumped RTL output (product for DV; not under .autowire)
 
 Macro policy (hdxml) — raw by default
-  only explicitly-valued macros expand: -D NAME=VALUE / toml [defines] NAME="v"
+  only explicitly-valued macros expand: -D NAME=VALUE / toml [analysis.defines] NAME="v"
   define-headers + keep_raw macros stay raw: sentinel __MACRO__DEFINE__NAME,
   \`ifdef still true; dump restores via strip_prefix; override order headers < -D < keep_raw
-  toml: [defines] NAME="" = raw (no null literal in TOML); keep_raw=[...] for unlisted names
+  toml: [analysis] keep_raw=[...] is the only raw channel (empty-string removed)
   undeclared macro = DefineNotFound error (strict; no auto-registration)
 
 Boundaries

@@ -40,29 +40,29 @@ RtlIndex 用 `definesFp` 把宏集合绑进索引有效性（见 `rtlindex-xml.m
 对应 hdxml CLI 见 `docs/hdxml/cli.md`。
 
 ```toml
-# 顶层键（必须在所有 [table] 之前）：
+# hdxml 不读本文件：autowire analysis 负责把配置映射为 hdxml CLI 参数。
 
+[analysis]
 # 从头文件提取 `define（等价 --define-headers）；
-# 默认保原文：头文件宏一律转哨兵不展开，需展开时用 [defines] 带值项覆盖同名
+# 默认保原文：头文件宏一律转哨兵不展开，需展开时用 [analysis.defines] 带值项覆盖同名
 define_headers = ["rtl/include/project_defines.svh"]
 
-# 额外保原文宏（未出现在 define_headers 中的名字，如环境宏）；与 [defines] 空串项并集，经 --keep-raw 传入
-# keep_raw = ["ENV_MACRO"]
+# 保原文宏（端口表达式保留 `NAME 原文，`ifdef 判真，dump 时还原；经 --keep-raw 传入）
+keep_raw = ["WIDTH", "ENV_MACRO"]
 
-[rtl]
+[analysis.rtl]
 # 三种来源可并存，并集去重（与 hdxml 输入组一致）
 filelists = ["rtl/chip.f"]
 walk_dirs = []
 sources = []
-incdirs = ["rtl/include"]
+incdirs = ["rtl/include"]  # 源文件与 define_headers 提取共用（头文件内 `include 同规则）
 exclude_filenames = []
 
-[defines]
-# 带值 = 展开（经 hdxml -D 传入）；空串 = 保原文（null 语义：TOML 无 null 字面量，空串即"登记不展开"）
+[analysis.defines]
+# 带值 = 展开（经 hdxml -D 传入）；保原文宏不写在这里，列入上方 keep_raw
 SYNTHESIS = "1"
-# WIDTH = ""   # 端口表达式保留 `WIDTH 原文
 
-[index]
+[analysis.index]
 # RtlIndex XML 目录；固定在工作区生成临时目录 .autowire 下（见下方说明）
 dir = ".autowire/hdxml"
 
@@ -78,8 +78,9 @@ dir = "gen"
 
 说明：
 
-- **`define_headers`（.svh）** 与 **`[defines]`** 共同构成宏集合；二者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。展开规则：**只有 `[defines]` 带值项真展开**；headers 宏与 `keep_raw`/空串项保原文（哨兵），覆盖顺序 headers → `[defines]` → `keep_raw`。  
-- **`[defines]` 空串项 / `keep_raw`**（保原文宏）覆盖 `define_headers` 同名；哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。  
+- **hdxml 不读 toml**：`autowire analysis` 把 `[analysis.*]` 映射为 hdxml CLI 参数（映射表见 `help analysis`）；hdxml 侧只认 CLI 旗标。
+- **宏集合** = `[analysis.defines]`（展开）+ `define_headers`（默认保原文哨兵）+ `keep_raw`（保原文哨兵）；三者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。覆盖顺序 headers → `[analysis.defines]` → `keep_raw`。空串保原文约定已**废弃**（空串值直接报错）。哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。
+- **宏作用域**：CLI/toml 宏作为 pre_defines 对**每个文件**一致生效（编译单元级种子）；各文件内 `` `define `` 不外泄（按文件独立预处理）。跨文件一致的宏**必须**走本表，禁止依赖文件间宏传递。
 - **`[connect]`** 只点到 HTML 入口，**不**描述连线。
 
 - **`.autowire/`** 是工作区**生成临时目录**（索引等缓存），可整体删除重建；**禁止**放入手写内容或任何 SoT。dump RTL 是**产物**目录（默认 `gen/`），供 DV 使用，与临时目录分开。

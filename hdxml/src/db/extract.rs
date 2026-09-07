@@ -744,7 +744,7 @@ endmodule
         let path = dir.join("raw.sv");
         std::fs::write(&path, src).unwrap();
         let defines =
-            crate::db::build_defines(&[], &[], &["WIDTH".to_string()]).unwrap();
+            crate::db::build_defines(&[], &[], &["WIDTH".to_string()], &[]).unwrap();
         let (pp, pp_defines) =
             sv_parser::preprocess(&path, &defines, &[] as &[&Path], false, false)
                 .expect("预处理失败");

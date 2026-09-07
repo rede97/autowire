@@ -20,20 +20,20 @@ describe("workspace", () => {
     expect(hdxmlArgs(cfg)).toEqual(["--xml", join(dir, ".autowire/hdxml")]);
   });
 
-  test("defines 三分流：带值→-D，空串/keep_raw→--keep-raw，数字值字符串化", async () => {
+  test("analysis.* 映射：defines 带值→-D，keep_raw→--keep-raw，数字值字符串化", async () => {
     const dir = tempWorkspace(`
-keep_raw = ["ENV_MACRO"]
+[analysis]
+keep_raw = ["ENV_MACRO", "WIDTH"]
 define_headers = ["include/defs.svh"]
 
-[rtl]
+[analysis.rtl]
 walk_dirs = ["rtl"]
 incdirs = ["rtl/include"]
 exclude_filenames = ["tb_top.sv"]
 
-[defines]
+[analysis.defines]
 SYNTHESIS = "1"
 DEPTH = 16
-WIDTH = ""
 `);
     const cfg = await loadWorkspace(join(dir, "autowire.toml"));
     expect(cfg.keepRaw).toEqual(["ENV_MACRO", "WIDTH"]);
@@ -49,15 +49,22 @@ WIDTH = ""
     ]);
   });
 
+  test("defines 空串已废弃：报错并指向 keep_raw", async () => {
+    const dir = tempWorkspace('[analysis.defines]\nWIDTH = ""\n');
+    await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow("keep_raw");
+  });
+
   test("findWorkspace 自子目录向上查找", () => {
-    const dir = tempWorkspace("[rtl]\n");
+    const dir = tempWorkspace("[analysis.rtl]\n");
     mkdirSync(join(dir, "a/b"), { recursive: true });
     expect(findWorkspace(join(dir, "a/b"))).toBe(join(dir, "autowire.toml"));
     expect(findWorkspace(tmpdir())).toBe(findWorkspace(tmpdir())); // 不报错即可
   });
 
   test("类型错误给出键名定位", async () => {
-    const dir = tempWorkspace("[rtl]\nwalk_dirs = \"rtl\"\n");
-    await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow("rtl.walk_dirs");
+    const dir = tempWorkspace('[analysis.rtl]\nwalk_dirs = "rtl"\n');
+    await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+      "analysis.rtl.walk_dirs",
+    );
   });
 });

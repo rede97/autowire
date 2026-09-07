@@ -23,7 +23,7 @@
 | `-D, --defines NAME=VALUE...` | 宏定义；**无 `=VALUE` 时视为 `NAME=1`**（EDA 工具惯例，vcs/verilator 同） |
 | `--keep-raw NAME...` | 登记宏保原文（哨兵 `__MACRO__DEFINE__NAME`，`` `ifdef `` 判真，dump 时还原 `` `NAME ``）；用于未出现在 `--define-headers` 中的名字；覆盖 `-D`/headers 同名 |
 | `--define-headers FILE...` | 从头文件提取 `` `define ``（`SV_COV*` 过滤保留）；**默认保原文**：一律转哨兵不展开，需展开用 `-D NAME=VALUE` 覆盖同名 |
-| `-I, --incdirs DIR...` | include 搜索路径（+incdir；列表类选项均可空格分隔多值） |
+| `-I, --incdirs DIR...` | include 搜索路径（+incdir；列表类选项均可空格分隔多值）；源文件与 `--define-headers` 头文件提取**共用**（头文件内 `` `include `` 同样经此解析，缺失即报错） |
 
 ## 3. `hdxml analysis` — 层级分析/导出
 

@@ -390,10 +390,13 @@ pub fn build_defines(
     defs: &[String],
     headers: &[PathBuf],
     keep_raw: &[String],
+    incdirs: &[PathBuf],
 ) -> Result<HashMap<String, Option<Define>>> {
     let mut defines: HashMap<String, Option<Define>> = HashMap::new();
     for h in headers {
-        let (_, hdr_defs) = sv_parser::preprocess(h, &defines, &[] as &[&Path], false, true)
+        // 头文件可再 `include 其他头文件：与源文件分析共用同一组 -I 搜索路径
+        // （注意 sv_parser::preprocess 形参序为 strip_comments, ignore_include，与 preprocess_str 相反）
+        let (_, hdr_defs) = sv_parser::preprocess(h, &defines, incdirs, true, false)
             .map_err(|e| anyhow::anyhow!("define header 预处理失败 {}: {}", h.display(), e))?;
         for (name, def) in hdr_defs {
             if name.starts_with("SV_COV") {
@@ -541,6 +544,7 @@ mod tests {
             &["WIDTH=32".to_string(), "SYNTH".to_string()],
             &[],
             &["WIDTH".to_string(), "DEPTH".to_string()],
+            &[],
         )
         .unwrap();
         let w = defs.get("WIDTH").unwrap().as_ref().unwrap();
@@ -559,7 +563,7 @@ mod tests {
 
     #[test]
     fn keep_raw_expands_sentinel_and_ifdef_true() {
-        let defs = build_defines(&[], &[], &["WIDTH".to_string()]).unwrap();
+        let defs = build_defines(&[], &[], &["WIDTH".to_string()], &[]).unwrap();
         let src = "module m(output logic [`WIDTH-1:0] o);\n`ifdef WIDTH\n  localparam int K = 1;\n`endif\nendmodule\n";
         let (pp, _) = sv_parser::preprocess_str(
             src,
@@ -582,6 +586,7 @@ mod tests {
             "`ifdef 对 keep_raw 宏必须判真: {text}"
         );
     }
+
     /// 默认保原文：headers 宏转哨兵（带参宏保留形参）；-D 显式展开优先；keep_raw 最强
     #[test]
     fn headers_default_raw_and_override_order() {
@@ -590,7 +595,7 @@ mod tests {
         let hdr = dir.join("defs.svh");
         std::fs::write(&hdr, "`define H_WIDTH 32\n`define H_MIN(a,b) ((a)<(b)?(a):(b))\n").unwrap();
 
-        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[]).unwrap();
+        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[]).unwrap();
         let w = defs.get("H_WIDTH").unwrap().as_ref().unwrap();
         assert_eq!(
             w.text.as_ref().unwrap().text,
@@ -606,7 +611,9 @@ mod tests {
         assert_eq!(m.arguments.len(), 2, "形参必须保留（pp 实参替换依赖）");
 
         // -D 显式给值 → 覆盖 header 哨兵，真展开
-        let defs = build_defines(&["H_WIDTH=64".to_string()], std::slice::from_ref(&hdr), &[]).unwrap();
+        let defs =
+            build_defines(&["H_WIDTH=64".to_string()], std::slice::from_ref(&hdr), &[], &[])
+                .unwrap();
         assert_eq!(
             defs.get("H_WIDTH").unwrap().as_ref().unwrap().text.as_ref().unwrap().text,
             "64"
@@ -616,12 +623,31 @@ mod tests {
             &["H_WIDTH=64".to_string()],
             std::slice::from_ref(&hdr),
             &["H_WIDTH".to_string()],
+            &[],
         )
         .unwrap();
         assert_eq!(
             defs.get("H_WIDTH").unwrap().as_ref().unwrap().text.as_ref().unwrap().text,
             format!("{MACRO_RAW_PREFIX}H_WIDTH")
         );
+    }
+
+    /// 头文件可再 `include 其他头文件：经 -I 搜索路径解析（与源文件分析共用）
+    #[test]
+    fn header_include_resolved_via_incdirs() {
+        let dir = std::env::temp_dir().join(format!("hdxml_test_inc_{}", std::process::id()));
+        let inc = dir.join("include");
+        std::fs::create_dir_all(&inc).unwrap();
+        std::fs::write(inc.join("base.svh"), "`define BASE_W 8\n").unwrap();
+        let hdr = dir.join("defs.svh");
+        std::fs::write(&hdr, "`include \"base.svh\"\n`define TOP_W 16\n").unwrap();
+
+        // 无 -I：被 include 的文件找不到 → 预处理报错（ignore_include=false）
+        assert!(build_defines(&[], std::slice::from_ref(&hdr), &[], &[]).is_err());
+        // 有 -I：两个头文件的宏都登记（默认哨兵）
+        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[inc]).unwrap();
+        assert!(defs.contains_key("BASE_W"), "include 进来的宏必须登记");
+        assert!(defs.contains_key("TOP_W"));
     }
 
     /// 端到端：header 带参宏经哨兵展开后实参落回原位
@@ -631,7 +657,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let hdr = dir.join("defs.svh");
         std::fs::write(&hdr, "`define H_MIN(a,b) ((a)<(b)?(a):(b))\n").unwrap();
-        let defs = build_defines(&[], &[hdr], &[]).unwrap();
+        let defs = build_defines(&[], &[hdr], &[], &[]).unwrap();
         let src = "module m;\n  localparam int K = `H_MIN(3, 5);\nendmodule\n";
         let (pp, _) = sv_parser::preprocess_str(
             src,
