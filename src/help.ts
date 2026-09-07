@@ -2,22 +2,22 @@
 // Print: `bun index.ts help` or `autowire help [topic]`
 
 export const HELP_TOPICS = [
-  "agent",
-  "status",
-  "workspace",
-  "analysis",
-  "connect",
-  "web",
-  "dump",
-  "cli",
-  "deps",
-  "dont",
+	"agent",
+	"status",
+	"workspace",
+	"analysis",
+	"connect",
+	"web",
+	"dump",
+	"cli",
+	"deps",
+	"dont",
 ] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
 
 const SECTIONS: Record<HelpTopic, string> = {
-  agent: `\
+	agent: `\
 Autowire — Agent onboarding
 
 Read this before editing. This output is the working contract; do not invent a separate project prompt.
@@ -68,7 +68,7 @@ Pipeline
       →  DV
 `,
 
-  analysis: `\
+	analysis: `\
 autowire init / autowire analysis (landed)
 
   autowire init                 create default autowire.toml in CWD (refuses to overwrite)
@@ -88,7 +88,7 @@ No [rtl] sources configured -> error. Error files keep the index usable but
 the hdxml exit code is passed through (CI can gate on it).
 `,
 
-  status: `\
+	status: `\
 Current status (code is truth; do not invent finished commands)
 
 Landed
@@ -113,7 +113,7 @@ Parallel, does not block connect
   Leaf port tables from RtlIndex feed the connect page read-only
 `,
 
-  workspace: `\
+	workspace: `\
 Workspace config autowire.toml (landed: init / analysis; see help analysis)
 Full constraints: docs/workspace-toml.md
 
@@ -144,7 +144,7 @@ Hooks into elaboration
   → params top-down → wires bottom-up (see help connect / docs/connect-html.md)
 `,
 
-  connect: `\
+	connect: `\
 HTML dialect (connectivity SoT) — draft
 
 Full constraints and examples (must follow for later impl; not landed yet):
@@ -193,7 +193,7 @@ Elaboration
   Quick rules: docs/connect-rules.md; full: docs/connect-html.md
 `,
 
-  web: `\
+	web: `\
 autowire web (early main entry; not landed)
 
   autowire web [html]
@@ -224,7 +224,7 @@ Isolation: separate browser context; local page only.
 Safety: render in the browser; file writes only via autowire API.
 `,
 
-  dump: `\
+	dump: `\
 Dump / write-back
 
 Browser does not touch disk. Page or Playwright POSTs each aw-mod's aw-render
@@ -236,7 +236,7 @@ web and future cli must share the same write path.
 Until landed, do not treat hand-rolled "fake dump" side scripts as the official path.
 `,
 
-  cli: `\
+	cli: `\
 autowire cli (later; do not build now)
 
   autowire cli phy.html --dump gen/
@@ -250,7 +250,7 @@ Building cli before tests is not allowed.
 deps and other RtlIndex queries may hang off cli, separate from connect render.
 `,
 
-  deps: `\
+	deps: `\
 autowire deps — RTL module dependency tree (landed)
 
   bun index.ts deps <path>
@@ -271,7 +271,7 @@ Output
 Connect page reads port tables only; deps must not rewrite RTL.
 `,
 
-  dont: `\
+	dont: `\
 Do not
 
   XML / one-file-per-level connectivity as SoT
@@ -288,30 +288,30 @@ Do not
 };
 
 function topicsIndex(): string {
-  return [
-    "autowire help [topic]",
-    "",
-    "  agent     onboarding (default; full text when no topic)",
-    "  status    landed / not landed",
-    "  workspace top-level autowire.toml (.f / macros)",
-    "  analysis  init + run hdxml with autowire.toml",
-    "  connect   HTML dialect (author template vs render)",
-    "  web       local page + Playwright",
-    "  dump      write-back RTL",
-    "  cli       later headless (tests first)",
-    "  deps      RtlIndex dependency tree",
-    "  dont      forbidden items",
-    "",
-  ].join("\n");
+	return [
+		"autowire help [topic]",
+		"",
+		"  agent     onboarding (default; full text when no topic)",
+		"  status    landed / not landed",
+		"  workspace top-level autowire.toml (.f / macros)",
+		"  analysis  init + run hdxml with autowire.toml",
+		"  connect   HTML dialect (author template vs render)",
+		"  web       local page + Playwright",
+		"  dump      write-back RTL",
+		"  cli       later headless (tests first)",
+		"  deps      RtlIndex dependency tree",
+		"  dont      forbidden items",
+		"",
+	].join("\n");
 }
 
 export function renderHelp(topic?: string): string {
-  if (topic === "topics") return topicsIndex();
-  if (!topic) {
-    return HELP_TOPICS.map((t) => SECTIONS[t].trimEnd()).join("\n\n");
-  }
-  if ((HELP_TOPICS as readonly string[]).includes(topic)) {
-    return SECTIONS[topic as HelpTopic].trimEnd() + "\n";
-  }
-  throw new Error(`unknown help topic: ${topic}\n\n${topicsIndex()}`);
+	if (topic === "topics") return topicsIndex();
+	if (!topic) {
+		return HELP_TOPICS.map((t) => SECTIONS[t].trimEnd()).join("\n\n");
+	}
+	if ((HELP_TOPICS as readonly string[]).includes(topic)) {
+		return `${SECTIONS[topic as HelpTopic].trimEnd()}\n`;
+	}
+	throw new Error(`unknown help topic: ${topic}\n\n${topicsIndex()}`);
 }

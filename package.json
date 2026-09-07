@@ -1,26 +1,28 @@
 {
-  "name": "autowire",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
-  "bin": {
-    "autowire": "./index.ts"
-  },
-  "scripts": {
-    "help": "bun index.ts help",
-    "test": "bun test"
-  },
-  "devDependencies": {
-    "@playwright/mcp": "^0.0.80",
-    "@types/bun": "latest",
-    "playwright": "^1.63.0"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "chalk": "^6.0.0",
-    "commander": "^15.0.0",
-    "smol-toml": "^1.8.0"
-  }
+	"name": "autowire",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"bin": {
+		"autowire": "./index.ts"
+	},
+	"scripts": {
+		"help": "bun index.ts help",
+		"lint": "biome check .",
+		"test": "bun test"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.12",
+		"@playwright/mcp": "^0.0.80",
+		"@types/bun": "latest",
+		"playwright": "^1.63.0"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"chalk": "^6.0.0",
+		"commander": "^15.0.0",
+		"smol-toml": "^1.8.0"
+	}
 }
