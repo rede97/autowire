@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use hdxml::args::{AnalysisArgs, Cli, Commands};
+use hdxml::args::{AnalysisArgs, Cli};
 use hdxml::db::{self, xml::XmlExport};
 use hdxml::filelist::FilesSet;
 use hdxml::progress::ProgressCenter;
@@ -17,19 +17,17 @@ fn main() -> Result<()> {
         .context("线程池初始化失败")?;
     let pc = ProgressCenter::new();
 
-    match &cli.command {
-        Commands::Analysis(a) => cmd_analysis(a, &pool, &pc),
-    }
+    cmd_analysis(&cli.analysis, &pool, &pc)
 }
 
 fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter) -> Result<()> {
-    let defines = db::build_defines(&a.input.defines, &a.input.define_headers, &a.input.keep_raw, &a.input.incdirs)?;
+    let defines = db::build_defines(&a.input.defines, &a.input.keep_raw)?;
     // 供 index.xml 记录：排序的 (名称, 值文本) 列表；宏变更 → 指纹变 → 整库作废
     let mut define_pairs: Vec<(String, Option<String>)> = defines
         .iter()
         .map(|(n, d)| {
             let v = d.as_ref().and_then(|d| d.text.as_ref().map(|t| t.text.clone()));
-            // keep_raw/header 哨兵宏在 index.xml 记为 raw（raw="true"、无 value）；
+            // keep_raw 哨兵宏在 index.xml 记为 raw（raw="true"、无 value）；
             // 哨兵文本形如 `PREFIX`NAME 或带形参 `PREFIX`NAME(a,b)
             match v {
                 Some(t)

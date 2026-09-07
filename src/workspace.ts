@@ -19,7 +19,6 @@ export interface WorkspaceConfig {
   defines: Record<string, string>;
   /** 保原文宏（[analysis].keep_raw）→ --keep-raw */
   keepRaw: string[];
-  defineHeaders: string[];
   /** RtlIndex 输出目录（[analysis.index] dir，默认 .autowire/hdxml） */
   indexDir: string;
   /** dump RTL 输出目录（[dump] dir，默认 gen） */
@@ -86,13 +85,12 @@ export async function loadWorkspace(tomlPath: string): Promise<WorkspaceConfig> 
     excludeFilenames: strList(rtl.exclude_filenames, "analysis.rtl.exclude_filenames"),
     defines,
     keepRaw: strList(analysis.keep_raw, "analysis.keep_raw"),
-    defineHeaders: strList(analysis.define_headers, "analysis.define_headers").map(rel),
     indexDir: rel(typeof index.dir === "string" ? index.dir : ".autowire/hdxml"),
     dumpDir: rel(typeof dump.dir === "string" ? dump.dir : "gen"),
   };
 }
 
-/** WorkspaceConfig → hdxml analysis argv（不含 "analysis" 本身；顺序稳定便于测试） */
+/** WorkspaceConfig → hdxml argv（hdxml 无子命令，参数平铺顶层；顺序稳定便于测试） */
 export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
   const args: string[] = [];
   const group = (flag: string, values: string[]) => {
@@ -103,7 +101,6 @@ export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
   group("-w", cfg.walkDirs);
   group("--exclude-filenames", cfg.excludeFilenames);
   group("-I", cfg.incdirs);
-  group("--define-headers", cfg.defineHeaders);
   group(
     "-D",
     Object.entries(cfg.defines)
@@ -120,11 +117,7 @@ export const DEFAULT_TOML = `# autowire 工作区配置（契约见 docs/workspa
 # hdxml 不读本文件：autowire analysis 负责把配置映射为 hdxml CLI 参数。
 
 [analysis]
-# 宏定义头文件（等价 hdxml --define-headers）；默认保原文：一律转哨兵不展开，
-# 需展开时用 [analysis.defines] 带值项覆盖同名
-# define_headers = ["rtl/include/project_defines.svh"]
-
-# 保原文宏（端口表达式保留 \`NAME 原文，\`ifdef 判真，dump 时还原）
+# 保原文宏（端口表达式保留 \`NAME 原文，\`ifdef 判真，dump 时还原；经 --keep-raw 传入）
 # keep_raw = ["WIDTH", "ENV_MACRO"]
 
 [analysis.rtl]
@@ -132,7 +125,7 @@ export const DEFAULT_TOML = `# autowire 工作区配置（契约见 docs/workspa
 filelists = []
 walk_dirs = ["rtl"]
 sources = []
-# 源文件与 define_headers 提取共用（头文件内 \`include 同规则）
+# include 搜索路径（+incdir）
 incdirs = []
 exclude_filenames = []
 

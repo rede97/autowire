@@ -1,23 +1,17 @@
-//! CLI 定义（docs/hdxml/cli.md）。全局选项 global(true)，子命令前后均可。
+//! CLI 定义（docs/hdxml/cli.md）。唯一功能 = 层级分析（无子命令，参数平铺顶层）。
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser};
 use std::path::PathBuf;
-
-#[derive(Subcommand, Debug)]
-pub enum Commands {
-    /// 层级分析：模块/参数/端口提取，导出 XML
-    Analysis(AnalysisArgs),
-}
 
 #[derive(Parser, Debug)]
 #[command(
     version,
-    about = "hdxml — SystemVerilog RTL 分析器",
+    about = "hdxml — SystemVerilog RTL 分析器（层级分析：模块/参数/端口提取，导出 XML）",
     arg_required_else_help = true
 )]
 pub struct Cli {
-    #[command(subcommand)]
-    pub command: Commands,
+    #[command(flatten)]
+    pub analysis: AnalysisArgs,
 
     /// 工作线程数（默认 CPU 核数）
     #[arg(short, long, global = true)]
@@ -59,11 +53,7 @@ pub struct InputArgs {
     #[arg(short = 'D', long, num_args = 1..)]
     pub defines: Vec<String>,
 
-    /// 宏定义头文件（提取其中的 `define）
-    #[arg(long, num_args = 1..)]
-    pub define_headers: Vec<PathBuf>,
-
-    /// 登记宏但不展开：表达式保留 `NAME 原文，`ifdef NAME 仍判真（autowire.toml 空值宏经此传入）
+    /// 登记宏保原文（哨兵展开）：表达式保留 `NAME 原文，`ifdef NAME 仍判真（autowire.toml keep_raw 经此传入）
     #[arg(long, num_args = 1..)]
     pub keep_raw: Vec<String>,
 

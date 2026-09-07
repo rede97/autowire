@@ -77,7 +77,6 @@ autowire init / autowire analysis (landed)
 analysis loads autowire.toml (upward from CWD, or --workspace) and runs hdxml
 analysis with mapped args (contract: docs/workspace-toml.md):
   [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames -> -f / -s / -w / --exclude-filenames
-  [analysis.rtl] incdirs -> -I;  [analysis] define_headers -> --define-headers
   [analysis.defines] NAME="v" -> -D NAME=v  (expanding macros only)
   [analysis] keep_raw = [...] -> --keep-raw (raw macros; empty-string convention removed)
   [analysis.index] dir -> --xml (default .autowire/hdxml under workspace root)
@@ -128,10 +127,10 @@ Dirs
   .autowire/hdxml/    RtlIndex XML index lives here
   [dump] dir="gen"    dumped RTL output (product for DV; not under .autowire)
 
-Macro policy (hdxml) — raw by default
+Macro policy (hdxml)
   only explicitly-valued macros expand: -D NAME=VALUE / toml [analysis.defines] NAME="v"
-  define-headers + keep_raw macros stay raw: sentinel __MACRO__DEFINE__NAME,
-  \`ifdef still true; dump restores via strip_prefix; override order headers < -D < keep_raw
+  keep_raw macros stay raw: sentinel __MACRO__DEFINE__NAME,
+  \`ifdef still true; dump restores via strip_prefix; override: keep_raw beats -D
   toml: [analysis] keep_raw=[...] is the only raw channel (empty-string removed)
   undeclared macro = DefineNotFound error (strict; no auto-registration)
 

@@ -29,7 +29,7 @@ function findHdxml(explicit?: string): string {
 /** When path is an RTL source dir, run hdxml sidecar into .autowire/hdxml（autowire 指定的固定临时目录；GC 保持干净）。 */
 function analyzeWithSidecar(rtlDir: string, hdxmlBin: string, incdirs: string[]): string {
   const outDir = join(import.meta.dir, ".autowire/hdxml");
-  const args = ["analysis", "-w", rtlDir, "--xml", outDir];
+  const args = ["-w", rtlDir, "--xml", outDir];
   for (const i of incdirs) args.push("-I", i);
   const proc = Bun.spawnSync({ cmd: [hdxmlBin, ...args], stdout: "inherit", stderr: "inherit" });
   if (!existsSync(join(outDir, "index.xml"))) {
@@ -108,7 +108,7 @@ program
       console.error(`autowire.toml: [rtl] filelists/walk_dirs/sources 至少配置一项（${tomlPath}）`);
       process.exit(1);
     }
-    const args = ["analysis", ...hdxmlArgs(cfg)];
+    const args = hdxmlArgs(cfg);
     if (opts.subBars) args.push("--sub-bars");
     const proc = Bun.spawnSync({ cmd: [findHdxml(opts.hdxml), ...args], stdout: "inherit", stderr: "inherit" });
     if (!existsSync(join(cfg.indexDir, "index.xml"))) {

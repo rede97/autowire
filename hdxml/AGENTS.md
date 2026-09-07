@@ -17,7 +17,7 @@ autowire 的 RTL 分析 sidecar 子项目（由 stune 迁移裁剪而来，历�
 ```bash
 cargo build          # dev 构建
 cargo test           # 单元测试
-cargo run -- analysis -w <rtl_dir> --tree   # 目录扫描 + 依赖树
+cargo run -- -w <rtl_dir> --tree   # 目录扫描 + 依赖树（无子命令）
 ```
 
 ## 约定

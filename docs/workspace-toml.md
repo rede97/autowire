@@ -91,7 +91,7 @@ dir = "gen"
 
 ```text
 autowire.toml（.f + svh/宏 + incdir …）
-    →  hdxml analysis → RtlIndex（叶子端口/参数声明，只读）
+    →  hdxml → RtlIndex（叶子端口/参数声明，只读）
     →  作者 HTML（aw-content + aw-submods）
     →  ① 顶→底 param  ② 展开 aw-template+patch  ③ 底→顶连线 → aw-render
     →  dump（读 aw-render）→ .sv → DV

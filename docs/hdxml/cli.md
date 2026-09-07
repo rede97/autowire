@@ -1,9 +1,9 @@
 # CLI 设计（hdxml）
 
-> hdxml 是 autowire 的 RTL 分析 sidecar：唯一子命令 `analysis`（只读分析，导出 RtlIndex XML 目录）。
+> hdxml 是 autowire 的 RTL 分析 sidecar：无子命令，唯一功能即只读层级分析（导出 RtlIndex XML 目录）。
 > 数据模型与 XML schema 见同目录 `module-info.md` / `rtlindex-xml.md`。
 
-## 1. 全局选项（clap `global(true)`，子命令前后均可）
+## 1. 全局选项
 
 | 选项 | 默认 | 说明 |
 |---|---|---|
@@ -21,14 +21,15 @@
 | `-w, --walk-dirs DIR...` | 递归收集 `*.sv/*.v` |
 | `--exclude-filenames NAME...` | 按文件名（不含目录）排除 |
 | `-D, --defines NAME=VALUE...` | 宏定义；**无 `=VALUE` 时视为 `NAME=1`**（EDA 工具惯例，vcs/verilator 同） |
-| `--keep-raw NAME...` | 登记宏保原文（哨兵 `__MACRO__DEFINE__NAME`，`` `ifdef `` 判真，dump 时还原 `` `NAME ``）；用于未出现在 `--define-headers` 中的名字；覆盖 `-D`/headers 同名 |
-| `--define-headers FILE...` | 从头文件提取 `` `define ``（`SV_COV*` 过滤保留）；**默认保原文**：一律转哨兵不展开，需展开用 `-D NAME=VALUE` 覆盖同名 |
-| `-I, --incdirs DIR...` | include 搜索路径（+incdir；列表类选项均可空格分隔多值）；源文件与 `--define-headers` 头文件提取**共用**（头文件内 `` `include `` 同样经此解析，缺失即报错） |
+| `--keep-raw NAME...` | 登记宏保原文（哨兵 `__MACRO__DEFINE__NAME`，`` `ifdef `` 判真，dump 时还原 `` `NAME ``）；覆盖 `-D` 同名 |
+| `-I, --incdirs DIR...` | include 搜索路径（+incdir；列表类选项均可空格分隔多值） |
 
-## 3. `hdxml analysis` — 层级分析/导出
+## 3. 用法
+
+hdxml 无子命令——唯一功能即层级分析，参数平铺顶层：
 
 ```
-hdxml analysis [输入组] [--tree] [--xml DIR] [--fail-on-undef]
+hdxml [输入组] [--tree] [--xml DIR] [--fail-on-undef] [--sub-bars]
 ```
 
 | 选项 | 说明 |
@@ -44,8 +45,8 @@ hdxml analysis [输入组] [--tree] [--xml DIR] [--fail-on-undef]
 示例：
 
 ```bash
-hdxml analysis -f ibex.f --xml out/rtlindex          # 全量分析并导出 XML
-hdxml analysis -w rtl/ -I rtl/include --tree         # 目录扫描 + 依赖树
+hdxml -f ibex.f --xml out/rtlindex          # 全量分析并导出 XML
+hdxml -w rtl/ -I rtl/include --tree         # 目录扫描 + 依赖树
 ```
 
 ## 4. 输入解析优先级与冲突
