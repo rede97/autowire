@@ -149,24 +149,25 @@ Hooks into elaboration
 HTML dialect (connectivity SoT) — draft
 
 Full constraints and examples (must follow for later impl; not landed yet):
-  docs/connect-html.md         (skeleton / pipeline)
-  docs/connect-rules.md        (template / rewrite / inst_name / param rules summary)
-  docs/connect-lifecycle.md    (advanced: scripts on render lifecycle; no aw-rewrite@fn)
+  docs/connect-html.md         (skeleton / pipeline / dump & multi-mod rules)
+  docs/connect-rules.md        (template / rewrite / inst_name / param)
+  docs/connect-lifecycle.md    (advanced: scripts on render lifecycle)
   docs/examples/connect/
-  docs/workspace-toml.md       (.f / macros; hooks into connect)
+  docs/workspace-toml.md       (.f / macros / [connect] html list)
 
 Two layers; do not mix
-  aw-content (author)   module params/ports; aw-template; inst + base/overwrite
-  aw-render (result)    localparams / instances / signals / export ports / connects
-  aw-submods            nested aw-mod deps (recursive); separate from content containment
+  aw-content (author)   imports / params / localparams / ports; aw-template; inst + overwrite
+  aw-render (result)    imports / localparams / instances / signals / export ports / connects
+  aw-submods            nested aw-mod deps (recursive); sibling forward-refs by document order only
 
 Printer / dump / golden only accept each aw-mod's aw-render, not content/templates source.
-rewrite is Web-style: JS RegExp match + String.replace ($1 / $<name>) only — no fn=;
-not emacs []/@ syntax. aw-template@inst_name defaults to passthrough \${id}.
-aw-connect@to, aw-param@expr, and aw-template@inst_name: variable expressions only
-(e.g. \${idx}, module params); do not use regex capture placeholders ($1 / $<name>) there.
-Advanced / irregular logic: embed scripts on elaboration lifecycle
-(docs/connect-lifecycle.md); do not put callbacks on aw-rewrite.
+Dump collects every related aw-mod aw-render (nested + multi-HTML), not top-only.
+rewrite: JS RegExp match + String.replace ($1 / $<name>) + \${…}; attributes match+to only.
+aw-connect@to, aw-param@expr, aw-template@inst_name: variable expressions only (no $1 / $<name>).
+Advanced logic: lifecycle scripts (docs/connect-lifecycle.md).
+aw-template names are per-aw-mod only (no cross-mod template import).
+Connected nets stay in aw-signals; only unconnected signals may auto-export as ports.
+aw-imports dump as SV import at module head (deduped).
 
 Skeleton
   <autowire>
@@ -180,7 +181,7 @@ Skeleton
 aw-template (style-like; only rule container under aw-inst)
   define with name= in library; under inst only aw-template (no bare connect/rewrite)
   overwrite: same tag <aw-template base>…child rules…</aw-template> (apply after base)
-  multi-template: sibling aw-templates expand in order; later wins (also allowed)
+  multi-template: sibling aw-templates expand in order; later wins
   aw-template@inst_name defaults to \${id}; aw-rewrite match+to only; templates do not dump
   aw-imports: package imports auto-inherited bottom-up when interfaces reference packages
   aw-port: dir=input/output/inout/interface; dir=interface requires interface= type, optional modport=
@@ -228,9 +229,10 @@ Safety: render in the browser; file writes only via autowire API.
 	dump: `\
 Dump / write-back
 
-Browser does not touch disk. Page or Playwright POSTs each aw-mod's aw-render
-to same-origin /api/dump (instances / aw-connect / export aw-port / aw-signals /
-aw-localparams — not aw-content source).
+Browser does not touch disk. Page or Playwright POSTs every related aw-mod's aw-render
+(nested submods + multi-HTML) to same-origin /api/dump (instances / aw-connect /
+export aw-port / aw-signals / aw-localparams / aw-imports — not aw-content source).
+SV import from aw-imports is emitted at module head and deduped.
 autowire checks workspace paths then writes RTL. Correctness is DV on files, not by banning dump.
 
 web and future cli must share the same write path.

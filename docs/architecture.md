@@ -37,9 +37,11 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 
 - 根 `<autowire>`；每模：`aw-content` → `aw-submods` → `aw-render`
 - `aw-template`：`aw-inst` 下规则**必须**用其包裹；同标签 `base`+子规则 = overwrite；也可多个 template 组合
-- `aw-rewrite`：仅 Web 向 `match`+`to`（**无** `fn`）——**不对齐** emacs `[]`/`@` 语法
-- 高级处理：渲染生命周期嵌入脚本（[connect-lifecycle.md](./connect-lifecycle.md)），不挂在 rewrite 属性上
+- `aw-rewrite`：`match` + `to`（JS RegExp / `String.replace`）
+- 高级处理：渲染生命周期嵌入脚本（[connect-lifecycle.md](./connect-lifecycle.md)）
 - Elaboration：顶→底 param → template/rewrite → 底→顶写入 `aw-render`
+- dump：收集全部相关 `aw-mod` 的 `aw-render`；`aw-imports` 写在模块头并去重
+- template 仅本模可见；同级 submods 仅允许文档序向前引用
 - **先文档约束，未实现前不要假装能渲染或 dump**
 
 ### 2.3 `autowire web [html]`
