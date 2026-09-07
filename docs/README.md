@@ -4,7 +4,7 @@
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [architecture.md](./architecture.md) | 架构设计：组件（hdxml / aw.js / web / dump / cli）、Playwright 隔离、入口阶段 | 草稿 |
+| [architecture.md](./architecture.md) | 架构设计：组件（hdxml / aw.js / web / check / dump / cli）、Playwright 隔离、入口阶段 | 草稿 |
 | [workspace-toml.md](./workspace-toml.md) | 顶层 `autowire.toml`：`.f`、宏/`.svh`、与 RtlIndex / 连接衔接 | 草稿，未实现 |
 | [connect-html.md](./connect-html.md) | 连接 HTML：骨架 / dump / 多模与多 HTML 规则 | 草稿，未实现 |
 | [connect-rules.md](./connect-rules.md) | 细则：template、rewrite、`inst_name`、param→`Mod__Inst__Param` | 草稿 |

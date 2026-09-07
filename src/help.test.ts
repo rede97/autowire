@@ -8,6 +8,7 @@ test("no topic prints command index and one-line agent pointer", () => {
 	expect(text).toContain("init");
 	expect(text).toContain("analysis");
 	expect(text).toContain("deps");
+	expect(text).toContain("check");
 	expect(text).toContain("help agent");
 	expect(text).toContain("do not invent a project prompt");
 	expect(text).not.toContain("Pipeline");
@@ -26,8 +27,10 @@ test("agent topic holds the working contract", () => {
 
 test("each slice prints independently", () => {
 	expect(renderHelp("status")).toContain("Landed");
-	expect(renderHelp("workspace")).toContain("autowire.toml");
-	expect(renderHelp("workspace")).toContain("docs/workspace-toml.md");
+	expect(renderHelp("workspace")).toContain(".autowire/hdxml");
+	expect(renderHelp("workspace")).toContain(".autowire/connect");
+	expect(renderHelp("workspace")).toContain("/api/connect");
+	expect(renderHelp("web")).toContain("/api/connect?id=");
 	expect(renderHelp("analysis")).toContain("autowire init");
 	expect(renderHelp("connect")).toContain("aw-mod");
 	expect(renderHelp("connect")).toContain("aw-template@inst_name");
@@ -45,11 +48,26 @@ test("each slice prints independently", () => {
 	expect(renderHelp("dont")).toContain("autowire.toml");
 	expect(renderHelp("web")).toContain("autowire web");
 	expect(renderHelp("web")).toContain("help agent");
+	expect(renderHelp("web")).toContain("[Check]");
+	expect(renderHelp("web")).toContain("NOT aw-render");
+	expect(renderHelp("web")).toContain("depends on Check");
+	expect(renderHelp("web")).toContain("?check=1");
+	expect(renderHelp("web")).toContain("?dump=1");
+	expect(renderHelp("check")).toContain("autowire check");
+	expect(renderHelp("check")).toContain("aw-content");
+	expect(renderHelp("check")).toContain("Does NOT require render");
+	expect(renderHelp("check")).toContain("Render depends on Check");
+	expect(renderHelp("check")).toContain("/api/check");
+	expect(renderHelp("check")).toContain("Does NOT write");
 	expect(renderHelp("dump")).toContain("/api/dump");
 	expect(renderHelp("dump")).toContain("aw-render");
+	expect(renderHelp("dump")).toContain("not a substitute for check");
 	expect(renderHelp("cli")).toContain("do not build now");
+	expect(renderHelp("cli")).toContain("--check");
 	expect(renderHelp("deps")).toContain("RtlIndex");
 	expect(renderHelp("dont")).toContain("connection-specific MCP");
+	expect(renderHelp("dont")).toContain("treat dump as the only validation");
+	expect(renderHelp("dont")).toContain("skip check before render");
 	for (const topic of HELP_TOPICS) {
 		expect(renderHelp(topic).trim().length).toBeGreaterThan(20);
 	}

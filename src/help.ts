@@ -8,6 +8,7 @@ export const HELP_TOPICS = [
 	"analysis",
 	"connect",
 	"web",
+	"check",
 	"dump",
 	"cli",
 	"deps",
@@ -32,7 +33,8 @@ What it is
 Pipeline
   autowire.toml (.f + svh / macros)
       →  hdxml → RtlIndex (read-only)
-      →  HTML (aw-content + aw-submods)
+      →  HTML aw-content (+ aw-submods)
+      →  check (author HTML legality + deps; no write; not aw-render)
       →  elaboration → aw-render
       →  POST /api/dump (every related aw-render)
       →  autowire writes .sv → DV
@@ -41,13 +43,14 @@ You can do now
   1. Follow help dont; use help status for landed vs not landed.
   2. autowire init / analysis / deps for workspace + RtlIndex.
   3. Author connect HTML per docs/connect-html.md (even if aw.js is not landed).
-  4. Until web / dump / cli land: do not pretend render or dump works.
+  4. Until web / check / dump / cli land: do not pretend render, check, or dump works.
 
 After web lands
   1. autowire web [html]; wait for first paint (or #aw-status when GET params auto-run).
   2. Playwright MCP: navigate / snapshot / evaluate / click — inspect live DOM, not source HTML.
-  3. Dump via same-origin POST /api/dump; browser must not write the workspace.
-  4. Do not build cli before Web cases and goldens exist.
+  3. Run check on aw-content (legality + deps) separately from render/dump; dump should refuse unclean check.
+  4. Dump via same-origin POST /api/dump (reads aw-render); browser must not write the workspace.
+  5. Do not build cli before Web cases and goldens exist.
 
 Rules of engagement
   Edit this help (src/help.ts) when behavior changes; format constraints live in docs/.
@@ -67,6 +70,7 @@ Landed
 Not landed (do in this order; do not skip)
   aw.js + constrained HTML custom elements
   autowire web [html]
+  autowire check / POST /api/check   (HTML legality + deps; no RTL write)
   POST /api/dump
   Playwright cases / golden
   autowire cli
@@ -90,8 +94,14 @@ Shared by deps / web / cli for the RTL universe:
 
 Dirs
   .autowire/          generated temp (deletable; never hand-authored)
-  .autowire/hdxml/    RtlIndex XML
-  .autowire/connect/  elaborated aw-render snapshots (dump/cli input; not author HTML)
+  .autowire/hdxml/    RtlIndex XML — web loads ONLY via GET /api/rtlindex|/api/module
+  .autowire/connect/  elaborated aw-render snapshots per [connect.<id>] —
+                      dump/cli + cross-unit deps via GET /api/connect?id=; never author SoT
+
+Load rules (docs/workspace-toml.md §4.2 / docs/web-ui.md §5)
+  leaf ports: hdxml only (missing/stale definesFp → error when needed)
+  cross-unit: require dep unit snapshot under connect/ (or elaborate deps first)
+  browser never reads workspace files directly; dump never reloads author html=
 
 Macro policy (hdxml)
   expanding: -D / [analysis.defines] NAME="v"
@@ -182,18 +192,48 @@ autowire web (not landed)
 Local HTTP page for headed browsers and headless Chromium.
 Layout / GET action contract: docs/web-ui.md.
 
-Page: header [Render] [Dump] [Reset]; left = dep tree + db summary;
-right = selected module (RtlIndex read-only; aw-render preview after render).
+Page: header must expose [Render] [Check] [Dump] [Reset] for humans;
+  left = dep tree + db summary;
+  right = selected module (RtlIndex read-only; aw-render preview after render).
+  [Check] validates aw-content (author), NOT aw-render; Check has no prerequisite.
+  [Render] depends on Check (auto-runs Check first; abort render on check errors).
+  [Dump] depends on Render (thus Check); dump reads aw-render only.
 
-GET
-  no params     load only; buttons trigger actions (human)
-  with params   auto-run select=MODULE → render=1 → dump=1
-                (dump implies render; order fixed)
-  done signal   #aw-status[data-state=done|error]
+GET (same actions / same prereqs; docs/web-ui.md §3)
+  no action params   load only; use header buttons
+  ?check=1           validate aw-content + deps only (no render, no .sv)
+  ?render=1          check → render (render depends on check)
+  ?dump=1            check → render → dump
+  ?select=MOD&…      select then the requested actions; order: check → render → dump
+  done signal        #aw-status[data-state=done|error]
 
-Endpoints: GET /api/rtlindex, GET /api/module?name=, POST /api/dump (only write path).
+Endpoints: GET /api/rtlindex, GET /api/module?name=  (.autowire/hdxml),
+  GET /api/connect?id= (.autowire/connect snapshots; not author HTML),
+  POST /api/check (validate only), POST /api/dump (only RTL write path; may refresh connect/).
 Isolation: 127.0.0.1 / localhost only. File writes only via autowire API.
 Agent workflow: help agent.
+`,
+
+	check: `\
+autowire check (not landed; separate from dump / render)
+
+  autowire check [html|workspace]
+  POST same-origin /api/check
+
+Validate author-face connect HTML (aw-content + aw-submods) and dependency graphs.
+Does NOT inspect aw-render as SoT. Does NOT write .sv / gen/. Does NOT require render.
+
+Must check
+  dialect constraints on aw-content (docs/connect-html.md / connect-rules.md)
+  [connect.<id>] toml deps: missing ref = error; unused = warn; cycle = error
+  aw-mod@deps + path-accumulated visible set (same discipline; refs seen in content)
+
+Not check's job
+  aw-render dumpability (no leftover template/rewrite) — dump gate after render
+
+Web header [Check] / GET ?check=1 / POST /api/check / cli --check share the same checker.
+Render depends on Check (auto-check before elaborate). Dump depends on Render.
+See docs/web-ui.md §3.1 and docs/architecture.md.
 `,
 
 	dump: `\
@@ -208,6 +248,8 @@ Server should persist snapshots under .autowire/connect/ then emit SV; dump must
 re-load author HTML as the netlist.
 SV import from aw-imports at module head, deduped.
 autowire checks workspace paths then writes RTL; DV checks files.
+Dump is not a substitute for check — content check (aw-content) before render/write.
+Dump requires render (render already required check); refuse on check or unclean-render errors.
 
 web and future cli must share this write path.
 Do not treat hand-rolled fake-dump scripts as the official path.
@@ -216,10 +258,12 @@ Do not treat hand-rolled fake-dump scripts as the official path.
 	cli: `\
 autowire cli (later; do not build now)
 
+  autowire cli phy.html --check
   autowire cli phy.html --dump gen/
 
 Build only after Web / Playwright tests and goldens are stable.
 Same aw.js extract logic (in-process or headless browser).
+--check validates only; --dump writes RTL and should imply --check.
 cli must pass existing Web tests (same HTML → same RTL).
 Building cli before tests is not allowed.
 `,
@@ -257,6 +301,9 @@ Do not
   put wiring into autowire.toml ([connect.<id>] allows only html= + deps= — no top, no wiring)
   patch aw-render after it is filled (lifecycle: only before-instances + on-template may write; before-dump is read-only)
   rely on document-order "forward" sibling refs inside aw-submods (use aw-mod@deps; visible set accumulates down the path)
+  treat dump as the only validation (use autowire check on aw-content + deps; dump reads aw-render)
+  require render before check (wrong direction: Render depends on Check; Check does not depend on Render)
+  skip check before render or dump (?render=1 / [Render] must auto-run Check first)
 `,
 };
 
@@ -269,7 +316,8 @@ function commandIndex(): string {
 		"  init                      create default autowire.toml in CWD",
 		"  analysis [options]        run hdxml from autowire.toml   → help analysis | workspace",
 		"  deps <path> [options]     RTL module dependency tree     → help deps",
-		"  web [html]                local render page (not landed) → help web | dump",
+		"  web [html]                local render page (not landed) → help web | check | dump",
+		"  check [html|workspace]    validate HTML + deps (not landed) → help check",
 		"  cli …                     headless later (not landed)    → help cli",
 		"",
 		"Also: help status | connect | dont",
@@ -290,6 +338,7 @@ function topicsIndex(): string {
 		"  analysis   init + analysis",
 		"  connect    HTML dialect",
 		"  web        local page",
+		"  check      validate HTML + deps",
 		"  dump       write-back RTL",
 		"  cli        later headless",
 		"  deps       dependency tree",

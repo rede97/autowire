@@ -189,4 +189,7 @@ master_decoder #(.PIPE_NUM(master_cfg_wrap__u_decoder__PIPE_NUM)) u_decoder (…
 - 同级 `deps` 成环、未知名、自依赖，或引用旁系孙子（共享须上提后再写 deps）  
 - 跨 HTML 单元引用却未写入 toml `deps`（或 `deps` 成环）  
 - 在 `deps`（toml 或 `aw-mod@deps`）里挂死边却忽略警告  
-- 在 `aw-render` 写满后再用脚本改 instances / signals / ports / connects（render 冻结；钩子只写 content / template 中间态）
+- 在 `aw-render` 写满后再用脚本改 instances / signals / ports / connects（render 冻结；钩子只写 content / template 中间态）  
+- 把 dump 当成唯一校验（作者面合法性 / deps 走独立 check，对象是 aw-content；dump 只读 aw-render 写 RTL）  
+- 把 check 绑成必须先 render（方向反了：是 **Render 依赖 Check**，Check 不依赖 Render）  
+- 跳过 check 直接 render / dump（`?render=1` / [Render] **必须**先过 check）

@@ -110,6 +110,23 @@ deps = ["phy_wrap"]
   - `.autowire/connect/` — 各连接单元 elaborate 后的 `aw-render` 快照（dump/cli 读此印 SV，**禁止** dump 直接 load 作者 HTML）  
   - dump RTL 产物目录（默认 `gen/`）与临时目录分开。
 
+### 4.2 HTML / web 如何加载这两类 XML（必须）
+
+连接页与 check / render **禁止**在浏览器里直接读盘；**必须**经 `autowire web` 同源 API，由服务端从工作区生成目录取数。
+
+| 目录 | 内容 | 谁读 | 用途 | 缺失 / 过期 |
+|---|---|---|---|---|
+| **`.autowire/hdxml/`** | RtlIndex（`index.xml` + 每源文件 XML） | web → `GET /api/rtlindex`、`GET /api/module?name=` | 叶子端口/参数/层次；**只读**；**禁止**当连接 SoT | 无索引或 `definesFp` 与当前 toml 宏集合不一致 → check/render 需要叶子表时 **报错**（先 `autowire analysis`） |
+| **`.autowire/connect/`** | 各 `[connect.<id>]` 的 **elaborated `aw-render` 快照**（按 **单元 id** 落盘，如 `<id>.html` / `<id>/…`；生成物） | dump/cli 印 SV；多单元 elaborate 时加载 **deps 单元**快照；web → `GET /api/connect?id=`（只读快照） | 跨单元符号 / 已冻结 render；**禁止**把作者 HTML 当 dump 输入 | 单元 A 的 `deps` 含 B，但 B 快照不存在 → elaborate/check 跨单元引用时 **报错**（先按 DAG render/写入 B） |
+
+补充纪律：
+
+1. **作者 HTML** 路径只来自 toml `[connect.<id>] html=`（或 `web` 打开的页）；**禁止**从 `.autowire/connect/` 当作者 SoT 打开编辑。  
+2. **叶子事实**只认 `.autowire/hdxml/`；**禁止**页面重解析 `.sv` / 旁路 RtlIndex。  
+3. **跨 `[connect.<id>]` 依赖**：先按 deps DAG 保证被依赖单元已有 connect 快照（或本会话内已 elaborate 并写入），再处理依赖方；与 toml `deps` / 并行 elaborate 一致。  
+4. **dump** 读 POST 体活 DOM 和/或 `.autowire/connect/` 快照印 SV；**禁止**再 load 作者 `html=` 当 netlist。  
+5. 两目录均可删重建；删后须重新 `analysis` + 按需 render 出 connect 快照。
+
 - **`.svh` 不进 filelist**（hdxml 跳过并警告）：宏头文件只有两条合法路径——源内 `` `include ``（预处理）或 `define_headers`（独立加载，等价 EDA「.f 头部 svh」的全局宏）。降级方案：EDA 侧用 `eda_load.f`（头部 svh + 共享 `rtl.f`），分析器只用纯源码 `rtl.f`，两侧行为一致。  
 ## 5. 与 elaboration 的衔接（总流水线）
 
@@ -118,6 +135,7 @@ deps = ["phy_wrap"]
 ```text
 autowire.toml（.f + svh/宏 + [connect.<id>] DAG）
     →  hdxml → RtlIndex（叶子端口/参数声明，只读）
+    →  check（作者面 aw-content 合法性 + deps；不写盘）
     →  按 deps 拓扑（可并行）elaborate 各连接 HTML
     →  写入 .autowire/connect/ 快照
     →  dump（读快照 / aw-render）→ .sv → DV

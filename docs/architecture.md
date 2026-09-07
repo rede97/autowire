@@ -9,13 +9,14 @@
 autowire.toml（.f + svh/宏）
     →  hdxml → RtlIndex（只读）
     →  HTML（aw-content + aw-submods）
+    →  check（作者面合法性 + deps；不写盘；不以 aw-render 为 SoT）
     →  elaboration → aw-render
     →  POST /api/dump（读 aw-render）
     →  autowire 写 .sv
     →  DV
 ```
 
-打印机看的是 **script 跑完的 DOM**，不是源文件原文。打印机、`/api/dump`、Playwright golden 只认各 `aw-mod` 下的 `aw-render`（connect-html.md §2）。
+打印机看的是 **script 跑完的 DOM**，不是源文件原文。打印机、`/api/dump`、Playwright golden 只认各 `aw-mod` 下的 `aw-render`（connect-html.md §2）。**合法性 / 依赖检查**走独立的 **check**，校验 **`aw-content`（作者面）**，与 dump 读 render 写 RTL 分开（`help check`）。
 
 ## 2. 组件
 
@@ -40,28 +41,45 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 - `aw-rewrite`：`match` + `to`（JS RegExp / `String.replace`）
 - 高级处理：渲染生命周期嵌入脚本（[connect-lifecycle.md](./connect-lifecycle.md)）
 - Elaboration：顶→底 param → template/rewrite → 底→顶写入 `aw-render`
-- dump：收集全部相关 `aw-mod` 的 `aw-render`；`aw-imports` 写在模块头并去重
+- dump：收集全部相关 `aw-mod` 的 `aw-render`；`aw-imports` 写在模块头并去重  
+- check：独立动作，校验 **作者面** `aw-content` / submods / toml deps；**不写** `.sv`；**不**以 `aw-render` 为检查 SoT；dump **应当**在 check 无 error 且已有可印 render 后才写  
 - template 仅本模可见；同级 submods 互引须 `aw-mod@deps`（路径累积可见集；缺边报错）
-- **先文档约束，未实现前不要假装能渲染或 dump**
+- **先文档约束，未实现前不要假装能渲染、check 或 dump**
 
 ### 2.3 `autowire web [html]`
 
 本机起服务：给人用有头浏览器，给 Agent 用无头。`127.0.0.1` 同源。
-页面布局（header 动作按钮 + 左栏 dep tree / DB 摘要 + 右栏模块预览）与 GET 参数自动动作链见 [web-ui.md](./web-ui.md)：无参打开不执行任何动作（人工），带参按 `select → render → dump` 自动执行并落 `#aw-status`（Agent）。
+页面布局与 GET 动作见 [web-ui.md](./web-ui.md)：**Check → Render → Dump**（Render 依赖 Check；Check 只验 aw-content）。
 
-### 2.4 写回（`/api/dump`）
+**生成 XML 加载**（详见 [workspace-toml.md](./workspace-toml.md) §4.2、[web-ui.md](./web-ui.md) §5）：
 
-浏览器不碰磁盘。页面或 Playwright 把渲染结果 `POST` 到同源 `/api/dump`，autowire 校验工作区路径后写 RTL。对错由 DV 测文件，不靠禁止 dump。
+| 来源 | API | 用途 |
+|---|---|---|
+| `.autowire/hdxml/` | `/api/rtlindex`、`/api/module` | 叶子 RtlIndex，只读 |
+| `.autowire/connect/` | `/api/connect?id=` | 依赖单元 `aw-render` 快照；dump 输入侧 | 
 
-### 2.5 `autowire cli`（后期）
+浏览器不直读盘；作者 HTML 只来自 toml `html=`。
+
+### 2.4 check（校验作者面，不写盘）
+
+独立于 render / dump：`autowire check` / 页内 [Check] / `POST /api/check` / GET `check=1`。  
+校验 **`aw-content` + `aw-submods` + 依赖图**（`[connect.<id>] deps`、`aw-mod@deps` 路径累积可见集、环、缺边/多余边）。**禁止**以 `aw-render` 为 check 的 SoT；**禁止**借 check 写 `.sv` / `gen/`。详见 `help check`。
+
+### 2.5 写回（`/api/dump`）
+
+浏览器不碰磁盘。页面或 Playwright 把渲染结果 `POST` 到同源 `/api/dump`，autowire 校验工作区路径后写 RTL。对错由 DV 测文件，不靠禁止 dump。  
+dump **应当**隐含 `check → render`（**Render 依赖 Check**，见 [web-ui.md](./web-ui.md) §3.1）；check 有 error 时 **必须**拒绝 render 与写盘。render 可印性（无残留 template/rewrite）由 dump 门禁负责，**不是** Check 按钮的职责。
+
+### 2.6 `autowire cli`（后期）
 
 等 Web 测试用例和 golden 稳定，再做完全无头 CLI（同一套抽取逻辑，进程内或无头浏览器）：
 
 ```text
+autowire cli phy.html --check
 autowire cli phy.html --dump gen/
 ```
 
-`deps` 等 RtlIndex 查询可另挂在 cli 上，与连接渲染分开。
+`deps` 等 RtlIndex 查询可另挂在 cli 上，与连接渲染分开。`--dump` **应当**隐含 `--check`。
 
 ## 3. 隔离与调试：Playwright
 
@@ -81,7 +99,7 @@ autowire cli phy.html --dump gen/
 | 何时做 | **现在** | **现在** | 用例够了以后 |
 | 渲染 | — | 浏览器 | 无头，被测试锁死 |
 | Agent | 先跑这个再干活 | Playwright MCP | 无浏览器时直接出 RTL |
-| 落盘 | — | Web API → autowire 写文件 | `--dump`，同一写盘代码 |
+| 落盘 | — | `/api/check` 不写；`/api/dump` → autowire 写文件 | `--check` / `--dump`（dump 隐含 check） |
 
 ## 5. 并列子系统（不堵连接）
 

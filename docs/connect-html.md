@@ -311,17 +311,18 @@ visible(child) = visible(parent) ∪ child.deps ∪ { child 的直接子 aw-mod 
 4. **底 → 顶（连线）**  
    生成 `aw-connect`；应用 `packed`/`unpacked`/`width`/`part`/`nettype`（§3.5.1–3.5.2）写入 `aw-signals`；宽度 deps 形参换成 `Mod__Inst__Param`；填 `aw-ports`（按 §4.1）；写 `aw-render` 后 **冻结**。  
 5. **递归** `aw-submods`（按 `aw-mod@deps` DAG + 路径累积可见集，§3.3）。  
-6. **`before-dump`**（可选，只读校验）→ dump。
+6. **`before-dump`**（可选钩子只读）→ dump（dump 门禁验 render 可印；作者面 check 见流水线，不在此把 `aw-render` 当 check SoT）。
 
 ```text
 autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
     →  hdxml → RtlIndex（只读）
+    →  check（作者面 aw-content 合法性 + deps；不写盘）
     →  按 deps 拓扑 elaborate（无边单元可并行）→ .autowire/connect/ 快照
     →  POST /api/dump（读快照 / 全部相关 aw-render）
     →  autowire 写 .sv → DV
 ```
 
-落地顺序：`aw.js` → `autowire web` + dump → Playwright golden → 才允许 `autowire cli`。
+落地顺序：`aw.js` → `autowire web` + check + dump → Playwright golden → 才允许 `autowire cli`。
 
 ## 6. 多模引用与多 HTML
 
@@ -337,7 +338,8 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 ## 7. 与 RtlIndex / 工作区
 
 - `.f` / 宏 / `.svh` 与 [`workspace-toml.md`](./workspace-toml.md) 一致（`definesFp`）。  
-- 叶子 `aw-inst@mod` 端口表来自 RtlIndex 只读查询。  
+- 叶子 `aw-inst@mod` 端口表来自 **`.autowire/hdxml/`**（经 web API），只读。  
+- 跨 `[connect.<id>]` 包装模符号来自 **`.autowire/connect/`** 依赖单元快照（经 API / DAG elaborate）；见 workspace-toml §4.2。  
 - hdxml **不**表达连接关系。
 
 ## 8. 示例索引

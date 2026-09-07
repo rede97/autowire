@@ -46,11 +46,12 @@
 流水线单向：
 
 ```text
-content (+ before-instances)
+check（作者面 aw-content + deps；可单独跑，见 help check）
+  → content (+ before-instances)
   → params / uniquify（引擎）
   → template expand (+ on-template)
   → aw-render（冻结）
-  → before-dump（只读）→ POST /api/dump
+  → before-dump（钩子只读）→ POST /api/dump（dump 门禁验 render 可印）
 ```
 
 同一 HTML → 同一 `aw-render`（钩子 **应当**幂等）。
@@ -75,10 +76,11 @@ content (+ before-instances)
 4. `on-template` **应当**按例化触发（参数给出当前 `mod` / `inst` / 所用 `template`）；全局汇总若需要，也只碰未 commit 的中间态。  
 5. dump 前每个 `aw-render` 必须合法（无 template/rewrite），且与冻结后内容一致。
 
-## 5. dump / Playwright
+## 5. check / dump / Playwright
 
-- snapshot 活 DOM（`aw-render` 为引擎写出后的冻结结果）。  
-- 写回仍 `POST /api/dump`（全部相关 `aw-render`，见 connect-html §4.2）。  
+- 正式 **check** 走 **`autowire check` / `POST /api/check`**：校验 **作者面 `aw-content`** + deps（**不写盘**；**不以 `aw-render` 为 SoT**）；见 `help check`。  
+- snapshot 活 DOM（`aw-render` 为引擎写出后的冻结结果，供 dump / golden）。  
+- 写回仍 `POST /api/dump`（全部相关 `aw-render`）；dump **应当**在 content check 无 error 且 render 可印后才写。  
 - golden 比对 render，不比对脚本源。  
 - **禁止**在 golden / dump 前用脚本改 render 来「对齐」期望。
 
