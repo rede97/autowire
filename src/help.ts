@@ -5,6 +5,7 @@ export const HELP_TOPICS = [
   "agent",
   "status",
   "workspace",
+  "analysis",
   "connect",
   "web",
   "dump",
@@ -67,6 +68,24 @@ Pipeline
       →  DV
 `,
 
+  analysis: `\
+autowire init / autowire analysis (landed)
+
+  autowire init                 create default autowire.toml in CWD (refuses to overwrite)
+  autowire analysis [--workspace dir|file] [--hdxml bin] [--sub-bars]
+
+analysis loads autowire.toml (upward from CWD, or --workspace) and runs hdxml
+analysis with mapped args (contract: docs/workspace-toml.md):
+  [rtl] filelists / sources / walk_dirs / exclude_filenames -> -f / -s / -w / --exclude-filenames
+  [rtl] incdirs -> -I;  define_headers -> --define-headers
+  [defines] NAME="v" -> -D NAME=v;  NAME="" -> --keep-raw NAME
+  top-level keep_raw = [...] -> --keep-raw (union with empty-string defines)
+  [index] dir -> --xml (default .autowire/hdxml under workspace root)
+Paths in toml are relative to the workspace root (toml location).
+No [rtl] sources configured -> error. Error files keep the index usable but
+the hdxml exit code is passed through (CI can gate on it).
+`,
+
   status: `\
 Current status (code is truth; do not invent finished commands)
 
@@ -75,12 +94,12 @@ Landed
   autowire deps <path>      RTL module dependency tree
                             path = RtlIndex dir (with index.xml)
                                  or RTL source dir (hdxml sidecar analysis first)
+  autowire init / analysis  workspace autowire.toml → hdxml (docs/workspace-toml.md)
   hdxml sidecar             Rust; analysis → RtlIndex XML; read-only consumer
   Playwright env            headless Chromium installed; Playwright MCP via .mcp.json
                             (--headless --isolated; only 127.0.0.1/localhost origins)
 
 Not landed (do in this order; do not skip)
-  autowire.toml load        workspace .f / macros / .svh → feed hdxml (docs/workspace-toml.md)
   aw.js + constrained HTML custom elements
   autowire web [html]       local HTTP render page
   POST /api/dump            browser does not write disk; autowire writes workspace RTL
@@ -93,14 +112,25 @@ Parallel, does not block connect
 `,
 
   workspace: `\
-Workspace config autowire.toml (draft; not implemented)
-
+Workspace config autowire.toml (landed: init / analysis; see help analysis)
 Full constraints: docs/workspace-toml.md
 
 One top-level config shared by deps / web / cli for the RTL universe:
   source entry .f (and walk/sources)
   macros: defines + define .svh (aligns with hdxml --define-headers)
-  incdirs, RtlIndex output dir, etc.
+  incdirs, dump RTL out dir, etc.
+
+Dirs
+  .autowire/          fixed generated temp dir (deletable; never hand-authored)
+  .autowire/hdxml/    RtlIndex XML index lives here
+  [dump] dir="gen"    dumped RTL output (product for DV; not under .autowire)
+
+Macro policy (hdxml) — raw by default
+  only explicitly-valued macros expand: -D NAME=VALUE / toml [defines] NAME="v"
+  define-headers + keep_raw macros stay raw: sentinel __MACRO__DEFINE__NAME,
+  \`ifdef still true; dump restores via strip_prefix; override order headers < -D < keep_raw
+  toml: [defines] NAME="" = raw (no null literal in TOML); keep_raw=[...] for unlisted names
+  undeclared macro = DefineNotFound error (strict; no auto-registration)
 
 Boundaries
   toml = project config (feed hdxml / check definesFp)
@@ -167,7 +197,22 @@ autowire web (early main entry; not landed)
   autowire web [html]
 
 Local HTTP for headed browsers and for Agents headless.
-Open the web URL with headless Chromium; Agent joins after first paint.
+Layout and GET action contract: docs/web-ui.md.
+
+Page: header (title + [Render] [Dump] [Reset]); left = dep tree (RtlIndex
+hierarchy, blackbox marked) + db summary (files/modules/packages/definesFp);
+right = selected module info (RtlIndex params/imports/ports/instances;
+aw-render preview only after render). Left/right data is RtlIndex read-only.
+
+Two modes:
+  no GET params   load only; NO action runs; buttons are the only trigger (human)
+  with GET params auto-run fixed chain select=MODULE -> render=1 -> dump=1
+                  (dump implies render; order fixed regardless of param order)
+  completion: #aw-status[data-state=done|error] + document.title suffix;
+              idle when no params. Playwright joins: no-param = first paint,
+              with-params = wait for #aw-status[data-state].
+
+Endpoints: GET /api/rtlindex, GET /api/module?name=, POST /api/dump (only write).
 
 Agent uses only Playwright MCP (navigate / snapshot / evaluate / click),
 like any front-end. Do not add outline / apply / rewrite MCP for connect.
@@ -212,7 +257,7 @@ autowire deps — RTL module dependency tree (landed)
 
 <path>
   RtlIndex dir (with index.xml): read directly
-  else treat as RTL source dir; run hdxml sidecar into tmp/rtlindex
+  else treat as RTL source dir; run hdxml sidecar into .autowire/hdxml
 
 hdxml lookup order
   --hdxml > $HDXML_BIN > repo hdxml/target/{release,debug}/hdxml > PATH
@@ -247,6 +292,7 @@ function topicsIndex(): string {
     "  agent     onboarding (default; full text when no topic)",
     "  status    landed / not landed",
     "  workspace top-level autowire.toml (.f / macros)",
+    "  analysis  init + run hdxml with autowire.toml",
     "  connect   HTML dialect (author template vs render)",
     "  web       local page + Playwright",
     "  dump      write-back RTL",
