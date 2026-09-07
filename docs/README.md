@@ -4,6 +4,7 @@
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
+| [architecture.md](./architecture.md) | 架构设计：组件（hdxml / aw.js / web / dump / cli）、Playwright 隔离、入口阶段 | 草稿 |
 | [workspace-toml.md](./workspace-toml.md) | 顶层 `autowire.toml`：`.f`、宏/`.svh`、与 RtlIndex / 连接衔接 | 草稿，未实现 |
 | [connect-html.md](./connect-html.md) | 连接 HTML：`aw-content` / `aw-template` / `aw-submods` / `aw-render` | 草稿，未实现 |
 | [connect-rules.md](./connect-rules.md) | **细则小结**：template、overwrite、`inst_name`、rewrite、`aw-param`→`Mod__Inst__Param` | 草稿 |
