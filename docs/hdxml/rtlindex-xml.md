@@ -33,8 +33,8 @@
 - 排序规则（相同输入必须产出字节一致的结果，`rtlIndex/@generated` 除外）：
   - `<files>/<file>`：按 `source` 字典序；
   - 各文件内 `<module>`：按 `name` 字典序；
-  - `<modules>/<module>`：按 `name` 字典序；
-  - `<module>` 子结构固定次序：`<params>` → `<ports>` → `<instances>`；组内元素按源码声明序；
+  - `<modules>/<module>`、`<packages>/<package>`：按 `name` 字典序；
+  - `<module>` 子结构固定次序：`<imports>` → `<params>` → `<ports>` → `<instances>`；组内元素按源码声明序（`<import>` 例外见 §5.3）；
   - `<hierarchy>` 内兄弟 `<node>`：按 `module` 字典序。
 - 所有 `span` 为**预处理后文本**的字节偏移 `start:end`（含宏/include 展开），映射回源文件需 sv-parser-pp origins；消费者不得把 span 当作源文件偏移。
 - 时间戳一律为 unix 秒（整数）。
@@ -43,7 +43,7 @@
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<rtlIndex tool="hdxml 0.1.0" generated="1788627786" files="168" modules="200" errorFiles="0"
+<rtlIndex tool="hdxml 0.1.0" generated="1788627786" files="168" modules="200" packages="3" errorFiles="0"
           definesFp="6c76cc6a…">
   <defines>
     <define name="SYNTHESIS" value="1"/>
@@ -54,6 +54,9 @@
   <modules>
     <module name="top" index="src/top.sv.xml"/>
   </modules>
+  <packages>
+    <package name="axi_pkg" index="src/axi_pkg.sv.xml"/>
+  </packages>
   <hierarchy>
     <top module="top">
       <node module="sub"/>
@@ -71,6 +74,7 @@
 | `generated` | int | 是 | 本次生成时间戳；两次运行可不同，不影响等价性 |
 | `files` | int | 是 | 输入源文件总数（= `<files>` 子元素数） |
 | `modules` | int | 是 | 已定义模块总数（= `<modules>` 子元素数） |
+| `packages` | int | 是 | 已定义 package 总数（= `<packages>` 子元素数） |
 | `errorFiles` | int | 是 | 含分析错误的文件数 |
 | `definesFp` | string | 是 | 宏定义指纹（`name=value` 排序逐行 blake3-128）；消费方宏集合指纹不一致 ⇒ **整个索引作废**（§6） |
 
@@ -100,7 +104,16 @@
 | `name` | string | 是 | 模块名，全局唯一（重复定义见 §6） |
 | `index` | string | 是 | 声明所在文件 XML 的相对路径 |
 
-### 4.5 `<hierarchy>/<top>`（每个顶层模块一棵 DAG 展开树）
+### 4.5 `<packages>/<package>`（每个已定义 package 一条）
+
+| 属性 | 类型 | 必须 | 含义 |
+|---|---|---|---|
+| `name` | string | 是 | 包名，全局唯一 |
+| `index` | string | 是 | 声明所在文件 XML 的相对路径 |
+
+package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）；本组仅为全局名→文件映射。
+
+### 4.6 `<hierarchy>/<top>`（每个顶层模块一棵 DAG 展开树）
 
 顶层 = 有定义且未被任何模块例化的模块。`<top>` 的 `module` 属性为顶层名；子 `<node>` 为直接例化的目标模块，递归展开。
 
@@ -119,11 +132,16 @@
 <fileIndex source="src/cc_cdc_2phase.sv" mtime="1788325458">
   <module name="cc_cdc_2phase" kind="module" span="17692:19347"
           contentHash="ca4d…" interfaceSig="c67e…">
+    <imports>
+      <import package="axi_pkg" symbol="*" via="decl" span="17693:17710"/>
+      <import package="axi_pkg" symbol="axi_t" via="scope" span="17856:17869"/>
+    </imports>
     <params>
       <param name="SyncStages" kind="parameter" dataType="int unsigned" default="2" span="17774:17789"/>
     </params>
     <ports>
-      <input name="src_data_i" dataType="data_t" packed="[W-1:0]" span="17849:17873"/>
+      <input name="src_data_i" dataType="axi_pkg::axi_t" packed="[W-1:0]" span="17849:17873"/>
+      <interface name="s_axi" interface="axi_if" modport="slave" span="…"/>
     </ports>
     <instances>
       <instance name="i_src" target="cc_cdc_2phase_src" span="18536:18826">
@@ -146,15 +164,25 @@
 | 属性 | 类型 | 必须 | 含义 |
 |---|---|---|---|
 | `name` | string | 是 | 模块名 |
-| `kind` | `module` \| `interface` | 是 | 声明种类 |
-| `span` | `int:int` | 是 | 模块文本范围（**地址**，预处理后基准，§3） |
+| `kind` | `module` \| `interface` \| `package` | 是 | 声明种类 |
 | `contentHash` | string | 是 | 模块文本内容哈希（blake3-128）；回答"这个文件要不要重分析" |
-| `interfaceSig` | string | 是 | 接口签名（参数+端口规范化哈希，顺序敏感、格式不敏感）；回答"父模块要不要重连线" |
+| `interfaceSig` | string | module/interface 是 | 接口签名（参数+端口规范化哈希，顺序敏感、格式不敏感）；回答"父模块要不要重连线"；`kind="package"` 时省略（无端口，签名无意义） |
+子结构固定次序 `<imports>` → `<params>` → `<ports>` → `<instances>`（§3）；空组**必须**整体省略（无参数则不出现 `<params>`）。`kind="package"` 只有 `<params>`（包内 parameter/localparam 声明），无 `<ports>`/`<instances>`。
 
-子结构固定次序 `<params>` → `<ports>` → `<instance>`（§3）；空组**必须**整体省略（无参数则不出现 `<params>`）。
+### 5.3 `<module>/<imports>/<import>`（package 依赖：显式 import + 作用域引用）
 
-### 5.3 `<module>/<params>/<param>`（声明序）
+模块/接口对 package 的依赖统一收进本组；`kind="package"` 的声明无此组。定位"某 interface 引用属于哪个 package"即查定义该 interface 的 `<module>` 的 `<imports>`。
 
+| 属性 | 类型 | 必须 | 含义 |
+|---|---|---|---|
+| `package` | string | 是 | 包名 |
+| `symbol` | string | 是 | 导入/引用的符号；通配导入为 `*` |
+| `via` | `decl` \| `scope` | 是 | `decl`：显式 `import pkg::sym;` 声明（含 `$unit` 编译单元级）；`scope`：类型/表达式中的 `pkg::sym` 作用域引用（隐式依赖） |
+| `span` | `int:int` | 是 | 声明或引用范围 |
+
+排序：`via="decl"` 按源码声明序在前；`via="scope"` 按 `(package, symbol)` 字典序去重殿后。两种 **必须**同时收集——只收 `decl` 会漏掉未 import 而直接 `pkg::` 限定的引用。
+
+### 5.4 `<module>/<params>/<param>`（声明序）
 | 属性 | 类型 | 必须 | 含义 |
 |---|---|---|---|
 | `name` | string | 是 | 参数名 |
@@ -164,8 +192,7 @@
 | `deps` | string | 否 | `default` 引用的符号，逗号分隔、字典序 |
 | `span` | `int:int` | 是 | 声明范围 |
 
-### 5.4 `<module>/<ports>/<input|output|inout|ref|interface>`（声明序；顺序即位置连接语义）
-
+### 5.5 `<module>/<ports>/<input|output|inout|ref|interface>`（声明序；顺序即位置连接语义）
 方向**必须**用标签名表达，不设 `dir` 属性：`<input>` / `<output>` / `<inout>` / `<ref>` / `<interface>`。方向未知（非 ANSI 头部端口体内未补全声明）时使用 `<port>` 兜底。
 
 | 属性 | 类型 | 必须 | 含义 |
@@ -181,8 +208,7 @@
 
 > `<ref>` 仅为事实记录：模块级 `ref` 端口面向验证代码，主流综合工具不支持；可综合 RTL 中不应出现。分析层无条件收集（零功能特判），消费方连线层遇到 `<ref>` 端口**应当**告警并跳过，不得为其生成连接。
 
-### 5.5 `<module>/<instances>/<instance>`（声明序）
-
+### 5.6 `<module>/<instances>/<instance>`（声明序）
 | 属性 | 类型 | 必须 | 含义 |
 |---|---|---|---|
 | `name` | string | 是 | 例化名 |
@@ -196,8 +222,7 @@
 | `name` | string | 否 | 命名覆盖的参数名；位置连接缺省 |
 | `value` | string | 是 | 覆盖表达式原文（已剥离 `.name(...)` 包裹与注释，不求值），如 `1`、`W` |
 
-### 5.6 `<fileIndex>/<error>`（文件级分析错误，零个或多个；与 `<module>` 可共存）
-
+### 5.7 `<fileIndex>/<error>`（文件级分析错误，零个或多个；与 `<module>` 可共存）
 | 属性 | 类型 | 必须 | 含义 |
 |---|---|---|---|
 | `message` | string | 是 | 错误描述（含生产者原始错误文本） |
@@ -208,10 +233,10 @@
 
 ## 6. 一致性与错误语义
 
-- `index.xml` 的 `files`/`modules`/`errorFiles` 必须与对应子元素实际数量一致。
-- **宏失效**：消费方以当前宏集合按 §4.1 规则计算指纹，与 `definesFp` 不一致 ⇒ 整个索引作废，不得部分使用（预处理结果随宏变化，无法局部修正）。
+- `index.xml` 的 `files`/`modules`/`packages`/`errorFiles` 必须与对应子元素实际数量一致。
 - `<modules>` 与全部文件 XML 的 `<module>` 必须一一对应（同名同文件）。
 - 模块重复定义：后者覆盖前者进入 `defs`，并在该文件追加一条 `<error>`；生产者进程退出码为 1（XML 仍完整落盘）。
+- `<packages>` 与全部文件 XML 中 `kind="package"` 的 `<module>` 必须一一对应（同名同文件）。
 - 任何文件存在 `<error>` ⇒ 生产者退出码 1；消费者应当把该文件的数据视为不完整。
 
 ## 7. 待定项（评审决定）

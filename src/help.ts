@@ -138,7 +138,7 @@ Advanced / irregular logic: embed scripts on elaboration lifecycle
 Skeleton
   <autowire>
     <aw-mod name="…">
-      <aw-content>  aw-params / aw-localparams / aw-ports / aw-templates / aw-insts  </aw-content>
+      <aw-content>  aw-imports / aw-params / aw-localparams / aw-ports / aw-templates / aw-insts  </aw-content>
       <aw-submods>  nested aw-mod …  </aw-submods>
       <aw-render>   aw-params / aw-imports / aw-localparams / aw-ports / aw-signals / aw-insts  </aw-render>
     </aw-mod>
@@ -149,6 +149,8 @@ aw-template (style-like; only rule container under aw-inst)
   overwrite: same tag <aw-template base>…child rules…</aw-template> (apply after base)
   multi-template: sibling aw-templates expand in order; later wins (also allowed)
   aw-template@inst_name defaults to \${id}; aw-rewrite match+to only; templates do not dump
+  aw-imports: package imports auto-inherited bottom-up when interfaces reference packages
+  aw-port: dir=input/output/inout/interface; dir=interface requires interface= type, optional modport=
   aw-param → aw-localparams (Mod__Inst__Param); fold constants / inherited module params
             / matching module-internal localparams; do not fold expressions or macros
 

@@ -36,6 +36,7 @@
 <autowire>                          # 唯一文档根；dump/golden 外边界
   <aw-mod name="…">
     <aw-content>                    # 内含：本模作者声明
+      <aw-imports>…</aw-imports>    # package 导入；接口引用 package 时自底向上继承
       <aw-params>…</aw-params>
       <aw-localparams>…</aw-localparams>  # 可选：本模内部 localparam
       <aw-ports>…</aw-ports>        # 显式导出（不仅是内部 net）
@@ -47,7 +48,7 @@
     </aw-submods>
     <aw-render>                     # 生成物；dump 读这里
       <aw-params>…</aw-params>      # 本模 parameter（对外）
-      <aw-imports>…</aw-imports>    # 预留（语义见开放项）
+      <aw-imports>…</aw-imports>    # 继承汇总后的 package 导入（见 §3.2）
       <aw-localparams>…</aw-localparams>  # 本模内部 + 例化 uniquify
       <aw-ports>…</aw-ports>
       <aw-signals>…</aw-signals>
@@ -75,7 +76,7 @@
 本模**自己的**声明，不定义子模块体：
 
 | 子组 | 含义 |
-|---|---|
+| `aw-imports` | package 导入声明；当接口（本模或子模）引用 package 类型时，**自动自底向上继承**汇总到各层 `aw-mod`；作者无需逐层手抄 |
 | `aw-params` | 本模参数模板 |
 | `aw-localparams` | 可选：本模**内部** localparam（`name`+`expr`）；可供例化 `aw-param@expr` 引用并参与折叠（[`connect-rules.md`](./connect-rules.md) §7.2） |
 | `aw-ports` | **显式要导出**的端口（不只是内部连线用到的信号） |
@@ -212,7 +213,7 @@
 |---|---|---|
 | `aw-param` | content params / template；render params 与 inst 下 | `name`；作者面 `expr`（变量表达式；**禁止**正则捕获）；渲染后宜有 `value` |
 | `aw-localparam` | 作者面 `aw-content`/`aw-localparams`；或 `aw-render`/`aw-localparams` | 作者：`name`+`expr`；render：`name`+`value`，宜有 `folded` / `for-inst` / `for-param` |
-| `aw-port` | content 显式导出；render 导出结果 | `name`；`dir`；可选 `width` |
+| `aw-port` | content 显式导出；render 导出结果 | `name`；`dir`（`input`/`output`/`inout`/`interface`）；可选 `width`；`dir="interface"` 时**必须**带 `interface`（接口类型名）、可选 `modport`——与 RtlIndex `<interface>` 端口（rtlindex-xml.md §5.5）对齐 |
 | `aw-inst` | content / render `aw-insts` | `id`；`mod`；可选 `idx` |
 | `aw-connect` | 仅 template 内 / render | `port`；`to`（变量表达式；**禁止** `$1` / `$<name>`） |
 | `aw-rewrite` | 仅作者面 template 内 | `match` + `to`（可含捕获 + 变量）；可选 `flags`；**禁止** `fn` |
@@ -237,7 +238,7 @@
 | 子组 | 含义 |
 |---|---|
 | `aw-params` | 本模 **parameter**（模块接口参数；宜 `value`） |
-| `aw-imports` | **预留**槽（见 §9 开放项）；未裁定前 **禁止**当连接 SoT |
+| `aw-imports` | 自底向上继承汇总后的 package 导入（叶子接口引用 package → 各上层 `aw-mod` 自动持有）；dump 行为见 §9 |
 | `aw-localparams` | 本模 **localparam**：作者面内部声明的落盘 + 例化 uniquify 的 `Mod__Inst__Param`（见 [`connect-rules.md`](./connect-rules.md) §7）；dump 写成 SV `localparam` |
 | `aw-ports` | 导出端口（显式 ∪ 推导） |
 | `aw-signals` | 本层内部 net（由 connect/`to` 等汇总） |
@@ -321,7 +322,7 @@ autowire.toml（.f + svh/宏）
 3. dump：序列化顶层 `aw-render` 子树 vs 含全部嵌套 render？  
 4. 跨 `aw-mod` 引用 `aw-template` 是否允许？生命周期钩子作用域见 [`connect-lifecycle.md`](./connect-lifecycle.md) 开放项。  
 5. overwrite：同标签内「base + 子规则」与「多 template 兄弟」两种都允许；禁止规则直接挂在 `aw-inst` 下。  
-6. `aw-imports`（render 预留槽）语义与 dump 行为？  
+6. `aw-imports`：语义已定（接口引用 package 时自动自底向上继承）；dump 行为（SV `import` 语句生成位置/去重）？
 7. 工作区 toml 开放项见 [`workspace-toml.md`](./workspace-toml.md) §6。
 
 裁定后改本文 + `help connect`，再动代码。

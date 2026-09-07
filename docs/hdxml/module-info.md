@@ -54,9 +54,22 @@ struct InstanceInfo {
     span: (Locate, Locate),
 }
 
+enum DeclKind { Module, Interface, Package }   // 声明种类；package 仅 name/span/hash（无端口，不计算 interface_sig）
+
+enum ImportVia { Decl, Scope }   // Decl: 显式 import pkg::sym; 声明；Scope: 类型/表达式中 pkg::sym 作用域引用
+
+struct ImportInfo {
+    package: String,
+    symbol: String,              // "*" 或具体符号名
+    via: ImportVia,
+    span: (Locate, Locate),
+}
+
 struct ModuleDecl {
     name: String,
     file: PathBuf,
+    kind: DeclKind,
+    imports: Vec<ImportInfo>,    // package 依赖：decl 按声明序 + scope 按 (package,symbol) 去重
     params: Vec<ParamInfo>,        // 声明序
     ports: Vec<PortInfo>,          // 声明序（autowire 展开顺序依据）
     instances: Vec<InstanceInfo>,  // 直接子模块实例
@@ -114,7 +127,7 @@ interface_sig = blake3(canonical)
 
 失效清理（manifest 驱动 GC）：`index.xml` 即产物清单。每次运行读旧 manifest，删除"旧产物集 − 本次产物集"的 XML 并修剪空目录——源码被删除或移出输入集后，其 XML 下次运行必被清理，不污染索引；目录内非产物文件不受影响。`index.xml` 最后写入，中途崩溃旧 manifest 仍在，下次 GC 依然正确。
 
-固定排序规则（字节级确定）：`<files>` 按源路径字典序；`<module>` 按模块名字典序；`<param>`/`<port>`/`<instance>`/`<conn>` 按源码声明序；`<hierarchy>` 子节点按目标模块名字典序。所有数据走属性；`span` 为预处理后文本字节偏移 `[start:end]`（§3 勘定）。
+固定排序规则（字节级确定）：`<files>` 按源路径字典序；`<module>` 按模块名字典序；`<module>` 子结构固定次序 `<imports>` → `<params>` → `<ports>` → `<instances>`，组内按源码声明序（`<import>` 的 scope 条目按 `(package,symbol)` 去重殿后）；`<hierarchy>` 子节点按目标模块名字典序。所有数据走属性；`span` 为预处理后文本字节偏移 `[start:end]`（§3 勘定）。
 
 每文件 XML：
 
@@ -123,6 +136,9 @@ interface_sig = blake3(canonical)
 <fileIndex source="src/cc_cdc_2phase.sv" mtime="1788325458">
   <module name="cc_cdc_2phase" kind="module" span="17692:19347"
           contentHash="ca4d…" interfaceSig="c67e…">
+    <imports>
+      <import package="axi_pkg" symbol="*" via="decl" span="…"/>
+    </imports>
     <params>
       <param name="SyncStages" kind="parameter" dataType="int unsigned" default="2" span="…"/>
       <param name="data_t" kind="type" span="…"/>
@@ -148,7 +164,7 @@ interface_sig = blake3(canonical)
 index.xml：
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<rtlIndex tool="hdxml 0.1.0" generated="1788627786" files="168" modules="200" errorFiles="0" definesFp="6c76cc6a…">
+<rtlIndex tool="hdxml 0.1.0" generated="1788627786" files="168" modules="200" packages="1" errorFiles="0" definesFp="6c76cc6a…">
   <defines><define name="SYNTHESIS" value="1"/></defines>
   <files>
     <file source="src/bad.sv" index="src/bad.sv.xml" status="error" modules="0" mtime="…"/>
@@ -157,6 +173,9 @@ index.xml：
   <modules>
     <module name="cc_cdc_2phase" index="src/cc_cdc_2phase.sv.xml"/>
   </modules>
+  <packages>
+    <package name="axi_pkg" index="src/axi_pkg.sv.xml"/>
+  </packages>
   <hierarchy>
     <top module="cc_cdc_2phase">
       <node module="cc_cdc_2phase_dst"/>
@@ -185,3 +204,4 @@ undef 模块：有实例无定义 → 记入 `undef`，其 `InstanceInfo.target_
 - B-2 generate 块内实例、数组化实例（`u[3:0]`）：收集；展开与物化不在分析器范围内。
 - B-3 宏内声明的端口（`` `PORT_DECL(x) ``）：宏展开后可见，但 span 落在宏展开文本而非源文本 → 该模块标记 `readonly`（不可重写），仅参与签名。
 - B-4 interface/modport 端口的"宽度"语义不属于本模块签名的一部分，签名只含 interface 类型名 + modport 名。
+- B-5 package 定位为**名字级**：`<imports>` 记录显式 import 与 `pkg::sym` 作用域引用（含 `$unit` 级），不做 wildcard 冲突与跨编译单元符号裁决；interface 依 1800 不能声明在 package 内，其 package 依赖来自端口/modport 的类型引用。
