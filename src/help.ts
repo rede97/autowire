@@ -141,7 +141,7 @@ Constraints:
 Two layers; do not mix
   aw-content   imports / params / localparams / ports; aw-template; inst + overwrite
   aw-render    imports / localparams / instances / signals / export ports / connects
-  aw-submods   nested aw-mod; sibling forward-refs by document order only
+  aw-submods   nested aw-mod; sibling refs only via aw-mod@deps (path-accumulated visible set)
 
 Dump / golden only accept aw-render (every related mod; nested + multi-HTML).
 aw-rewrite: RegExp match + String.replace ($1 / $<name>) + \${…}; match+to only.
@@ -150,7 +150,9 @@ aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlI
   unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; default wire);
   to is net name only — no [] suffix. See docs/connect-html.md §3.5.1–3.5.2;
   multidim example: docs/examples/connect/04-author-multidim.html.
-Lifecycle scripts: docs/connect-lifecycle.md.
+Lifecycle scripts: docs/connect-lifecycle.md —
+  before-instances (mutate aw-content) → on-template (per-inst expand) → aw-render frozen;
+  before-dump read-only (no patching render).
 Templates are per-aw-mod only. Connected nets → aw-signals; unconnected may auto-export ports.
 aw-imports → SV import at module head (deduped).
 
@@ -158,7 +160,7 @@ Skeleton
   <autowire>
     <aw-mod name="…">
       <aw-content>  aw-imports / aw-params / aw-localparams / aw-ports / aw-templates / aw-insts  </aw-content>
-      <aw-submods>  nested aw-mod …  </aw-submods>
+      <aw-submods>  nested aw-mod (optional deps="sibling_a sibling_b") …  </aw-submods>
       <aw-render>   aw-params / aw-imports / aw-localparams / aw-ports / aw-signals / aw-insts  </aw-render>
     </aw-mod>
   </autowire>
@@ -169,7 +171,7 @@ aw-port: dir=input|output|inout|interface; interface requires interface=, option
 aw-param → Mod__Inst__Param; fold constants / inherited params / internal localparams;
            do not fold expressions or macros.
 
-Elaboration: params top-down → template/rewrite → wires bottom-up → aw-render.
+Elaboration: before-instances → params → on-template → wires → frozen aw-render → before-dump.
 `,
 
 	web: `\
@@ -253,6 +255,8 @@ Do not
   copy a per-chip connect prompt (edit help agent / src/help.ts instead)
   make README a second contract without updating help
   put wiring into autowire.toml ([connect.<id>] allows only html= + deps= — no top, no wiring)
+  patch aw-render after it is filled (lifecycle: only before-instances + on-template may write; before-dump is read-only)
+  rely on document-order "forward" sibling refs inside aw-submods (use aw-mod@deps; visible set accumulates down the path)
 `,
 };
 

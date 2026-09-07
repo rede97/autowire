@@ -41,7 +41,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 - 高级处理：渲染生命周期嵌入脚本（[connect-lifecycle.md](./connect-lifecycle.md)）
 - Elaboration：顶→底 param → template/rewrite → 底→顶写入 `aw-render`
 - dump：收集全部相关 `aw-mod` 的 `aw-render`；`aw-imports` 写在模块头并去重
-- template 仅本模可见；同级 submods 仅允许文档序向前引用
+- template 仅本模可见；同级 submods 互引须 `aw-mod@deps`（路径累积可见集；缺边报错）
 - **先文档约束，未实现前不要假装能渲染或 dump**
 
 ### 2.3 `autowire web [html]`

@@ -42,7 +42,7 @@
       <aw-insts>…</aw-insts>
     </aw-content>
     <aw-submods>
-      <aw-mod name="…">…</aw-mod>
+      <aw-mod name="…" deps="…">…</aw-mod>   # deps = 同父兄弟名；路径累积可见集见 §3.3
     </aw-submods>
     <aw-render>
       <aw-params>…</aw-params>
@@ -61,12 +61,14 @@
 - 本文件连接树 **必须**整包在唯一 **`<autowire>`** 下。  
 - 页内可有 `<html>` / `<body>`；**禁止**把壳外节点当连接 SoT。  
 - 实现可用 `querySelector("autowire")` 取根。  
-- **多份 HTML** 可互引（见 §6）；清单在 `autowire.toml` 的 `[connect] html`（路径数组，无连线细节）。
+- **多份 HTML** 可互引（见 §6）；清单在 `autowire.toml` 的 `[connect.<id>]`（`html` + `deps`，无连线细节）。
 
 ### 3.1 `<aw-mod>`
 
 - `name`：模块名（必须）。  
+- `deps`：可选；**同父**下其它包装模的 `name` 列表（空格或逗号分隔）。见 §3.3。  
 - 子节点顺序 **应当**为：`aw-content` → `aw-submods` → `aw-render`。  
+- `aw-render` 在作者 HTML 里 **可以**预留空壳；elaborate 后由引擎填满并冻结。
 - 层次路径 = 自外向内 `aw-mod@name` 拼接（不含 `autowire`）。  
 - 展开后例化 id 在**同一父路径下**必须唯一。
 
@@ -84,8 +86,34 @@
 ### 3.3 `<aw-submods>`（依赖）
 
 - 子级为嵌套 **`aw-mod`**，递归 elaboration。  
-- **可见性（单文件内）**：`aw-inst@mod` 只能解析到 RtlIndex 叶子、**本**模直接 `aw-submods` 孩子、或**同一父**下文档序更早的兄弟；**禁止**引用旁系的孙子（共享模须上提到平行层，即使本层不例化）。  
-- **禁止**环。跨 HTML 包级依赖见 toml `[connect.<id>] deps`（§6）。
+- 每个嵌套（及 `<autowire>` 下顶层并列的）`aw-mod` **可以**带 `deps`（§3.1）：列出**同父**兄弟包装模的 `name`。  
+- **合法性只认 deps + 路径累积可见集**；文档序仅作稳定排序/展示，**不再**单独充当「前向即可引用」规则。
+
+**可见集（路径累积，单调并集）**
+
+```text
+visible(root)  = root.deps ∪ { root 的直接子 aw-mod name }
+visible(child) = visible(parent) ∪ child.deps ∪ { child 的直接子 aw-mod name }
+```
+
+往下走时可见集只增不减：子层可看见祖先路径上已声明的依赖，不必整条链重写。
+
+**`aw-inst@mod` 解析**
+
+| 目标 | 条件 |
+|---|---|
+| RtlIndex 叶子 | 始终允许 |
+| 本模**直接**子 `aw-mod` | 始终允许（结构拥有，不必写入 `deps`） |
+| 同父兄弟包装模 | **必须**出现在本模 `deps`（或经路径累积已进入 `visible(本模)`） |
+| 旁系孙子 / 未上提的共享模 | **禁止**（共享须上提到平行层，再靠兄弟 `deps`） |
+
+**纪律（与 toml `[connect.<id>] deps` 对齐）**
+
+1. 引用了却未进入可见集 → **非法引用，报错**。  
+2. `deps` 写了但 elaborate 未实际引用 → **警告**。  
+3. `deps` 图（同父兄弟之间）**必须无环**；未知名 / 自依赖 → **报错**。  
+4. 无边兄弟可按 DAG **并行** elaborate。  
+5. 跨 HTML 包级依赖仍只走 toml `[connect.<id>] deps`（§6）；**不要**把单元 id 写进 `aw-mod@deps`。
 
 ### 3.4 `<aw-template>`（复用 + overwrite）
 
@@ -240,7 +268,7 @@
 ### 3.7 脚本
 
 - 常规连接用 `aw-template` / `aw-rewrite` / `aw-connect`。  
-- 高级处理挂生命周期钩子：[`connect-lifecycle.md`](./connect-lifecycle.md)。  
+- 高级处理挂生命周期钩子：[`connect-lifecycle.md`](./connect-lifecycle.md)——**仅** `before-instances`（写 `aw-content`）与 `on-template`（写展开中间态）；**`aw-render` 写满后冻结**；`before-dump` 只读。  
 - `<script type="module">` **必须**只用 DOM / `aw.*`；**禁止** layout / 对外 `fetch` / 写工作区磁盘。
 
 ### 3.8 可访问性
@@ -276,13 +304,14 @@
 
 ## 5. Elaboration 顺序
 
-1. **顶 → 底（param）**  
+1. **`before-instances` 钩子**（可选）：只改本模 `aw-content`（动态 inst / template）。见 [`connect-lifecycle.md`](./connect-lifecycle.md)。  
+2. **顶 → 底（param）**  
    求值本模内部 localparam 与例化 `aw-param`（常量 / 继承本模 param / 匹配本模内部 localparam → 折叠；表达式与宏不折）；求值 `inst_name`；写入 `aw-localparams`。  
-2. **展开 template**（`match`+`to` → connect）。  
-3. **底 → 顶（连线）**  
-   生成 `aw-connect`；应用 `packed`/`unpacked`/`width`/`part`/`nettype`（§3.5.1–3.5.2）写入 `aw-signals`；宽度 deps 形参换成 `Mod__Inst__Param`；填 `aw-ports`（按 §4.1）；写 `aw-render`。  
-4. **递归** `aw-submods`（同级向前引用，§3.3）。  
-5. **生命周期钩子**（可选）：[`connect-lifecycle.md`](./connect-lifecycle.md)。
+3. **展开 template**（`match`+`to` → connect）+ **`on-template` 钩子**（可选）：按例化改中间态，**禁止**写已完成的 `aw-render`。  
+4. **底 → 顶（连线）**  
+   生成 `aw-connect`；应用 `packed`/`unpacked`/`width`/`part`/`nettype`（§3.5.1–3.5.2）写入 `aw-signals`；宽度 deps 形参换成 `Mod__Inst__Param`；填 `aw-ports`（按 §4.1）；写 `aw-render` 后 **冻结**。  
+5. **递归** `aw-submods`（按 `aw-mod@deps` DAG + 路径累积可见集，§3.3）。  
+6. **`before-dump`**（可选，只读校验）→ dump。
 
 ```text
 autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
@@ -299,7 +328,7 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 | 规则 | 要求 |
 |---|---|
 | 跨 `aw-mod` 的 `aw-template` | **禁止**；各模自写 template |
-| 同级 `aw-submods` 互引 | **仅前向**；**禁止**够旁系孙子；共享上提；**禁止**环 |
+| 同级 `aw-submods` 互引 | **必须**写在被引方同父下的 `aw-mod@deps`；可见集路径累积；缺边报错、多余警告、无环可并行；**禁止**旁系孙子（共享上提） |
 | 多份连接 HTML | 必须在 `autowire.toml` 注册为 `[connect.<id>]`；跨单元引用 **必须**写在 `deps` 里，否则非法引用报错；`deps` 写了但未实际引用 → **警告**；`deps` 图无环；就绪单元可**并行** elaborate |
 | toml | **禁止**连线细节；只允许 `html` + `deps` |
 
@@ -317,7 +346,7 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 |---|---|
 | [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) | 完整骨架；`packed=auto` / `part` 切片 |
 | [`examples/connect/01-rendered-simple.html`](./examples/connect/01-rendered-simple.html) | render 示意（含 `slice_data_bus` + `part`） |
-| [`examples/connect/02-author-nested.html`](./examples/connect/02-author-nested.html) | `aw-submods` 嵌套 |
+| [`examples/connect/02-author-nested.html`](./examples/connect/02-author-nested.html) | `aw-submods` 嵌套（无兄弟互引时可省略 `deps`） |
 | [`examples/connect/03-author-template-reuse.html`](./examples/connect/03-author-template-reuse.html) | template 复用 / overwrite + `packed`/`part` |
 | [`examples/connect/03-rendered-template-reuse.html`](./examples/connect/03-rendered-template-reuse.html) | 复用后 render（共享 bus + part） |
 | [`examples/connect/04-author-multidim.html`](./examples/connect/04-author-multidim.html) | 多维：`packed` + `unpacked`；`packed=auto` |
@@ -325,7 +354,8 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 
 ## 9. 渲染生命周期
 
-高级 / 不规则处理：[`connect-lifecycle.md`](./connect-lifecycle.md)。产物仍须落在各 `aw-mod` 的 `aw-render`。
+高级 / 不规则处理：[`connect-lifecycle.md`](./connect-lifecycle.md)。  
+两写一冻：`before-instances` → `on-template` → 引擎写 `aw-render`（冻结）→ `before-dump` 只读。产物 **必须**只来自引擎写出的 `aw-render`，**禁止**脚本事后改 render。
 
 ## 10. 仍开放（实现前裁定）
 

@@ -185,6 +185,8 @@ master_decoder #(.PIPE_NUM(master_cfg_wrap__u_decoder__PIPE_NUM)) u_decoder (…
 - 静默覆盖同名 localparam / 信号  
 - 把宏或表达式当常量折叠  
 - 跨 `aw-mod` 引用 `aw-template`  
-- 同级 submods 环依赖、向后引用、或引用旁系孙子（共享须上提）  
+- 同级 submods 靠文档序「前向」互引却不写 `aw-mod@deps`（合法性只认 deps + 路径累积可见集）  
+- 同级 `deps` 成环、未知名、自依赖，或引用旁系孙子（共享须上提后再写 deps）  
 - 跨 HTML 单元引用却未写入 toml `deps`（或 `deps` 成环）  
-- 在 `deps` 里挂死边却忽略警告（写了依赖、elaborate 未引用 → 应删边）
+- 在 `deps`（toml 或 `aw-mod@deps`）里挂死边却忽略警告  
+- 在 `aw-render` 写满后再用脚本改 instances / signals / ports / connects（render 冻结；钩子只写 content / template 中间态）
