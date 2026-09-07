@@ -21,6 +21,7 @@
 | `-w, --walk-dirs DIR...` | 递归收集 `*.sv/*.v` |
 | `--exclude-filenames NAME...` | 按文件名（不含目录）排除 |
 | `-D, --defines NAME=VALUE...` | 宏定义；**无 `=VALUE` 时视为 `NAME=1`**（EDA 工具惯例，vcs/verilator 同） |
+| `--define-headers FILE...` | 宏定义头文件（提取其中 `` `define ``，默认转哨兵保原文；替代 EDA「.f 头部 svh」全局宏）。按给定顺序预处理合并；**`-D` 先作种子**——header 内 `` `ifdef `` 可见 `-D` 宏，同名 header 宏随后又被 `-D` 压顶 |
 | `--keep-raw NAME...` | 登记宏保原文（哨兵 `__MACRO__DEFINE__NAME`，`` `ifdef `` 判真，dump 时还原 `` `NAME ``）；覆盖 `-D` 同名 |
 | `-I, --incdirs DIR...` | include 搜索路径（+incdir；列表类选项均可空格分隔多值） |
 

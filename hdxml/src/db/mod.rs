@@ -385,7 +385,8 @@ fn sentinel_define(name: &str, args: &[(String, Option<String>)]) -> Option<Defi
 /// 的全局宏——逐文件并行预处理无法传递宏）与 `keep_raw` 转哨兵保原文。
 /// 宏表值语义（sv-parser-pp `HashMap<String, Option<Define>>`）：
 /// `Some` = 展开（哨兵也是一种展开）；`None` = 删除宏引用；未登记 = 预处理报 `DefineNotFound`。
-/// 覆盖顺序：headers（哨兵）→ `defs`（真值，显式展开优先）→ `keep_raw`（哨兵，显式保原文最强）。
+/// 顺序：`-D` 先入种子（header 预处理可见 `ifdef 等）→ headers 按序合并（同名后者覆盖）
+/// → `-D` 再压顶（显式展开优先于 header 哨兵）→ `keep_raw`（显式保原文最强）。
 pub fn build_defines(
     defs: &[String],
     headers: &[PathBuf],
@@ -393,6 +394,28 @@ pub fn build_defines(
     incdirs: &[PathBuf],
 ) -> Result<HashMap<String, Option<Define>>> {
     let mut defines: HashMap<String, Option<Define>> = HashMap::new();
+    // -D NAME ≡ -D NAME=1（EDA 惯例，仅 CLI）；先入种子 → header 预处理可见
+    let mut parsed_defs: Vec<(String, String)> = Vec::with_capacity(defs.len());
+    for d in defs {
+        let (name, value) = match d.split_once('=') {
+            Some((n, v)) => (n.trim(), v.trim().to_string()),
+            None => (d.trim(), "1".to_string()),
+        };
+        parsed_defs.push((name.to_string(), value));
+    }
+    let insert_def = |defines: &mut HashMap<String, Option<Define>>, name: &str, value: &str| {
+        defines.insert(
+            name.to_string(),
+            Some(Define::new(
+                name.to_string(),
+                Vec::new(),
+                Some(DefineText::new(value.to_string(), None)),
+            )),
+        );
+    };
+    for (name, value) in &parsed_defs {
+        insert_def(&mut defines, name, value);
+    }
     for h in headers {
         // 头文件可再 `include 其他头文件：与源文件分析共用同一组 -I 搜索路径
         // （注意 sv_parser::preprocess 形参序为 strip_comments, ignore_include，与 preprocess_str 相反）
@@ -406,19 +429,9 @@ pub fn build_defines(
             defines.insert(name.clone(), sentinel_define(&name, &args));
         }
     }
-    for d in defs {
-        let (name, value) = match d.split_once('=') {
-            Some((n, v)) => (n.trim(), v.trim().to_string()),
-            None => (d.trim(), "1".to_string()), // -D NAME ≡ -D NAME=1（EDA 惯例，仅 CLI）
-        };
-        defines.insert(
-            name.to_string(),
-            Some(Define::new(
-                name.to_string(),
-                Vec::new(),
-                Some(DefineText::new(value, None)),
-            )),
-        );
+    // -D 压顶：同名 header 哨兵被显式展开值覆盖（keep_raw 仍最强，见下）
+    for (name, value) in &parsed_defs {
+        insert_def(&mut defines, name, value);
     }
     for name in keep_raw {
         let name = name.trim();
@@ -671,5 +684,23 @@ mod tests {
         let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[inc]).unwrap();
         assert!(defs.contains_key("BASE_W"), "macros from `include must be registered");
         assert!(defs.contains_key("TOP_W"));
+    }
+
+    /// -D seeds first: `ifdef inside a header sees -D macros (EDA .f-head behavior)
+    #[test]
+    fn define_seed_visible_in_header_ifdef() {
+        let dir = std::env::temp_dir().join(format!("hdxml_test_seed_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let hdr = dir.join("defs.svh");
+        std::fs::write(&hdr, "`ifdef SEED\n`define GATED 1\n`endif\n").unwrap();
+
+        // Without the seed the `ifdef branch must not fire
+        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[]).unwrap();
+        assert!(!defs.contains_key("GATED"), "without seed, `ifdef branch must not fire");
+        // With -D SEED=1 the gated macro is registered (sentinel by default)
+        let defs =
+            build_defines(&["SEED=1".to_string()], std::slice::from_ref(&hdr), &[], &[]).unwrap();
+        assert!(defs.contains_key("GATED"), "-D seed must be visible to header `ifdef");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
