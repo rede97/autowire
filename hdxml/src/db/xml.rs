@@ -1,4 +1,4 @@
-//! RtlIndex XML 导出器：每源文件一个 XML + 顶层 index.xml（docs/module-info.md §5）。
+//! RtlIndex XML 导出器：每源文件一个 XML + 顶层 index.xml（docs/hdxml/module-info.md §5）。
 //!
 //! 固定排序规则（每次序列化结果一致）：
 //! - `<files>`：按源文件路径字典序

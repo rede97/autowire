@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+  作者面示例：单层包装 + 显式 connect + rewrite 模板。
+  约束文档：docs/connect-html.md
+  对应渲染示意：01-rendered-simple.html
+  尚未有 aw.js；本文件仅作格式约束，勿当作可运行页。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>01-author-simple</title>
+  </head>
+  <body>
+    <aw-mod name="master_cfg_wrap">
+      <aw-param name="BUS_PIPE_NUM" expr="2"></aw-param>
+
+      <aw-inst id="u_decoder" mod="m2_ddrphy_master_decoder">
+        <aw-param name="PIPE_NUM" expr="BUS_PIPE_NUM"></aw-param>
+        <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
+        <aw-rewrite port="dec_in_(.*)" to="mst_blk_reg_$1[]"></aw-rewrite>
+      </aw-inst>
+    </aw-mod>
+  </body>
+</html>

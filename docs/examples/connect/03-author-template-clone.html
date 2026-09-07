@@ -1,0 +1,29 @@
+<!doctype html>
+<!--
+  作者面：data-template + script 生成多实例（示意脚本，aw.js 未落地前不可运行）。
+  对应渲染示意：03-rendered-template-clone.html
+  约束：docs/connect-html.md §3.2–3.3
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>03-author-template-clone</title>
+  </head>
+  <body>
+    <aw-mod name="lane_wrap">
+      <aw-param name="N" expr="2"></aw-param>
+
+      <aw-inst id="u_lane" mod="lane_slice" data-template="lane">
+        <aw-rewrite port="(.*)" to="lane_$1"></aw-rewrite>
+      </aw-inst>
+
+      <script type="module">
+        // 示意：按 N clone [data-template=lane]
+        // 1. 去掉模板节点（或标记为非 dump）
+        // 2. 生成 id=u_lane0..u_lane{N-1}
+        // 3. rewrite 落成逐条 aw-connect；必要时改写 to 前缀区分 lane
+        // 只用 DOM / aw.*；禁止 fetch / layout
+      </script>
+    </aw-mod>
+  </body>
+</html>

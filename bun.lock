@@ -9,7 +9,9 @@
         "commander": "^15.0.0",
       },
       "devDependencies": {
+        "@playwright/mcp": "^0.0.80",
         "@types/bun": "latest",
+        "playwright": "^1.63.0",
       },
       "peerDependencies": {
         "typescript": "^5",
@@ -17,6 +19,8 @@
     },
   },
   "packages": {
+    "@playwright/mcp": ["@playwright/mcp@0.0.80", "https://registry.npmmirror.com/@playwright/mcp/-/mcp-0.0.80.tgz", { "dependencies": { "playwright": "1.63.0-alpha-2026-08-31", "playwright-core": "1.63.0-alpha-2026-08-31" }, "bin": { "playwright-mcp": "cli.js" } }, "sha512-FOPXHm2SvFhAQylm10jMZ35B/SR2TaMLVkavAlwoG4N2qCb5RqbvhQYcu3zmXNyxR2DW0Ooxe+9XPVt5UjKRCQ=="],
+
     "@types/bun": ["@types/bun@1.4.1", "https://registry.npmmirror.com/@types/bun/-/bun-1.4.1.tgz", { "dependencies": { "bun-types": "1.4.1" } }, "sha512-0AVGiTXGajf1rgKom3N+c5L7CBxuoyyv1i44M0nX4UDK0G/fnRAMiri93nHuVPIb429KKtAgj7HatVmmOjeQLA=="],
 
     "@types/node": ["@types/node@26.4.1", "https://registry.npmmirror.com/@types/node/-/node-26.4.1.tgz", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-k97ENvZWtvA6yqz5/FS6a7duDgOPEeOQOc2iKS/nY6mX6qJUKtLnWzQS+Xj6tXweyj6ZcTAK2Qecetnvi9nCLA=="],
@@ -27,8 +31,16 @@
 
     "commander": ["commander@15.0.0", "https://registry.npmmirror.com/commander/-/commander-15.0.0.tgz", {}, "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="],
 
+    "playwright": ["playwright@1.63.0", "https://registry.npmmirror.com/playwright/-/playwright-1.63.0.tgz", { "dependencies": { "playwright-core": "1.63.0" }, "bin": { "playwright": "cli.js" } }, "sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg=="],
+
+    "playwright-core": ["playwright-core@1.63.0-alpha-2026-08-31", "https://registry.npmmirror.com/playwright-core/-/playwright-core-1.63.0-alpha-2026-08-31.tgz", { "bin": { "playwright-core": "cli.js" } }, "sha512-1ek0Lyr12h6jcs/WTcNoVtzZkQp7D/90PsMuBW/Rm6h3AsWAbzpqj0geMv8+8Tzzr9CSUYvg9kznrVZINQMXXw=="],
+
     "typescript": ["typescript@5.9.3", "https://registry.npmmirror.com/typescript/-/typescript-5.9.3.tgz", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "undici-types": ["undici-types@8.3.0", "https://registry.npmmirror.com/undici-types/-/undici-types-8.3.0.tgz", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
+
+    "@playwright/mcp/playwright": ["playwright@1.63.0-alpha-2026-08-31", "https://registry.npmmirror.com/playwright/-/playwright-1.63.0-alpha-2026-08-31.tgz", { "dependencies": { "playwright-core": "1.63.0-alpha-2026-08-31" }, "bin": { "playwright": "cli.js" } }, "sha512-3XAsuznfu8jBVJ4QxdGvBkt0+b8ZFwuwJYyOfiIw5ZjUOrNLNRhKxzLzLuydou3gJ9c6eMwVqgzdiOwhy54Kzw=="],
+
+    "playwright/playwright-core": ["playwright-core@1.63.0", "https://registry.npmmirror.com/playwright-core/-/playwright-core-1.63.0.tgz", { "bin": { "playwright-core": "cli.js" } }, "sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg=="],
   }
 }

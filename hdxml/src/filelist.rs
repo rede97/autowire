@@ -1,4 +1,4 @@
-//! 输入收集：.f 列表 / 目录遍历 / 散文件（语义见 docs/cli.md §2 共享输入组）。
+//! 输入收集：.f 列表 / 目录遍历 / 散文件（语义见 docs/hdxml/cli.md §2 共享输入组）。
 //! 与 svo 的差异：全部错误走 anyhow::Result，不再 panic。
 
 use anyhow::{Context, Result, anyhow};

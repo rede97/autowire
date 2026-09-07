@@ -1,4 +1,4 @@
-//! ProgressCenter — 跨线程进度核心（docs/architecture.md §5，第一阶段的薄实现）。
+//! ProgressCenter — 跨线程进度核心（docs/hdxml/module-info.md §5，第一阶段的薄实现）。
 //! 全局唯一；功能代码禁止直接 println!/eprintln!，一律经此处。
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};

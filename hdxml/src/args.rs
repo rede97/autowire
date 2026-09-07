@@ -1,4 +1,4 @@
-//! CLI 定义（docs/cli.md）。全局选项 global(true)，子命令前后均可。
+//! CLI 定义（docs/hdxml/cli.md）。全局选项 global(true)，子命令前后均可。
 
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
@@ -36,7 +36,7 @@ pub struct Cli {
     pub log_file: Option<PathBuf>,
 }
 
-/// 输入来源组（docs/cli.md §2）
+/// 输入来源组（docs/hdxml/cli.md §2）
 #[derive(Args, Debug, Default)]
 pub struct InputArgs {
     /// 源文件列表（.f，支持 #/​// 注释、-f 嵌套、$ENV 展开）

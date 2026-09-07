@@ -11,12 +11,22 @@ test("无 topic 打印全文，含接手约定", () => {
   expect(text).toContain("先做 cli、再补测试，不允许");
   expect(text).toContain("autowire deps");
   expect(text).toContain("当前状态");
+  expect(text).toContain("autowire.toml");
+  expect(text).toContain("顶→底");
 });
 
 test("每个切片都能独立打印", () => {
   expect(renderHelp("agent")).toContain("接手说明");
   expect(renderHelp("status")).toContain("已落地");
+  expect(renderHelp("workspace")).toContain("autowire.toml");
+  expect(renderHelp("workspace")).toContain("docs/workspace-toml.md");
   expect(renderHelp("connect")).toContain("aw-mod");
+  expect(renderHelp("connect")).toContain("docs/connect-html.md");
+  expect(renderHelp("connect")).toContain("顶 → 底");
+  expect(renderHelp("connect")).toContain("底 → 顶");
+  expect(renderHelp("connect")).toContain("aw-port");
+  expect(renderHelp("connect")).toContain("渲染后");
+  expect(renderHelp("dont")).toContain("autowire.toml");
   expect(renderHelp("web")).toContain("Playwright MCP");
   expect(renderHelp("dump")).toContain("/api/dump");
   expect(renderHelp("cli")).toContain("先做 cli");

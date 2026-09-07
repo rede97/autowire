@@ -4,7 +4,7 @@
 
 前期 autowire 就是一个 **Web 前端库**（自定义元素 + 页面）。隔离和调试交给 **Playwright**（无头 + Playwright MCP）。等页面用例够多，用这些用例约束再做完全无头的 `cli`。不为连接层自研 MCP。
 
-**Agent 接手：先跑 `bun index.ts help`（或 `autowire help`）。那就是用法和思路，不要另写项目提示词。改行为时同步改 `src/help.ts`。**
+**Agent 接手：先跑 `bun index.ts help`（或 `autowire help`）。那就是用法和思路，不要另写项目提示词。改行为时同步改 `src/help.ts`。格式约束见 [`docs/`](docs/README.md)。**
 
 ---
 
@@ -27,13 +27,17 @@
 ## 流水线
 
 ```text
-HTML + script
-    →  浏览器 / Playwright 渲染（elaboration）
+autowire.toml（.f + svh/宏）
+    →  hdxml → RtlIndex（只读）
+    →  HTML + script
+    →  ① 顶→底 param  ② 底→顶连线（elaboration）
     →  活 DOM = 连接关系
     →  POST /api/dump（结构化结果或 SV）
     →  autowire 写 .sv
     →  DV
 ```
+
+工作区配置：[`docs/workspace-toml.md`](docs/workspace-toml.md)。连接方言：[`docs/connect-html.md`](docs/connect-html.md)。
 
 打印机看的是 **script 跑完的 DOM**，不是源文件原文。
 
@@ -43,25 +47,21 @@ HTML + script
 
 `aw.js` + 约束 HTML，完全跑在浏览器里。
 
-- 标签：`aw-mod`、`aw-inst`、`aw-connect`、`aw-rewrite`、`aw-param`（小写、属性加引号）
-- 一份文件可嵌套多层；`id` 在路径下唯一
-- 静态规则对齐 emacs Verilog-mode 心智（rewrite 捕获、`@`、`[]`、AUTO 子集语义）
-- `<script>` 做复杂例化（clone、改 id）
-- 脚本只用 DOM / `aw.*`，不要依赖 layout、不要对外 `fetch`
-- 节点带可访问名字，方便 Playwright snapshot
+**两层（完整约束：[`docs/connect-html.md`](docs/connect-html.md)；示例：[`docs/examples/connect/`](docs/examples/connect/)）**
 
-```html
-<aw-mod name="master_cfg_wrap">
-  <aw-inst id="u_decoder" mod="m2_ddrphy_master_decoder">
-    <aw-param name="PIPE_NUM" expr="BUS_PIPE_NUM"></aw-param>
-    <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
-    <aw-rewrite port="dec_in_(.*)" to="mst_blk_reg_$1[]"></aw-rewrite>
-  </aw-inst>
-  <script type="module">
-    // 复杂例化
-  </script>
-</aw-mod>
-```
+| | 作者 HTML（源） | 渲染后活 DOM（结果） |
+|---|---|---|
+| 内容 | 模块名 + 可选参数；例化 / 连线 / param **模板** | 具体 instance、连线、**导出端口**（生成物） |
+| 像什么 | 带 rewrite / script 的模板 | elaborated XML：生成的 port、生成的实例 |
+| 谁看 | 人 / Agent 编辑 | 打印机、`/api/dump`、golden |
+
+- 作者标签：`aw-mod`、`aw-inst`、`aw-connect`、`aw-rewrite`、`aw-param`
+- Elaboration：**顶→底**推 param，**底→顶**连线 / 导出 port
+- 渲染后多出生成的：`aw-port`、展开后的 `aw-inst` / `aw-connect`（rewrite 落成逐条 connect）
+- 一份文件可嵌多层；`id` 在父路径下唯一
+- 静态规则对齐 emacs Verilog-mode 心智（rewrite 捕获、`@`、`[]`、AUTO 子集）
+- `<script>` 做复杂例化（clone、改 id）；只用 DOM / `aw.*`
+- **先文档约束，未实现前不要假装能渲染或 dump**
 
 `autowire web [html]`：本机起服务，给人用有头浏览器，给 Agent 用无头。
 
@@ -126,4 +126,5 @@ autowire cli phy.html --dump gen/
 - 浏览器直接写工作区  
 - 先做 cli 再补 Web 用例  
 - 两套连线语义（Web 与 cli 必须同一 `aw.js` + 同一 golden）  
+- 把连接关系写进 `autowire.toml`（toml 只做工程 / RTL 宇宙配置）  
 - 为每个芯片项目复制一份连接提示词（改 `src/help.ts`）  

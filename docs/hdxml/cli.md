@@ -1,7 +1,7 @@
 # CLI 设计（hdxml）
 
 > hdxml 是 autowire 的 RTL 分析 sidecar：唯一子命令 `analysis`（只读分析，导出 RtlIndex XML 目录）。
-> 数据模型与 XML schema 见 `module-info.md`。
+> 数据模型与 XML schema 见同目录 `module-info.md` / `rtlindex-xml.md`。
 
 ## 1. 全局选项（clap `global(true)`，子命令前后均可）
 

@@ -1,4 +1,4 @@
-// RtlIndex 读取层：解析 hdxml 产出的 index.xml（契约见 hdxml/docs/module-info.md §5）。
+// RtlIndex 读取层：解析 hdxml 产出的 index.xml（契约见 docs/hdxml/rtlindex-xml.md；语义见 docs/hdxml/module-info.md §5）。
 // 只读消费；模块→源文件路径经 <files> 的 index→source 映射联得，无需打开各文件 XML。
 
 import { readFile } from "node:fs/promises";

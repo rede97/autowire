@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  渲染后示意（实现目标）：rewrite 已落成 aw-connect；出现生成的 aw-port。
+  禁止把本文件当作者 SoT。约束：docs/connect-html.md §4
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>01-rendered-simple</title>
+  </head>
+  <body>
+    <aw-mod name="master_cfg_wrap">
+      <aw-param name="BUS_PIPE_NUM" value="2"></aw-param>
+
+      <aw-port name="dfi_clk" dir="input"></aw-port>
+      <aw-port name="mst_blk_reg_data" dir="input" width="32"></aw-port>
+
+      <aw-inst id="u_decoder" mod="m2_ddrphy_master_decoder">
+        <aw-param name="PIPE_NUM" value="2"></aw-param>
+        <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
+        <aw-connect port="dec_in_data" to="mst_blk_reg_data"></aw-connect>
+      </aw-inst>
+    </aw-mod>
+  </body>
+</html>

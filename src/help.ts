@@ -4,6 +4,7 @@
 export const HELP_TOPICS = [
   "agent",
   "status",
+  "workspace",
   "connect",
   "web",
   "dump",
@@ -44,7 +45,7 @@ Autowire — Agent 接手说明
 你现在就能做
   1. 读本 help，按「禁止」约束自己。
   2. 用 deps 看叶子 RTL 层级（RtlIndex / hdxml）。
-  3. 按 connect 方言写或改 HTML（即便 aw.js 还没落地，方言已定）。
+  3. 按 connect 方言写或改 HTML（完整约束 docs/connect-html.md；即便 aw.js 还没落地）。
   4. web / dump / cli 未落地时：不要假装已经能渲染或写盘；先补库和测试。
 
 web 落地后怎么干活（连接）
@@ -57,8 +58,10 @@ web 落地后怎么干活（连接）
   5. 没有浏览器的机器等 cli；cli 必须先通过现有 Web 用例，禁止先做 cli。
 
 流水线
-  HTML + script
-      →  浏览器 / Playwright 渲染（elaboration）
+  autowire.toml（.f + svh/宏）
+      →  hdxml → RtlIndex（只读）
+      →  HTML + script
+      →  ① 顶→底 param  ② 底→顶连线（elaboration）
       →  活 DOM = 连接关系
       →  POST /api/dump
       →  autowire 写 .sv
@@ -74,8 +77,11 @@ web 落地后怎么干活（连接）
                             path = RtlIndex 目录（含 index.xml）
                                  或 RTL 源码目录（先调 hdxml sidecar 分析）
   hdxml sidecar             Rust；analysis → RtlIndex XML；只读消费
+  Playwright 环境           无头 Chromium（headless shell）已装；Playwright MCP 经 .mcp.json
+                            提供（--headless --isolated，只放行 127.0.0.1/localhost 源）
 
 未落地（按此顺序做，不要跳）
+  autowire.toml 读取        工作区 .f / 宏 / .svh → 喂 hdxml（约束见 docs/workspace-toml.md）
   aw.js + 约束 HTML 自定义元素
   autowire web [html]       本机 HTTP，渲染页
   POST /api/dump            浏览器不写盘，autowire 写工作区 RTL
@@ -87,37 +93,58 @@ web 落地后怎么干活（连接）
   叶子端口表从 RtlIndex 只读喂给连接页
 `,
 
+  workspace: `\
+工作区配置 autowire.toml（草稿，未实现）
+
+完整约束：docs/workspace-toml.md
+
+同一份顶层配置，供 deps / web / cli 共享 RTL 宇宙：
+  源码入口 .f（及 walk/sources）
+  宏 defines + define .svh（对齐 hdxml --define-headers）
+  incdir、RtlIndex 输出目录等
+
+边界
+  toml = 工程配置（喂 hdxml / 校验 definesFp）
+  HTML = 连接 SoT（禁止把连线写进 toml）
+  不是旧 stune mods_info.toml 缓存的回归
+
+衔接 elaboration
+  toml 固定宏与 filelist → RtlIndex
+  → 顶→底推 aw-param → 底→顶连线（见 help connect / docs/connect-html.md）
+`,
+
   connect: `\
-HTML 方言（连接 SoT）
+HTML 方言（连接 SoT）— 草稿
 
-一份文件可嵌套多层。打印机看 script 跑完的 DOM，不是源文件原文。
-静态规则对齐 emacs Verilog-mode 心智（rewrite 捕获、@、[]、AUTO 子集语义），
-不对齐 emacs 进程。
+完整约束与示例（后续实现必须遵守，先不要当已落地）：
+  docs/connect-html.md
+  docs/examples/connect/
+  docs/workspace-toml.md   （.f / 宏；与连接衔接）
 
-标签（小写、属性加引号）
-  aw-mod       一个包装 / 层次
-  aw-inst      例化；id 在路径下唯一
-  aw-connect   端口连接
-  aw-rewrite   端口名改写
-  aw-param     参数
+两层，不要混
+  作者 HTML（源）     模块名 + 可选参数；例化 / 连线 / param 的模板
+  渲染后活 DOM（结果） 具体 instance、连线、导出端口（生成物）
+                       类似 elaborated XML：生成的 port、生成的实例
 
-脚本
-  <script type="module"> 做复杂例化（clone、改 id）
-  只用 DOM / aw.*，不要依赖 layout，不要对外 fetch
+打印机 / dump / golden 只认渲染后 DOM，不认源文件原文。
+静态规则对齐 emacs Verilog-mode 心智（rewrite 捕获、@、[]、AUTO 子集），
+不对齐 emacs 进程。属性名未冻结；改 docs/connect-html.md 时同步本段。
 
-节点带可访问名字，方便 Playwright snapshot。
+作者标签
+  aw-mod / aw-param / aw-inst / aw-connect / aw-rewrite
+  嵌套 aw-mod = 层次；aw-inst@id 在父路径下唯一
+  <script type="module">：clone 模板、改 id；只用 DOM / aw.*
 
-示例
-  <aw-mod name="master_cfg_wrap">
-    <aw-inst id="u_decoder" mod="m2_ddrphy_master_decoder">
-      <aw-param name="PIPE_NUM" expr="BUS_PIPE_NUM"></aw-param>
-      <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
-      <aw-rewrite port="dec_in_(.*)" to="mst_blk_reg_$1[]"></aw-rewrite>
-    </aw-inst>
-    <script type="module">
-      // 复杂例化
-    </script>
-  </aw-mod>
+Elaboration（引擎顺序，语义冻结）
+  ① 顶 → 底：绑定/求值 aw-param（expr → value）
+  ② 底 → 顶：叶子端口表展开 rewrite → aw-connect，再推导导出 aw-port
+  宏（toml/.svh）≠ 模块 param；先固定宏再推 param
+  连接顶不必是全芯片 RTL top；子树内部仍按上述顺序
+
+渲染后（dump 输入）
+  保留 aw-mod / aw-inst；rewrite 落成逐条 aw-connect
+  生成 aw-port（导出）；模板 clone 生成具体实例
+  详见 docs/examples/connect/*-rendered-*.html
 `,
 
   web: `\
@@ -139,7 +166,8 @@ Agent 只用 Playwright MCP（navigate / snapshot / evaluate / click），
   dump: `\
 写回
 
-浏览器不碰磁盘。页面或 Playwright 把渲染结果 POST 到同源 /api/dump。
+浏览器不碰磁盘。页面或 Playwright 把「渲染后活 DOM」POST 到同源 /api/dump
+（具体 instance / aw-connect / 导出 aw-port，不是作者源 HTML）。
 autowire 校验工作区路径后写 RTL。对错由 DV 测文件，不靠禁止 dump。
 
 web 与将来的 cli 必须走同一套写盘代码。
@@ -192,6 +220,8 @@ hdxml 查找顺序
   两套连线语义（Web 与 cli 必须同一 aw.js + 同一 golden）
   为每个芯片项目复制一份连接提示词（改本 help）
   把 README 写成第二套约定却不改 help
+  在 hdxml/docs/ 再放文档（统一 docs/）
+  把连接关系写进 autowire.toml（toml 只做工程配置）
 `,
 };
 
@@ -199,14 +229,15 @@ function topicsIndex(): string {
   return [
     "autowire help [topic]",
     "",
-    "  agent    接手说明（默认；无 topic 时打印全文）",
-    "  status   已落地 / 未落地",
-    "  connect  HTML 方言",
-    "  web      本机页 + Playwright",
-    "  dump     写回 RTL",
-    "  cli      后期无头（先测后做）",
-    "  deps     RtlIndex 依赖树",
-    "  dont     禁止事项",
+    "  agent     接手说明（默认；无 topic 时打印全文）",
+    "  status    已落地 / 未落地",
+    "  workspace 顶层 autowire.toml（.f / 宏）",
+    "  connect   HTML 方言（作者模板 vs 渲染结果）",
+    "  web       本机页 + Playwright",
+    "  dump      写回 RTL",
+    "  cli       后期无头（先测后做）",
+    "  deps      RtlIndex 依赖树",
+    "  dont      禁止事项",
     "",
   ].join("\n");
 }

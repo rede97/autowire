@@ -47,7 +47,7 @@ program.addHelpCommand(false);
 program
   .command("help")
   .description("打印 Agent 接手说明（用法 + 思路）；topic 见 help topics")
-  .argument("[topic]", "agent | status | connect | web | dump | cli | deps | dont | topics")
+  .argument("[topic]", "agent | status | workspace | connect | web | dump | cli | deps | dont | topics")
   .action((topic?: string) => {
     try {
       console.log(renderHelp(topic));

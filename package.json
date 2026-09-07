@@ -11,7 +11,9 @@
     "test": "bun test"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@playwright/mcp": "^0.0.80",
+    "@types/bun": "latest",
+    "playwright": "^1.63.0"
   },
   "peerDependencies": {
     "typescript": "^5"

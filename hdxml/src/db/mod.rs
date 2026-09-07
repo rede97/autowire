@@ -1,4 +1,4 @@
-//! DesignDb — 模块信息数据底座（docs/module-info.md）。
+//! DesignDb — 模块信息数据底座（docs/hdxml/module-info.md）。
 //! 纯净分析层：无条件全量收集 params/ports/instances/层级，零功能标志位。
 
 pub mod extract;
@@ -196,7 +196,7 @@ fn normalize(s: &str) -> String {
 }
 
 impl ModuleDecl {
-    /// 接口签名（docs/module-info.md §4）：参数+端口按声明序规范化后 blake3
+    /// 接口签名（docs/hdxml/module-info.md §4）：参数+端口按声明序规范化后 blake3
     pub fn compute_sig(&self) -> String {
         let mut canon = String::with_capacity(256);
         for p in &self.params {
