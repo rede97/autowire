@@ -21,14 +21,14 @@ pub struct ExportStats {
 pub struct XmlExport<'a> {
     db: &'a DesignDb,
     files: &'a [PathBuf],
-    /// 分析时使用的宏定义（名称, 值文本），按名称字典序
-    defines: &'a [(String, String)],
+    /// 分析时使用的宏定义（名称, 值文本）；None = 登记未展开（raw），按名称字典序
+    defines: &'a [(String, Option<String>)],
     /// 生成时间戳（unix 秒）；测试可注入固定值保证字节级确定性
     generated: u64,
 }
 
 impl<'a> XmlExport<'a> {
-    pub fn new(db: &'a DesignDb, files: &'a [PathBuf], defines: &'a [(String, String)]) -> Self {
+    pub fn new(db: &'a DesignDb, files: &'a [PathBuf], defines: &'a [(String, Option<String>)]) -> Self {
         Self {
             db,
             files,
@@ -41,7 +41,7 @@ impl<'a> XmlExport<'a> {
     fn with_generated(
         db: &'a DesignDb,
         files: &'a [PathBuf],
-        defines: &'a [(String, String)],
+        defines: &'a [(String, Option<String>)],
         generated: u64,
     ) -> Self {
         Self {
@@ -236,11 +236,15 @@ impl<'a> XmlExport<'a> {
         index_of: &BTreeMap<&PathBuf, String>,
     ) -> String {
         let mut w = XmlWriter::new();
-        // 宏指纹：排序后 name=value 逐行哈希；消费方不一致即整库作废
+        // 宏指纹：排序后逐行哈希（展开宏 "name=value"；raw 宏 "name" 无等号）；
+        // 消费方不一致即整库作废
         let defines_fp = short_hash(
             self.defines
                 .iter()
-                .map(|(n, v)| format!("{n}={v}"))
+                .map(|(n, v)| match v {
+                    Some(v) => format!("{n}={v}"),
+                    None => n.clone(),
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
                 .as_bytes(),
@@ -259,7 +263,10 @@ impl<'a> XmlExport<'a> {
         if !self.defines.is_empty() {
             w.open("defines", &[]);
             for (n, v) in self.defines {
-                w.empty("define", &[("name", n.clone()), ("value", v.clone())]);
+                match v {
+                    Some(v) => w.empty("define", &[("name", n.clone()), ("value", v.clone())]),
+                    None => w.empty("define", &[("name", n.clone()), ("raw", "true".to_string())]),
+                }
             }
             w.close("defines");
         }
@@ -628,8 +635,8 @@ mod tests {
         let db = demo_db(&f);
         let files = vec![f.clone()];
         let defs_a = vec![
-            ("ADDR_W".to_string(), "32".to_string()),
-            ("DATA_W".to_string(), "64".to_string()),
+            ("ADDR_W".to_string(), Some("32".to_string())),
+            ("DATA_W".to_string(), Some("64".to_string())),
         ];
         let dir = tmpdir("defs");
         XmlExport::with_generated(&db, &files, &defs_a, 0)
@@ -644,10 +651,10 @@ mod tests {
 
         // 宏集合变化 → 指纹必须变化（整库作废判定依据）
         let defs_b = vec![
-            ("ADDR_W".to_string(), "32".to_string()),
-            ("DATA_W".to_string(), "128".to_string()),
+            ("ADDR_W".to_string(), Some("32".to_string())),
+            ("DATA_W".to_string(), Some("128".to_string())),
         ];
-        let fp_of = |defs: &[(String, String)]| {
+        let fp_of = |defs: &[(String, Option<String>)]| {
             let dir = tmpdir("defs_fp");
             XmlExport::with_generated(&db, &files, defs, 0)
                 .write(&dir)
@@ -658,6 +665,22 @@ mod tests {
         };
         assert_ne!(fp_of(&defs_a), fp_of(&defs_b), "宏值变化必须改变指纹");
         assert_eq!(fp_of(&defs_a), fp_of(&defs_a), "同宏集指纹必须稳定");
+        // raw 宏（None）：XML 记 raw="true" 且无 value；与空值展开宏指纹必须可区分
+        let defs_raw = vec![
+            ("ADDR_W".to_string(), Some("32".to_string())),
+            ("DATA_W".to_string(), None),
+        ];
+        let dir_raw = tmpdir("defs_raw");
+        XmlExport::with_generated(&db, &files, &defs_raw, 0)
+            .write(&dir_raw)
+            .unwrap();
+        let index_raw = std::fs::read_to_string(dir_raw.join("index.xml")).unwrap();
+        assert!(
+            index_raw.contains("name=\"DATA_W\" raw=\"true\""),
+            "raw 宏必须带 raw 属性: {index_raw}"
+        );
+        let _ = std::fs::remove_dir_all(&dir_raw);
+        assert_ne!(fp_of(&defs_a), fp_of(&defs_raw), "展开与 raw 必须可区分");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

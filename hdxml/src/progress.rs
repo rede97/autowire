@@ -24,6 +24,13 @@ impl ProgressCenter {
         }
     }
 
+    /// svo 同款共享 spinner 样式（{prefix:.bold.dim} {spinner} {wide_msg}）
+    fn spinner_style() -> ProgressStyle {
+        ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
+            .unwrap()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+    }
+
     /// 阶段聚合条（done/total）；非 TTY 返回隐藏条（不产生输出）
     pub fn phase(&self, name: &str, total: u64) -> ProgressBar {
         if !self.tty {
@@ -31,11 +38,25 @@ impl ProgressCenter {
         }
         let pb = self.mp.add(ProgressBar::new(total));
         pb.set_style(
-            ProgressStyle::with_template("{msg} [{bar:40}] {pos}/{len} ({eta})")
+            ProgressStyle::with_template("{msg:.bold} [{bar:40}] {pos}/{len} ({eta})")
                 .unwrap()
                 .progress_chars("=>-"),
         );
         pb.set_message(name.to_string());
+        pb
+    }
+
+    /// 线程子进度条（svo 同款）：spinner + 当前处理文件；`--sub-bars` 开启时由 analyze 逐文件创建。
+    /// 非 TTY 返回隐藏条。
+    pub fn sub_bar(&self, thread_idx: usize, file: &str) -> ProgressBar {
+        if !self.tty {
+            return ProgressBar::hidden();
+        }
+        let pb = self.mp.add(ProgressBar::new_spinner());
+        pb.set_style(Self::spinner_style());
+        pb.set_prefix(format!("Analyzing[{thread_idx}]"));
+        pb.set_message(file.to_string());
+        pb.enable_steady_tick(Duration::from_millis(100));
         pb
     }
 

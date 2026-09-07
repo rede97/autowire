@@ -662,7 +662,7 @@ mod tests {
     }
 
     #[test]
-    fn content_hash与span切片一致() {
+    fn content_hash_matches_span_slice() {
         let src = "module m(input logic clk);\nendmodule\n";
         let (mods, src) = extract_src("hash_consistency", src);
         assert_eq!(mods.len(), 1);
@@ -676,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn 参数化端口与依赖提取() {
+    fn parameterized_ports_and_deps() {
         let src = r#"module fifo #(parameter int W = 8, parameter type T = logic [W-1:0]) (
   input logic clk,
   input T din,
@@ -709,7 +709,7 @@ endmodule
     }
 
     #[test]
-    fn 实例参数覆盖值剥离包裹与注释() {
+    fn inst_param_values_strip_wrappers_and_comments() {
         let src = r#"module top;
   sub #(.IS_FUNCTIONAL(1) // The gate is required to prevent glitches
         ) u0 ();
@@ -726,12 +726,46 @@ endmodule
     }
 
     #[test]
-    fn 接口签名对格式不敏感对内容敏感() {
+    fn interface_sig_format_insensitive_content_sensitive() {
         let a = "module m(input logic [7:0] d);\nendmodule\n";
         let b = "module m(\n  input   logic [7:0] d\n);\nendmodule\n";
         let c = "module m(input logic [8:0] d);\nendmodule\n";
         let sig = |s: &str| extract_src("sig", s).0[0].interface_sig.clone();
         assert_eq!(sig(a), sig(b), "空白差异不应改变签名");
         assert_ne!(sig(a), sig(c), "位宽差异必须改变签名");
+    }
+
+    #[test]
+    fn raw_macro_sentinel_kept_in_port_dims() {
+        // keep_raw 链路：--keep-raw WIDTH → 哨兵展开 → 维度与 deps 含哨兵名（dump 时还原 `WIDTH）
+        let src = "module m(output logic [`WIDTH-1:0] o);\nendmodule\n";
+        let dir = std::env::temp_dir().join(format!("hdxml_test_raw_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("raw.sv");
+        std::fs::write(&path, src).unwrap();
+        let defines =
+            crate::db::build_defines(&[], &[], &["WIDTH".to_string()]).unwrap();
+        let (pp, pp_defines) =
+            sv_parser::preprocess(&path, &defines, &[] as &[&Path], false, false)
+                .expect("预处理失败");
+        let pp_text = pp.text().to_string();
+        assert!(
+            pp_text.contains(crate::db::MACRO_RAW_PREFIX),
+            "预处理文本必须含哨兵: {pp_text}"
+        );
+        let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false).expect("解析失败");
+        let mods = Extractor::new(&pp_text).run(&tree);
+        let p = &mods[0].ports[0];
+        assert_eq!(
+            p.packed[0].text,
+            format!("{}-1:0", crate::db::MACRO_RAW_PREFIX.to_string() + "WIDTH"),
+            "维度必须保留哨兵: {:?}",
+            p.packed[0].text
+        );
+        assert_eq!(
+            p.packed[0].deps,
+            vec![format!("{}WIDTH", crate::db::MACRO_RAW_PREFIX)],
+            "deps 必须含哨兵名"
+        );
     }
 }

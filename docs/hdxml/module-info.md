@@ -103,7 +103,9 @@ struct DesignDb {
 - **DAG 求解**（svo 同语义）：`undef = 被引用 − 有定义`；`tops = 有定义 − 被引用`。层级树自 tops 展开，子节点 = 直接引用模块去重有序；环标注 `cycle="true"` 截断，黑盒标注 `blackbox="true"`。
 - **多模块文件**：ModuleDecl 各自独立，`file` 指向同一文件；导出时每文件聚合为一个 XML（一对多）。
 
-> **实现勘定（第一阶段落地）**：span 基准为**预处理后文本**（宏/include 展开后）。sv-parser 的 `parse_sv`/`parse_sv_str` 内部会重跑预处理，两阶段流程必须用 `parse_sv_pp(PreprocessedText, …)` 直取——二次预处理会使宏文本再展开、locate 整体漂移（common_cells 实测越界 panic）。源映射回原始文件可用 `PreprocessedText.origins`（`BTreeMap<Range, Origin>` → 原文件路径+范围），autowire 阶段重写定位走该映射。
+> **实现勘定（第一阶段落地）**：预处理 = include 展开 + **宏默认保原文**。展开规则：**只有显式给值的宏**（CLI `-D` / toml `[defines]` 带值项）真展开；`--define-headers` 头文件宏与 `--keep-raw` 宏一律转**哨兵**（登记为 `Some("__MACRO__DEFINE__NAME")`，带参宏保留形参表 `…NAME(a,b)` 使实参落回原位），表达式中落占位符标识符、`` `ifdef `` 判真（判定只看 key 存在性）；消费方 dump 时 `strip_prefix` 还原为 `` `NAME ``（svo obfuscator 同式）。覆盖顺序：headers → `-D` → `--keep-raw`。sv-parser-pp 宏表（`HashMap<String, Option<Define>>`）其余两态：`None` **删除**宏引用（不是原文保留）；未登记报 `DefineNotFound`（源文件内 `` `define `` 由预处理自动登记真值、正常展开）。span 基准为该**分析文本**。sv-parser 的 `parse_sv`/`parse_sv_str` 内部会重跑预处理，两阶段流程必须用 `parse_sv_pp(PreprocessedText, …)` 直取——二次预处理会使宏文本再展开、locate 整体漂移（common_cells 实测越界 panic）。源映射回原始文件可用 `PreprocessedText.origins`（`BTreeMap<Range, Origin>` → 原文件路径+范围），autowire 阶段重写定位走该映射。
+
+> **specify 剥离（解析前）**：`specify…endspecify` 时序块在预处理前按**字节等长留白**抹除（`src/db/strip.rs`，移植自 ipchecker `strip_specify_blocks`；sv-parser 对部分时序块解析异常）。等长 ⇒ origin 映射与 span 不漂移；注释/字符串内的 `specify` 不触发；未配对块原样保留交解析器报错。include 文件内的 specify 块不在本阶段处理。
 
 ## 4. 接口签名（InterfaceSig）
 
@@ -117,7 +119,7 @@ canonical(module) = concat(
 interface_sig = blake3(canonical)
 ```
 
-- `normalize`：剥离空白/注释、宏引用保持 `` `NAME `` 原样（不展开）。
+- `normalize`：剥离空白/注释、宏引用保持 `` `NAME `` 原样（不展开；未收录宏本就不展开，见 §3）。
 - **顺序敏感**：端口/参数顺序参与签名（位置连接的合法性依赖顺序）。
 - 与 `content_hash` 区分：content_hash 覆盖模块全部文本（含内部逻辑）；interface_sig 只覆盖参数+端口。autowire 跳过判定用后者。
 
@@ -202,6 +204,7 @@ undef 模块：有实例无定义 → 记入 `undef`，其 `InstanceInfo.target_
 
 - B-1 **参数不求值**：`[W-1:0]` 中的 `W` 在父模块被 override 时，AUTOWIRE 需要宽度 → 做**字面量/同名参数文本替换**（`ExprText.deps` 替换为实例参数值文本），替换后仍含未知符号则原样输出并告警。不做常量表达式求值器（v2 范围外）。
 - B-2 generate 块内实例、数组化实例（`u[3:0]`）：收集；展开与物化不在分析器范围内。
-- B-3 宏内声明的端口（`` `PORT_DECL(x) ``）：宏展开后可见，但 span 落在宏展开文本而非源文本 → 该模块标记 `readonly`（不可重写），仅参与签名。
+- B-3 已展开宏内声明的端口（`` `PORT_DECL(x) ``，仅限 autowire 宏集合中被展开的宏）：展开后可见，但 span 落在宏展开文本而非源文本 → 该模块标记 `readonly`（不可重写），仅参与签名。未展开宏不触发本条。
 - B-4 interface/modport 端口的"宽度"语义不属于本模块签名的一部分，签名只含 interface 类型名 + modport 名。
 - B-5 package 定位为**名字级**：`<imports>` 记录显式 import 与 `pkg::sym` 作用域引用（含 `$unit` 级），不做 wildcard 冲突与跨编译单元符号裁决；interface 依 1800 不能声明在 package 内，其 package 依赖来自端口/modport 的类型引用。
+- B-6 保原文宏（headers / keep_raw，**默认不展开**）在分析文本中以哨兵 `__MACRO__DEFINE__NAME` 出现（端口类型/维度/缺省表达式及 deps 同名；带参宏实参已落回形参位）：连线层**禁止**求值；dump 时 `strip_prefix` 还原为 `` `NAME ``。未登记宏引用 → 预处理报 `DefineNotFound`（严格模式：拼写错误即报错，不做未知名自动登记）。

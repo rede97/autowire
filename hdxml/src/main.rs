@@ -23,17 +23,24 @@ fn main() -> Result<()> {
 }
 
 fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter) -> Result<()> {
-    let defines = db::build_defines(&a.input.defines, &a.input.define_headers)?;
+    let defines = db::build_defines(&a.input.defines, &a.input.define_headers, &a.input.keep_raw)?;
     // 供 index.xml 记录：排序的 (名称, 值文本) 列表；宏变更 → 指纹变 → 整库作废
-    let mut define_pairs: Vec<(String, String)> = defines
+    let mut define_pairs: Vec<(String, Option<String>)> = defines
         .iter()
         .map(|(n, d)| {
-            (
-                n.clone(),
-                d.as_ref()
-                    .and_then(|d| d.text.as_ref().map(|t| t.text.clone()))
-                    .unwrap_or_default(),
-            )
+            let v = d.as_ref().and_then(|d| d.text.as_ref().map(|t| t.text.clone()));
+            // keep_raw/header 哨兵宏在 index.xml 记为 raw（raw="true"、无 value）；
+            // 哨兵文本形如 `PREFIX`NAME 或带形参 `PREFIX`NAME(a,b)
+            match v {
+                Some(t)
+                    if t
+                        .strip_prefix(db::MACRO_RAW_PREFIX)
+                        .is_some_and(|rest| rest == *n || rest.starts_with(&format!("{n}("))) =>
+                {
+                    (n.clone(), None)
+                }
+                other => (n.clone(), other),
+            }
         })
         .collect();
     define_pairs.sort();
@@ -43,9 +50,7 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
     }
     pc.println(&format!("输入文件: {}", files.len()));
 
-    let pb = pc.phase("解析分析", files.len() as u64);
-    let db = db::analyze_files(&files, &defines, &a.input.incdirs, pool, &pb)?;
-    pb.finish_and_clear();
+    let db = db::analyze_files(&files, &defines, &a.input.incdirs, pool, &pc, a.sub_bars)?;
 
     // 摘要
     pc.println(&format!(

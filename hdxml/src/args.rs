@@ -63,6 +63,10 @@ pub struct InputArgs {
     #[arg(long, num_args = 1..)]
     pub define_headers: Vec<PathBuf>,
 
+    /// 登记宏但不展开：表达式保留 `NAME 原文，`ifdef NAME 仍判真（autowire.toml 空值宏经此传入）
+    #[arg(long, num_args = 1..)]
+    pub keep_raw: Vec<String>,
+
     /// include 搜索路径（+incdir）
     #[arg(short = 'I', long, num_args = 1..)]
     pub incdirs: Vec<PathBuf>,
@@ -76,6 +80,10 @@ pub struct AnalysisArgs {
     /// 打印依赖树
     #[arg(long)]
     pub tree: bool,
+
+    /// 每线程子进度条（spinner 显示当前处理文件，svo 同款样式）
+    #[arg(long)]
+    pub sub_bars: bool,
 
     /// 导出 RtlIndex XML 到目录（每源文件一个 XML + index.xml）
     #[arg(long)]

@@ -36,7 +36,7 @@
   - `<modules>/<module>`、`<packages>/<package>`：按 `name` 字典序；
   - `<module>` 子结构固定次序：`<imports>` → `<params>` → `<ports>` → `<instances>`；组内元素按源码声明序（`<import>` 例外见 §5.3）；
   - `<hierarchy>` 内兄弟 `<node>`：按 `module` 字典序。
-- 所有 `span` 为**预处理后文本**的字节偏移 `start:end`（含宏/include 展开），映射回源文件需 sv-parser-pp origins；消费者不得把 span 当作源文件偏移。
+- 所有 `span` 为**分析文本**的字节偏移 `start:end`（分析文本 = include 展开 + `defines` 宏集合展开后的文本；未收录宏引用保持 `` `NAME `` 原文不展开，见 module-info.md §3），映射回源文件需 sv-parser-pp origins；消费者不得把 span 当作源文件偏移。
 - 时间戳一律为 unix 秒（整数）。
 
 ## 4. index.xml
@@ -76,7 +76,7 @@
 | `modules` | int | 是 | 已定义模块总数（= `<modules>` 子元素数） |
 | `packages` | int | 是 | 已定义 package 总数（= `<packages>` 子元素数） |
 | `errorFiles` | int | 是 | 含分析错误的文件数 |
-| `definesFp` | string | 是 | 宏定义指纹（`name=value` 排序逐行 blake3-128）；消费方宏集合指纹不一致 ⇒ **整个索引作废**（§6） |
+| `definesFp` | string | 是 | 宏定义指纹（逐行排序 blake3-128：展开宏 `name=value`，raw 宏 `name` 无等号）；消费方宏集合指纹不一致 ⇒ **整个索引作废**（§6） |
 
 ### 4.2 `<defines>/<define>`（分析时使用的宏定义，按 `name` 字典序；为空则整组省略）
 
@@ -84,6 +84,9 @@
 |---|---|---|---|
 | `name` | string | 是 | 宏名 |
 | `value` | string | 是 | 宏值文本（`-D NAME` 无值按 EDA 惯例记为 `1`；来自 `-D` 与 `--define-headers`） |
+| `raw` | bool | 否 | `true` = 登记未展开的保原文宏（哨兵展开，见 module-info.md §3）；此时**必须**无 `value` |
+
+只有本组宏参与展开：`raw="true"` 的宏以哨兵占位符形式出现在类型/维度/缺省表达式中（消费方禁止求值，module-info.md B-6）；**未登记**的宏引用使生产者预处理报 `DefineNotFound`。
 
 预处理结果由宏集合决定，因此宏是索引有效性的一部分：消费方**必须**以当前宏集合按同一规则计算指纹并与 `definesFp` 比对，不一致不得使用该索引。
 

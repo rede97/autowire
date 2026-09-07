@@ -21,7 +21,8 @@
 | `-w, --walk-dirs DIR...` | 递归收集 `*.sv/*.v` |
 | `--exclude-filenames NAME...` | 按文件名（不含目录）排除 |
 | `-D, --defines NAME=VALUE...` | 宏定义；**无 `=VALUE` 时视为 `NAME=1`**（EDA 工具惯例，vcs/verilator 同） |
-| `--define-headers FILE...` | 从头文件提取 `` `define ``（`SV_COV*` 过滤保留） |
+| `--keep-raw NAME...` | 登记宏保原文（哨兵 `__MACRO__DEFINE__NAME`，`` `ifdef `` 判真，dump 时还原 `` `NAME ``）；用于未出现在 `--define-headers` 中的名字；覆盖 `-D`/headers 同名 |
+| `--define-headers FILE...` | 从头文件提取 `` `define ``（`SV_COV*` 过滤保留）；**默认保原文**：一律转哨兵不展开，需展开用 `-D NAME=VALUE` 覆盖同名 |
 | `-I, --incdirs DIR...` | include 搜索路径（+incdir；列表类选项均可空格分隔多值） |
 
 ## 3. `hdxml analysis` — 层级分析/导出
@@ -32,6 +33,7 @@ hdxml analysis [输入组] [--tree] [--xml DIR] [--fail-on-undef]
 
 | 选项 | 说明 |
 | `--xml DIR` | 导出 RtlIndex XML 目录：每源文件一个 XML（镜像源码相对路径命名；模块参数/端口/实例 + 文件级错误，含行列定位）+ `index.xml`（文件清单、模块→XML 映射、顶层 DAG 层级树）。失效产物按旧 manifest 自动 GC（`module-info.md` §5） |
+| `--sub-bars` | 每线程子进度条：spinner 显示该线程当前处理的文件（svo 同款 `{prefix} {spinner} {msg}` 样式）；非 TTY 自动隐藏 |
 | `--tree` | 终端打印依赖树（termtree；黑盒标 `[blackbox]`） |
 | `--fail-on-undef` | 存在黑盒模块时退出码 1（CI 用；默认黑盒仅列出） |
 

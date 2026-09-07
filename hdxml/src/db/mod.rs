@@ -2,6 +2,7 @@
 //! 纯净分析层：无条件全量收集 params/ports/instances/层级，零功能标志位。
 
 pub mod extract;
+pub mod strip;
 pub mod xml;
 
 use anyhow::Result;
@@ -358,10 +359,37 @@ use std::collections::HashMap;
 use std::path::Path;
 use sv_parser::{Define, DefineText};
 
+/// 保原文宏的展开哨兵前缀（svo `__MACRO__DEFINE__` 同式）：
+/// `` `WIDTH `` 展开为 `__MACRO__DEFINE__WIDTH`，消费方 dump 时 strip_prefix 还原。
+/// （sv-parser-pp 0.13.4 的 None 值是**删除**宏引用而非原文保留，故不能用 None。）
+pub const MACRO_RAW_PREFIX: &str = "__MACRO__DEFINE__";
+
+/// 宏的哨兵定义：`` `NAME `` 展开为 `__MACRO__DEFINE__NAME`（保原文，`ifdef` 判真）。
+/// 带参宏保留形参表（`__MACRO__DEFINE__MIN(a,b)`），实参由 pp 替换落回原位，还原规则不变。
+fn sentinel_define(name: &str, args: &[(String, Option<String>)]) -> Option<Define> {
+    let text = if args.is_empty() {
+        format!("{MACRO_RAW_PREFIX}{name}")
+    } else {
+        let params = args.iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>().join(",");
+        format!("{MACRO_RAW_PREFIX}{name}({params})")
+    };
+    Some(Define::new(
+        name.to_string(),
+        args.to_vec(),
+        Some(DefineText::new(text, None)),
+    ))
+}
+
 /// 构建宏定义表（K-2 修复：无 `=VALUE` 视为 `NAME=1`；SV_COV* 过滤保留）
+///
+/// **默认保原文**：只有 `defs`（-D / toml 带值）真展开；`headers` 宏默认转哨兵（保原文）。
+/// 宏表值语义（sv-parser-pp `HashMap<String, Option<Define>>`）：
+/// `Some` = 展开（哨兵也是一种展开）；`None` = 删除宏引用；未登记 = 预处理报 `DefineNotFound`。
+/// 覆盖顺序：headers（哨兵）→ `defs`（真值，显式展开优先）→ `keep_raw`（哨兵，显式保原文最强）。
 pub fn build_defines(
     defs: &[String],
     headers: &[PathBuf],
+    keep_raw: &[String],
 ) -> Result<HashMap<String, Option<Define>>> {
     let mut defines: HashMap<String, Option<Define>> = HashMap::new();
     for h in headers {
@@ -371,13 +399,14 @@ pub fn build_defines(
             if name.starts_with("SV_COV") {
                 continue;
             }
-            defines.insert(name, def);
+            let args = def.as_ref().map(|d| d.arguments.clone()).unwrap_or_default();
+            defines.insert(name.clone(), sentinel_define(&name, &args));
         }
     }
     for d in defs {
         let (name, value) = match d.split_once('=') {
             Some((n, v)) => (n.trim(), v.trim().to_string()),
-            None => (d.trim(), "1".to_string()), // -D NAME ≡ -D NAME=1
+            None => (d.trim(), "1".to_string()), // -D NAME ≡ -D NAME=1（EDA 惯例，仅 CLI）
         };
         defines.insert(
             name.to_string(),
@@ -388,17 +417,23 @@ pub fn build_defines(
             )),
         );
     }
+    for name in keep_raw {
+        let name = name.trim();
+        defines.insert(name.to_string(), sentinel_define(name, &[]));
+    }
     Ok(defines)
 }
 
 /// 并行解析 + 提取（barrier 后 DesignDb 不可变）。
 /// 单文件失败不中止：错误（含行列定位）收入 `DesignDb.errors`，由导出层写入对应 XML。
+/// `sub_bars`：每线程子进度条（spinner 显示当前处理文件，svo 同款渲染样式）。
 pub fn analyze_files(
     files: &[PathBuf],
     defines: &HashMap<String, Option<Define>>,
     incdirs: &[PathBuf],
     pool: &rayon::ThreadPool,
-    pb: &indicatif::ProgressBar,
+    pc: &crate::progress::ProgressCenter,
+    sub_bars: bool,
 ) -> Result<DesignDb> {
     use dashmap::DashMap;
     use rayon::prelude::*;
@@ -406,14 +441,27 @@ pub fn analyze_files(
     let collected: DashMap<String, ModuleDecl> = DashMap::new();
     let errors: DashMap<PathBuf, Vec<FileError>> = DashMap::new();
 
+    let pb = pc.phase("Analyzing", files.len() as u64);
     pool.install(|| {
         files.par_iter().for_each(|path| {
+            let sub = sub_bars.then(|| {
+                pc.sub_bar(
+                    rayon::current_thread_index().unwrap_or(0),
+                    &path.display().to_string(),
+                )
+            });
             let result = (|| -> std::result::Result<Vec<ModuleDecl>, FileError> {
+                // specify…endspecify 先按字节等长留白（sv-parser 对时序块解析异常，
+                // 移植自 ipchecker strip_specify_blocks；等长 ⇒ origin/span 不漂移）。
                 // 两阶段：preprocess 展开宏/include 后，用 parse_sv_pp 直接解析
                 // PreprocessedText（parse_sv_str 会二次预处理，宏文本再展开导致 locate 漂移）。
                 // SyntaxTree.text 私有，提取器用同字节副本。
-                let (pp, pp_defines) = sv_parser::preprocess(path, defines, incdirs, false, false)
-                    .map_err(|e| FileError::new(format!("预处理失败: {e}")))?;
+                let raw = std::fs::read_to_string(path)
+                    .map_err(|e| FileError::new(format!("读取失败: {e}")))?;
+                let stripped = strip::strip_specify_blocks(&raw);
+                let (pp, pp_defines) =
+                    sv_parser::preprocess_str(&stripped, path, defines, incdirs, false, false, 0, 0)
+                        .map_err(|e| FileError::new(format!("预处理失败: {e}")))?;
                 let src = pp.text().to_string();
                 let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false).map_err(|e| {
                     FileError::located(format!("解析失败: {e}"), &format!("{e:?}"), &src)
@@ -442,9 +490,13 @@ pub fn analyze_files(
                     errors.entry(path.clone()).or_default().push(e);
                 }
             }
+            if let Some(sub) = sub {
+                sub.finish_and_clear();
+            }
             pb.inc(1);
         });
     });
+    pb.finish_and_clear();
 
     Ok(DesignDb::new(
         collected.into_iter().collect(),
@@ -477,4 +529,125 @@ pub fn dep_tree(db: &DesignDb) -> Vec<termtree::Tree<String>> {
         .iter()
         .map(|t| build(db, t, &mut BTreeSet::new()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MACRO_RAW_PREFIX, build_defines};
+
+    #[test]
+    fn keep_raw_registers_sentinel_and_overrides() {
+        let defs = build_defines(
+            &["WIDTH=32".to_string(), "SYNTH".to_string()],
+            &[],
+            &["WIDTH".to_string(), "DEPTH".to_string()],
+        )
+        .unwrap();
+        let w = defs.get("WIDTH").unwrap().as_ref().unwrap();
+        assert_eq!(
+            w.text.as_ref().unwrap().text,
+            format!("{MACRO_RAW_PREFIX}WIDTH"),
+            "keep_raw 必须覆盖 -D 展开值"
+        );
+        assert!(defs.get("DEPTH").unwrap().is_some());
+        assert_eq!(
+            defs.get("SYNTH").unwrap().as_ref().unwrap().text.as_ref().unwrap().text,
+            "1",
+            "裸名 -D 仍按 EDA 惯例展开为 1"
+        );
+    }
+
+    #[test]
+    fn keep_raw_expands_sentinel_and_ifdef_true() {
+        let defs = build_defines(&[], &[], &["WIDTH".to_string()]).unwrap();
+        let src = "module m(output logic [`WIDTH-1:0] o);\n`ifdef WIDTH\n  localparam int K = 1;\n`endif\nendmodule\n";
+        let (pp, _) = sv_parser::preprocess_str(
+            src,
+            "<test>",
+            &defs,
+            &[] as &[&std::path::Path],
+            false,
+            false,
+            0,
+            0,
+        )
+        .unwrap();
+        let text = pp.text();
+        assert!(
+            text.contains(&format!("{MACRO_RAW_PREFIX}WIDTH")),
+            "raw 宏必须展开为哨兵占位符: {text}"
+        );
+        assert!(
+            text.contains("localparam int K"),
+            "`ifdef 对 keep_raw 宏必须判真: {text}"
+        );
+    }
+    /// 默认保原文：headers 宏转哨兵（带参宏保留形参）；-D 显式展开优先；keep_raw 最强
+    #[test]
+    fn headers_default_raw_and_override_order() {
+        let dir = std::env::temp_dir().join(format!("hdxml_test_hdr_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let hdr = dir.join("defs.svh");
+        std::fs::write(&hdr, "`define H_WIDTH 32\n`define H_MIN(a,b) ((a)<(b)?(a):(b))\n").unwrap();
+
+        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[]).unwrap();
+        let w = defs.get("H_WIDTH").unwrap().as_ref().unwrap();
+        assert_eq!(
+            w.text.as_ref().unwrap().text,
+            format!("{MACRO_RAW_PREFIX}H_WIDTH"),
+            "header 宏必须默认转哨兵"
+        );
+        let m = defs.get("H_MIN").unwrap().as_ref().unwrap();
+        assert_eq!(
+            m.text.as_ref().unwrap().text,
+            format!("{MACRO_RAW_PREFIX}H_MIN(a,b)"),
+            "带参宏哨兵必须保留形参表"
+        );
+        assert_eq!(m.arguments.len(), 2, "形参必须保留（pp 实参替换依赖）");
+
+        // -D 显式给值 → 覆盖 header 哨兵，真展开
+        let defs = build_defines(&["H_WIDTH=64".to_string()], std::slice::from_ref(&hdr), &[]).unwrap();
+        assert_eq!(
+            defs.get("H_WIDTH").unwrap().as_ref().unwrap().text.as_ref().unwrap().text,
+            "64"
+        );
+        // keep_raw → 覆盖 -D，回到哨兵
+        let defs = build_defines(
+            &["H_WIDTH=64".to_string()],
+            std::slice::from_ref(&hdr),
+            &["H_WIDTH".to_string()],
+        )
+        .unwrap();
+        assert_eq!(
+            defs.get("H_WIDTH").unwrap().as_ref().unwrap().text.as_ref().unwrap().text,
+            format!("{MACRO_RAW_PREFIX}H_WIDTH")
+        );
+    }
+
+    /// 端到端：header 带参宏经哨兵展开后实参落回原位
+    #[test]
+    fn header_fn_macro_sentinel_keeps_actual_args() {
+        let dir = std::env::temp_dir().join(format!("hdxml_test_fn_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let hdr = dir.join("defs.svh");
+        std::fs::write(&hdr, "`define H_MIN(a,b) ((a)<(b)?(a):(b))\n").unwrap();
+        let defs = build_defines(&[], &[hdr], &[]).unwrap();
+        let src = "module m;\n  localparam int K = `H_MIN(3, 5);\nendmodule\n";
+        let (pp, _) = sv_parser::preprocess_str(
+            src,
+            "<test>",
+            &defs,
+            &[] as &[&std::path::Path],
+            false,
+            false,
+            0,
+            0,
+        )
+        .unwrap();
+        assert!(
+            pp.text().contains(&format!("{MACRO_RAW_PREFIX}H_MIN(3,5)")),
+            "实参必须落回哨兵形参位: {}",
+            pp.text()
+        );
+    }
 }
