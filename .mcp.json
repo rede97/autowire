@@ -1,14 +1,14 @@
 {
-  "mcpServers": {
-    "playwright": {
-      "command": "bunx",
-      "args": [
-        "@playwright/mcp",
-        "--headless",
-        "--isolated",
-        "--allowed-origins",
-        "http://127.0.0.1:*;http://localhost:*"
-      ]
-    }
-  }
+	"mcpServers": {
+		"playwright": {
+			"command": "bunx",
+			"args": [
+				"@playwright/mcp",
+				"--headless",
+				"--isolated",
+				"--allowed-origins",
+				"http://127.0.0.1:*;http://localhost:*"
+			]
+		}
+	}
 }

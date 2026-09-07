@@ -318,11 +318,9 @@ autowire.toml（.f + svh/宏）
 ## 9. 开放项（实现前裁定）
 
 1. 未在 `aw-ports` 声明、但被连线用到的信号：是否自动升为导出 port，还是只进 `aw-signals`？  
-2. ~~`aw-param` 折叠策略~~ **已定**：自动检查——常量、继承本模 param、**匹配本模内部 localparam** → 折叠；表达式 → 不折；**宏不可折叠**（`connect-rules.md` §7.2）。uniquify 名 `Mod__Inst__Param`。  
-3. dump：序列化顶层 `aw-render` 子树 vs 含全部嵌套 render？  
-4. 跨 `aw-mod` 引用 `aw-template` 是否允许？生命周期钩子作用域见 [`connect-lifecycle.md`](./connect-lifecycle.md) 开放项。  
-5. overwrite：同标签内「base + 子规则」与「多 template 兄弟」两种都允许；禁止规则直接挂在 `aw-inst` 下。  
-6. `aw-imports`：语义已定（接口引用 package 时自动自底向上继承）；dump 行为（SV `import` 语句生成位置/去重）？
-7. 工作区 toml 开放项见 [`workspace-toml.md`](./workspace-toml.md) §6。
+2. dump：序列化顶层 `aw-render` 子树 vs 含全部嵌套 render？  
+3. 跨 `aw-mod` 引用 `aw-template` 是否允许？生命周期钩子作用域见 [`connect-lifecycle.md`](./connect-lifecycle.md) 开放项。  
+4. `aw-imports` 的 dump 行为（SV `import` 语句生成位置/去重）？  
+5. 工作区 toml 开放项见 [`workspace-toml.md`](./workspace-toml.md) §6。
 
 裁定后改本文 + `help connect`，再动代码。

@@ -98,8 +98,6 @@ autowire.toml（.f + svh/宏 + incdir …）
 
 ## 6. 开放项（实现前裁定）
 
-1. 多包/多 chip 是否允许多份 toml，还是单工作区单文件 + profile 表？  
-2. `filelists` 与 CI 的 `.f` 是否要求符号链接/生成，避免双源？  
-3. 配置变更后：自动失效并重建 RtlIndex，还是仅校验 `definesFp` 报错？  
+1. 多包/多 chip 是否允许多份 toml，还是单工作区单文件 + profile 表？
 
 裁定后改本文 + `help workspace`，再动代码。

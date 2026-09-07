@@ -274,7 +274,7 @@ Connect page reads port tables only; deps must not rewrite RTL.
 	dont: `\
 Do not
 
-  XML / one-file-per-level connectivity as SoT
+  connectivity SoT in XML / one-file-per-level files (RtlIndex XML is an index, not connectivity)
   connection-specific MCP (outline, apply, rewrite, …)
   mcp / run / repl as the main entry
   browser writing the workspace directly
