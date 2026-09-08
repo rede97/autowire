@@ -5,8 +5,13 @@
 
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
+// Browser assets embedded as text: same source in dev (`bun index.ts`) and in
+// the compiled binary (`bun build --compile`); web/aw.js is the built bundle.
+// @ts-expect-error Bun text import (typed via src/assets.d.ts for editors that resolve it)
+import awBundle from "../web/aw.js" with { type: "text" };
+// @ts-expect-error Bun text import
+import pageJs from "../web/page.js" with { type: "text" };
 import {
 	buildEngineCtx,
 	connectDir,
@@ -20,7 +25,6 @@ import { assertPrintable, parseSnapshot, writeSvFiles } from "./printer.ts";
 import { loadRtlIndex } from "./rtlindex.ts";
 import type { WorkspaceConfig } from "./workspace.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const UNIT_ID = /^[A-Za-z0-9_-]+$/;
 
 interface WebState {
@@ -229,8 +233,6 @@ export async function startWeb(
 ): Promise<string> {
 	const leafDb = new LeafDb(ws.indexDir);
 	const state: WebState = { ws, leafDb, defaultUnit };
-	const awJs = await readFile(join(HERE, "../web/aw.js"), "utf8");
-	const pageJs = await readFile(join(HERE, "../web/page.js"), "utf8");
 	const server = Bun.serve({
 		hostname: "127.0.0.1",
 		port,
@@ -242,7 +244,7 @@ export async function startWeb(
 				if (req.method !== "GET")
 					return json({ error: "method not allowed" }, 405);
 				if (url.pathname === "/aw.js") {
-					return new Response(awJs, {
+					return new Response(awBundle, {
 						headers: { "content-type": "text/javascript; charset=utf-8" },
 					});
 				}
