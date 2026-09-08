@@ -9,7 +9,7 @@ import {
 	on as hookOn,
 	runBeforeInstances,
 	serializeSnapshot,
-} from "../web/aw.ts";
+} from "./core/aw.ts";
 
 /** querySelector + non-null, failing the test with context instead of `!`. */
 function mustQuery(root: ParentNode, sel: string): Element {

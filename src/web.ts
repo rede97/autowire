@@ -7,7 +7,6 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { check as awCheck } from "../web/aw.ts";
 import {
 	buildEngineCtx,
 	connectDir,
@@ -15,6 +14,7 @@ import {
 	topoUnits,
 } from "./connect.ts";
 import { connectXml } from "./connectxml.ts";
+import { check as awCheck } from "./core/aw.ts";
 import { LeafDb } from "./leaf.ts";
 import { assertPrintable, parseSnapshot, writeSvFiles } from "./printer.ts";
 import { loadRtlIndex } from "./rtlindex.ts";

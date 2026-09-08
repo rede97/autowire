@@ -27,7 +27,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 ### 2.2 aw.js（Web 前端库 / elaboration 引擎）
 
 `aw.js` + 约束 HTML，完全跑在浏览器里（Custom Elements）。
-源码是 **`web/aw.ts`**（TypeScript）；`web/aw.js` 由 `bun run build:web` 生成（浏览器单文件，签入；新鲜度由 `src/web-build.test.ts` 守卫，禁止手改）。服务端 check 与单测直接 import `web/aw.ts`（Bun 原生 TS），同一源码无分叉。
+源码是 **`src/core/aw.ts`**（TypeScript）；`web/aw.js` 由 `bun run build:web` 生成（浏览器单文件，签入；新鲜度由 `src/web-build.test.ts` 守卫，禁止手改）。服务端 check 与单测直接 import `src/core/aw.ts`（Bun 原生 TS），同一源码无分叉。
 
 **两层**（完整约束：[connect-html.md](./connect-html.md)；示例：[examples/connect/](./examples/connect/)）：
 

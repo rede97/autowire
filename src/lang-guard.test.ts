@@ -7,11 +7,7 @@ const CJK =
 
 describe("language guard", () => {
 	test("no CJK in TypeScript sources", async () => {
-		const files = [
-			"index.ts",
-			...new Bun.Glob("src/**/*.ts").scanSync(),
-			...new Bun.Glob("web/**/*.ts").scanSync(),
-		];
+		const files = ["index.ts", ...new Bun.Glob("src/**/*.ts").scanSync()];
 		const offenders: string[] = [];
 		for (const f of files) {
 			const text = await Bun.file(f).text();

@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Command } from "commander";
 import { buildEngineCtx, loadUnitDoc, topoUnits } from "./src/connect.js";
+import { check as awCheck } from "./src/core/aw.ts";
 import { renderHelp } from "./src/help.js";
 import { LeafDb } from "./src/leaf.js";
 import { loadRtlIndex } from "./src/rtlindex.js";
@@ -20,7 +21,6 @@ import {
 	hdxmlArgs,
 	loadWorkspace,
 } from "./src/workspace.js";
-import { check as awCheck } from "./web/aw.ts";
 
 /** Resolve hdxml binary: --hdxml > toml [hdxml] bin > $HDXML_BIN > repo target/{release,debug} > PATH */
 function findHdxml(explicit?: string, tomlBin?: string | null): string {

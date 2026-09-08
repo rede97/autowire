@@ -1,4 +1,4 @@
-// web/aw.ts
+// src/core/aw.ts
 function evalConst(expr) {
   const s = expr.trim();
   if (s === "" || /[A-Za-z_`$]/.test(s.replace(/\d+'[bodhBODH][0-9a-fA-FxXzZ?]+/g, "")))
