@@ -221,11 +221,28 @@ for (const group of ["projects", "corpus"]) {
 	}
 }
 
-const cols = ["files", "modules", "tops", "blackbox", "error_files"] as const;
+const cols = [
+	"files",
+	"modules",
+	"tops",
+	"blackbox",
+	"error_files",
+	"reused",
+	"parsed",
+] as const;
+const colHeader: Record<(typeof cols)[number], string> = {
+	files: "files",
+	modules: "modules",
+	tops: "tops",
+	blackbox: "blackbox",
+	error_files: "errors",
+	reused: "reused",
+	parsed: "parsed",
+};
 console.log("================ summary ================");
 console.log(
 	"target".padEnd(22) +
-		cols.map((c) => c.replace("error_files", "errors").padStart(9)).join("") +
+		cols.map((c) => colHeader[c].padStart(9)).join("") +
 		"  note",
 );
 for (const r of rows) {
