@@ -30,11 +30,13 @@ function* walk(dir: string): Generator<string> {
 	}
 }
 
-/** 含 .svh 的目录及其父目录（覆盖 "regs.svh" 源相对式与 "common_cells/regs.svh" 前缀式 include） */
+/** incdirs 探测：含 .svh 的目录 ∪ 名为 include 的目录（前者覆盖源相对式 include，
+ *  后者覆盖 cv32e40p bhv/include 这类只放 .sv 被 include 文件的目录）；
+ *  各级目录的父目录一并加入（覆盖 "common_cells/regs.svh" 前缀式 include） */
 function includeDirs(base: string): string[] {
 	const dirs = new Set<string>();
 	for (const f of walk(base)) {
-		if (!f.endsWith(".svh")) continue;
+		if (!f.endsWith(".svh") && !f.includes("/include/")) continue;
 		dirs.add(dirname(f));
 		dirs.add(dirname(dirname(f)));
 	}
@@ -44,8 +46,8 @@ function includeDirs(base: string): string[] {
 const siblingIncdirs = includeDirs(join(root, "projects"));
 
 interface TargetCfg {
-	/** projects 组共享全部 include 目录并排除验证侧目录 */
-	excludeDirs?: string[];
+	/** 排除文件名（实现变体二选一，如 cv32e40p register_file ff/latch 取 ff） */
+	excludeFilenames?: string[];
 	/** 真展开的全局宏头文件（EDA .f 头部 svh 等价物；ASSERT 等模块项宏） */
 	expandHeaders?: string[];
 	/** 额外 -D（如 VERILATOR 选 prim_assert 假宏分支） */
@@ -53,6 +55,9 @@ interface TargetCfg {
 }
 
 const perTarget: Record<string, TargetCfg> = {
+	"projects/cv32e40p": {
+		excludeFilenames: ["cv32e40p_register_file_latch.sv"],
+	},
 	"projects/opentitan": {
 		expandHeaders: [
 			"hw/ip/prim/rtl/prim_assert.sv",
@@ -96,6 +101,7 @@ for (const group of ["projects", "corpus"]) {
 		];
 		for (const i of incdirs) args.push("-I", i);
 		for (const d of cfg.defines ?? []) args.push("-D", d);
+		if (cfg.excludeFilenames) args.push("--exclude-filenames", ...cfg.excludeFilenames);
 		if (cfg.expandHeaders) {
 			args.push(
 				"--expand-headers",
