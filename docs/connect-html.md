@@ -183,11 +183,12 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 |---|---|---|
 | `match` | 是 | JS RegExp 源（对整个端口名；**应当**写 `^…$`） |
 | `flags` | 否 | 默认 `""` |
-| `to` | 是 | 替换得到的**净网名**（捕获 + 变量；顺序见 §3.4.1）；**禁止**夹带 `[]` / part-select |
+| `to` | 是 | 替换得到的**净网名**（捕获 + 变量；顺序见 §3.4.1）；**禁止**夹带 `[]` / part-select。常量见 §3.5.3 |
 | `packed` / `width` | 否 | 见 §3.5.1；默认 `auto`（`width` = 一维 packed 简写） |
 | `unpacked` | 否 | 见 §3.5.1 |
 | `part` | 否 | 见 §3.5.1 |
 | `nettype` | 否 | 见 §3.5.2 |
+| `type` | 否 | 可选断言 `net`\|`const`（§3.5.3）；与推断不一致 → 报错 |
 
 ```html
 <aw-rewrite match="^dec_in_(.+)$" to="mst_blk_reg_$1" packed="auto"></aw-rewrite>
@@ -248,6 +249,27 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 ></aw-connect>
 ```
 
+### 3.5.3 常量连线（`to` = 常量表达式）
+
+> 细则与评审记录：[`connect-const-proposal.md`](./connect-const-proposal.md)（已转正式约束）。
+
+`aw-connect@to`（以及 `aw-rewrite@to`）在 `${…}` 变量代入后分类：
+
+| 形态 | 分类 | 语义 |
+|---|---|---|
+| 合法标识符，且**不**命中本模 param/localparam | 净网名 | 建网/维度/自动导出（§3.5.1–3.5.2） |
+| 单一标识符命中本模 param / localparam | 常量引用 | 不建网，dump 内联 `.port(NAME)` |
+| 以数字 / `'` / `{` / `` ` `` 开头 | 常量表达式 | 字面量、拼接/复制、宏原文内联 |
+| 含运算符且**全部**标识符命中 param/localparam | 常量表达式 | 如 `W+1`、`{W{1'b0}}` |
+| 其他 | 报错 | — |
+
+- 常量**不建网**（不进 `aw-signals`、不参与维度合并、不触发自动导出端口）；`part` / `packed` / `width` / `unpacked` / `nettype` 与常量互斥（同写报错）。
+- 常量只能驱动 **input** 端口（连 output/inout → 报错）。
+- `aw-rewrite` 产常量 = 批量 tie-off（match 须覆盖全端口名），此时**禁止**正则捕获。
+- `type="net|const"` 可选断言：与引擎推断不一致 → 报错。
+- **能力边界**：更复杂的信号·常量组合（三元、位运算等）不内嵌于连接方言，**必须**单独写集成小模块再例化。
+- 示例：[`examples/connect/05-author-const.html`](./examples/connect/05-author-const.html) / [`05-rendered-const.html`](./examples/connect/05-rendered-const.html)。
+
 ### 3.5.2 `nettype`（`wire` / `logic`）
 
 - dump 默认 **`wire`**（互联网）。  
@@ -263,8 +285,8 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 | `aw-localparam` | content 或 render 的 `aw-localparams` | 作者：`name`+`expr`；render：`name`+`value`，宜有 `folded` / `for-inst` / `for-param` |
 | `aw-port` | content 显式导出；render 导出结果 | `name`；`dir`；可选维信息；`dir="interface"` 时**必须** `interface=`，可选 `modport=` |
 | `aw-inst` | content / render `aw-insts` | `id`；`mod`；可选 `idx` |
-| `aw-connect` | template 内 / render | `port`；`to`；可选 `packed`/`width`/`unpacked`/`part`/`nettype`；render 宜保留求值后的 `part` |
-| `aw-rewrite` | 仅作者面 template 内 | `match` + `to`；可选 `flags` 与上列维/选位/`nettype` |
+| `aw-connect` | template 内 / render | `port`；`to`（净网名或常量，§3.5.3）；可选 `packed`/`width`/`unpacked`/`part`/`nettype`/`type`；render 宜保留求值后的 `part` |
+| `aw-rewrite` | 仅作者面 template 内 | `match` + `to`；可选 `flags` / `type` 与上列维/选位/`nettype`（常量时全禁，§3.5.3） |
 | `aw-signal` | 仅 `aw-render` / `aw-signals` | `name`；可选 `packed`/`unpacked`/`nettype`（`width` 仅作一维简写输入，render **应当**规范成 `packed`） |
 
 ### 3.7 脚本
@@ -355,6 +377,8 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 | [`examples/connect/03-rendered-template-reuse.html`](./examples/connect/03-rendered-template-reuse.html) | 复用后 render（共享 bus + part） |
 | [`examples/connect/04-author-multidim.html`](./examples/connect/04-author-multidim.html) | 多维：`packed` + `unpacked`；`packed=auto` |
 | [`examples/connect/04-rendered-multidim.html`](./examples/connect/04-rendered-multidim.html) | 多维 render 示意 |
+| [`examples/connect/05-author-const.html`](./examples/connect/05-author-const.html) | 常量连线：字面量 / 拼接复制 / 宏 / param·localparam 引用 |
+| [`examples/connect/05-rendered-const.html`](./examples/connect/05-rendered-const.html) | 常量 render（引擎实际产物） |
 
 ## 9. 渲染生命周期
 

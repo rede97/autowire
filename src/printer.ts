@@ -281,6 +281,14 @@ export function printSv(m: RenderModule, unitId: string): string {
 		lines.push(`\t${signalDecl(s.nettype, s.packed, s.unpacked, s.name)}`);
 	}
 	if (printedSignals > 0) lines.push("");
+	// Constant tie-offs (docs/connect-const-proposal.md): a connect whose `to`
+	// is a plain identifier names a net, UNLESS it matches a module
+	// param/localparam (constant reference); anything else is inlined as a
+	// constant expression. Part-selects exist only on nets (engine-enforced).
+	const constNames = new Set([
+		...m.params.map((p) => p.name),
+		...m.localparams.map((l) => l.name),
+	]);
 	for (const inst of m.insts) {
 		const ptext = inst.params.map((p) => `.${p.name}(${p.value})`);
 		const head =
@@ -289,9 +297,13 @@ export function printSv(m: RenderModule, unitId: string): string {
 				: `\t${inst.mod} ${inst.id} (`;
 		lines.push(head);
 		for (const [i, c] of inst.connects.entries()) {
-			const sel = c.part ? `[${c.part.replace(/^\[|\]$/g, "")}]` : "";
+			const netForm =
+				/^[A-Za-z_][A-Za-z0-9_]*$/.test(c.to) && !constNames.has(c.to);
+			const rhs = netForm
+				? `${c.to}${c.part ? `[${c.part.replace(/^\[|\]$/g, "")}]` : ""}`
+				: c.to;
 			lines.push(
-				`\t\t.${c.port}(${c.to}${sel})${i < inst.connects.length - 1 ? "," : ""}`,
+				`\t\t.${c.port}(${rhs})${i < inst.connects.length - 1 ? "," : ""}`,
 			);
 		}
 		lines.push("\t);");

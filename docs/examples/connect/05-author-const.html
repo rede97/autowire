@@ -1,0 +1,62 @@
+<!doctype html>
+<!--
+  作者面规范示例：常量连线（docs/connect-const-proposal.md，已评审）。
+  aw-connect@to 二态：净网名 | 常量表达式（字面量 / 拼接复制 / 宏 / param·localparam 引用，
+  支持 ${…} 变量代入）。常量不建网、不导出端口；type="net|const" 为可选断言。
+  对应渲染示意：05-rendered-const.html
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>05-author-const</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-mod name="const_wrap">
+        <aw-content>
+          <aw-imports></aw-imports>
+          <aw-params>
+            <aw-param name="MODE" expr="2"></aw-param>
+          </aw-params>
+          <aw-localparams>
+            <aw-localparam name="INIT_VAL" expr="8'hA5"></aw-localparam>
+          </aw-localparams>
+          <aw-ports></aw-ports>
+          <aw-templates>
+            <aw-template name="cfg_tpl" inst_name="${id}_${idx}">
+              <aw-connect port="clk" to="clk"></aw-connect>
+              <!-- 宏常量：原样内联，不展开 -->
+              <aw-connect port="en_i" to="`CFG_EN" type="const"></aw-connect>
+              <!-- param 引用 → 常量（不写 type 则由引擎推断） -->
+              <aw-connect port="mode_i" to="MODE"></aw-connect>
+              <!-- localparam 引用 → 常量 -->
+              <aw-connect port="init_i" to="INIT_VAL"></aw-connect>
+              <!-- 批量 tie-off：常量 rewrite 禁捕获，match 须覆盖全名 -->
+              <aw-rewrite match="^test_.*_i$" to="1'b0" type="const"></aw-rewrite>
+            </aw-template>
+          </aw-templates>
+          <aw-insts>
+            <aw-inst id="u_cfg" mod="cfg_reg" idx="0">
+              <aw-template base="cfg_tpl"></aw-template>
+            </aw-inst>
+            <aw-inst id="u_cfg" mod="cfg_reg" idx="1">
+              <!-- overwrite：${idx} 代入后与 localparam 组合成复制表达式 -->
+              <aw-template base="cfg_tpl">
+                <aw-connect port="init_i" to="{${idx}{INIT_VAL}}" type="const"></aw-connect>
+              </aw-template>
+            </aw-inst>
+          </aw-insts>
+        </aw-content>
+        <aw-submods></aw-submods>
+        <aw-render>
+          <aw-params></aw-params>
+          <aw-imports></aw-imports>
+          <aw-localparams></aw-localparams>
+          <aw-ports></aw-ports>
+          <aw-signals></aw-signals>
+          <aw-insts></aw-insts>
+        </aw-render>
+      </aw-mod>
+    </autowire>
+  </body>
+</html>

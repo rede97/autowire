@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+  渲染后示意：对应 05-author-const（引擎实际产物，非作者 SoT）。
+  常量连线：不建网（aw-signals 只有真实网名 clk）、不导出端口；
+  to 保留常量原文；${idx} 已代入；宏 `CFG_EN 原样内联。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>05-rendered-const</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-mod name="const_wrap">
+        <aw-content></aw-content>
+        <aw-submods></aw-submods>
+        <aw-render>
+          <aw-params>
+            <aw-param name="MODE" value="2"></aw-param>
+          </aw-params>
+          <aw-imports></aw-imports>
+          <aw-localparams>
+            <aw-localparam name="INIT_VAL" value="8'hA5"></aw-localparam>
+          </aw-localparams>
+          <aw-ports>
+            <aw-port dir="input" name="clk" nettype="logic"></aw-port>
+          </aw-ports>
+          <aw-signals>
+            <aw-signal name="clk" nettype="logic"></aw-signal>
+          </aw-signals>
+          <aw-insts>
+            <aw-inst id="u_cfg_0" mod="cfg_reg">
+              <aw-connect port="clk" to="clk"></aw-connect>
+              <aw-connect port="en_i" to="`CFG_EN"></aw-connect>
+              <aw-connect port="mode_i" to="MODE"></aw-connect>
+              <aw-connect port="init_i" to="INIT_VAL"></aw-connect>
+              <aw-connect port="test_mode_i" to="1'b0"></aw-connect>
+              <aw-connect port="test_scan_i" to="1'b0"></aw-connect>
+            </aw-inst>
+            <aw-inst id="u_cfg_1" mod="cfg_reg">
+              <aw-connect port="clk" to="clk"></aw-connect>
+              <aw-connect port="en_i" to="`CFG_EN"></aw-connect>
+              <aw-connect port="mode_i" to="MODE"></aw-connect>
+              <aw-connect port="init_i" to="{1{INIT_VAL}}"></aw-connect>
+              <aw-connect port="test_mode_i" to="1'b0"></aw-connect>
+              <aw-connect port="test_scan_i" to="1'b0"></aw-connect>
+            </aw-inst>
+          </aw-insts>
+        </aw-render>
+      </aw-mod>
+    </autowire>
+  </body>
+</html>

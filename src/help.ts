@@ -156,7 +156,8 @@ Two layers; do not mix
 
 Dump / golden only accept aw-render (every related mod; nested + multi-HTML).
 aw-rewrite: RegExp match + String.replace ($1 / $<name>) + \${…}; match+to only.
-aw-connect@to / aw-param@expr / aw-template@inst_name: variable expressions only (no $1).
+aw-connect@to: net name OR constant (literal / concat / macro / param ref; no net, input only) — docs/connect-const-proposal.md;
+  aw-param@expr / aw-template@inst_name: variable expressions only (no $1).
 aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlIndex form),
   unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; default wire);
   to is net name only — no [] suffix. See docs/connect-html.md §3.5.1–3.5.2;

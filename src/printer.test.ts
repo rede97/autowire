@@ -35,6 +35,9 @@ const SNAP = `<autowire>
           <aw-connect port="clk" to="clk_i"></aw-connect>
           <aw-connect port="d" to="arr" part="[2]"></aw-connect>
           <aw-connect port="q" to="mid"></aw-connect>
+          <aw-connect port="en" to="32'h0"></aw-connect>
+          <aw-connect port="w_in" to="W"></aw-connect>
+          <aw-connect port="init" to="{48{1'b1}}"></aw-connect>
         </aw-inst>
       </aw-insts>
     </aw-render>
@@ -83,7 +86,10 @@ describe("printer", () => {
 		expect(sv).toContain("leaf #(.Width(top__u0__Width)) u0 (");
 		expect(sv).toContain(".clk(clk_i),");
 		expect(sv).toContain(".d(arr[2]),");
-		expect(sv).toContain("endmodule");
+		// constant tie-offs inline verbatim (no part-select wrapping)
+		expect(sv).toContain(".en(32'h0),");
+		expect(sv).toContain(".w_in(W),");
+		expect(sv).toContain(".init({48{1'b1}})");
 	});
 
 	test("interface ports print as type.modport", () => {

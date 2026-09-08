@@ -65,6 +65,11 @@
 | `width` | 一维 packed 简写（`auto` \| `15:0`）；与 `packed` 冲突则报错 |
 | `part` | 可选；连线 part-select；省略 = 整网 |
 | `nettype` | 可选；`wire`\|`logic`；默认 dump `wire`（auto 时可继承端口） |
+| `type` | 可选断言 `net`\|`const`；与推断不一致报错 |
+
+`to` 也接受**常量表达式**（字面量 / 拼接复制 / 宏 / param·localparam 引用，变量先代入）：
+常量不建网、只能连 input 端口、禁 `part`/维度属性；rewrite 产常量 = 批量 tie-off（禁捕获）。
+完整细则：[`connect-const-proposal.md`](./connect-const-proposal.md)；示例 `examples/connect/05-*.html`。
 
 ```html
 <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
@@ -184,6 +189,7 @@ master_decoder #(.PIPE_NUM(master_cfg_wrap__u_decoder__PIPE_NUM)) u_decoder (…
 - 用 `$` 分隔 uniquify 名  
 - 静默覆盖同名 localparam / 信号  
 - 把宏或表达式当常量折叠  
+- 在连接方言里内嵌复杂信号·常量组合逻辑（三元/位运算等）——单独写集成小模块再例化  
 - 跨 `aw-mod` 引用 `aw-template`  
 - 同级 submods 靠文档序「前向」互引却不写 `aw-mod@deps`（合法性只认 deps + 路径累积可见集）  
 - 同级 `deps` 成环、未知名、自依赖，或引用旁系孙子（共享须上提后再写 deps）  

@@ -161,7 +161,9 @@ describe("check (author face)", () => {
 		);
 		const res = check(doc, ctxWith({ leaf: counterLeaf }));
 		expect(res.errors.some((e) => e.includes("regex captures"))).toBe(true);
-		expect(res.errors.some((e) => e.includes("bare net name"))).toBe(true);
+		expect(
+			res.errors.some((e) => e.includes("neither a net name nor a constant")),
+		).toBe(true);
 	});
 
 	test("aw-param on localparam or unknown param rejected; unknown port rejected", () => {
@@ -417,5 +419,123 @@ describe("elaborate (render)", () => {
 		expect(snap).toContain('id="gen"');
 		expect(snap).not.toContain("aw-template");
 		clearUnitHooks("t1");
+	});
+});
+
+describe("constant tie-off (connect-const-proposal)", () => {
+	const leaf = leafOf(
+		[
+			{ name: "clk_i", dir: "input" },
+			{ name: "en_i", dir: "input" },
+			{ name: "mode_i", dir: "input", packed: "[1:0]" },
+			{ name: "init_i", dir: "input", packed: "[7:0]" },
+			{ name: "test_a_i", dir: "input" },
+			{ name: "test_b_i", dir: "input" },
+			{ name: "q_o", dir: "output" },
+		],
+		[],
+	);
+	const scopeHead =
+		`<aw-mod name="m"><aw-content>` +
+		`<aw-params><aw-param name="W" expr="8"></aw-param></aw-params>` +
+		`<aw-localparams><aw-localparam name="INIT" expr="8'hA5"></aw-localparam></aw-localparams>`;
+	const mkInst = (rules: string) =>
+		docOf(
+			`${scopeHead}<aw-insts><aw-inst id="u" mod="leaf" idx="2"><aw-template>${rules}</aw-template></aw-inst></aw-insts></aw-content></aw-mod>`,
+		);
+
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: test title documents the ${idx} dialect syntax
+	test("literal / replication / ${idx} constants create no net and no export", () => {
+		const doc = mkInst(
+			`<aw-connect port="en_i" to="1'b0"></aw-connect>
+			 <aw-connect port="init_i" to="{48{1'b1}}"></aw-connect>
+			 <aw-connect port="mode_i" to="{\${idx}{1'b1}}"></aw-connect>`,
+		);
+		expect(check(doc, ctxWith({ leaf })).errors).toEqual([]);
+		expect(elaborate(doc, ctxWith({ leaf })).errors).toEqual([]);
+		const connects = [...doc.querySelectorAll("aw-render aw-connect")].map(
+			(c) => [c.getAttribute("port"), c.getAttribute("to")],
+		);
+		expect(connects).toContainEqual(["en_i", "1'b0"]);
+		expect(connects).toContainEqual(["init_i", "{48{1'b1}}"]);
+		// ${idx} substitutes before classification
+		expect(connects).toContainEqual(["mode_i", "{2{1'b1}}"]);
+		// no nets / no ports were created for the constants
+		expect(doc.querySelectorAll("aw-render aw-signal")).toHaveLength(0);
+		expect(doc.querySelectorAll("aw-render aw-port")).toHaveLength(0);
+	});
+
+	test("param/localparam reference is a constant; expression with all-known identifiers too", () => {
+		const doc = mkInst(
+			`<aw-connect port="en_i" to="W"></aw-connect>
+				 <aw-connect port="init_i" to="INIT"></aw-connect>
+				 <aw-connect port="mode_i" to="W+1"></aw-connect>`,
+		);
+		expect(check(doc, ctxWith({ leaf })).errors).toEqual([]);
+		expect(elaborate(doc, ctxWith({ leaf })).errors).toEqual([]);
+		// no signal named W / INIT / "W+1" may appear
+		expect(doc.querySelectorAll("aw-render aw-signal")).toHaveLength(0);
+	});
+
+	test("unknown identifier in a constant expression is an error", () => {
+		const doc = mkInst(`<aw-connect port="mode_i" to="NOPE+1"></aw-connect>`);
+		expect(
+			check(doc, ctxWith({ leaf })).errors.some((e) =>
+				e.includes("neither a net name nor a constant"),
+			),
+		).toBe(true);
+	});
+
+	test("part/dims on a constant are rejected; type assertion mismatch errors", () => {
+		const bad1 = mkInst(
+			`<aw-connect port="en_i" to="1'b0" part="0"></aw-connect>`,
+		);
+		expect(
+			check(bad1, ctxWith({ leaf })).errors.some((e) =>
+				e.includes("part-select"),
+			),
+		).toBe(true);
+		const bad2 = mkInst(
+			`<aw-connect port="en_i" to="1'b0" type="net"></aw-connect>`,
+		);
+		expect(
+			check(bad2, ctxWith({ leaf })).errors.some((e) =>
+				e.includes('type="net"'),
+			),
+		).toBe(true);
+		const okAssert = mkInst(
+			`<aw-connect port="en_i" to="1'b0" type="const"></aw-connect>`,
+		);
+		expect(check(okAssert, ctxWith({ leaf })).errors).toEqual([]);
+	});
+
+	test("constant rewrite = batch tie-off; captures in const rewrite rejected", () => {
+		// full-name match: String.replace replaces only the matched span
+		const doc = mkInst(`<aw-rewrite match="^test_.*$" to="1'b0"></aw-rewrite>`);
+		expect(check(doc, ctxWith({ leaf })).errors).toEqual([]);
+		expect(elaborate(doc, ctxWith({ leaf })).errors).toEqual([]);
+		const connects = [...doc.querySelectorAll("aw-render aw-connect")].map(
+			(c) => [c.getAttribute("port"), c.getAttribute("to")],
+		);
+		expect(connects).toContainEqual(["test_a_i", "1'b0"]);
+		expect(connects).toContainEqual(["test_b_i", "1'b0"]);
+		const badCap = mkInst(
+			`<aw-rewrite match="^test_(.+)$" to="48'h0$1"></aw-rewrite>`,
+		);
+		// to after replace starts with a digit → const; captures present → error
+		expect(
+			check(badCap, ctxWith({ leaf })).errors.some((e) =>
+				e.includes("captures"),
+			),
+		).toBe(true);
+	});
+
+	test("constant cannot drive an output port", () => {
+		const doc = mkInst(`<aw-connect port="q_o" to="1'b1"></aw-connect>`);
+		expect(
+			elaborate(doc, ctxWith({ leaf })).errors.some((e) =>
+				e.includes("inputs only"),
+			),
+		).toBe(true);
 	});
 });

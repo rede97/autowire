@@ -133,4 +133,37 @@ describe("docs examples elaborate (locked golden shape)", () => {
 		expect(parts).toContain("lane=[1]");
 		expect(parts).toContain("word=[0]");
 	});
+
+	test("05-author-const: constants inline, only real nets become signals", async () => {
+		const doc = await authorDoc("05-author-const.html");
+		const ctx = ctxWith({
+			cfg_reg: {
+				ports: [
+					{ name: "clk", dir: "input" },
+					{ name: "en_i", dir: "input" },
+					{ name: "mode_i", dir: "input", packed: "[1:0]" },
+					{ name: "init_i", dir: "input", packed: "[7:0]" },
+					{ name: "test_mode_i", dir: "input" },
+					{ name: "test_scan_i", dir: "input" },
+					{ name: "dout_o", dir: "output", packed: "[7:0]" },
+				],
+			},
+		});
+		expect(check(doc, ctx).errors).toEqual([]);
+		expect(elaborate(doc, ctx).errors).toEqual([]);
+		// only "clk" is a real net; constants never enter aw-signals
+		const sigs = [...doc.querySelectorAll("aw-render aw-signal")].map((s) =>
+			s.getAttribute("name"),
+		);
+		expect(sigs).toEqual(["clk"]);
+		const inst1 = [...doc.querySelectorAll("aw-render aw-inst")].find(
+			(i) => i.getAttribute("id") === "u_cfg_1",
+		);
+		const conn = (port: string) =>
+			inst1?.querySelector(`aw-connect[port="${port}"]`)?.getAttribute("to");
+		expect(conn("en_i")).toBe("`CFG_EN");
+		expect(conn("mode_i")).toBe("MODE");
+		expect(conn("init_i")).toBe("{1{INIT_VAL}}");
+		expect(conn("test_mode_i")).toBe("1'b0");
+	});
 });
