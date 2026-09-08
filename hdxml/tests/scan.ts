@@ -36,7 +36,8 @@ function* walk(dir: string): Generator<string> {
 function includeDirs(base: string): string[] {
 	const dirs = new Set<string>();
 	for (const f of walk(base)) {
-		if (!f.endsWith(".svh") && !f.includes("/include/")) continue;
+		if (!f.endsWith(".svh") && !f.endsWith(".vh") && !f.includes("/include/"))
+			continue;
 		dirs.add(dirname(f));
 		dirs.add(dirname(dirname(f)));
 	}
@@ -48,15 +49,41 @@ const siblingIncdirs = includeDirs(join(root, "projects"));
 interface TargetCfg {
 	/** 排除文件名（实现变体二选一，如 cv32e40p register_file ff/latch 取 ff） */
 	excludeFilenames?: string[];
+	/** 追加排除目录名（合并进 projects 组全局排除；如 hpdcache SRAM 工艺变体） */
+	excludeDirs?: string[];
 	/** 真展开的全局宏头文件（EDA .f 头部 svh 等价物；ASSERT 等模块项宏） */
 	expandHeaders?: string[];
 	/** 额外 -D（如 VERILATOR 选 prim_assert 假宏分支） */
 	defines?: string[];
+	/** 生成步骤（marker 缺失时执行一次；如 veer-el2 的 el2_param.vh 由 veer.config 生成） */
+	gen?: { cmd: string[]; marker: string };
+	/** 追加扫描目录（相对目标目录；如 cva6 的 hpdcache 子模块独立克隆在兄弟目录） */
+	extraWalkDirs?: string[];
 }
 
 const perTarget: Record<string, TargetCfg> = {
 	"projects/cv32e40p": {
 		excludeFilenames: ["cv32e40p_register_file_latch.sv"],
+	},
+	"projects/cva6": {
+		extraWalkDirs: ["../cv-hpdcache/rtl/src"],
+		excludeDirs: ["blackbox"],
+	},
+	"projects/cv-hpdcache": {
+		excludeDirs: ["blackbox", "syn"],
+	},
+	"projects/veer-el2": {
+		gen: {
+			cmd: [
+				"sh",
+				"-c",
+				"perl configs/veer.config >/dev/null && tools/picmap -t 31 > snapshots/default/pic_map_auto.h",
+			],
+			marker: "snapshots/default/pic_map_auto.h",
+		},
+		expandHeaders: ["design/lib/el2_assert.sv"],
+		defines: ["TEC_RV_ICG=el2_beh_icg"],
+		excludeDirs: ["riscv-dv"],
 	},
 	"projects/opentitan": {
 		expandHeaders: [
@@ -90,6 +117,16 @@ for (const group of ["projects", "corpus"]) {
 		const name = `${group}/${dir.replace(/\/$/, "").split("/").pop()}`;
 		const dest = join(outDir, name.replace("/", "-"));
 		const cfg = perTarget[name] ?? {};
+		if (cfg.gen && !existsSync(join(dir, cfg.gen.marker))) {
+			console.log(`  gen: ${cfg.gen.cmd.join(" ")}`);
+			const g = Bun.spawnSync({
+				cmd: cfg.gen.cmd,
+				cwd: dir,
+				stdout: "inherit",
+				stderr: "inherit",
+			});
+			if (g.exitCode !== 0) console.error(`  gen failed (exit ${g.exitCode})`);
+		}
 		const incdirs = includeDirs(dir);
 		const args = [
 			"-w",
@@ -101,7 +138,11 @@ for (const group of ["projects", "corpus"]) {
 		];
 		for (const i of incdirs) args.push("-I", i);
 		for (const d of cfg.defines ?? []) args.push("-D", d);
-		if (cfg.excludeFilenames) args.push("--exclude-filenames", ...cfg.excludeFilenames);
+		if (cfg.excludeFilenames)
+			args.push("--exclude-filenames", ...cfg.excludeFilenames);
+		if (cfg.extraWalkDirs) {
+			for (const w of cfg.extraWalkDirs) args.push("-w", join(dir, w));
+		}
 		if (cfg.expandHeaders) {
 			args.push(
 				"--expand-headers",
@@ -110,7 +151,15 @@ for (const group of ["projects", "corpus"]) {
 		}
 		if (group === "projects") {
 			// 验证侧目录（UVM/FPV 库不在分析范围）——剩余错误即真 RTL 问题
-			args.push("--exclude-dirs", "dv", "verif", "tb", "testbench");
+			args.push(
+				"--exclude-dirs",
+				"dv",
+				"verif",
+				"tb",
+				"testbench",
+				"generic_dv",
+				...(cfg.excludeDirs ?? []),
+			);
 			for (const i of siblingIncdirs)
 				if (!incdirs.includes(i)) args.push("-I", i);
 		}

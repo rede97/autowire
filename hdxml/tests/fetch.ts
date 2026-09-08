@@ -77,6 +77,13 @@ const TARGETS: Target[] = [
 		sparse: ["core"],
 	},
 	{
+		name: "cv-hpdcache",
+		kind: "projects",
+		url: "https://github.com/openhwgroup/cv-hpdcache.git",
+		branch: "master",
+		sparse: ["rtl"],
+	},
+	{
 		name: "common_cells",
 		kind: "projects",
 		url: "https://github.com/pulp-platform/common_cells.git",
@@ -102,7 +109,7 @@ const TARGETS: Target[] = [
 		kind: "projects",
 		url: "https://github.com/chipsalliance/Cores-VeeR-EL2.git",
 		branch: "main",
-		sparse: ["design"],
+		sparse: ["design", "configs"],
 	},
 	{
 		name: "opentitan",
