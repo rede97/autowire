@@ -1,6 +1,7 @@
 /target
 # 测试语料与第三方项目：由 tests/fetch.sh 拉取，不入库
 /tests/corpus/
+/tests/out/
 /tests/projects/
 /tests/MANIFEST.txt
 # 输出工件
