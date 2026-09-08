@@ -22,8 +22,6 @@ module phy_wrap #(
 	localparam phy_wrap__u_oh2b__OnehotWidth = GRAY_W;
 
 	wire [15:0] cnt_q_bus;
-	logic cnt_0_overflow;
-	logic cnt_1_overflow;
 
 	cc_counter #(.Width(phy_wrap__u_cnt_0__Width)) u_cnt_0 (
 		.clk_i(clk_i),
@@ -34,7 +32,7 @@ module phy_wrap #(
 		.down_i(cnt_shared_down),
 		.d_i(cnt_d_bus[7:0]),
 		.q_o(cnt_q_bus[7:0]),
-		.overflow_o(cnt_0_overflow)
+		.overflow_o()
 	);
 	cc_counter #(.Width(phy_wrap__u_cnt_1__Width)) u_cnt_1 (
 		.clk_i(clk_i),
@@ -45,7 +43,7 @@ module phy_wrap #(
 		.down_i(cnt_shared_down),
 		.d_i(cnt_d_bus[15:8]),
 		.q_o(cnt_q_bus[15:8]),
-		.overflow_o(cnt_1_overflow)
+		.overflow_o()
 	);
 	gray_tap u_tap (
 		.tap_out_o(phy_gray_o),

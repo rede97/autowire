@@ -38,6 +38,7 @@ const SNAP = `<autowire>
           <aw-connect port="en" to="32'h0"></aw-connect>
           <aw-connect port="w_in" to="W"></aw-connect>
           <aw-connect port="init" to="{48{1'b1}}"></aw-connect>
+          <aw-connect port="dbg" type="open"></aw-connect>
         </aw-inst>
       </aw-insts>
     </aw-render>
@@ -65,6 +66,7 @@ describe("printer", () => {
 			port: "d",
 			to: "arr",
 			part: "[2]",
+			type: "",
 		});
 		expect(m.children[0].name).toBe("kid");
 		expect(flattenModules(mods).map((x) => x.name)).toEqual(["top", "kid"]);
@@ -90,6 +92,8 @@ describe("printer", () => {
 		expect(sv).toContain(".en(32'h0),");
 		expect(sv).toContain(".w_in(W),");
 		expect(sv).toContain(".init({48{1'b1}})");
+		// explicit dangling pin prints as an empty connection
+		expect(sv).toContain(".dbg()");
 	});
 
 	test("interface ports print as type.modport", () => {

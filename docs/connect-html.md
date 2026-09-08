@@ -188,7 +188,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 | `unpacked` | 否 | 见 §3.5.1 |
 | `part` | 否 | 见 §3.5.1 |
 | `nettype` | 否 | 见 §3.5.2 |
-| `type` | 否 | 可选断言 `net`\|`const`（§3.5.3）；与推断不一致 → 报错 |
+| `type` | 否 | `net`（默认）\|`const`（§3.5.3）\|`open`（§3.5.4）；const/open **必须**显式写明，与推断不一致 → 报错 |
 
 ```html
 <aw-rewrite match="^dec_in_(.+)$" to="mst_blk_reg_$1" packed="auto"></aw-rewrite>
@@ -251,7 +251,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ### 3.5.3 常量连线（`to` = 常量表达式）
 
-> 细则与评审记录：[`connect-const-proposal.md`](./connect-const-proposal.md)（已转正式约束）。
+> 细则与评审记录：[`connect-to-rules.md`](./connect-to-rules.md)（已转正式约束）。
 
 `aw-connect@to`（以及 `aw-rewrite@to`）在 `${…}` 变量代入后分类：
 
@@ -269,6 +269,16 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 - `type="net|const"` 可选断言：与引擎推断不一致 → 报错。
 - **能力边界**：更复杂的信号·常量组合（三元、位运算等）不内嵌于连接方言，**必须**单独写集成小模块再例化。
 - 示例：[`examples/connect/05-author-const.html`](./examples/connect/05-author-const.html) / [`05-rendered-const.html`](./examples/connect/05-rendered-const.html)。
+
+### 3.5.4 显式悬空（`type="open"`）
+
+> 细则：[`connect-to-rules.md`](./connect-to-rules.md) §2.3。
+
+- `<aw-connect port="q_o" type="open">`：显式悬空；**只允许 output / inout**（input 悬空报错，改用常量绑死）；**禁止** `to` / `part` / 维度属性。
+- `aw-rewrite` 可批量悬空（`match` 命中端口全部 open，不写 `to`）。
+- open 不建网；render 落 `type="open"`；dump 打印 `.port()`（消 PINMISSING）。
+- 缺 `to` 且未声明 `type="open"` → 报错（open 必须显式）；未被任何规则覆盖的端口 elaborate 时逐一 **warning**。
+- 覆盖语义同 net：同端口后写覆盖。
 
 ### 3.5.2 `nettype`（`wire` / `logic`）
 
@@ -379,6 +389,8 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 | [`examples/connect/04-rendered-multidim.html`](./examples/connect/04-rendered-multidim.html) | 多维 render 示意 |
 | [`examples/connect/05-author-const.html`](./examples/connect/05-author-const.html) | 常量连线：字面量 / 拼接复制 / 宏 / param·localparam 引用 |
 | [`examples/connect/05-rendered-const.html`](./examples/connect/05-rendered-const.html) | 常量 render（引擎实际产物） |
+| [`examples/connect/06-author-open.html`](./examples/connect/06-author-open.html) | 显式悬空 `type="open"`（批量 + 覆盖回挂网） |
+| [`examples/connect/06-rendered-open.html`](./examples/connect/06-rendered-open.html) | open render（引擎实际产物） |
 
 ## 9. 渲染生命周期
 

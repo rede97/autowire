@@ -166,4 +166,39 @@ describe("docs examples elaborate (locked golden shape)", () => {
 		expect(conn("init_i")).toBe("{1{INIT_VAL}}");
 		expect(conn("test_mode_i")).toBe("1'b0");
 	});
+
+	test("06-author-open: open pins never enter signals; override back to net", async () => {
+		const doc = await authorDoc("06-author-open.html");
+		const ctx = ctxWith({
+			dbg_core: {
+				ports: [
+					{ name: "clk", dir: "input" },
+					{ name: "dbg_main_o", dir: "output" },
+					{ name: "dbg_aux_o", dir: "output", packed: "[3:0]" },
+					{ name: "stat_o", dir: "output", packed: "[1:0]" },
+				],
+			},
+		});
+		expect(check(doc, ctx).errors).toEqual([]);
+		expect(elaborate(doc, ctx).errors).toEqual([]);
+		const sigs = [...doc.querySelectorAll("aw-render aw-signal")].map((s) =>
+			s.getAttribute("name"),
+		);
+		expect(sigs).toEqual(["clk", "stat_0", "dbg_aux_1", "stat_1"]);
+		const core0 = [...doc.querySelectorAll("aw-render aw-inst")].find(
+			(i) => i.getAttribute("id") === "u_core_0",
+		);
+		const core1 = [...doc.querySelectorAll("aw-render aw-inst")].find(
+			(i) => i.getAttribute("id") === "u_core_1",
+		);
+		expect(
+			core0
+				?.querySelector('aw-connect[port="dbg_aux_o"]')
+				?.getAttribute("type"),
+		).toBe("open");
+		// later rule wins: dbg_aux_o is a net again on idx 1
+		expect(
+			core1?.querySelector('aw-connect[port="dbg_aux_o"]')?.getAttribute("to"),
+		).toBe("dbg_aux_1");
+	});
 });

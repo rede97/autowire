@@ -422,7 +422,7 @@ describe("elaborate (render)", () => {
 	});
 });
 
-describe("constant tie-off (connect-const-proposal)", () => {
+describe("constant tie-off (connect-to-rules)", () => {
 	const leaf = leafOf(
 		[
 			{ name: "clk_i", dir: "input" },
@@ -447,9 +447,9 @@ describe("constant tie-off (connect-const-proposal)", () => {
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: test title documents the ${idx} dialect syntax
 	test("literal / replication / ${idx} constants create no net and no export", () => {
 		const doc = mkInst(
-			`<aw-connect port="en_i" to="1'b0"></aw-connect>
-			 <aw-connect port="init_i" to="{48{1'b1}}"></aw-connect>
-			 <aw-connect port="mode_i" to="{\${idx}{1'b1}}"></aw-connect>`,
+			`<aw-connect port="en_i" to="1'b0" type="const"></aw-connect>
+			 <aw-connect port="init_i" to="{48{1'b1}}" type="const"></aw-connect>
+			 <aw-connect port="mode_i" to="{\${idx}{1'b1}}" type="const"></aw-connect>`,
 		);
 		expect(check(doc, ctxWith({ leaf })).errors).toEqual([]);
 		expect(elaborate(doc, ctxWith({ leaf })).errors).toEqual([]);
@@ -467,9 +467,9 @@ describe("constant tie-off (connect-const-proposal)", () => {
 
 	test("param/localparam reference is a constant; expression with all-known identifiers too", () => {
 		const doc = mkInst(
-			`<aw-connect port="en_i" to="W"></aw-connect>
-				 <aw-connect port="init_i" to="INIT"></aw-connect>
-				 <aw-connect port="mode_i" to="W+1"></aw-connect>`,
+			`<aw-connect port="en_i" to="W" type="const"></aw-connect>
+				 <aw-connect port="init_i" to="INIT" type="const"></aw-connect>
+				 <aw-connect port="mode_i" to="W+1" type="const"></aw-connect>`,
 		);
 		expect(check(doc, ctxWith({ leaf })).errors).toEqual([]);
 		expect(elaborate(doc, ctxWith({ leaf })).errors).toEqual([]);
@@ -488,7 +488,7 @@ describe("constant tie-off (connect-const-proposal)", () => {
 
 	test("part/dims on a constant are rejected; type assertion mismatch errors", () => {
 		const bad1 = mkInst(
-			`<aw-connect port="en_i" to="1'b0" part="0"></aw-connect>`,
+			`<aw-connect port="en_i" to="1'b0" type="const" part="0"></aw-connect>`,
 		);
 		expect(
 			check(bad1, ctxWith({ leaf })).errors.some((e) =>
@@ -511,7 +511,9 @@ describe("constant tie-off (connect-const-proposal)", () => {
 
 	test("constant rewrite = batch tie-off; captures in const rewrite rejected", () => {
 		// full-name match: String.replace replaces only the matched span
-		const doc = mkInst(`<aw-rewrite match="^test_.*$" to="1'b0"></aw-rewrite>`);
+		const doc = mkInst(
+			`<aw-rewrite match="^test_.*$" to="1'b0" type="const"></aw-rewrite>`,
+		);
 		expect(check(doc, ctxWith({ leaf })).errors).toEqual([]);
 		expect(elaborate(doc, ctxWith({ leaf })).errors).toEqual([]);
 		const connects = [...doc.querySelectorAll("aw-render aw-connect")].map(
@@ -520,7 +522,7 @@ describe("constant tie-off (connect-const-proposal)", () => {
 		expect(connects).toContainEqual(["test_a_i", "1'b0"]);
 		expect(connects).toContainEqual(["test_b_i", "1'b0"]);
 		const badCap = mkInst(
-			`<aw-rewrite match="^test_(.+)$" to="48'h0$1"></aw-rewrite>`,
+			`<aw-rewrite match="^test_(.+)$" to="48'h0$1" type="const"></aw-rewrite>`,
 		);
 		// to after replace starts with a digit → const; captures present → error
 		expect(
@@ -531,11 +533,91 @@ describe("constant tie-off (connect-const-proposal)", () => {
 	});
 
 	test("constant cannot drive an output port", () => {
-		const doc = mkInst(`<aw-connect port="q_o" to="1'b1"></aw-connect>`);
+		const doc = mkInst(
+			`<aw-connect port="q_o" to="1'b1" type="const"></aw-connect>`,
+		);
 		expect(
 			elaborate(doc, ctxWith({ leaf })).errors.some((e) =>
 				e.includes("inputs only"),
 			),
 		).toBe(true);
+	});
+});
+
+describe("open pins (connect-to-rules §2.3)", () => {
+	const leaf = leafOf(
+		[
+			{ name: "clk_i", dir: "input" },
+			{ name: "en_i", dir: "input" },
+			{ name: "dbg_a_o", dir: "output" },
+			{ name: "dbg_b_o", dir: "output" },
+			{ name: "q_o", dir: "output" },
+		],
+		[],
+	);
+	const mkInst = (rules: string) =>
+		docOf(
+			`<aw-mod name="m"><aw-content><aw-insts><aw-inst id="u" mod="leaf"><aw-template>${rules}</aw-template></aw-inst></aw-insts></aw-content></aw-mod>`,
+		);
+
+	test("explicit open on an output: render records type=open, no net", () => {
+		const doc = mkInst(
+			`<aw-connect port="clk_i" to="clk"></aw-connect>
+			 <aw-connect port="q_o" type="open"></aw-connect>`,
+		);
+		expect(check(doc, ctxWith({ leaf })).errors).toEqual([]);
+		expect(elaborate(doc, ctxWith({ leaf })).errors).toEqual([]);
+		const c = mustQuery(doc, 'aw-render aw-connect[port="q_o"]');
+		expect(c.getAttribute("type")).toBe("open");
+		expect(c.getAttribute("to")).toBeNull();
+		expect(doc.querySelector('aw-signals aw-signal[name="q_o"]')).toBeNull();
+	});
+
+	test("batch open via rewrite; open can be overridden by a later net rule", () => {
+		const doc = mkInst(
+			`<aw-rewrite match="^dbg_.*_o$" type="open"></aw-rewrite>
+			 <aw-connect port="dbg_a_o" to="dbg_a" type="net"></aw-connect>`,
+		);
+		expect(check(doc, ctxWith({ leaf })).errors).toEqual([]);
+		expect(elaborate(doc, ctxWith({ leaf })).errors).toEqual([]);
+		const open = mustQuery(doc, 'aw-render aw-connect[port="dbg_b_o"]');
+		expect(open.getAttribute("type")).toBe("open");
+		// later rule wins: dbg_a_o is a net again
+		const net = mustQuery(doc, 'aw-render aw-connect[port="dbg_a_o"]');
+		expect(net.getAttribute("to")).toBe("dbg_a");
+		expect(net.getAttribute("type")).toBeNull();
+	});
+
+	test("open on input errors; open with to errors; missing to without type errors", () => {
+		const onInput = mkInst(`<aw-connect port="en_i" type="open"></aw-connect>`);
+		expect(
+			elaborate(onInput, ctxWith({ leaf })).errors.some((e) =>
+				e.includes("only allowed on output/inout"),
+			),
+		).toBe(true);
+		const withTo = mkInst(
+			`<aw-connect port="q_o" type="open" to="x"></aw-connect>`,
+		);
+		expect(
+			check(withTo, ctxWith({ leaf })).errors.some((e) =>
+				e.includes('type="open" takes no'),
+			),
+		).toBe(true);
+		const noTo = mkInst(`<aw-connect port="q_o"></aw-connect>`);
+		expect(
+			check(noTo, ctxWith({ leaf })).errors.some((e) =>
+				e.includes('declare type="open"'),
+			),
+		).toBe(true);
+	});
+
+	test("uncovered ports produce warnings (not errors)", () => {
+		const doc = mkInst(`<aw-connect port="clk_i" to="clk"></aw-connect>`);
+		const res = elaborate(doc, ctxWith({ leaf }));
+		expect(res.errors).toEqual([]);
+		const warned = res.warnings.filter((w) => w.includes("not covered"));
+		expect(warned.some((w) => w.includes("en_i"))).toBe(true);
+		expect(warned.some((w) => w.includes("q_o"))).toBe(true);
+		expect(warned.some((w) => w.includes("clk_i"))).toBe(false);
 	});
 });

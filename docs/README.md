@@ -12,7 +12,7 @@
 | [connect-lifecycle.md](./connect-lifecycle.md) | 渲染生命周期嵌入脚本（高级） | 已实现 |
 | [examples/connect/](./examples/connect/) | 连接 HTML 示例（作者面 + 渲染后示意） | 草稿 |
 | [coverage-report.md](./coverage-report.md) | Web 实现功能覆盖报告 + 设计修改意见 | 2026-09-08 |
-| [connect-const-proposal.md](./connect-const-proposal.md) | 常量连线（`to` = 常量表达式）评审与约束 | 已实现 |
+| [connect-to-rules.md](./connect-to-rules.md) | `to` 目标三态规则：net（默认）/ const / open；`type` 属性 | 已实现 |
 | [hdxml/rtlindex-xml.md](./hdxml/rtlindex-xml.md) | RtlIndex XML 格式契约（hdxml ↔ autowire） | 草案 |
 | [hdxml/module-info.md](./hdxml/module-info.md) | hdxml DesignDb / 模块信息模型 | 已实现参考 |
 | [hdxml/cli.md](./hdxml/cli.md) | hdxml `analysis` CLI | 已实现 |

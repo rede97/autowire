@@ -141,7 +141,7 @@ const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const LITERAL = /^(\d+('[bodhBODH][0-9a-fA-F_xXzZ?]+)?|\d+("[^"]*")?|"[^"]*")$/;
 
 /** Classify an aw-connect@to text (after ${…} substitution): "net" or "const".
- *  Rules (docs/connect-const-proposal.md §2.2): a plain identifier is a net,
+ *  Rules (docs/connect-to-rules.md §2.2): a plain identifier is a net,
  *  unless it names a module param/localparam (constant reference); texts
  *  starting with a digit / ' / { / ` are constant literals; expression texts
  *  are constants only when every identifier is a known param/localparam.
@@ -621,7 +621,7 @@ function checkTemplate(t, ctx, res, where, lib, scope) {
 	for (const [k, v] of scope.params) modVars[k] = v.value;
 	for (const [k, v] of scope.localparams) modVars[k] = v.value;
 	// Probe substitution stands variables for plausible text so `to` can be
-	// classified at check time (docs/connect-const-proposal.md §2.2).
+	// classified at check time (docs/connect-to-rules.md §2.2).
 	const probeVars = { id: "u", idx: "0", mod: "m", ...modVars };
 	const probeTo = (r) => {
 		const raw = attr(r, "to");
@@ -633,56 +633,74 @@ function checkTemplate(t, ctx, res, where, lib, scope) {
 	};
 	for (const r of walkRules(t)) {
 		const tag = (r.tagName ?? "").toLowerCase();
-		if (tag === "aw-rewrite") {
-			if (!attr(r, "match"))
+		if (tag === "aw-rewrite" || tag === "aw-connect") {
+			const isOpen = attr(r, "type") === "open";
+			if (tag === "aw-rewrite" && !attr(r, "match"))
 				res.errors.push(`${where}: aw-rewrite missing match`);
-			if (!attr(r, "to")) res.errors.push(`${where}: aw-rewrite missing to`);
-			try {
-				new RegExp(attr(r, "match") ?? "", attr(r, "flags") ?? "");
-			} catch (e) {
-				res.errors.push(`${where}: aw-rewrite bad RegExp: ${e.message}`);
+			if (tag === "aw-connect" && !attr(r, "port"))
+				res.errors.push(`${where}: aw-connect missing port`);
+			if (tag === "aw-rewrite") {
+				try {
+					new RegExp(attr(r, "match") ?? "", attr(r, "flags") ?? "");
+				} catch (e) {
+					res.errors.push(`${where}: aw-rewrite bad RegExp: ${e.message}`);
+				}
 			}
-			checkNetName(attr(r, "to"), res, `${where} aw-rewrite@to`);
-			// Constant rewrite = batch tie-off: no captures allowed.
-			const text = probeTo(r);
-			if (text != null) {
-				const kind = classifyTo(text, scope);
-				if (kind === "const" && CAPTURE_RE.test(attr(r, "to") ?? "")) {
+			if (isOpen) {
+				// Explicit dangling pin: no to / part / dims / nettype.
+				for (const a of [
+					"to",
+					"part",
+					"packed",
+					"width",
+					"unpacked",
+					"nettype",
+				]) {
+					if (attr(r, a)) {
+						res.errors.push(`${where}: type="open" takes no @${a}`);
+					}
+				}
+				continue; // nothing else applies
+			}
+			if (!attr(r, "to")) {
+				res.errors.push(
+					`${where}: ${tag} missing to (declare type="open" for a dangling pin)`,
+				);
+				continue;
+			}
+			if (tag === "aw-connect")
+				rejectCaptures(attr(r, "to") ?? "", res, `${where} aw-connect@to`);
+			const rawText = probeTo(r);
+			// rewrite captures ($1/$&/$<name>) stand in for net-name fragments
+			const text =
+				tag === "aw-rewrite" && rawText != null
+					? rawText.replace(/\$<[^>]*>|\$\d+|\$&/g, "x")
+					: rawText;
+			if (text == null) continue;
+			const kind = classifyTo(text, scope);
+			if (kind == null) {
+				res.errors.push(
+					`${where} ${tag}@to: "${text}" is neither a net name nor a constant`,
+				);
+			} else if (kind === "net") {
+				checkNetName(text, res, `${where} ${tag}@to`);
+			} else {
+				// const: no captures in rewrite tie-offs; no part/dims anywhere.
+				if (tag === "aw-rewrite" && CAPTURE_RE.test(attr(r, "to") ?? "")) {
 					res.errors.push(
 						`${where}: aw-rewrite@to is a constant but uses regex captures`,
 					);
 				}
-				checkTypeAttr(r, kind, res, where);
-			}
-		}
-		if (tag === "aw-connect") {
-			if (!attr(r, "port"))
-				res.errors.push(`${where}: aw-connect missing port`);
-			if (!attr(r, "to")) res.errors.push(`${where}: aw-connect missing to`);
-			rejectCaptures(attr(r, "to") ?? "", res, `${where} aw-connect@to`);
-			const text = probeTo(r);
-			if (text != null) {
-				const kind = classifyTo(text, scope);
-				if (kind == null) {
-					res.errors.push(
-						`${where} aw-connect@to: "${text}" is neither a net name nor a constant`,
-					);
-				} else if (kind === "net") {
-					checkNetName(text, res, `${where} aw-connect@to`);
-				} else {
-					if (attr(r, "part")) {
-						res.errors.push(
-							`${where}: part-select on a constant is not allowed`,
-						);
-					}
-					for (const a of ["packed", "width", "unpacked", "nettype"]) {
-						if (attr(r, a)) {
-							res.errors.push(`${where}: @${a} does not apply to a constant`);
-						}
+				if (attr(r, "part")) {
+					res.errors.push(`${where}: part-select on a constant is not allowed`);
+				}
+				for (const a of ["packed", "width", "unpacked", "nettype"]) {
+					if (attr(r, a)) {
+						res.errors.push(`${where}: @${a} does not apply to a constant`);
 					}
 				}
-				checkTypeAttr(r, kind, res, where);
 			}
+			checkTypeAttr(r, kind, res, where);
 		}
 		if (tag === "aw-param") {
 			if (!attr(r, "name")) res.errors.push(`${where}: aw-param missing name`);
@@ -752,17 +770,22 @@ function checkTemplate(t, ctx, res, where, lib, scope) {
 	void ctx;
 }
 
-/** Optional assertion attribute: type="net|const" must match classification. */
+/** type attribute: defaults to "net"; const/open must be declared explicitly. */
 function checkTypeAttr(r, kind, res, where) {
 	const asserted = attr(r, "type");
-	if (asserted == null) return;
-	if (asserted !== "net" && asserted !== "const") {
+	if (asserted != null && !["net", "const", "open"].includes(asserted)) {
 		res.errors.push(
-			`${where}: type must be "net" or "const", got "${asserted}"`,
+			`${where}: type must be "net", "const" or "open", got "${asserted}"`,
 		);
-	} else if (kind != null && asserted !== kind) {
+		return;
+	}
+	if (asserted != null && kind != null && asserted !== kind) {
 		res.errors.push(
 			`${where}: type="${asserted}" but to classifies as ${kind}`,
+		);
+	} else if (kind === "const" && asserted == null) {
+		res.errors.push(
+			`${where}: constant must be declared type="const" (type defaults to net)`,
 		);
 	}
 }
@@ -936,6 +959,30 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
 		for (const t of chain) {
 			for (const r of walkRules(t)) {
 				const tag = (r.tagName ?? "").toLowerCase();
+				if (tag === "aw-connect" || tag === "aw-rewrite") {
+					if (attr(r, "type") === "open") {
+						// Explicit dangling pin (connect-to-rules): no to, no net.
+						if (tag === "aw-connect") {
+							connects.set(attr(r, "port"), {
+								open: true,
+								to: null,
+								part: null,
+							});
+						} else {
+							let re;
+							try {
+								re = new RegExp(attr(r, "match"), attr(r, "flags") ?? "");
+							} catch {
+								continue; // already reported by check
+							}
+							for (const p of ports) {
+								if (re.test(p.name))
+									connects.set(p.name, { open: true, to: null, part: null });
+							}
+						}
+						continue;
+					}
+				}
 				if (tag === "aw-connect") {
 					connects.set(
 						attr(r, "port"),
@@ -976,6 +1023,14 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
 			const { port, ...rest } = c;
 			connects.set(port, rest);
 		}
+		// Uncovered ports (no net/const/open rule) → warning per port.
+		for (const p of ports) {
+			if (!connects.has(p.name)) {
+				res.warnings.push(
+					`${iwhere}: port "${p.name}" of ${target} not covered by any rule (left unconnected)`,
+				);
+			}
+		}
 		renderInsts.push({
 			id: instName,
 			mod: target,
@@ -1011,6 +1066,15 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
 		);
 		for (const [port, c] of ri.connects) {
 			const pf = portFacts.get(port);
+			if (c.open) {
+				// Explicit dangling pin: output/inout only (inputs must tie off).
+				if (pf && pf.dir !== "output" && pf.dir !== "inout") {
+					res.errors.push(
+						`${where} port "${port}": open is only allowed on output/inout (got ${pf.dir}; tie inputs off with type="const")`,
+					);
+				}
+				continue;
+			}
 			if (c.isConst) {
 				// Constants drive input ports only; no net is created.
 				if (pf?.dir !== "input") {
@@ -1183,13 +1247,22 @@ function ruleToConnect(r, port, vars, res, where, rewrittenNet, scope) {
 	}
 	// Optional assertion: type="net|const" must match the inferred kind.
 	const asserted = attr(r, "type");
-	if (asserted != null && asserted !== "net" && asserted !== "const") {
+	if (asserted != null && !["net", "const", "open"].includes(asserted)) {
 		res.errors.push(
-			`${where}: type must be "net" or "const", got "${asserted}"`,
+			`${where}: type must be "net", "const" or "open", got "${asserted}"`,
+		);
+	} else if (asserted === "open") {
+		res.errors.push(
+			`${where} connect "${port}": type="open" takes no to (did you mean a dangling pin?)`,
 		);
 	} else if (asserted != null && kind != null && asserted !== kind) {
 		res.errors.push(
 			`${where} connect "${port}": type="${asserted}" but "${net}" classifies as ${kind}`,
+		);
+	} else if (kind === "const" && asserted == null) {
+		// Constants must be declared (review ruling: type defaults to net).
+		res.errors.push(
+			`${where} connect "${port}": constant "${net}" must be declared type="const"`,
 		);
 	}
 	// Constant rewrite = batch tie-off: captures are meaningless there.
@@ -1372,7 +1445,11 @@ function writeRender(mod, m) {
 			return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
 		});
 		for (const [port, c] of sorted) {
-			el.appendChild(mk("aw-connect", { port, to: c.to, part: c.part }));
+			el.appendChild(
+				c.open
+					? mk("aw-connect", { port, type: "open" })
+					: mk("aw-connect", { port, to: c.to, part: c.part }),
+			);
 		}
 		groups["aw-insts"].appendChild(el);
 	}

@@ -65,11 +65,12 @@
 | `width` | 一维 packed 简写（`auto` \| `15:0`）；与 `packed` 冲突则报错 |
 | `part` | 可选；连线 part-select；省略 = 整网 |
 | `nettype` | 可选；`wire`\|`logic`；默认 dump `wire`（auto 时可继承端口） |
-| `type` | 可选断言 `net`\|`const`；与推断不一致报错 |
+| `type` | `net`（默认）\|`const`\|`open`；const/open 必须显式写明，推断仅作校验 |
 
 `to` 也接受**常量表达式**（字面量 / 拼接复制 / 宏 / param·localparam 引用，变量先代入）：
 常量不建网、只能连 input 端口、禁 `part`/维度属性；rewrite 产常量 = 批量 tie-off（禁捕获）。
-完整细则：[`connect-const-proposal.md`](./connect-const-proposal.md)；示例 `examples/connect/05-*.html`。
+显式悬空：`type="open"`（无 `to`；只 output/inout；dump 出 `.port()`；未覆盖端口 warning）。
+完整细则：[`connect-to-rules.md`](./connect-to-rules.md)；示例 `examples/connect/05-*.html`。
 
 ```html
 <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>

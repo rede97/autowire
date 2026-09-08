@@ -49,7 +49,8 @@
                 width="15:0"
                 part="8*${idx}+7:8*${idx}"
               ></aw-rewrite>
-              <aw-rewrite match="^overflow_o$" to="cnt_${idx}_overflow" packed="auto"></aw-rewrite>
+              <!-- intentional dangling outputs (connect-to-rules §2.3): no PINMISSING -->
+              <aw-rewrite match="^overflow_o$" type="open"></aw-rewrite>
             </aw-template>
           </aw-templates>
           <aw-insts>

@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  作者面规范示例：常量连线（docs/connect-const-proposal.md，已评审）。
+  作者面规范示例：常量连线（docs/connect-to-rules.md，已评审）。
   aw-connect@to 二态：净网名 | 常量表达式（字面量 / 拼接复制 / 宏 / param·localparam 引用，
   支持 ${…} 变量代入）。常量不建网、不导出端口；type="net|const" 为可选断言。
   对应渲染示意：05-rendered-const.html
@@ -28,9 +28,9 @@
               <!-- 宏常量：原样内联，不展开 -->
               <aw-connect port="en_i" to="`CFG_EN" type="const"></aw-connect>
               <!-- param 引用 → 常量（不写 type 则由引擎推断） -->
-              <aw-connect port="mode_i" to="MODE"></aw-connect>
+              <aw-connect port="mode_i" to="MODE" type="const"></aw-connect>
               <!-- localparam 引用 → 常量 -->
-              <aw-connect port="init_i" to="INIT_VAL"></aw-connect>
+              <aw-connect port="init_i" to="INIT_VAL" type="const"></aw-connect>
               <!-- 批量 tie-off：常量 rewrite 禁捕获，match 须覆盖全名 -->
               <aw-rewrite match="^test_.*_i$" to="1'b0" type="const"></aw-rewrite>
             </aw-template>

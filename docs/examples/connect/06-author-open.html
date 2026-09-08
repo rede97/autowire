@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+  作者面规范示例：显式悬空端口（docs/connect-to-rules.md §2.3）。
+  type="open" 无 to；只允许 output/inout；rewrite 可批量悬空；后写覆盖可把 open 改回 net。
+  对应渲染示意：06-rendered-open.html（引擎实际产物）。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>06-author-open</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-mod name="dbg_wrap">
+        <aw-content>
+          <aw-imports></aw-imports>
+          <aw-params></aw-params>
+          <aw-localparams></aw-localparams>
+          <aw-ports></aw-ports>
+          <aw-templates>
+            <aw-template name="dbg_tpl" inst_name="${id}_${idx}">
+              <aw-connect port="clk" to="clk"></aw-connect>
+              <!-- 批量悬空所有 dbg_*_o 输出（不自建网、不进 signals） -->
+              <aw-rewrite match="^dbg_.*_o$" type="open"></aw-rewrite>
+              <!-- 状态输出按 idx 挂网 -->
+              <aw-rewrite match="^stat_o$" to="stat_${idx}" packed="auto"></aw-rewrite>
+            </aw-template>
+          </aw-templates>
+          <aw-insts>
+            <aw-inst id="u_core" mod="dbg_core" idx="0">
+              <aw-template base="dbg_tpl"></aw-template>
+            </aw-inst>
+            <aw-inst id="u_core" mod="dbg_core" idx="1">
+              <!-- overwrite：后写覆盖——把 dbg_aux_o 从 open 改回挂网 -->
+              <aw-template base="dbg_tpl">
+                <aw-connect port="dbg_aux_o" to="dbg_aux_1" packed="auto"></aw-connect>
+              </aw-template>
+            </aw-inst>
+          </aw-insts>
+        </aw-content>
+        <aw-submods></aw-submods>
+        <aw-render>
+          <aw-params></aw-params>
+          <aw-imports></aw-imports>
+          <aw-localparams></aw-localparams>
+          <aw-ports></aw-ports>
+          <aw-signals></aw-signals>
+          <aw-insts></aw-insts>
+        </aw-render>
+      </aw-mod>
+    </autowire>
+  </body>
+</html>

@@ -46,6 +46,8 @@ export interface RenderConnect {
 	port: string;
 	to: string;
 	part: string;
+	/** "open" = explicit dangling pin (prints as `.port()`); else net/const. */
+	type: string;
 }
 
 export interface RenderInst {
@@ -153,6 +155,7 @@ function parseMod(v: unknown): RenderModule | null {
 				port: str(c["@port"]),
 				to: str(c["@to"]),
 				part: str(c["@part"]),
+				type: str(c["@type"]),
 			});
 		}
 		insts.push({
@@ -281,7 +284,7 @@ export function printSv(m: RenderModule, unitId: string): string {
 		lines.push(`\t${signalDecl(s.nettype, s.packed, s.unpacked, s.name)}`);
 	}
 	if (printedSignals > 0) lines.push("");
-	// Constant tie-offs (docs/connect-const-proposal.md): a connect whose `to`
+	// Constant tie-offs (docs/connect-to-rules.md): a connect whose `to`
 	// is a plain identifier names a net, UNLESS it matches a module
 	// param/localparam (constant reference); anything else is inlined as a
 	// constant expression. Part-selects exist only on nets (engine-enforced).
@@ -299,9 +302,12 @@ export function printSv(m: RenderModule, unitId: string): string {
 		for (const [i, c] of inst.connects.entries()) {
 			const netForm =
 				/^[A-Za-z_][A-Za-z0-9_]*$/.test(c.to) && !constNames.has(c.to);
-			const rhs = netForm
-				? `${c.to}${c.part ? `[${c.part.replace(/^\[|\]$/g, "")}]` : ""}`
-				: c.to;
+			const rhs =
+				c.type === "open"
+					? ""
+					: netForm
+						? `${c.to}${c.part ? `[${c.part.replace(/^\[|\]$/g, "")}]` : ""}`
+						: c.to;
 			lines.push(
 				`\t\t.${c.port}(${rhs})${i < inst.connects.length - 1 ? "," : ""}`,
 			);
