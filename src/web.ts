@@ -14,6 +14,7 @@ import {
 	loadUnitDoc,
 	topoUnits,
 } from "./connect.ts";
+import { connectXml } from "./connectxml.ts";
 import { LeafDb } from "./leaf.ts";
 import { assertPrintable, parseSnapshot, writeSvFiles } from "./printer.ts";
 import { loadRtlIndex } from "./rtlindex.ts";

@@ -22,7 +22,7 @@
 | `connect/phy_wrap.html` | 两个 `cc_counter` 切片 + 嵌套 `gray_pair`（`cc_binary_to_gray`/`cc_gray_to_binary`）+ 兄弟 `gray_tap`（deps=gray_pair）+ 钩子生成 `cc_onehot_to_bin` | 模板复用/overwrite、`$1` 捕获 + `${idx}`、共享总线 width+part、`packed=auto`、嵌套 submods、兄弟 deps、`before-instances`/`on-template` |
 | `connect/phy_wrap_tb.html` | 跨单元例化 `phy_wrap` 包装模 + `cc_lfsr` | 跨单元快照引用、包装模参数 override（非折叠表达式 `TB_W/2`）、`before-dump` 只读钩子 |
 
-产物：`gen/{phy_wrap,phy_wrap_tb,gray_pair,gray_tap}.sv`；快照 `.autowire/connect/{phy_wrap,phy_wrap_tb}.html`；golden 锁定于 `test/golden/`。
+产物：`gen/{phy_wrap,phy_wrap_tb,gray_pair,gray_tap}.sv`；快照 `.autowire/connect/{id}.html` + 抽象模块信息 `{id}.xml`（hdxml 风格，无时间戳/哈希，dump 时同写；跨单元 deps 优先读 XML）；golden 锁定于 `test/golden/`。
 
 ## 3. 功能覆盖矩阵
 

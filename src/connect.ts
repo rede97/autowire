@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseHTML } from "linkedom";
+import { parseConnectXml } from "./connectxml.ts";
 import type { LeafDb, LeafModule } from "./leaf.ts";
 import { loadSnapshotFile, parseSnapshot } from "./printer.ts";
 import type { ConnectUnit, WorkspaceConfig } from "./workspace.ts";
@@ -77,11 +78,28 @@ export async function unitModNames(
 export const connectDir = (ws: WorkspaceConfig) =>
 	join(ws.root, ".autowire", "connect");
 
-/** Wrapper facts from a dep unit's elaborated snapshot (.autowire/connect/<id>.html). */
+/** Wrapper facts from a dep unit's elaborated snapshot. The abstract XML
+ *  sidecar (.autowire/connect/<id>.xml) is the preferred, deterministic form;
+ *  the HTML snapshot (<id>.html) is the legacy/fallback full render. */
 export async function loadDepWrappers(
 	ws: WorkspaceConfig,
 	depId: string,
 ): Promise<WrapperFacts[]> {
+	const xmlPath = join(connectDir(ws), `${depId}.xml`);
+	if (existsSync(xmlPath)) {
+		const mods = parseConnectXml(await readFile(xmlPath, "utf8"));
+		return mods.map((m) => ({
+			name: m.name,
+			params: m.params,
+			ports: m.ports.map((p) => ({
+				name: p.name,
+				dir: p.dir,
+				packed: p.packed,
+				unpacked: p.unpacked,
+			})),
+			imports: m.imports,
+		}));
+	}
 	const text = await loadSnapshotFile(connectDir(ws), depId);
 	if (text == null) return [];
 	const mods = parseSnapshot(text);

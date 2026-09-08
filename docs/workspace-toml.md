@@ -115,7 +115,7 @@ deps = ["phy_wrap"]
 
 - **`.autowire/`** 是工作区**生成临时目录**（索引等缓存），可整体删除重建；**禁止**放入手写内容或任何 SoT。  
   - `.autowire/hdxml/` — RtlIndex  
-  - `.autowire/connect/` — 各连接单元 elaborate 后的 `aw-render` 快照（dump/cli 读此印 SV，**禁止** dump 直接 load 作者 HTML）  
+  - `.autowire/connect/` — 各连接单元 elaborate 后的快照：`<id>.html`（完整 `aw-render`，dump/golden 用）+ `<id>.xml`（抽象模块信息，hdxml 风格规范：属性承载、方向标签名、模块字典序、无时间戳/哈希；跨单元 deps 加载优先读它；dump 时两者同写）。**禁止** dump 直接 load 作者 HTML  
   - dump RTL 产物目录（默认 `gen/`）与临时目录分开。
 
 ### 4.2 HTML / web 如何加载这两类 XML（必须）

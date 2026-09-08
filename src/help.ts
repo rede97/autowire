@@ -73,8 +73,9 @@ Not landed
   autowire cli              build only after Web cases/goldens prove stable
 
 Parallel (does not block connect)
-  Register Table + Block/Cell
+  Register Table + Block/Cell → Wishbone Classic regfile/decoder (plugin; docs/wishbone-regfile.md)
   Leaf port tables from RtlIndex (read-only on the connect page)
+  Do not emit regfile from connect aw-submods custom tags — plugin generates SV; connect only aw-insts leaves
 `,
 
 	workspace: `\
@@ -93,7 +94,8 @@ Shared by deps / web / cli for the RTL universe:
 Dirs
   .autowire/          generated temp (deletable; never hand-authored)
   .autowire/hdxml/    RtlIndex XML — web loads ONLY via GET /api/rtlindex|/api/module
-  .autowire/connect/  elaborated aw-render snapshots per [connect.<id>] —
+  .autowire/connect/  per-unit snapshots: <id>.html (full aw-render) + <id>.xml
+                      (abstract module info, hdxml-style, no timestamps/hashes) —
                       dump/cli + cross-unit deps via GET /api/connect?id=; never author SoT
 
 Load rules (docs/workspace-toml.md §4.2 / docs/web-ui.md §5)
@@ -307,6 +309,7 @@ Do not
   treat dump as the only validation (use autowire check on aw-content + deps; dump reads aw-render)
   require render before check (wrong direction: Render depends on Check; Check does not depend on Render)
   skip check before render or dump (?render=1 / [Render] must auto-run Check first)
+  generate regfile/cfgbus from connect aw-submods custom tags (use regfile plugin + aw-inst; docs/wishbone-regfile.md)
 `,
 };
 
