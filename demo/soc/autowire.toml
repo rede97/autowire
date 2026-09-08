@@ -1,0 +1,32 @@
+# autowire workspace config (contract: docs/workspace-toml.md)
+# SoC demo workspace: picorv32 + simpleuart + spimemio + 2x sdspi +
+# 2x read DMA + 2x sha256 (Wishbone + AXI4-Stream).
+# Run from this directory: bun ../../index.ts analysis / web soc_top / check
+
+[hdxml]
+# hdxml binary path (relative to this file). Unset = default lookup:
+# --hdxml CLI > $HDXML_BIN > repo hdxml/target/{release,debug} > PATH
+
+[analysis.rtl]
+filelists = ["rtl/soc.f"]
+incdirs = []
+exclude_filenames = []
+
+[analysis.defines]
+
+[analysis.index]
+# RtlIndex XML dir; fixed generated temp dir (deletable)
+dir = ".autowire/hdxml"
+
+[dump]
+# dump output RTL directory (DV artifact)
+dir = "gen"
+
+# sha256 Wishbone re-wrap (regs leaf + streaming core)
+[connect.sha256wb]
+html = "connect/sha256wb.html"
+
+# SoC top: cross-unit reference to sha256wb -> deps
+[connect.soc_top]
+html = "connect/soc_top.html"
+deps = ["sha256wb"]

@@ -1,0 +1,6 @@
+[submodule "demo/soc/ip/picorv32"]
+	path = demo/soc/ip/picorv32
+	url = https://github.com/YosysHQ/picorv32
+[submodule "demo/soc/ip/sdspi"]
+	path = demo/soc/ip/sdspi
+	url = https://github.com/ZipCPU/sdspi
