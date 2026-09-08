@@ -44,7 +44,12 @@ for (const e of readdirSync(scanOut, { withFileTypes: true })) {
 	}
 
 	// parse 失败的文件逐个过 oracle（verible 接受 = sv-parser 语法覆盖差距）
-	const counts: Counts = { parseGap: 0, parseIntentional: 0, preprocess: 0, redefined: 0 };
+	const counts: Counts = {
+		parseGap: 0,
+		parseIntentional: 0,
+		preprocess: 0,
+		redefined: 0,
+	};
 	const gaps: string[] = [];
 	const jobs = files.map(async (f) => {
 		if (f.kinds.has("redefined")) counts.redefined++;
@@ -67,5 +72,6 @@ for (const e of readdirSync(scanOut, { withFileTypes: true })) {
 	console.log(
 		`${`corpus/${name}`.padEnd(22)} gap=${String(counts.parseGap).padStart(3)}  intentional=${String(counts.parseIntentional).padStart(3)}  preprocess=${String(counts.preprocess).padStart(3)}  redefined=${String(counts.redefined).padStart(3)}`,
 	);
-	for (const g of gaps.sort()) console.log(`    gap: ${g.split(`/corpus/${name}/`)[1] ?? g}`);
+	for (const g of gaps.sort())
+		console.log(`    gap: ${g.split(`/corpus/${name}/`)[1] ?? g}`);
 }
