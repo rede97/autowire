@@ -85,16 +85,51 @@ async function loadUnit(id) {
 	return entry;
 }
 
-/** Wrapper facts of a dep unit: prefer this session's elaborated doc, else the snapshot. */
+/** Wrapper facts of a dep unit: prefer this session's elaborated doc, else the
+ *  abstract XML snapshot (.autowire/connect/<id>.xml via /api/connect). */
 async function depWrappers(depId) {
 	const session = state.docs.get(depId);
 	if (session?.rendered) return { facts: renderFactsOf(session.container) };
 	const res = await fetch(`/api/connect?id=${encodeURIComponent(depId)}`);
 	if (res.status === 404) return { missing: depId, facts: [] };
 	if (!res.ok) throw new Error((await res.json()).error);
-	const html = await res.text();
-	const parsed = new DOMParser().parseFromString(html, "text/html");
-	return { facts: renderFactsOf(parsed) };
+	const xml = await res.text();
+	const parsed = new DOMParser().parseFromString(xml, "text/xml");
+	return { facts: xmlFactsOf(parsed) };
+}
+
+/** Abstract module facts from a <connectUnit> XML snapshot. */
+function xmlFactsOf(doc) {
+	const facts = [];
+	for (const mod of doc.querySelectorAll("connectUnit > module")) {
+		const ports = [];
+		for (const dir of ["input", "output", "inout", "interface"]) {
+			for (const p of mod.querySelectorAll(`:scope > ports > ${dir}`)) {
+				ports.push({
+					name: p.getAttribute("name"),
+					dir,
+					packed: p.getAttribute("packed"),
+					unpacked: p.getAttribute("unpacked"),
+				});
+			}
+		}
+		const params = [];
+		for (const pr of mod.querySelectorAll(":scope > params > param")) {
+			params.push({
+				name: pr.getAttribute("name"),
+				value: pr.getAttribute("value"),
+			});
+		}
+		const imports = [];
+		for (const im of mod.querySelectorAll(":scope > imports > import")) {
+			imports.push({
+				package: im.getAttribute("package"),
+				symbol: im.getAttribute("symbol") ?? "*",
+			});
+		}
+		facts.push({ name: mod.getAttribute("name"), params, ports, imports });
+	}
+	return facts;
 }
 
 function renderFactsOf(rootEl) {

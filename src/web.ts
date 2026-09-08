@@ -99,7 +99,7 @@ async function handleApi(
 	if (req.method === "GET" && path === "/api/connect") {
 		const id = url.searchParams.get("id") ?? "";
 		if (!UNIT_ID.test(id)) return json({ error: "bad unit id" }, 400);
-		const file = join(connectDir(ws), `${id}.html`);
+		const file = join(connectDir(ws), `${id}.xml`);
 		if (!existsSync(file)) {
 			return json(
 				{ error: `no snapshot for unit "${id}" (render/dump it first)` },
@@ -107,7 +107,7 @@ async function handleApi(
 			);
 		}
 		return new Response(await readFile(file, "utf8"), {
-			headers: { "content-type": "text/html; charset=utf-8" },
+			headers: { "content-type": "application/xml; charset=utf-8" },
 		});
 	}
 	if (req.method === "POST" && path === "/api/check") {
@@ -140,7 +140,11 @@ async function handleApi(
 		if (mods.length === 0)
 			return json({ error: "snapshot has no aw-mod" }, 422);
 		await mkdir(connectDir(ws), { recursive: true });
-		await writeFile(join(connectDir(ws), `${id}.html`), `${html}\n`, "utf8");
+		await writeFile(
+			join(connectDir(ws), `${id}.xml`),
+			`${connectXml(id, mods)}\n`,
+			"utf8",
+		);
 		const files = await writeSvFiles(mods, resolve(ws.root, ws.dumpDir), id);
 		return json({ files, mods: mods.map((m) => m.name) });
 	}

@@ -57,7 +57,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 | 来源 | API | 用途 |
 |---|---|---|
 | `.autowire/hdxml/` | `/api/rtlindex`、`/api/module` | 叶子 RtlIndex，只读 |
-| `.autowire/connect/` | `/api/connect?id=` | 依赖单元 `aw-render` 快照；dump 输入侧 | 
+| `.autowire/connect/` | `/api/connect?id=` | 依赖单元抽象模块信息（`<id>.xml`）；跨单元 deps 输入侧 |
 
 浏览器不直读盘；作者 HTML 只来自 toml `html=`。
 

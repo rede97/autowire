@@ -127,11 +127,11 @@ describe("autowire web e2e", () => {
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
 		expect(status.text).toContain("dump: 4 file(s)");
+		expect(existsSync(join(ROOT, ".autowire", "connect", "phy_wrap.xml"))).toBe(
+			true,
+		);
 		expect(
-			existsSync(join(ROOT, ".autowire", "connect", "phy_wrap.html")),
-		).toBe(true);
-		expect(
-			existsSync(join(ROOT, ".autowire", "connect", "phy_wrap_tb.html")),
+			existsSync(join(ROOT, ".autowire", "connect", "phy_wrap_tb.xml")),
 		).toBe(true);
 		await page.close();
 		const names = ["phy_wrap_tb", "phy_wrap", "gray_tap", "gray_pair"];
@@ -168,7 +168,7 @@ describe("autowire web e2e", () => {
 	});
 
 	test("check error path: tb without dep snapshot reports missing snapshot", async () => {
-		await rm(join(ROOT, ".autowire", "connect", "phy_wrap.html"), {
+		await rm(join(ROOT, ".autowire", "connect", "phy_wrap.xml"), {
 			force: true,
 		});
 		const page = await browser.newPage();

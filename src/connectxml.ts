@@ -61,6 +61,7 @@ export function connectXml(unitId: string, mods: RenderModule[]): string {
 					if (p.modport) attrs.push(["modport", p.modport]);
 				} else {
 					if (p.packed) attrs.push(["packed", p.packed]);
+					if (p.unpacked) attrs.push(["unpacked", p.unpacked]);
 					if (p.nettype) attrs.push(["nettype", p.nettype]);
 				}
 				out.push(

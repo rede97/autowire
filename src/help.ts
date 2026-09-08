@@ -100,9 +100,9 @@ Shared by deps / web / cli for the RTL universe:
 Dirs
   .autowire/          generated temp (deletable; never hand-authored)
   .autowire/hdxml/    RtlIndex XML — web loads ONLY via GET /api/rtlindex|/api/module
-  .autowire/connect/  per-unit snapshots: <id>.html (full aw-render) + <id>.xml
-                      (abstract module info, hdxml-style, no timestamps/hashes) —
-                      dump/cli + cross-unit deps via GET /api/connect?id=; never author SoT
+  .autowire/connect/  per-unit snapshot: <id>.xml only (abstract module info,
+                      hdxml-style, no timestamps/hashes) — dump + cross-unit deps
+                      via GET /api/connect?id=; never author SoT; no html snapshot
 
 Load rules (docs/workspace-toml.md §4.2 / docs/web-ui.md §5)
   leaf ports: hdxml only (missing/stale definesFp → error when needed)
@@ -219,7 +219,7 @@ GET (same actions / same prereqs; docs/web-ui.md §3)
   done signal        #aw-status[data-state=done|error]
 
 Endpoints: GET /api/rtlindex, GET /api/module?name=  (.autowire/hdxml),
-  GET /api/connect?id= (.autowire/connect snapshots; not author HTML),
+  GET /api/connect?id= (.autowire/connect <id>.xml snapshots; not author HTML),
   POST /api/check (validate only), POST /api/dump (only RTL write path; may refresh connect/).
 Isolation: 127.0.0.1 / localhost only. File writes only via autowire API.
 Agent workflow: help agent.
@@ -255,8 +255,8 @@ Dump / write-back (landed; pairs with autowire web)
 Browser does not touch disk. Body = every related aw-mod aw-render
 (nested submods + multi-HTML units per [connect.<id>] deps): instances / aw-connect /
 export aw-port / aw-signals / aw-localparams / aw-imports — not aw-content.
-Server should persist snapshots under .autowire/connect/ then emit SV; dump must not
-re-load author HTML as the netlist.
+Server persists the <id>.xml abstract-module snapshot under .autowire/connect/
+then emits SV; dump must not re-load author HTML as the netlist.
 SV import from aw-imports at module head, deduped.
 autowire checks workspace paths then writes RTL; DV checks files.
 Dump is not a substitute for check — content check (aw-content) before render/write.

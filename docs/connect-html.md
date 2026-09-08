@@ -351,8 +351,8 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
     →  hdxml → RtlIndex（只读）
     →  check（作者面 aw-content 合法性 + deps；不写盘）
-    →  按 deps 拓扑 elaborate（无边单元可并行）→ .autowire/connect/ 快照
-    →  POST /api/dump（读快照 / 全部相关 aw-render）
+    →  按 deps 拓扑 elaborate（无边单元可并行）→ .autowire/connect/<id>.xml 快照
+    →  POST /api/dump（读 POST 体全部相关 aw-render；刷新 xml 快照）
     →  autowire 写 .sv → DV
 ```
 

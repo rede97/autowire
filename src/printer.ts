@@ -3,8 +3,7 @@
 // Input is the deterministic snapshot produced by web/aw.js serializeSnapshot():
 // <autowire> → aw-mod (name) → aw-render (params/imports/localparams/ports/signals/insts),
 // with nested aw-mod after the render. All data lives on attributes.
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface RenderParam {
@@ -341,14 +340,4 @@ export async function writeSvFiles(
 		written.push(path);
 	}
 	return written;
-}
-
-/** Load a .autowire/connect snapshot file if it exists. */
-export async function loadSnapshotFile(
-	dir: string,
-	unitId: string,
-): Promise<string | null> {
-	const path = join(dir, `${unitId}.html`);
-	if (!existsSync(path)) return null;
-	return readFile(path, "utf8");
 }
