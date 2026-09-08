@@ -333,6 +333,28 @@ describe("elaborate (render)", () => {
 		const sig = mustQuery(doc, 'aw-signals aw-signal[name="d"]');
 		expect(sig.getAttribute("packed")).toBe("[(8)-1:0]");
 	});
+	test("inline mode: ANY operator (concat / arithmetic) forces localparam folding", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-param name="Width" expr="{4'h2, 4'h4}"></aw-param>
+					<aw-param name="Sticky" expr="W+1"></aw-param>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(
+			doc,
+			ctxWith({ leaf: leafOf([], [{ name: "Width" }, { name: "Sticky" }]) }),
+		);
+		expect(res.errors).toEqual([]);
+		const names = [...doc.querySelectorAll("aw-render aw-localparam")].map(
+			(l) => l.getAttribute("name"),
+		);
+		expect(names).toContain("m__u__Width");
+		expect(names).toContain("m__u__Sticky");
+		const p = mustQuery(doc, 'aw-render aw-inst aw-param[name="Width"]');
+		expect(p.getAttribute("value")).toBe("m__u__Width");
+	});
 
 	test("auto-export: input-only nets become input ports; output-driven nets stay internal", () => {
 		const doc = docOf(

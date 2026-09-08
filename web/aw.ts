@@ -1116,9 +1116,11 @@ function elaborateMod(
 					paramRules.set(attr(r, "name"), attr(r, "expr") ?? "");
 			}
 		}
-		// [style] param (autowire.toml): "inline" (default) writes the override
-		// expression into the instance; "localparam" folds each override into a
-		// Mod__Inst__Param localparam (connect-rules §7).
+		// [style] param (autowire.toml): "inline" (default) writes NON-EXPRESSION
+		// overrides (literal / single identifier ref to a module param or
+		// localparam / macro) into the instance. Anything containing ANY
+		// operator (concat {}, arithmetic, ternary, …) always folds into a
+		// Mod__Inst__Param localparam; style "localparam" folds everything.
 		const inlineParams = ctx.style?.param !== "localparam";
 		const instParams = new Map<
 			string,
@@ -1128,7 +1130,11 @@ function elaborateMod(
 			const expr = substVars(expr0, vars, res, `${iwhere} aw-param "${pname}"`);
 			const cls = classifyExpr(expr, scope);
 			const uniq = `${name}__${instName}__${pname}`;
-			if (inlineParams) {
+			const simple =
+				LITERAL.test(cls.value) ||
+				IDENT.test(cls.value) ||
+				/^`[A-Za-z_]\w*$/.test(cls.value);
+			if (inlineParams && simple) {
 				// Inline: dims rewrite substitutes the parenthesized expression.
 				instParams.set(pname, {
 					expr: cls.value,

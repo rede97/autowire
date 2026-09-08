@@ -17,10 +17,13 @@ module phy_wrap_tb #(
 	input wire [(((TB_W/2)))-1:0] tb_onehot,
 	input logic lfsr_en
 );
-	logic [(TB_W/2)-1:0] lfsr_out;
+	localparam phy_wrap_tb__u_dut__CNT_W = TB_W/2;
+	localparam phy_wrap_tb__u_lfsr__OutWidth = TB_W/2;
+
+	logic [phy_wrap_tb__u_lfsr__OutWidth-1:0] lfsr_out;
 
 	phy_wrap #(
-		.CNT_W(TB_W/2)
+		.CNT_W(phy_wrap_tb__u_dut__CNT_W)
 	) u_dut (
 		.phy_gray_o(tb_gray_o),
 		.phy_bin_o(tb_bin_o),
@@ -38,7 +41,7 @@ module phy_wrap_tb #(
 	);
 	cc_lfsr #(
 		.LfsrWidth(16),
-		.OutWidth(TB_W/2)
+		.OutWidth(phy_wrap_tb__u_lfsr__OutWidth)
 	) u_lfsr (
 		.clk_i(tb_clk),
 		.rst_ni(tb_rst_n),

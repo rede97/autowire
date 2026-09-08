@@ -74,7 +74,8 @@ dir = "gen"
 
 [style]
 # 例化参数风格（connect-rules §7）：
-#   "inline"（默认）——override 表达式直接写进例化 #(.W(CNT_W))，不产生 localparam；
+#   "inline"（默认）——非表达式 override（字面量/param·localparam 引用/宏）直接写进
+#     例化 #(.W(CNT_W))；含任何操作符的表达式（含 {} 拼接）不展开，仍折叠；
 #   "localparam"      ——每个 override 折叠成 Mod__Inst__Param localparam（可追溯/占位）。
 # param = "inline"
 

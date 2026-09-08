@@ -752,7 +752,8 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
       const expr = substVars(expr0, vars, res, `${iwhere} aw-param "${pname}"`);
       const cls = classifyExpr(expr, scope);
       const uniq = `${name}__${instName}__${pname}`;
-      if (inlineParams) {
+      const simple = LITERAL.test(cls.value) || IDENT.test(cls.value) || /^`[A-Za-z_]\w*$/.test(cls.value);
+      if (inlineParams && simple) {
         instParams.set(pname, {
           expr: cls.value,
           uniq: `(${cls.value})`,
