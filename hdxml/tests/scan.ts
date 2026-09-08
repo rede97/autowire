@@ -74,11 +74,7 @@ const perTarget: Record<string, TargetCfg> = {
 	},
 	"projects/veer-el2": {
 		gen: {
-			cmd: [
-				"sh",
-				"-c",
-				"perl configs/veer.config >/dev/null && tools/picmap -t 31 > snapshots/default/pic_map_auto.h",
-			],
+			cmd: ["sh", "-c", "RV_ROOT=\"$PWD\" perl configs/veer.config >/dev/null"],
 			marker: "snapshots/default/pic_map_auto.h",
 		},
 		expandHeaders: ["design/lib/el2_assert.sv"],

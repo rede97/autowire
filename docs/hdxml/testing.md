@@ -25,7 +25,7 @@
 | 生成物缺失 | veer-el2 `el2_param.vh` / `pic_map_auto.h`（config 生成） | `perTarget.gen` 自动生成（perl 依赖见 §2） |
 | 断言/工具宏（非 include 引入） | opentitan `ASSUME_FPV` | `--expand-headers` + `-D VERILATOR`（见 §2） |
 | 语料故意非法 / 伪代码 | verilog-mode `tests_ok/`（Emacs 缩进夹具，非合法 SV）、slang 杂散 token、ibex `.tpl.sv` | 基线数据（triage 的 intentional 列） |
-| **sv-parser 0.13.4 语法覆盖差距**（verible/slang 接受；0.13.5 同样不覆盖，升级无益） | 端口声明内属性 `(* *)`、单数字打包维度 `[0]`、非 ANSI 头+体内额外端口声明、covergroup、`foreach` 隐式循环变量、`@x[y]` 事件控制、generate `begin:label`、块内后置声明、**模块头部 package import**（veer el2_pmp / ahb↔axi4，3 例）、elaboration `$fatal`（ibex，1 例） | 基线数据（triage 的 gap 列，当前 slang 7 / verible 14）；parser 已 pin，不靠 hdxml pre-strip 逐个 hack |
+| **sv-parser 0.13.4 语法覆盖差距**（verible/slang 接受；0.13.5 同样不覆盖，升级无益） | 端口声明内属性 `(* *)`、单数字打包维度 `[0]`、非 ANSI 头+体内额外端口声明、covergroup、`foreach` 隐式循环变量、`@x[y]` 事件控制、generate `begin:label`、块内后置声明、elaboration `$fatal`（ibex，1 例） | 基线数据（triage 的 gap 列，当前 slang 7 / verible 15）；parser 已 pin，不靠 hdxml pre-strip 逐个 hack。**注**：模块头部 package import（`module m import p::*; #(...)`）**可正常解析**，不在差距之列 |
 
 ## 4. 相关
 
