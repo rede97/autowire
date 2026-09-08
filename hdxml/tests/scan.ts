@@ -110,11 +110,16 @@ interface Row {
 const rows: Row[] = [];
 let failed = false;
 
+// verilog-mode 是 Emacs 缩进模式仓库，夹具含大量伪代码（tests_ok/ 也非合法 SV），
+// 其错误纯噪音——只留在 smoke 的 oracle 抽样中，不进扫描基线
+const skipTargets: Record<string, true> = { "corpus/verilog-mode": true };
+
 for (const group of ["projects", "corpus"]) {
 	for (const e of readdirSync(join(root, group), { withFileTypes: true })) {
 		if (!e.isDirectory()) continue;
 		const dir = join(root, group, e.name);
 		const name = `${group}/${dir.replace(/\/$/, "").split("/").pop()}`;
+		if (skipTargets[name]) continue;
 		const dest = join(outDir, name.replace("/", "-"));
 		const cfg = perTarget[name] ?? {};
 		if (cfg.gen && !existsSync(join(dir, cfg.gen.marker))) {
