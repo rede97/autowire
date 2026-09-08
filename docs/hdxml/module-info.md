@@ -157,7 +157,7 @@ interface_sig = blake3(canonical)
       </instance>
     </instances>
   </module>
-  <!-- 解析失败的文件：无 module，错误带行列定位（定位机制移植自 ipchecker） -->
+  <!-- 解析失败的文件：无 module，错误带行列定位（源文件基准；EOF 近似取文件末尾） -->
   <error message="解析失败: Parse error: …" offset="48" line="2" column="3"/>
 </fileIndex>
 ```

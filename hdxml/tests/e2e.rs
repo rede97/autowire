@@ -218,6 +218,11 @@ fn error_file_exit1_and_index_marks_error() {
     assert_eq!(code, 1, "error file → exit 1: {text}");
     let xml = std::fs::read_to_string(c.find_out("bad.sv.xml").unwrap()).unwrap();
     assert!(xml.contains("<error message="), "{xml}");
+    // EOF 类错误（截断文件）经近似定位：源文件末尾（"module bad(\n" 长 12 → 行 2 列 1）
+    assert!(
+        xml.contains("offset=\"12\" line=\"2\" column=\"1\""),
+        "EOF error must carry approximate location: {xml}"
+    );
     let index = std::fs::read_to_string(c.out().join("index.xml")).unwrap();
     assert!(index.contains("status=\"error\""), "{index}");
     assert!(index.contains("errorFiles=\"1\""), "{index}");

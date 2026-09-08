@@ -270,13 +270,14 @@ pub fn short_hash(data: &[u8]) -> String {
     blake3::hash(data).to_hex()[..32].to_string()
 }
 
-/// 单文件分析错误（定位参考 ipchecker：sv-parser 错误 Debug 串尾部字节偏移 → 行列）
+/// 单文件分析错误（定位基准 = 源文件：sv-parser `Error::Parse` 已做 origins 映射；
+/// EOF 类错误 nom 报 Incomplete 无位置，近似取源文件末尾——解析器确在该处耗尽）
 #[derive(Debug, Clone, PartialEq)]
 pub struct FileError {
     pub message: String,
-    /// 预处理后文本字节偏移（可定位时）
+    /// 源文件字节偏移（可定位/可近似时）
     pub offset: Option<usize>,
-    /// 1-based 行/列（预处理后文本基准）
+    /// 1-based 行/列（源文件基准）
     pub line: Option<usize>,
     pub column: Option<usize>,
 }
@@ -291,25 +292,31 @@ impl FileError {
         }
     }
 
-    /// 带定位构造：err_debug 为 sv-parser 错误的 Debug 串，src 为预处理后文本
-    pub fn located(message: String, err_debug: &str, src: &str) -> Self {
-        let mut e = Self::new(message);
-        if let Some(pos) = parse_sv_error_pos(err_debug) {
-            let (line, col) = byte_offset_to_line_col(src, pos);
-            e.offset = Some(pos);
+    /// 解析失败定位：`Error::Parse(Some((file, offset)))` 为精确位（origin 文件坐标，
+    /// 源文件直接用内存副本，include 回读磁盘）；`None`（nom Incomplete = EOF）近似取
+    /// 源文件末尾；其余错误（预处理等）不定位。
+    pub fn parse_failed(err: &sv_parser::Error, source: &Path, raw: &str) -> Self {
+        let mut e = Self::new(format!("parse failed: {err}"));
+        let located = match err {
+            sv_parser::Error::Parse(Some((file, offset))) => {
+                let content = if file == source {
+                    raw.to_string()
+                } else {
+                    std::fs::read_to_string(file).unwrap_or_default()
+                };
+                Some((content, *offset))
+            }
+            sv_parser::Error::Parse(None) => Some((raw.to_string(), raw.len())),
+            _ => None,
+        };
+        if let Some((content, offset)) = located {
+            let (line, col) = byte_offset_to_line_col(&content, offset);
+            e.offset = Some(offset);
             e.line = Some(line);
             e.column = Some(col);
         }
         e
     }
-}
-
-/// 从 sv-parser 错误 Debug 串提取字节偏移，形如 `Parse(Some(("label", 12345)))`
-fn parse_sv_error_pos(err_str: &str) -> Option<usize> {
-    err_str
-        .rsplit(|c: char| !c.is_ascii_digit())
-        .find(|s| !s.is_empty())
-        .and_then(|s| s.parse::<usize>().ok())
 }
 
 /// 字节偏移 → 1-based (行, 列)
@@ -520,9 +527,8 @@ fn parse_many(d: &Drive, files: &[PathBuf]) -> ParseOut {
                     sv_parser::preprocess_str(&stripped, path, d.defines, d.incdirs, false, false, 0, 0)
                         .map_err(|e| FileError::new(format!("preprocess failed: {e}")))?;
                 let src = pp.text().to_string();
-                let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false).map_err(|e| {
-                    FileError::located(format!("parse failed: {e}"), &format!("{e:?}"), &src)
-                })?;
+                let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false)
+                    .map_err(|e| FileError::parse_failed(&e, path, &raw))?;
                 let mut mods = extract::Extractor::new(&src).run(&tree);
                 for m in &mut mods {
                     m.file = path.clone();

@@ -619,21 +619,22 @@ mod tests {
     #[test]
     fn error_file_xml_carries_location() {
         let f = PathBuf::from("/nonexistent/bad.sv");
+        // 精确位：Error::Parse 携带 origin 文件 + 偏移（源文件坐标）
+        let err = sv_parser::Error::Parse(Some((f.clone(), 42)));
+        let raw = "aaaaaaaaaa\naaaaaaaaaa\naaaaaaaaaa\naaaaaaaaaa\naaaaaaaaaa\n";
+        let located = FileError::parse_failed(&err, &f, raw);
+        assert_eq!((located.offset, located.line, located.column), (Some(42), Some(4), Some(10)));
+        // EOF 近似位：Parse(None)（nom Incomplete）→ 源文件末尾
+        let approx = FileError::parse_failed(&sv_parser::Error::Parse(None), &f, raw);
+        assert_eq!((approx.offset, approx.line, approx.column), (Some(raw.len()), Some(6), Some(1)));
         let mut errors: BTreeMap<PathBuf, Vec<FileError>> = BTreeMap::new();
-        errors.insert(
-            f.clone(),
-            vec![FileError::located(
-                "parse failed: boom".into(),
-                "Parse(Some((\"Description\", 42)))",
-                "aaaaaaaaaa\naaaaaaaaaa\naaaaaaaaaa\naaaaaaaaaa\naaaaaaaaaa\n",
-            )],
-        );
+        errors.insert(f.clone(), vec![located]);
         let db = DesignDb::new(BTreeMap::new(), errors);
         let files = vec![f.clone()];
         let dir = tmpdir("err");
         XmlExport::with_generated(&db, &files, &[], &BTreeMap::new(), &[], 0).write(&dir).unwrap();
         let body = std::fs::read_to_string(dir.join("nonexistent/bad.sv.xml")).unwrap();
-        assert!(body.contains("<error message=\"parse failed: boom\" offset=\"42\" line=\"4\" column=\"10\"/>"), "{body}");
+        assert!(body.contains("offset=\"42\" line=\"4\" column=\"10\""), "{body}");
         let index = std::fs::read_to_string(dir.join("index.xml")).unwrap();
         assert!(index.contains("status=\"error\""), "{index}");
         assert!(index.contains("errorFiles=\"1\""), "{index}");

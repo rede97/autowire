@@ -235,8 +235,8 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 | 属性 | 类型 | 必须 | 含义 |
 |---|---|---|---|
 | `message` | string | 是 | 错误描述（含生产者原始错误文本） |
-| `offset` | int | 否 | 预处理后文本字节偏移（可定位时） |
-| `line` / `column` | int | 否 | 1-based 行列（预处理后基准，可定位时成对出现） |
+| `offset` | int | 否 | 错误所在**源文件**字节偏移（sv-parser origins 映射后的精确位；EOF 类错误 nom 无位置，近似取源文件末尾） |
+| `line` / `column` | int | 否 | 1-based 行列（源文件基准；与 `offset` 成对出现） |
 
 解析失败的文件通常无 `<module>`；模块重复定义等错误可与 `<module>` 共存。
 
