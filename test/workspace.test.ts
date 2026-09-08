@@ -7,7 +7,7 @@ import {
 	findWorkspace,
 	hdxmlArgs,
 	loadWorkspace,
-} from "./workspace.js";
+} from "../src/workspace.ts";
 
 function tempWorkspace(toml: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "aw_ws_test_"));

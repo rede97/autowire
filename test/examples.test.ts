@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DOMParser } from "linkedom";
-import { check, elaborate, serializeSnapshot } from "./core/aw.ts";
+import { check, elaborate, serializeSnapshot } from "../src/core/aw.ts";
 
 // The docs examples (docs/examples/connect/) are executable author faces.
 // These tests elaborate each with a fictional leaf ctx matching the example's

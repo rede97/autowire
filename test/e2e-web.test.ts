@@ -3,9 +3,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Browser, chromium } from "playwright";
-import { startWeb } from "./web.ts";
-import type { WorkspaceConfig } from "./workspace.ts";
-import { loadWorkspace } from "./workspace.ts";
+import { startWeb } from "../src/web.ts";
+import type { WorkspaceConfig } from "../src/workspace.ts";
+import { loadWorkspace } from "../src/workspace.ts";
 
 // End-to-end: real workspace (repo autowire.toml + connect/ demos), real
 // headless Chromium, real dump. Golden .sv files live in test/golden/.

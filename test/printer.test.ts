@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { RenderModule } from "./printer.ts";
+import type { RenderModule } from "../src/printer.ts";
 import {
 	assertPrintable,
 	flattenModules,
 	parseSnapshot,
 	printSv,
-} from "./printer.ts";
+} from "../src/printer.ts";
 
 // Printer contract: snapshot XML → SV text (docs/connect-html.md §4, help dump).
 
