@@ -21,7 +21,7 @@ fn main() -> Result<()> {
 }
 
 fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter) -> Result<()> {
-    let defines = db::build_defines(&a.input.defines, &a.input.define_headers, &a.input.keep_raw, &a.input.incdirs)?;
+    let defines = db::build_defines(&a.input.defines, &a.input.define_headers, &a.input.expand_headers, &a.input.keep_raw, &a.input.incdirs)?;
     // 供 index.xml 记录：排序的 (名称, 值文本) 列表；宏变更 → 指纹变 → 整库作废
     let mut define_pairs: Vec<(String, Option<String>)> = defines
         .iter()

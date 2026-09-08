@@ -583,7 +583,7 @@ string s = "`include not_real";
 
     /// 跑一轮增量分析 + 导出；返回（命中数, 输出目录）
     fn run(fx: &Fixture, out: &Path, refresh: bool, extra_defines: &[String]) -> usize {
-        let defines = db::build_defines(extra_defines, &[], &[], &fx.incdirs).unwrap();
+        let defines = db::build_defines(extra_defines, &[], &[], &[], &fx.incdirs).unwrap();
         let mut pairs: Vec<(String, Option<String>)> = defines
             .iter()
             .map(|(n, d)| {

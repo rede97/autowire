@@ -16,6 +16,7 @@
 | [hdxml/rtlindex-xml.md](./hdxml/rtlindex-xml.md) | RtlIndex XML 格式契约（hdxml ↔ autowire） | 草案 |
 | [hdxml/module-info.md](./hdxml/module-info.md) | hdxml DesignDb / 模块信息模型 | 已实现参考 |
 | [hdxml/cli.md](./hdxml/cli.md) | hdxml `analysis` CLI | 已实现 |
+| [hdxml/testing.md](./hdxml/testing.md) | hdxml 测试脚本（fetch/scan/smoke，Bun）与错误基线分类 | 已实现 |
 
 ## 不做
 

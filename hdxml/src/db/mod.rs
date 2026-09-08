@@ -427,6 +427,7 @@ fn sentinel_define(name: &str, args: &[(String, Option<String>)]) -> Option<Defi
 pub fn build_defines(
     defs: &[String],
     headers: &[PathBuf],
+    expand_headers: &[PathBuf],
     keep_raw: &[String],
     incdirs: &[PathBuf],
 ) -> Result<HashMap<String, Option<Define>>> {
@@ -464,6 +465,18 @@ pub fn build_defines(
             }
             let args = def.as_ref().map(|d| d.arguments.clone()).unwrap_or_default();
             defines.insert(name.clone(), sentinel_define(&name, &args));
+        }
+    }
+    for h in expand_headers {
+        // 真展开通道：宏体原样进入宏表（ASSERT 等模块项宏的展开结果必须可解析，
+        // 哨兵占位符在模块项位置不合法）
+        let (_, hdr_defs) = sv_parser::preprocess(h, &defines, incdirs, true, false)
+            .map_err(|e| anyhow::anyhow!("expand header preprocess failed {}: {}", h.display(), e))?;
+        for (name, def) in hdr_defs {
+            if name.starts_with("SV_COV") {
+                continue;
+            }
+            defines.insert(name, def);
         }
     }
     // -D 压顶：同名 header 哨兵被显式展开值覆盖（keep_raw 仍最强，见下）
@@ -672,6 +685,7 @@ mod tests {
         let defs = build_defines(
             &["WIDTH=32".to_string(), "SYNTH".to_string()],
             &[],
+            &[],
             &["WIDTH".to_string(), "DEPTH".to_string()],
             &[],
         )
@@ -692,7 +706,7 @@ mod tests {
 
     #[test]
     fn keep_raw_expands_sentinel_and_ifdef_true() {
-        let defs = build_defines(&[], &[], &["WIDTH".to_string()], &[]).unwrap();
+        let defs = build_defines(&[], &[], &[], &["WIDTH".to_string()], &[]).unwrap();
         let src = "module m(output logic [`WIDTH-1:0] o);\n`ifdef WIDTH\n  localparam int K = 1;\n`endif\nendmodule\n";
         let (pp, _) = sv_parser::preprocess_str(
             src,
@@ -719,7 +733,7 @@ mod tests {
     /// 端到端：keep_raw 零参宏带实参使用时，pp 将实参表原样接回哨兵后
     #[test]
     fn keep_raw_fn_usage_keeps_actual_args() {
-        let defs = build_defines(&[], &[], &["H_MIN".to_string()], &[]).unwrap();
+        let defs = build_defines(&[], &[], &[], &["H_MIN".to_string()], &[]).unwrap();
         let src = "module m;\n  localparam int K = `H_MIN(3, 5);\nendmodule\n";
         let (pp, _) = sv_parser::preprocess_str(
             src,
@@ -747,7 +761,7 @@ mod tests {
         let hdr = dir.join("defs.svh");
         std::fs::write(&hdr, "`define H_WIDTH 32\n`define H_MIN(a,b) ((a)<(b)?(a):(b))\n").unwrap();
 
-        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[]).unwrap();
+        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[], &[]).unwrap();
         let w = defs.get("H_WIDTH").unwrap().as_ref().unwrap();
         assert_eq!(
             w.text.as_ref().unwrap().text,
@@ -764,7 +778,7 @@ mod tests {
 
         // -D 显式给值 → 覆盖 header 哨兵，真展开
         let defs =
-            build_defines(&["H_WIDTH=64".to_string()], std::slice::from_ref(&hdr), &[], &[])
+            build_defines(&["H_WIDTH=64".to_string()], std::slice::from_ref(&hdr), &[], &[], &[])
                 .unwrap();
         assert_eq!(
             defs.get("H_WIDTH").unwrap().as_ref().unwrap().text.as_ref().unwrap().text,
@@ -774,6 +788,7 @@ mod tests {
         let defs = build_defines(
             &["H_WIDTH=64".to_string()],
             std::slice::from_ref(&hdr),
+            &[],
             &["H_WIDTH".to_string()],
             &[],
         )
@@ -795,9 +810,9 @@ mod tests {
         std::fs::write(&hdr, "`include \"base.svh\"\n`define TOP_W 16\n").unwrap();
 
         // 无 -I：被 include 的文件找不到 → 预处理报错（ignore_include=false）
-        assert!(build_defines(&[], std::slice::from_ref(&hdr), &[], &[]).is_err());
+        assert!(build_defines(&[], std::slice::from_ref(&hdr), &[], &[], &[]).is_err());
         // 有 -I：两个头文件的宏都登记（默认哨兵）
-        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[inc]).unwrap();
+        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[], &[inc]).unwrap();
         assert!(defs.contains_key("BASE_W"), "macros from `include must be registered");
         assert!(defs.contains_key("TOP_W"));
     }
@@ -811,11 +826,11 @@ mod tests {
         std::fs::write(&hdr, "`ifdef SEED\n`define GATED 1\n`endif\n").unwrap();
 
         // Without the seed the `ifdef branch must not fire
-        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[]).unwrap();
+        let defs = build_defines(&[], std::slice::from_ref(&hdr), &[], &[], &[]).unwrap();
         assert!(!defs.contains_key("GATED"), "without seed, `ifdef branch must not fire");
         // With -D SEED=1 the gated macro is registered (sentinel by default)
         let defs =
-            build_defines(&["SEED=1".to_string()], std::slice::from_ref(&hdr), &[], &[]).unwrap();
+            build_defines(&["SEED=1".to_string()], std::slice::from_ref(&hdr), &[], &[], &[]).unwrap();
         assert!(defs.contains_key("GATED"), "-D seed must be visible to header `ifdef");
         let _ = std::fs::remove_dir_all(&dir);
     }

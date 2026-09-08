@@ -61,6 +61,11 @@ pub struct InputArgs {
     #[arg(long, num_args = 1..)]
     pub define_headers: Vec<PathBuf>,
 
+    /// Macro define headers with real expansion (unlike --define-headers' raw sentinels;
+    /// for assertion/utility macro libraries whose expansions must parse, e.g. lowrisc prim_assert)
+    #[arg(long, num_args = 1..)]
+    pub expand_headers: Vec<PathBuf>,
+
     /// Register macros as raw (sentinel expansion): expressions keep `NAME verbatim and `ifdef NAME still evaluates true (autowire.toml keep_raw goes through here)
     #[arg(long, num_args = 1..)]
     pub keep_raw: Vec<String>,

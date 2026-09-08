@@ -32,4 +32,4 @@ cargo run -- -w <rtl_dir> --tree   # 目录扫描 + 依赖树（无子命令）
 
 ## 测试语料
 
-`tests/fetch.sh` 拉取语料与第三方项目（slang/verible corpus、ibex/cva6/OpenTitan），`tests/smoke.sh` 做工具链与 oracle 冒烟。语料不入库（见 `.gitignore`）。`tests/scan.sh` 全量扫描测试：逐项目/语料跑分析产出索引并汇总规模与错误基线（产物在 `tests/out/scan/`，增量复跑秒级）。
+`tests/fetch.ts`（Bun）拉取语料与第三方项目，`tests/scan.ts` 全量扫描测试（逐项目产出索引 + 错误基线汇总），`tests/smoke.ts` 工具链与 oracle 冒烟。用法与错误基线分类见 [`docs/hdxml/testing.md`](../docs/hdxml/testing.md)。语料不入库（见 `.gitignore`）。

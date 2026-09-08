@@ -407,3 +407,27 @@ fn error_file_is_never_cached() {
     // good 命中缓存；bad 是错误文件不可缓存，每轮都解析
     assert!(text.contains("reused 1 files, parsed 1 files"), "{text}");
 }
+
+#[test]
+fn expand_headers_macros_really_expand_and_parse_as_module_items() {
+    let c = Case::new("exphdr");
+    let hdr = c.write(
+        "prim.sv",
+        "`define ADD_ONE(x) ((x) + 1)\n`define ASSERT(name, prop) assert property (@(posedge clk_i) (prop))\n",
+    );
+    let top = c.write(
+        "top.sv",
+        "module top(input logic clk_i, input logic d_i, output logic [`ADD_ONE(3)-1:0] v);\n  `ASSERT(DStable, d_i);\nendmodule\n",
+    );
+    let (code, text) = c.run(&[
+        "-s".into(),
+        s(&top),
+        "--expand-headers".into(),
+        s(&hdr),
+        "-o".into(),
+        s(&c.out()),
+    ]);
+    assert_eq!(code, 0, "{text}");
+    let xml = std::fs::read_to_string(c.find_out("top.sv.xml").unwrap()).unwrap();
+    assert!(xml.contains("packed=\"[((3) + 1)-1:0]\""), "macro must really expand: {xml}");
+}
