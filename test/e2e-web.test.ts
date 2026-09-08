@@ -167,6 +167,42 @@ describe("autowire web e2e", () => {
 		expect(badId.status).toBe(400);
 	});
 
+	test("save: [Save] drops live DOM to .autowire/dump; API guards id/body", async () => {
+		const page = await browser.newPage();
+		await page.goto(`${base}?unit=phy_wrap&check=1`);
+		await waitStatus(page);
+		await page.locator("#btn-save").click();
+		const status = await waitStatus(page);
+		expect(status.state).toBe("done");
+		expect(status.text).toContain(".autowire/dump/phy_wrap.html");
+		await page.close();
+		const saved = await readFile(
+			join(ROOT, ".autowire", "dump", "phy_wrap.html"),
+			"utf8",
+		);
+		// live DOM: author content present, and it is not the author file path
+		expect(saved).toContain("<aw-content>");
+		expect(saved).toContain('name="phy_wrap"');
+		const ghost = await fetch(`${base}api/save`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ id: "ghost_unit", html: "<autowire/>" }),
+		});
+		expect(ghost.status).toBe(404);
+		const noRoot = await fetch(`${base}api/save`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ id: "phy_wrap", html: "<div/>" }),
+		});
+		expect(noRoot.status).toBe(422);
+		const badId = await fetch(`${base}api/save`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ id: "../escape", html: "<autowire/>" }),
+		});
+		expect(badId.status).toBe(400);
+	});
+
 	test("check error path: tb without dep snapshot reports missing snapshot", async () => {
 		await rm(join(ROOT, ".autowire", "connect", "phy_wrap.xml"), {
 			force: true,

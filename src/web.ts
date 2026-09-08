@@ -118,6 +118,23 @@ async function handleApi(
 			headers: { "content-type": "application/xml; charset=utf-8" },
 		});
 	}
+	if (req.method === "POST" && path === "/api/save") {
+		// Debug drop: persist the live DOM (edited aw-content + aw-render) to
+		// .autowire/dump/<id>.html. Never writes author HTML (docs/mcp/README.md).
+		const body = await readBody(req);
+		const id = typeof body.id === "string" ? body.id : "";
+		const html = typeof body.html === "string" ? body.html : "";
+		if (!UNIT_ID.test(id)) return json({ error: "bad unit id" }, 400);
+		const unit = ws.connectUnits.find((u) => u.id === id);
+		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
+		if (!html.includes("<autowire"))
+			return json({ error: "body html has no <autowire> root" }, 422);
+		const dir = join(ws.root, ".autowire", "dump");
+		await mkdir(dir, { recursive: true });
+		const file = join(dir, `${id}.html`);
+		await writeFile(file, `${html}\n`, "utf8");
+		return json({ file });
+	}
 	if (req.method === "POST" && path === "/api/check") {
 		const body = await readBody(req);
 		const id = typeof body.id === "string" ? body.id : "";
@@ -206,6 +223,7 @@ const PAGE_HTML = `<!doctype html>
   <button id="btn-check" type="button">Check</button>
   <button id="btn-render" type="button">Render</button>
   <button id="btn-dump" type="button">Dump</button>
+  <button id="btn-save" type="button" title="Save live DOM to .autowire/dump/<unit>.html (debug drop; never author HTML)">Save</button>
   <button id="btn-reset" type="button">Reset</button>
   <span id="aw-status" data-state="idle" role="status">idle</span>
 </header>

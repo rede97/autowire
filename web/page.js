@@ -501,6 +501,26 @@ async function init() {
 	$("#btn-check").addEventListener("click", () => runChain({ check: true }));
 	$("#btn-render").addEventListener("click", () => runChain({ render: true }));
 	$("#btn-dump").addEventListener("click", () => runChain({ dump: true }));
+	$("#btn-save").addEventListener("click", async () => {
+		// Debug drop (docs/mcp/README.md): persist the live DOM to
+		// .autowire/dump/<unit>.html; never writes the author HTML.
+		const entry = state.docs.get(state.current);
+		const root = entry?.container.querySelector(":scope > autowire");
+		if (!root) {
+			setStatus("error", `save: unit "${state.current}" not loaded`);
+			return;
+		}
+		try {
+			const res = await fetchJson("/api/save", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ id: state.current, html: root.outerHTML }),
+			});
+			setStatus("done", `saved → ${res.file}`);
+		} catch (e) {
+			setStatus("error", `save: ${e.message}`);
+		}
+	});
 	$("#btn-reset").addEventListener("click", () => resetAll());
 	$("#dep-tree").addEventListener("click", (e) => {
 		const mod = e.target?.dataset?.mod;

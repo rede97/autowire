@@ -86,8 +86,7 @@ A: browser reload or GET ?render=1 → 看 aw-render
 A/工具: dump → .sv
 ```
 
-- A **默认不**把调试 DOM 写回作者 HTML。  
-- 若将来做「从页导出作者面」，**必须**另开合同，且仍经 check，不得绕过 B 的格式化写盘语义。
+- A **不**把调试 DOM 写回作者 HTML；调试产物可以经 `POST /api/save` 落到 `.autowire/dump/`（临时目录，已实现），合回作者面由本地人工决定。
 
 ## 5. 实现提示（非规范）
 
