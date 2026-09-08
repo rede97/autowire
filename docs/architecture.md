@@ -82,7 +82,20 @@ autowire cli phy.html --dump gen/
 
 `deps` 等 RtlIndex 查询可另挂在 cli 上，与连接渲染分开。`--dump` **应当**隐含 `--check`。
 
-## 3. 隔离与调试：Playwright
+## 3. Agent MCP：工具边界与双途径
+
+根本原则与分途见 [`mcp/README.md`](./mcp/README.md)。
+
+| 途径 | 场景 | 状态 |
+|---|---|---|
+| **工具** | analysis / check / render / dump / 插件 generate | 连接核心已落地（cli 除外） |
+| **A. Playwright MCP** | 隔离调试：活 DOM，不另做连线 outline MCP | 已落地（`.mcp.json`） |
+| **B. 工作区 MCP** | 作者 HTML 节点 Edit；RtlIndex 检索；analysis/reload | 草稿，见 [`mcp/workspace.md`](./mcp/workspace.md) |
+
+**禁止** MCP 内「改连接节点 → 实时网表/RTL」一体机（旧设计糊了工具与 MCP）。  
+A 只打浏览器调试工作区；B 只改作者面/索引——出结果仍须显式走 Web 工具路径。
+
+### 3.1 Playwright 隔离调试
 
 全程无头 Chromium 打开 `web` 的 URL，首屏渲染完成后再让 Agent 介入（Playwright MCP：navigate / snapshot / evaluate / click）。
 

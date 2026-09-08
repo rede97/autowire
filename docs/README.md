@@ -4,7 +4,9 @@
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [architecture.md](./architecture.md) | 架构设计：组件（hdxml / aw.js / web / check / dump / cli）、Playwright 隔离、入口阶段 | 草稿 |
+| [architecture.md](./architecture.md) | 架构设计：组件（hdxml / aw.js / web / check / dump / cli）、MCP 双途径、入口阶段 | 草稿 |
+| [mcp/](./mcp/) | 工具 vs MCP 边界；Playwright vs 工作区 MCP；本地 Edit/检索合同 | 草稿 |
+| [plugins/](./plugins/) | 并列插件：登记 / 自定义标签；Wishbone regfile + 块内 bus 树 | 草稿 |
 | [plugins/](./plugins/) | 并列插件：登记 / 自定义标签；Wishbone regfile + 块内 bus 树 | 草稿 |
 | [workspace-toml.md](./workspace-toml.md) | 顶层 `autowire.toml`：`.f`、宏/`.svh`、与 RtlIndex / 连接衔接 | 已实现（cli 除外） |
 | [connect-html.md](./connect-html.md) | 连接 HTML：骨架 / dump / 多模与多 HTML 规则 | 已实现 |
