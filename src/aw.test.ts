@@ -9,7 +9,7 @@ import {
 	on as hookOn,
 	runBeforeInstances,
 	serializeSnapshot,
-} from "../web/aw.js";
+} from "../web/aw.ts";
 
 /** querySelector + non-null, failing the test with context instead of `!`. */
 function mustQuery(root: ParentNode, sel: string): Element {
@@ -398,7 +398,8 @@ describe("elaborate (render)", () => {
 		);
 		// hook registered via the same aw.on API authors use in module scripts
 		beginUnitHooks("t1");
-		hookOn("before-instances", ({ mod }: { mod: Element }) => {
+		hookOn("before-instances", ({ mod }) => {
+			if (!mod) throw new Error("hook without mod");
 			const insts = mustQuery(mod, "aw-content aw-insts");
 			const inst = mod.ownerDocument.createElement("aw-inst");
 			inst.setAttribute("id", "gen");

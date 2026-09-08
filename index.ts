@@ -20,7 +20,7 @@ import {
 	hdxmlArgs,
 	loadWorkspace,
 } from "./src/workspace.js";
-import { check as awCheck } from "./web/aw.js";
+import { check as awCheck } from "./web/aw.ts";
 
 /** Resolve hdxml binary: --hdxml > toml [hdxml] bin > $HDXML_BIN > repo target/{release,debug} > PATH */
 function findHdxml(explicit?: string, tomlBin?: string | null): string {

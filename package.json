@@ -9,7 +9,8 @@
 	"scripts": {
 		"help": "bun index.ts help",
 		"lint": "biome check .",
-		"test": "bun test"
+		"test": "bun test",
+		"build:web": "bun build web/aw.ts --target browser --format esm --outfile web/aw.js"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.12",

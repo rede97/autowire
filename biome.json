@@ -6,7 +6,7 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"ignoreUnknown": false
+		"includes": ["**", "!web/aw.js"]
 	},
 	"formatter": {
 		"enabled": true,

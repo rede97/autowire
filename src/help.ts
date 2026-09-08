@@ -62,7 +62,7 @@ Landed
   autowire init / analysis   workspace autowire.toml → hdxml
   autowire deps <path>      RTL module dependency tree
   hdxml sidecar             analysis → RtlIndex XML
-  aw.js                     check + elaboration engine (browser + linkedom; web/aw.js)
+  aw.js                     engine: web/aw.ts → build:web → web/aw.js (generated; guarded)
   autowire web [unit]       local page (127.0.0.1); buttons + GET ?check/?render/?dump/?select
   autowire check [unit]     author-face legality + deps (no write)
   POST /api/check|/api/dump validate-only / only RTL write path; snapshots → .autowire/connect/

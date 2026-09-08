@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { RenderModule } from "./printer.ts";
 import {
 	assertPrintable,
 	flattenModules,
@@ -57,23 +58,25 @@ describe("printer", () => {
 		const mods = parseSnapshot(SNAP);
 		expect(mods).toHaveLength(1);
 		const m = mods[0];
+		if (!m) throw new Error("snapshot has no module");
 		expect(m.name).toBe("top");
 		expect(m.params).toEqual([{ name: "W", value: "8" }]);
 		expect(m.imports).toEqual([{ package: "cc_pkg", symbol: "*" }]);
 		expect(m.ports).toHaveLength(2);
 		expect(m.signals).toHaveLength(3);
-		expect(m.insts[0].connects[1]).toEqual({
+		const first = m.insts[0]?.connects[1];
+		expect(first).toEqual({
 			port: "d",
 			to: "arr",
 			part: "[2]",
 			type: "",
 		});
-		expect(m.children[0].name).toBe("kid");
+		expect(m.children[0]?.name).toBe("kid");
 		expect(flattenModules(mods).map((x) => x.name)).toEqual(["top", "kid"]);
 	});
 
 	test("printSv emits module with params, imports, localparams, signals, insts", () => {
-		const sv = printSv(parseSnapshot(SNAP)[0], "u1");
+		const sv = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1");
 		expect(sv).toContain("module top #(");
 		expect(sv).toContain("parameter W = 8");
 		expect(sv).toContain("input clk_i,");
@@ -97,7 +100,9 @@ describe("printer", () => {
 	});
 
 	test("interface ports print as type.modport", () => {
-		const sv = printSv(parseSnapshot(SNAP)[0].children[0], "u1");
+		const kid = parseSnapshot(SNAP)[0]?.children[0];
+		if (!kid) throw new Error("snapshot has no child module");
+		const sv = printSv(kid, "u1");
 		expect(sv).toContain("axi_if.slave s_axi");
 	});
 
