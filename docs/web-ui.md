@@ -1,6 +1,6 @@
 # Web 界面与 GET 动作 API（`autowire web`）
 
-> 状态：草稿，未实现。本文约束页面布局与「GET 参数 → 自动动作」契约；组件定位见 [architecture.md](./architecture.md) §2.3–2.5；校验见 `help check`，写回见 `/api/dump`（`help dump`）。
+> 状态：**已实现**（`autowire web`；引擎 `web/aw.js`，页面控制 `web/page.js`，服务 `src/web.ts`）。本文约束页面布局与「GET 参数 → 自动动作」契约；组件定位见 [architecture.md](./architecture.md) §2.3–2.5；校验见 `help check`，写回见 `/api/dump`（`help dump`）。
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。
 
 ## 1. 页面布局

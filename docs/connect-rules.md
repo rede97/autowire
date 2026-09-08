@@ -117,13 +117,13 @@ localparam <Mod>__<Inst>__<Param> = <Expression>;
 | `expr` 形态 | 可否折叠 | `aw-localparam@value` |
 |---|---|---|
 | 常量字面量 | 折叠 | 字面量 |
-| 单一标识符 = 本模 `aw-param` | 折叠 | 追到已解析值（可递归） |
-| 单一标识符 = 本模内部 localparam（content 或已写入 render 的条目） | 折叠 | 同上 |
+| 单一标识符 = 本模 `aw-param` | **不折叠**（实现裁定：模块 parameter 可被父模 override，折叠成默认值在 override 下是错的；保留参数名引用以跟踪 override） | 参数名原文 |
+| 单一标识符 = 本模内部 localparam | 其链**不经过**模块 param 且终于常量 → 折叠；终于 param → 不折叠 | 追到常量，或保留文本 |
 | 表达式（`W-1`、多操作数等） | 不折叠 | 保留表达式文本 |
 | 宏 | 不折叠 | 保留宏原文 |
 
 - 必须自动分类，不能靠作者标注。  
-- 链上碰到表达式或宏 → 该 uniquify localparam 不折叠。  
+- 链上碰到表达式、宏或模块 param → 该 uniquify localparam 不折叠。  
 - 单一标识符既非 param 也非 localparam → 不折叠（保留文本）。  
 - render 宜带 `folded="true|false"`。
 

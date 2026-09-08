@@ -121,7 +121,9 @@ enum Frame {
     Port(PortB),
     Inst(InstB),
     Hier(HierB),
-    Cap(Cap, Win),
+	Cap(Cap, Win),
+	/// 被抑制的嵌套表达式节点占位（配对 leave，不捕获）
+	Skip,
 }
 
 pub struct Extractor<'a> {
@@ -198,7 +200,7 @@ impl<'a> Extractor<'a> {
                 Frame::Inst(i) => i.win.feed(l),
                 Frame::Hier(h) => h.win.feed(l),
                 Frame::Cap(_, w) => w.feed(l),
-                Frame::ParamDecl { .. } => {}
+                Frame::ParamDecl { .. } | Frame::Skip => {}
             }
         }
     }
@@ -333,17 +335,27 @@ impl<'a> Extractor<'a> {
                 self.stack.push(Frame::Cap(Cap::DataType, Win::new()))
             }
             RefNode::ConstantExpression(_) | RefNode::ConstantParamExpression(_) => {
-                // 参数/端口默认值、实例参数覆盖值（维度内表达式已被 dim_open 抑制）
+                // 参数/端口默认值、实例参数覆盖值（维度内表达式已被 dim_open 抑制）。
+                // 外层表达式窗口先开先收：其后任何嵌套表达式节点只压 Skip 占位
+                // （与 leave 配对），保证 default 是完整表达式而非首个子表达式。
                 if !self.dim_open()
                     && (self.in_param_decl() || self.in_port_decl() || self.in_param_conn())
                 {
-                    self.stack.push(Frame::Cap(Cap::Expr, Win::new()));
+                    if self.expr_open() {
+                        self.stack.push(Frame::Skip);
+                    } else {
+                        self.stack.push(Frame::Cap(Cap::Expr, Win::new()));
+                    }
                 }
             }
             RefNode::ParamExpression(_) => {
                 // 实例参数覆盖的表达式节点（NamedParameterAssignment 内不是 ConstantExpression）
                 if !self.dim_open() && self.in_param_conn() {
-                    self.stack.push(Frame::Cap(Cap::Expr, Win::new()));
+                    if self.expr_open() {
+                        self.stack.push(Frame::Skip);
+                    } else {
+                        self.stack.push(Frame::Cap(Cap::Expr, Win::new()));
+                    }
                 }
             }
             RefNode::ModuleInstantiation(_) | RefNode::InterfaceInstantiation(_) => {
@@ -392,6 +404,13 @@ impl<'a> Extractor<'a> {
         self.stack
             .iter()
             .any(|f| matches!(f, Frame::Cap(Cap::ParamConn, _)))
+    }
+
+    /// 是否已有表达式捕获窗口（任意深度；嵌套表达式不得再开窗）
+    fn expr_open(&self) -> bool {
+        self.stack
+            .iter()
+            .any(|f| matches!(f, Frame::Cap(Cap::Expr, _)))
     }
 
     fn leave(&mut self, node: RefNode<'a>) {
@@ -491,8 +510,12 @@ impl<'a> Extractor<'a> {
             RefNode::ConstantExpression(_)
             | RefNode::ConstantParamExpression(_)
             | RefNode::ParamExpression(_) => {
-                if matches!(self.stack.last(), Some(Frame::Cap(Cap::Expr, _))) {
-                    self.pop_cap(Cap::Expr);
+                match self.stack.last() {
+                    Some(Frame::Cap(Cap::Expr, _)) => self.pop_cap(Cap::Expr),
+                    Some(Frame::Skip) => {
+                        self.stack.pop();
+                    }
+                    _ => {}
                 }
             }
             RefNode::NamedParameterAssignment(_) | RefNode::OrderedParameterAssignment(_) => {
@@ -726,6 +749,23 @@ endmodule
     }
 
     #[test]
+    fn param_default_keeps_full_nested_expression() {
+        // Regression: `OnehotWidth == 1 ? 1 : $clog2(OnehotWidth)` was truncated
+        // to the first sub-expression; the outermost window must win.
+        let src = r#"module m #(parameter int unsigned W = 16) ();
+  localparam int unsigned BW = W == 1 ? 1 : $clog2(W);
+endmodule
+"#;
+        let (mods, _) = extract_src("m", src);
+        let m = &mods[0];
+        assert_eq!(m.params[0].default.as_ref().unwrap().text, "16");
+        assert_eq!(
+            m.params[1].default.as_ref().unwrap().text,
+            "W == 1 ? 1 : $clog2(W)"
+        );
+    }
+
+    #[test]
     fn interface_sig_format_insensitive_content_sensitive() {
         let a = "module m(input logic [7:0] d);\nendmodule\n";
         let b = "module m(\n  input   logic [7:0] d\n);\nendmodule\n";
@@ -734,6 +774,7 @@ endmodule
         assert_eq!(sig(a), sig(b), "whitespace differences must not change the signature");
         assert_ne!(sig(a), sig(c), "width differences must change the signature");
     }
+
 
     #[test]
     fn raw_macro_sentinel_kept_in_port_dims() {

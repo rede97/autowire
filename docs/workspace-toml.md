@@ -1,6 +1,6 @@
 # 工作区配置 `autowire.toml`（实现约束）
 
-> 状态：**部分实现**（`autowire init` / `autowire analysis` 已落地，见 `help analysis`）；web / dump 侧未实现。  
+> 状态：**已实现**（`init` / `analysis` / `web` / `check` / `/api/dump` 全链路落地；`cli` 未落地）。  
 > 摘要切片：`bun index.ts help workspace`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
 > 关联：[`connect-html.md`](./connect-html.md)（连接 elaboration）、[`hdxml/cli.md`](./hdxml/cli.md)、[`hdxml/rtlindex-xml.md`](./hdxml/rtlindex-xml.md)。

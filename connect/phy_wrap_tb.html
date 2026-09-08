@@ -1,0 +1,76 @@
+<!doctype html>
+<!--
+  Connect demo unit "phy_wrap_tb" (deps = ["phy_wrap"] in autowire.toml).
+  Exercises: cross-unit wrapper reference via the .autowire/connect snapshot,
+  wrapper param override with a non-folding expression (connect-rules §7.2),
+  rewrite captures over wrapper port names, before-dump read-only hook.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>phy_wrap_tb</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-mod name="phy_wrap_tb">
+        <aw-content>
+          <aw-imports></aw-imports>
+          <aw-params>
+            <aw-param name="TB_W" expr="16"></aw-param>
+          </aw-params>
+          <aw-localparams></aw-localparams>
+          <aw-ports>
+            <aw-port dir="output" name="tb_gray_o" packed="[TB_W-1:0]"></aw-port>
+            <aw-port dir="output" name="tb_bin_o"></aw-port>
+          </aw-ports>
+          <aw-templates></aw-templates>
+          <aw-insts>
+            <!-- cross-unit: phy_wrap comes from the dep unit's elaborated snapshot -->
+            <aw-inst id="u_dut" mod="phy_wrap">
+              <aw-template>
+                <!-- expression (not a constant / single identifier) → not folded -->
+                <aw-param name="CNT_W" expr="TB_W/2"></aw-param>
+                <aw-connect port="clk_i" to="tb_clk"></aw-connect>
+                <aw-connect port="rst_ni" to="tb_rst_n"></aw-connect>
+                <aw-rewrite match="^cnt_0_(clr|en)$" to="tb_cnt0_$1" packed="auto"></aw-rewrite>
+                <aw-connect port="cnt_1_clr" to="tb_cnt1_clr"></aw-connect>
+                <aw-connect port="cnt_alt_en_1" to="tb_alt_en"></aw-connect>
+                <aw-rewrite match="^cnt_0_load$" to="tb_cnt0_load"></aw-rewrite>
+                <aw-connect port="cnt_1_load" to="tb_cnt1_load"></aw-connect>
+                <aw-connect port="cnt_d_bus" to="tb_d_bus" packed="auto"></aw-connect>
+                <aw-connect port="cnt_shared_down" to="tb_down"></aw-connect>
+                <aw-connect port="oh_onehot" to="tb_onehot" packed="auto"></aw-connect>
+                <aw-connect port="phy_gray_o" to="tb_gray_o"></aw-connect>
+                <aw-connect port="phy_bin_o" to="tb_bin_o"></aw-connect>
+              </aw-template>
+            </aw-inst>
+            <aw-inst id="u_lfsr" mod="cc_lfsr">
+              <aw-template>
+                <aw-param name="LfsrWidth" expr="16"></aw-param>
+                <!-- expression → not folded; localparam keeps the text -->
+                <aw-param name="OutWidth" expr="TB_W/2"></aw-param>
+                <aw-connect port="clk_i" to="tb_clk"></aw-connect>
+                <aw-connect port="rst_ni" to="tb_rst_n"></aw-connect>
+                <aw-connect port="clr_i" to="lfsr_clr"></aw-connect>
+                <aw-connect port="en_i" to="lfsr_en"></aw-connect>
+                <aw-connect port="out_o" to="lfsr_out" packed="auto"></aw-connect>
+              </aw-template>
+            </aw-inst>
+          </aw-insts>
+        </aw-content>
+        <aw-submods></aw-submods>
+        <aw-render></aw-render>
+      </aw-mod>
+    </autowire>
+    <script type="module">
+      // before-dump: read-only validation hook (must not touch the netlist).
+      aw.on("before-dump", ({ doc }) => {
+        for (const m of doc.querySelectorAll("aw-mod")) {
+          if (!m.querySelector(":scope > aw-render")) {
+            throw new Error(`before-dump: ${m.getAttribute("name")} has no frozen aw-render`);
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

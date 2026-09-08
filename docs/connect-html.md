@@ -1,6 +1,6 @@
 # 连接 HTML 方言（实现约束）
 
-> 状态：**草稿，先约束后实现**。禁止据此假装 `aw.js` / `web` / `dump` 已落地。  
+> 状态：**已实现**（`web/aw.js`；`autowire web` / `check` / `/api/dump` 落地；Playwright 用例与 golden 见 `src/e2e-web.test.ts` / `test/golden/`）。  
 > 摘要切片：`bun index.ts help connect`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
 > 结构以 [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) 为准。  
@@ -92,11 +92,13 @@
 **可见集（路径累积，单调并集）**
 
 ```text
-visible(root)  = root.deps ∪ { root 的直接子 aw-mod name }
-visible(child) = visible(parent) ∪ child.deps ∪ { child 的直接子 aw-mod name }
+visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例化
+           ∪ M.deps                           # 同父兄弟，须显式声明
+           ∪ ⋃_祖先 A 路径上的 A.deps          # 路径累积，只增不减
 ```
 
 往下走时可见集只增不减：子层可看见祖先路径上已声明的依赖，不必整条链重写。
+**兄弟不自动可见**（实现裁定：原公式 `visible(child) ⊇ {parent 的子 aw-mod}` 会让兄弟免 deps 可见，与「兄弟互引必须写 deps」冲突；以此为准）。
 
 **`aw-inst@mod` 解析**
 
@@ -308,9 +310,9 @@ visible(child) = visible(parent) ∪ child.deps ∪ { child 的直接子 aw-mod 
 2. **顶 → 底（param）**  
    求值本模内部 localparam 与例化 `aw-param`（常量 / 继承本模 param / 匹配本模内部 localparam → 折叠；表达式与宏不折）；求值 `inst_name`；写入 `aw-localparams`。  
 3. **展开 template**（`match`+`to` → connect）+ **`on-template` 钩子**（可选）：按例化改中间态，**禁止**写已完成的 `aw-render`。  
-4. **底 → 顶（连线）**  
+4. **递归 `aw-submods` 先 elaborate**（按 `aw-mod@deps` DAG；实现裁定：父模例化子包装模需要子模 render 端口表，故子模先于父模连线）  
+5. **底 → 顶（连线）**  
    生成 `aw-connect`；应用 `packed`/`unpacked`/`width`/`part`/`nettype`（§3.5.1–3.5.2）写入 `aw-signals`；宽度 deps 形参换成 `Mod__Inst__Param`；填 `aw-ports`（按 §4.1）；写 `aw-render` 后 **冻结**。  
-5. **递归** `aw-submods`（按 `aw-mod@deps` DAG + 路径累积可见集，§3.3）。  
 6. **`before-dump`**（可选钩子只读）→ dump（dump 门禁验 render 可印；作者面 check 见流水线，不在此把 `aw-render` 当 check SoT）。
 
 ```text
@@ -359,9 +361,8 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 高级 / 不规则处理：[`connect-lifecycle.md`](./connect-lifecycle.md)。  
 两写一冻：`before-instances` → `on-template` → 引擎写 `aw-render`（冻结）→ `before-dump` 只读。产物 **必须**只来自引擎写出的 `aw-render`，**禁止**脚本事后改 render。
 
-## 10. 仍开放（实现前裁定）
+## 10. 仍开放
 
-1. 工作区 toml：多包/多 chip 是否允许多份 toml（见 [`workspace-toml.md`](./workspace-toml.md) §6）。  
-2. 生命周期钩子稳定 API 形态（见 [`connect-lifecycle.md`](./connect-lifecycle.md) §6）。
+1. 工作区 toml：多包/多 chip 是否允许多份 toml（见 [`workspace-toml.md`](./workspace-toml.md) §6）。
 
-裁定后改本文 + `help connect`，再动代码。
+已裁定（随 aw.js 落地）：生命周期钩子 = `aw.on(phase, fn)`，按连接单元隔离；钩子同步；子模整段先于父模连线 elaborate（connect-lifecycle.md §6）。

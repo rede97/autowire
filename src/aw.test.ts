@@ -1,0 +1,421 @@
+import { describe, expect, test } from "bun:test";
+import { parseHTML } from "linkedom";
+import {
+	beginUnitHooks,
+	check,
+	clearUnitHooks,
+	elaborate,
+	endUnitHooks,
+	on as hookOn,
+	runBeforeInstances,
+	serializeSnapshot,
+} from "../web/aw.js";
+
+/** querySelector + non-null, failing the test with context instead of `!`. */
+function mustQuery(root: ParentNode, sel: string): Element {
+	const el = root.querySelector(sel);
+	if (!el) throw new Error(`expected element ${sel}`);
+	return el;
+}
+
+interface LeafPort {
+	name: string;
+	dir: string;
+	dataType?: string;
+	packed?: string | null;
+	unpacked?: string | null;
+}
+
+function docOf(body: string): Document {
+	return parseHTML(`<html><body><autowire>${body}</autowire></body></html>`)
+		.document;
+}
+
+function leafOf(
+	ports: LeafPort[],
+	params: { name: string; defaultText?: string; kind?: string }[] = [],
+) {
+	return {
+		params: params.map((p) => ({
+			name: p.name,
+			kind: p.kind ?? "parameter",
+			defaultText: p.defaultText ?? null,
+		})),
+		ports: ports.map((p) => ({
+			name: p.name,
+			dir: p.dir,
+			dataType: p.dataType ?? "logic",
+			packed: p.packed ?? null,
+			unpacked: p.unpacked ?? null,
+		})),
+		imports: [],
+	};
+}
+
+const counterLeaf = leafOf(
+	[
+		{ name: "clk_i", dir: "input" },
+		{ name: "d_i", dir: "input", packed: "[Width-1:0]" },
+		{ name: "q_o", dir: "output", packed: "[Width-1:0]" },
+	],
+	[{ name: "Width", defaultText: "4" }],
+);
+
+function ctxWith(
+	leaves: Record<string, unknown>,
+	extra: Record<string, unknown> = {},
+) {
+	return {
+		leaf: (m: string) => (leaves[m] ?? null) as never,
+		...extra,
+	};
+}
+
+describe("check (author face)", () => {
+	test("rules directly under aw-inst are rejected (connect-rules §1)", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-connect port="clk_i" to="c"></aw-connect></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = check(doc, ctxWith({ leaf: counterLeaf }));
+		expect(
+			res.errors.some((e) => e.includes("must be wrapped in <aw-template>")),
+		).toBe(true);
+	});
+
+	test("sibling ref without deps is an error; with deps it passes", () => {
+		const mk = (deps: string) =>
+			docOf(
+				`<aw-mod name="top"><aw-content></aw-content><aw-submods>
+					<aw-mod name="a"><aw-content><aw-insts>
+						<aw-inst id="u" mod="b"><aw-template></aw-template></aw-inst>
+					</aw-insts></aw-content></aw-mod>
+					<aw-mod name="b" ${deps}><aw-content></aw-content></aw-mod>
+				</aw-submods></aw-mod>`,
+			);
+		// a references b but b did not declare a in deps — a's own deps must list b.
+		const noDeps = check(mk(""), ctxWith({}));
+		// The ref lives in "a"; b's deps do not matter. Build with a declaring deps instead.
+		const withDeps = docOf(
+			`<aw-mod name="top"><aw-content></aw-content><aw-submods>
+				<aw-mod name="a" deps="b"><aw-content><aw-insts>
+					<aw-inst id="u" mod="b"><aw-template></aw-template></aw-inst>
+				</aw-insts></aw-content></aw-mod>
+				<aw-mod name="b"><aw-content></aw-content></aw-mod>
+			</aw-submods></aw-mod>`,
+		);
+		expect(noDeps.errors.some((e) => e.includes("visible set"))).toBe(true);
+		expect(check(withDeps, ctxWith({})).errors).toEqual([]);
+	});
+
+	test("deps cycle and self-dep are errors", () => {
+		const doc = docOf(
+			`<aw-mod name="top"><aw-content></aw-content><aw-submods>
+				<aw-mod name="a" deps="b"><aw-content></aw-content></aw-mod>
+				<aw-mod name="b" deps="a"><aw-content></aw-content></aw-mod>
+			</aw-submods></aw-mod>`,
+		);
+		expect(
+			check(doc, ctxWith({})).errors.some((e) => e.includes("cycle")),
+		).toBe(true);
+		const self = docOf(
+			`<aw-mod name="top"><aw-content></aw-content><aw-submods>
+				<aw-mod name="a" deps="a"><aw-content></aw-content></aw-mod>
+			</aw-submods></aw-mod>`,
+		);
+		expect(
+			check(self, ctxWith({})).errors.some((e) =>
+				e.includes("depends on itself"),
+			),
+		).toBe(true);
+	});
+
+	test("unused deps warn; unknown dep errors", () => {
+		const doc = docOf(
+			`<aw-mod name="top"><aw-content></aw-content><aw-submods>
+				<aw-mod name="a" deps="b"><aw-content></aw-content></aw-mod>
+				<aw-mod name="b"><aw-content></aw-content></aw-mod>
+				<aw-mod name="c" deps="ghost"><aw-content></aw-content></aw-mod>
+			</aw-submods></aw-mod>`,
+		);
+		const res = check(doc, ctxWith({}));
+		expect(
+			res.warnings.some((w) => w.includes('"b" declared but never referenced')),
+		).toBe(true);
+		expect(res.errors.some((e) => e.includes('unknown sibling "ghost"'))).toBe(
+			true,
+		);
+	});
+
+	test("regex captures outside aw-rewrite@to are rejected; [] in to rejected", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-connect port="clk_i" to="net_$1"></aw-connect>
+				</aw-template></aw-inst>
+				<aw-inst id="v" mod="leaf"><aw-template>
+					<aw-connect port="clk_i" to="net[3:0]"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = check(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors.some((e) => e.includes("regex captures"))).toBe(true);
+		expect(res.errors.some((e) => e.includes("bare net name"))).toBe(true);
+	});
+
+	test("aw-param on localparam or unknown param rejected; unknown port rejected", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-param name="Nope" expr="1"></aw-param>
+					<aw-connect port="nope_i" to="x"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = check(doc, ctxWith({ leaf: counterLeaf }));
+		expect(
+			res.errors.some((e) => e.includes('aw-param "Nope" does not exist')),
+		).toBe(true);
+		expect(
+			res.errors.some((e) => e.includes('port "nope_i" does not exist')),
+		).toBe(true);
+	});
+
+	test("packed/width conflict is an error", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-connect port="d_i" to="x" packed="[7:0]" width="15:0"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = check(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors.some((e) => e.includes("conflicts with width"))).toBe(
+			true,
+		);
+	});
+
+	test("cross-unit ref without toml deps is an error; declared deps pass", () => {
+		const doc = docOf(
+			`<aw-mod name="tb"><aw-content><aw-insts>
+				<aw-inst id="u" mod="wrap_a"><aw-template></aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const unitMods = new Map([["wrap_a", "unit_a"]]);
+		const bad = check(
+			doc,
+			ctxWith({}, { unitId: "tb", unitMods, unitDeps: [] }),
+		);
+		expect(bad.errors.some((e) => e.includes("deps"))).toBe(true);
+		const good = check(
+			doc,
+			ctxWith({}, { unitId: "tb", unitMods, unitDeps: ["unit_a"] }),
+		);
+		expect(good.errors).toEqual([]);
+	});
+});
+
+describe("elaborate (render)", () => {
+	test("template base + overwrite: later rule wins per port", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content>
+				<aw-templates>
+					<aw-template name="t">
+						<aw-connect port="clk_i" to="base_clk"></aw-connect>
+						<aw-connect port="d_i" to="base_d" packed="auto"></aw-connect>
+					</aw-template>
+				</aw-templates>
+				<aw-insts>
+					<aw-inst id="u" mod="leaf">
+						<aw-template base="t">
+							<aw-connect port="clk_i" to="over_clk"></aw-connect>
+						</aw-template>
+					</aw-inst>
+				</aw-insts>
+			</aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors).toEqual([]);
+		const connects = [
+			...mustQuery(doc, "aw-render aw-inst").querySelectorAll("aw-connect"),
+		].map((c) => [c.getAttribute("port"), c.getAttribute("to")]);
+		expect(connects).toContainEqual(["clk_i", "over_clk"]);
+		expect(connects).toContainEqual(["d_i", "base_d"]);
+		expect(connects.filter(([p]) => p === "clk_i")).toHaveLength(1);
+	});
+
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: dialect variable syntax, not JS
+	test("rewrite captures + ${idx}; part-select folds constants", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf" idx="1"><aw-template>
+					<aw-rewrite match="^q_o$" to="bus" width="15:0" part="8*\${idx}+7:8*\${idx}"></aw-rewrite>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors).toEqual([]);
+		const c = mustQuery(doc, "aw-render aw-connect");
+		expect(c.getAttribute("to")).toBe("bus");
+		expect(c.getAttribute("part")).toBe("15:8");
+		const sig = mustQuery(doc, 'aw-signals aw-signal[name="bus"]');
+		expect(sig.getAttribute("packed")).toBe("[15:0]");
+	});
+
+	test("param folding: constant folds; module param name stays symbolic; expression kept", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content>
+				<aw-params><aw-param name="W" expr="8"></aw-param></aw-params>
+				<aw-localparams><aw-localparam name="L" expr="3"></aw-localparam></aw-localparams>
+				<aw-insts>
+					<aw-inst id="a" mod="leaf"><aw-template><aw-param name="Width" expr="5"></aw-param></aw-template></aw-inst>
+					<aw-inst id="b" mod="leaf"><aw-template><aw-param name="Width" expr="W"></aw-param></aw-template></aw-inst>
+					<aw-inst id="c" mod="leaf"><aw-template><aw-param name="Width" expr="L"></aw-param></aw-template></aw-inst>
+					<aw-inst id="d" mod="leaf"><aw-template><aw-param name="Width" expr="W+1"></aw-param></aw-template></aw-inst>
+				</aw-insts>
+			</aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors).toEqual([]);
+		const lps = [...doc.querySelectorAll("aw-render aw-localparam")].map(
+			(l) => [
+				l.getAttribute("name"),
+				l.getAttribute("value"),
+				l.getAttribute("folded"),
+			],
+		);
+		expect(lps).toContainEqual(["m__a__Width", "5", "true"]);
+		// Module params are overridable: never fold to the default.
+		expect(lps).toContainEqual(["m__b__Width", "W", "false"]);
+		// Internal localparam with a constant value folds.
+		expect(lps).toContainEqual(["m__c__Width", "3", "true"]);
+		expect(lps).toContainEqual(["m__d__Width", "W+1", "false"]);
+	});
+
+	test("overridden leaf param rewrites auto port dims to Mod__Inst__Param (§7.4)", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-param name="Width" expr="8"></aw-param>
+					<aw-connect port="d_i" to="d" packed="auto"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors).toEqual([]);
+		const sig = mustQuery(doc, 'aw-signals aw-signal[name="d"]');
+		expect(sig.getAttribute("packed")).toBe("[m__u__Width-1:0]");
+	});
+
+	test("auto-export: input-only nets become input ports; output-driven nets stay internal", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-connect port="clk_i" to="ext_clk"></aw-connect>
+					<aw-connect port="q_o" to="int_q" packed="auto"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors).toEqual([]);
+		const ports = [...doc.querySelectorAll("aw-render aw-port")].map((p) => [
+			p.getAttribute("name"),
+			p.getAttribute("dir"),
+		]);
+		expect(ports).toContainEqual(["ext_clk", "input"]);
+		expect(ports.some(([n]) => n === "int_q")).toBe(false);
+		expect(
+			doc.querySelector('aw-signals aw-signal[name="int_q"]'),
+		).not.toBeNull();
+	});
+
+	test("dimension conflict on one net is an error (after constant folding)", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-connect port="d_i" to="x" width="7:0"></aw-connect>
+					<aw-connect port="q_o" to="x" width="15:0"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors.some((e) => e.includes("dimension conflict"))).toBe(true);
+	});
+
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: dialect variable syntax, not JS
+	test("inst_name default and ${id}_${idx}; duplicate expanded names error", () => {
+		const okDoc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf" idx="0"><aw-template inst_name="\${id}_\${idx}"></aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		elaborate(okDoc, ctxWith({ leaf: counterLeaf }));
+		expect(mustQuery(okDoc, "aw-render aw-inst").getAttribute("id")).toBe(
+			"u_0",
+		);
+		const dupDoc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template></aw-template></aw-inst>
+				<aw-inst id="u" mod="leaf"><aw-template></aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(dupDoc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors.some((e) => e.includes("not unique"))).toBe(true);
+	});
+
+	test("nested submod wrapper instantiates with its render port table", () => {
+		const doc = docOf(
+			`<aw-mod name="top"><aw-content><aw-insts>
+				<aw-inst id="u" mod="kid"><aw-template>
+					<aw-connect port="kp" to="outside"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content><aw-submods>
+				<aw-mod name="kid"><aw-content>
+					<aw-ports><aw-port dir="input" name="kp"></aw-port></aw-ports>
+					<aw-insts>
+						<aw-inst id="i" mod="leaf"><aw-template>
+							<aw-connect port="clk_i" to="kp"></aw-connect>
+						</aw-template></aw-inst>
+					</aw-insts>
+				</aw-content></aw-mod>
+			</aw-submods></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors).toEqual([]);
+		const top = mustQuery(doc, 'aw-mod[name="top"]');
+		const ports = [
+			...mustQuery(top, ":scope > aw-render").querySelectorAll("aw-port"),
+		].map((p) => p.getAttribute("name"));
+		expect(ports).toContain("outside");
+	});
+
+	test("before-instances prepass generates instances; snapshot carries render only", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts></aw-insts></aw-content></aw-mod>`,
+		);
+		// hook registered via the same aw.on API authors use in module scripts
+		beginUnitHooks("t1");
+		hookOn("before-instances", ({ mod }: { mod: Element }) => {
+			const insts = mustQuery(mod, "aw-content aw-insts");
+			const inst = mod.ownerDocument.createElement("aw-inst");
+			inst.setAttribute("id", "gen");
+			inst.setAttribute("mod", "leaf");
+			const tpl = mod.ownerDocument.createElement("aw-template");
+			const c = mod.ownerDocument.createElement("aw-connect");
+			c.setAttribute("port", "clk_i");
+			c.setAttribute("to", "gen_clk");
+			tpl.appendChild(c);
+			inst.appendChild(tpl);
+			insts.appendChild(inst);
+		});
+		endUnitHooks();
+		runBeforeInstances(doc, "t1");
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors).toEqual([]);
+		const snap = serializeSnapshot(doc);
+		expect(snap).toContain('id="gen"');
+		expect(snap).not.toContain("aw-template");
+		clearUnitHooks("t1");
+	});
+});

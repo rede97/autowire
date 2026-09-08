@@ -42,11 +42,8 @@ Pipeline
 You can do now
   1. Follow help dont; use help status for landed vs not landed.
   2. autowire init / analysis / deps for workspace + RtlIndex.
-  3. Author connect HTML per docs/connect-html.md (even if aw.js is not landed).
-  4. Until web / check / dump / cli land: do not pretend render, check, or dump works.
-
-After web lands
-  1. autowire web [html]; wait for first paint (or #aw-status when GET params auto-run).
+  3. Author connect HTML per docs/connect-html.md.
+  4. autowire web [unit]; wait for first paint (or #aw-status when GET params auto-run).
   2. Playwright MCP: navigate / snapshot / evaluate / click — inspect live DOM, not source HTML.
   3. Run check on aw-content (legality + deps) separately from render/dump; dump should refuse unclean check.
   4. Dump via same-origin POST /api/dump (reads aw-render); browser must not write the workspace.
@@ -65,15 +62,15 @@ Landed
   autowire init / analysis   workspace autowire.toml → hdxml
   autowire deps <path>      RTL module dependency tree
   hdxml sidecar             analysis → RtlIndex XML
+  aw.js                     check + elaboration engine (browser + linkedom; web/aw.js)
+  autowire web [unit]       local page (127.0.0.1); buttons + GET ?check/?render/?dump/?select
+  autowire check [unit]     author-face legality + deps (no write)
+  POST /api/check|/api/dump validate-only / only RTL write path; snapshots → .autowire/connect/
+  Playwright cases/golden   src/e2e-web.test.ts + test/golden/*.sv (headless Chromium)
   Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
 
-Not landed (do in this order; do not skip)
-  aw.js + constrained HTML custom elements
-  autowire web [html]
-  autowire check / POST /api/check   (HTML legality + deps; no RTL write)
-  POST /api/dump
-  Playwright cases / golden
-  autowire cli
+Not landed
+  autowire cli              build only after Web cases/goldens prove stable
 
 Parallel (does not block connect)
   Register Table + Block/Cell
@@ -142,7 +139,7 @@ Error files keep the index usable; hdxml exit code is passed through.
 `,
 
 	connect: `\
-Connect HTML dialect (draft; not landed as aw.js)
+Connect HTML dialect (landed: web/aw.js)
 
 Constraints:
   docs/connect-html.md
@@ -189,7 +186,7 @@ Elaboration: before-instances → params → on-template → wires → frozen aw
 `,
 
 	web: `\
-autowire web (not landed)
+autowire web (landed)
 
   autowire web [html]
 
@@ -219,7 +216,7 @@ Agent workflow: help agent.
 `,
 
 	check: `\
-autowire check (not landed; separate from dump / render)
+autowire check (landed; separate from dump / render)
 
   autowire check [html|workspace]
   POST same-origin /api/check
@@ -241,7 +238,7 @@ See docs/web-ui.md §3.1 and docs/architecture.md.
 `,
 
 	dump: `\
-Dump / write-back (not landed; pairs with autowire web)
+Dump / write-back (landed; pairs with autowire web)
 
   POST same-origin /api/dump
 
@@ -320,8 +317,8 @@ function commandIndex(): string {
 		"  init                      create default autowire.toml in CWD",
 		"  analysis [options]        run hdxml from autowire.toml   → help analysis | workspace",
 		"  deps <path> [options]     RTL module dependency tree     → help deps",
-		"  web [html]                local render page (not landed) → help web | check | dump",
-		"  check [html|workspace]    validate HTML + deps (not landed) → help check",
+		"  web [unit]                local connect page → help web | check | dump",
+		"  check [unit]              validate HTML + deps (no write) → help check",
 		"  cli …                     headless later (not landed)    → help cli",
 		"",
 		"Also: help status | connect | dont",

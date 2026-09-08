@@ -20,8 +20,8 @@
           <aw-localparams>
             <aw-localparam
               name="master_cfg_wrap__u_decoder__PIPE_NUM"
-              value="2"
-              folded="true"
+              value="BUS_PIPE_NUM"
+              folded="false"
               for-inst="u_decoder"
               for-param="PIPE_NUM"
             ></aw-localparam>
@@ -43,15 +43,15 @@
           <aw-ports>
             <aw-port name="export_share_clk" dir="output"></aw-port>
             <aw-port name="dfi_clk" dir="input"></aw-port>
-            <aw-port name="mst_blk_reg_data" dir="input" width="32"></aw-port>
+            <aw-port name="mst_blk_reg_data" dir="input" packed="[31:0]"></aw-port>
           </aw-ports>
           <aw-signals>
             <aw-signal name="dfi_clk"></aw-signal>
-            <aw-signal name="mst_blk_reg_data" packed="31:0"></aw-signal>
+            <aw-signal name="mst_blk_reg_data" packed="[31:0]"></aw-signal>
             <aw-signal name="slice_en_0"></aw-signal>
             <aw-signal name="slice_en_alt_1"></aw-signal>
             <aw-signal name="slice_1_dbg"></aw-signal>
-            <aw-signal name="slice_data_bus" packed="15:0"></aw-signal>
+            <aw-signal name="slice_data_bus" packed="[15:0]"></aw-signal>
           </aw-signals>
           <aw-insts>
             <aw-inst id="u_decoder" mod="master_decoder">

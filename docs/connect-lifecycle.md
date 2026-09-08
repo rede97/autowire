@@ -1,6 +1,6 @@
 # 渲染生命周期与嵌入脚本（高级）
 
-> 状态：**草稿，先约束后实现**。  
+> 状态：**已实现**（`web/aw.js`；钩子 API 为 `aw.on(phase, fn)`）。  
 > 常规连接：[`connect-html.md`](./connect-html.md) / [`connect-rules.md`](./connect-rules.md)。  
 > 摘要：`bun index.ts help connect`。改本文时同步改 help。
 
@@ -84,13 +84,11 @@ check（作者面 aw-content + deps；可单独跑，见 help check）
 - golden 比对 render，不比对脚本源。  
 - **禁止**在 golden / dump 前用脚本改 render 来「对齐」期望。
 
-## 6. 仍开放（实现前裁定）
+## 6. 裁定（随 aw.js 落地）
 
-1. 稳定 API：`aw.on(phase, fn)` vs `CustomEvent` vs 兼有？  
-2. 钩子默认作用域：文档全局 vs 声明所在 `aw-mod`？  
-3. 嵌套子模与父模：`before-instances` / `on-template` 的严格文档序（建议：子模整段 elaborate 完成后再继续父模 wires）？  
-4. 是否允许 `async` 钩子？
+1. 稳定 API：**`aw.on(phase, fn)`**（`window.aw`；无 CustomEvent）。  
+2. 钩子作用域：**按连接单元**（单元 id 注册表）；回调收到 `{ mod }` / `{ mod, inst, template, connects }` / `{ doc }`，自行按模过滤。  
+3. 文档序：**子模整段 elaborate 完成后父模才连线**（父模可例化子包装模）。`before-instances` 是引擎前置 prepass（`runBeforeInstances`），跑完后才取叶子端口表——钩子生成的例化同样可见。  
+4. **`async` 钩子不支持**（引擎同步；回调不要返回 Promise）。
 
 已裁定（勿再打开）：**仅两写相位**；**render 完成后不可改**；`before-dump` **只读**。
-
-裁定其余项后改本文 + `help connect`，再动 `aw.js`。
