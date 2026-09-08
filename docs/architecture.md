@@ -104,5 +104,6 @@ autowire cli phy.html --dump gen/
 
 ## 5. 并列子系统（不堵连接）
 
-- 寄存器：`Table` + `Block` / `Cell`，类型是数据；Excel 只出文档。
+- **插件机制**（草稿）：登记自定义标签；分 **生成器**（印 SV → analysis → connect 例化）与 **展开器**（elaborate 成核心 `aw-*`）。见 [plugins.md](./plugins.md)。  
+- **寄存器 / Wishbone**：`Table` + `Block` / `Cell`；Excel 只出文档；配置树为 Wishbone Classic（slice pipe）。作为 **生成器插件** 的一例，见 [wishbone-regfile.md](./wishbone-regfile.md)。  
 - 叶子 RTL：Rust sidecar 出 RtlIndex，连接页只读端口表。

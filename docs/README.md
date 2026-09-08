@@ -5,6 +5,8 @@
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [architecture.md](./architecture.md) | 架构设计：组件（hdxml / aw.js / web / check / dump / cli）、Playwright 隔离、入口阶段 | 草稿 |
+| [wishbone-regfile.md](./wishbone-regfile.md) | 并列：Wishbone Classic regfile/decoder/pipe（生成器插件实例） | 草稿 |
+| [plugins.md](./plugins.md) | 通用插件：自定义标签注册；生成器 vs 展开器 | 草稿 |
 | [workspace-toml.md](./workspace-toml.md) | 顶层 `autowire.toml`：`.f`、宏/`.svh`、与 RtlIndex / 连接衔接 | 已实现（cli 除外） |
 | [connect-html.md](./connect-html.md) | 连接 HTML：骨架 / dump / 多模与多 HTML 规则 | 已实现 |
 | [connect-rules.md](./connect-rules.md) | 细则：template、rewrite、`inst_name`、param→`Mod__Inst__Param` | 已实现（§7.2 折叠规则有实现裁定修正） |
