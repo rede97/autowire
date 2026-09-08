@@ -30,12 +30,12 @@
 hdxml 无子命令——唯一功能即层级分析，参数平铺顶层：
 
 ```
-hdxml [输入组] [--tree] [--xml DIR] [--fail-on-undef] [--sub-bars]
+hdxml [输入组] [--tree] [-o DIR] [--refresh] [--fail-on-undef] [--sub-bars]
 ```
 
 | 选项 | 说明 |
-| `--xml DIR` | 导出 RtlIndex XML 目录：每源文件一个 XML（镜像源码相对路径命名；模块参数/端口/实例 + 文件级错误，含行列定位）+ `index.xml`（文件清单、模块→XML 映射、顶层 DAG 层级树）。失效产物按旧 manifest 自动 GC（`module-info.md` §5） |
-| `--sub-bars` | 每线程子进度条：spinner 显示该线程当前处理的文件（svo 同款 `{prefix} {spinner} {msg}` 样式）；非 TTY 自动隐藏 |
+| `-o, --output-dir DIR` | 导出 RtlIndex XML 目录：每源文件一个 XML（镜像源码相对路径命名；模块参数/端口/实例 + 文件级错误，含行列定位）+ `index.xml`（文件清单、模块→XML 映射、顶层 DAG 层级树）。失效产物按旧 manifest 自动 GC（`module-info.md` §5）。**有 `-o` 即增量**：未变更文件直接由上次产物重建声明、不再解析（mtime+size 快路径、blake3 内容哈希仲裁；`` `include `` 闭包逐成员校验；`tool`/`definesFp`/`incdirsFp` 全局闸门任一变化整库重解析；含错误或宏计算 include 的文件不可缓存每次重解析，详见 `module-info.md` §5）。不给 `-o` 则纯终端分析，零写盘 |
+| `--refresh` | 无视缓存强制全量重解析并重写缓存（hdxml 行为变更而版本号未升的开发场景用） |
 | `--tree` | 终端打印依赖树（termtree；黑盒标 `[blackbox]`） |
 | `--fail-on-undef` | 存在黑盒模块时退出码 1（CI 用；默认黑盒仅列出） |
 
@@ -46,8 +46,8 @@ hdxml [输入组] [--tree] [--xml DIR] [--fail-on-undef] [--sub-bars]
 示例：
 
 ```bash
-hdxml -f ibex.f --xml out/rtlindex          # 全量分析并导出 XML
-hdxml -w rtl/ -I rtl/include --tree         # 目录扫描 + 依赖树
+hdxml -f ibex.f -o out/rtlindex              # 增量分析并导出（二次运行秒回）
+hdxml -w rtl/ -I rtl/include --tree         # 目录扫描 + 依赖树（零写盘）
 ```
 
 ## 4. 输入解析优先级与冲突

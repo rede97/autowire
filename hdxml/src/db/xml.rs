@@ -6,7 +6,8 @@
 //! - `<module>` 子结构固定次序：`<params>` → `<ports>` → `<instances>`；组内按源码声明序
 //! - `<hierarchy>` 子节点：按目标模块名字典序（去重，DAG 边集）
 
-use super::{DesignDb, ExprText, ModuleDecl, PortInfo, short_hash};
+use super::cache::{CacheMeta, defines_fingerprint, incdirs_fingerprint};
+use super::{DesignDb, ExprText, ModuleDecl, PortInfo};
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -23,16 +24,28 @@ pub struct XmlExport<'a> {
     files: &'a [PathBuf],
     /// 分析时使用的宏定义（名称, 值文本）；None = 登记未展开（raw），按名称字典序
     defines: &'a [(String, Option<String>)],
+    /// 每文件缓存指纹（增量缓存基；无条目的文件不写缓存元数据，不可复用）
+    stamps: &'a BTreeMap<PathBuf, CacheMeta>,
+    /// include 搜索路径（顺序敏感；写入 incdirsFp 作为增量全局闸门之一）
+    incdirs: &'a [PathBuf],
     /// 生成时间戳（unix 秒）；测试可注入固定值保证字节级确定性
     generated: u64,
 }
 
 impl<'a> XmlExport<'a> {
-    pub fn new(db: &'a DesignDb, files: &'a [PathBuf], defines: &'a [(String, Option<String>)]) -> Self {
+    pub fn new(
+        db: &'a DesignDb,
+        files: &'a [PathBuf],
+        defines: &'a [(String, Option<String>)],
+        stamps: &'a BTreeMap<PathBuf, CacheMeta>,
+        incdirs: &'a [PathBuf],
+    ) -> Self {
         Self {
             db,
             files,
             defines,
+            stamps,
+            incdirs,
             generated: now_unix(),
         }
     }
@@ -42,12 +55,16 @@ impl<'a> XmlExport<'a> {
         db: &'a DesignDb,
         files: &'a [PathBuf],
         defines: &'a [(String, Option<String>)],
+        stamps: &'a BTreeMap<PathBuf, CacheMeta>,
+        incdirs: &'a [PathBuf],
         generated: u64,
     ) -> Self {
         Self {
             db,
             files,
             defines,
+            stamps,
+            incdirs,
             generated,
         }
     }
@@ -127,13 +144,34 @@ impl<'a> XmlExport<'a> {
     ) -> String {
         let mut w = XmlWriter::new();
         let mtime = file_mtime(file);
-        w.open(
-            "fileIndex",
-            &[
-                ("source", file.to_string_lossy().into_owned()),
-                ("mtime", mtime.to_string()),
-            ],
-        );
+        // 缓存元数据（增量复用依据）：无指纹的文件（错误/宏 include）不写，
+        // 读取侧缺 srcHash 即判不可缓存
+        let mut head = vec![
+            ("source", file.to_string_lossy().into_owned()),
+            ("mtime", mtime.to_string()),
+        ];
+        if let Some(meta) = self.stamps.get(file) {
+            head.push(("srcSize", meta.source.size.to_string()));
+            head.push(("srcHash", meta.source.hash.clone()));
+        }
+        w.open("fileIndex", &head);
+        if let Some(meta) = self.stamps.get(file)
+            && !meta.includes.is_empty()
+        {
+            w.open("includes", &[]);
+            for inc in &meta.includes {
+                w.empty(
+                    "include",
+                    &[
+                        ("path", inc.path.to_string_lossy().into_owned()),
+                        ("hash", inc.stamp.hash.clone()),
+                        ("size", inc.stamp.size.to_string()),
+                        ("mtime", inc.stamp.mtime.to_string()),
+                    ],
+                );
+            }
+            w.close("includes");
+        }
         for m in mods {
             let attrs = vec![
                 ("name", m.name.clone()),
@@ -236,19 +274,9 @@ impl<'a> XmlExport<'a> {
         index_of: &BTreeMap<&PathBuf, String>,
     ) -> String {
         let mut w = XmlWriter::new();
-        // 宏指纹：排序后逐行哈希（展开宏 "name=value"；raw 宏 "name" 无等号）；
-        // 消费方不一致即整库作废
-        let defines_fp = short_hash(
-            self.defines
-                .iter()
-                .map(|(n, v)| match v {
-                    Some(v) => format!("{n}={v}"),
-                    None => n.clone(),
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-                .as_bytes(),
-        );
+        // 全局指纹（增量闸门；消费方不一致即整库作废）：宏集合 + incdirs（顺序敏感）
+        let defines_fp = defines_fingerprint(self.defines);
+        let incdirs_fp = incdirs_fingerprint(self.incdirs);
         w.open(
             "rtlIndex",
             &[
@@ -258,6 +286,7 @@ impl<'a> XmlExport<'a> {
                 ("modules", self.db.defs.len().to_string()),
                 ("errorFiles", self.db.errors.len().to_string()),
                 ("definesFp", defines_fp),
+                ("incdirsFp", incdirs_fp),
             ],
         );
         if !self.defines.is_empty() {
@@ -438,7 +467,9 @@ fn now_unix() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-/// 属性值转义（XML 全部数据走属性，文本节点仅空白）
+/// 属性值转义（XML 全部数据走属性，文本节点仅空白）。
+/// 换行/回车必须转字符引用——属性内的字面换行会被合规解析器归一化为空格，
+/// 且本格式的行扫描读取依赖每元素一行。
 fn esc(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -447,6 +478,8 @@ fn esc(s: &str) -> String {
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
+            '\n' => out.push_str("&#10;"),
+            '\r' => out.push_str("&#13;"),
             _ => out.push(c),
         }
     }
@@ -555,6 +588,8 @@ mod tests {
     fn escape_attr_values() {
         assert_eq!(esc("a&b<c>\"d\""), "a&amp;b&lt;c&gt;&quot;d&quot;");
         assert_eq!(esc("plain_123"), "plain_123");
+        // 多行表达式原文：换行必须转字符引用（属性内字面换行会被解析器归一化为空格）
+        assert_eq!(esc("'{1,\n2}"), "'{1,&#10;2}");
     }
 
     #[test]
@@ -564,8 +599,8 @@ mod tests {
         let files = vec![f.clone()];
         let d1 = tmpdir("det1");
         let d2 = tmpdir("det2");
-        XmlExport::with_generated(&db, &files, &[], 0).write(&d1).unwrap();
-        XmlExport::with_generated(&db, &files, &[], 0).write(&d2).unwrap();
+        XmlExport::with_generated(&db, &files, &[], &BTreeMap::new(), &[], 0).write(&d1).unwrap();
+        XmlExport::with_generated(&db, &files, &[], &BTreeMap::new(), &[], 0).write(&d2).unwrap();
         let i1 = std::fs::read_to_string(d1.join("index.xml")).unwrap();
         let i2 = std::fs::read_to_string(d2.join("index.xml")).unwrap();
         assert_eq!(i1, i2, "two index.xml exports must be byte-identical");
@@ -596,7 +631,7 @@ mod tests {
         let db = DesignDb::new(BTreeMap::new(), errors);
         let files = vec![f.clone()];
         let dir = tmpdir("err");
-        XmlExport::with_generated(&db, &files, &[], 0).write(&dir).unwrap();
+        XmlExport::with_generated(&db, &files, &[], &BTreeMap::new(), &[], 0).write(&dir).unwrap();
         let body = std::fs::read_to_string(dir.join("nonexistent/bad.sv.xml")).unwrap();
         assert!(body.contains("<error message=\"parse failed: boom\" offset=\"42\" line=\"4\" column=\"10\"/>"), "{body}");
         let index = std::fs::read_to_string(dir.join("index.xml")).unwrap();
@@ -621,7 +656,7 @@ mod tests {
         .unwrap();
         std::fs::write(dir.join("keep.txt"), "user data").unwrap();
 
-        XmlExport::with_generated(&db, &files, &[], 0).write(&dir).unwrap();
+        XmlExport::with_generated(&db, &files, &[], &BTreeMap::new(), &[], 0).write(&dir).unwrap();
 
         assert!(!dir.join("stale/old.sv.xml").exists(), "stale XML must be collected");
         assert!(!dir.join("stale").exists(), "empty dirs must be pruned");
@@ -639,7 +674,7 @@ mod tests {
             ("DATA_W".to_string(), Some("64".to_string())),
         ];
         let dir = tmpdir("defs");
-        XmlExport::with_generated(&db, &files, &defs_a, 0)
+        XmlExport::with_generated(&db, &files, &defs_a, &BTreeMap::new(), &[], 0)
             .write(&dir)
             .unwrap();
         let index = std::fs::read_to_string(dir.join("index.xml")).unwrap();
@@ -656,7 +691,7 @@ mod tests {
         ];
         let fp_of = |defs: &[(String, Option<String>)]| {
             let dir = tmpdir("defs_fp");
-            XmlExport::with_generated(&db, &files, defs, 0)
+            XmlExport::with_generated(&db, &files, defs, &BTreeMap::new(), &[], 0)
                 .write(&dir)
                 .unwrap();
             let body = std::fs::read_to_string(dir.join("index.xml")).unwrap();
@@ -671,7 +706,7 @@ mod tests {
             ("DATA_W".to_string(), None),
         ];
         let dir_raw = tmpdir("defs_raw");
-        XmlExport::with_generated(&db, &files, &defs_raw, 0)
+        XmlExport::with_generated(&db, &files, &defs_raw, &BTreeMap::new(), &[], 0)
             .write(&dir_raw)
             .unwrap();
         let index_raw = std::fs::read_to_string(dir_raw.join("index.xml")).unwrap();

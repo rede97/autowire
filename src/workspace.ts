@@ -227,7 +227,7 @@ export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
 			.map(([n, v]) => `${n}=${v}`),
 	);
 	group("--keep-raw", [...cfg.keepRaw].sort());
-	args.push("--xml", cfg.indexDir);
+	args.push("--output-dir", cfg.indexDir);
 	return args;
 }
 

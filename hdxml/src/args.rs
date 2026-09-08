@@ -79,9 +79,16 @@ pub struct AnalysisArgs {
     #[arg(long)]
     pub sub_bars: bool,
 
-    /// Export RtlIndex XML to a directory (one XML per source file + index.xml)
+    /// Output directory for the RtlIndex export (one XML per source file + index.xml).
+    /// With -o, analysis is incremental by default: unchanged files are reused from
+    /// the previous export (mtime+size fast path, content-hash arbiter;
+    /// `include closure tracked; tool/defines/incdirs change re-parses everything)
+    #[arg(short, long)]
+    pub output_dir: Option<PathBuf>,
+
+    /// Force full re-parse, ignoring the cache in the output directory (rewrites it)
     #[arg(long)]
-    pub xml: Option<PathBuf>,
+    pub refresh: bool,
 
     /// Exit code 1 when blackbox (undef) modules exist
     #[arg(long)]

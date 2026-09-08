@@ -6,7 +6,7 @@
 
 ## 1. 范围与版本
 
-- 本文档约束 `hdxml --xml DIR` 产出的整个目录，下称**索引目录**。
+- 本文档约束 `hdxml -o DIR` 产出的整个目录，下称**索引目录**。
 - 消费者必须只读索引目录；任何修改索引目录内容的行为只允许由 hdxml 执行。
 - 格式变更规则：
   - **新增**元素或属性为向后兼容变更，消费者**必须**忽略不认识的元素与属性。
@@ -29,7 +29,7 @@
 
 - UTF-8、LF、`<?xml version="1.0" encoding="UTF-8"?>` 声明；两级空格缩进。
 - 数据**必须**全部放在属性上；元素文本内容只允许空白（无混合内容）。
-- 属性值转义最小集：`&` `<` `>` `"`。
+- 属性值转义最小集：`&` `<` `>` `"`；换行/回车**必须**转字符引用 `&#10;`/`&#13;`（属性内字面换行会被合规解析器归一化为空格，且多行表达式原文会因此丢失换行）。
 - 排序规则（相同输入必须产出字节一致的结果，`rtlIndex/@generated` 除外）：
   - `<files>/<file>`：按 `source` 字典序；
   - 各文件内 `<module>`：按 `name` 字典序；
@@ -44,7 +44,7 @@
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <rtlIndex tool="hdxml 0.1.0" generated="1788627786" files="168" modules="200" packages="3" errorFiles="0"
-          definesFp="6c76cc6a…">
+          definesFp="6c76cc6a…" incdirsFp="d6f99e77…">
   <defines>
     <define name="SYNTHESIS" value="1"/>
   </defines>
@@ -77,6 +77,7 @@
 | `packages` | int | 是 | 已定义 package 总数（= `<packages>` 子元素数） |
 | `errorFiles` | int | 是 | 含分析错误的文件数 |
 | `definesFp` | string | 是 | 宏定义指纹（逐行排序 blake3-128：展开宏 `name=value`，raw 宏 `name` 无等号）；消费方宏集合指纹不一致 ⇒ **整个索引作废**（§6） |
+| `incdirsFp` | string | 是 | include 搜索路径指纹（按给定顺序逐行 blake3-128）；incdirs 变化 ⇒ **整个索引作废**（增量缓存全局闸门之一，§5.8） |
 
 ### 4.2 `<defines>/<define>`（分析时使用的宏定义，按 `name` 字典序；为空则整组省略）
 
@@ -132,7 +133,10 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<fileIndex source="src/cc_cdc_2phase.sv" mtime="1788325458">
+<fileIndex source="src/cc_cdc_2phase.sv" mtime="1788325458" srcSize="8211" srcHash="354d…">
+  <includes>
+    <include path="include/common_cells/registers.svh" hash="ece6…" size="13209" mtime="1788325458"/>
+  </includes>
   <module name="cc_cdc_2phase" kind="module" span="17692:19347"
           contentHash="ca4d…" interfaceSig="c67e…">
     <imports>
@@ -161,6 +165,8 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 |---|---|---|---|
 | `source` | string | 是 | 源文件路径，与 index.xml 中一致 |
 | `mtime` | int | 是 | 源文件 mtime；不可得时为 `0` |
+| `srcSize` | int | 增量缓存 | 源文件字节数；与 `srcHash` 成对出现（§5.8） |
+| `srcHash` | string | 增量缓存 | 源文件内容 blake3-128；缺省 ⇒ 该文件不可作为增量缓存（错误文件、宏计算 include 文件） |
 
 ### 5.2 `<module>`（按 `name` 字典序；零个或多个）
 
@@ -233,6 +239,27 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 | `line` / `column` | int | 否 | 1-based 行列（预处理后基准，可定位时成对出现） |
 
 解析失败的文件通常无 `<module>`；模块重复定义等错误可与 `<module>` 共存。
+
+### 5.8 `<fileIndex>/<includes>/<include>`（增量缓存元数据，零个或多个；仅可缓存文件出现）
+
+增量缓存（有 `-o` 即默认开启）的依据：该文件预处理后实际展开的全部 `` `include `` 文件闭包（含嵌套），按路径字典序。
+
+| 属性 | 类型 | 必须 | 含义 |
+|---|---|---|---|
+| `path` | string | 是 | include 文件的解析后路径（解析规则与预处理器一致：按原写法存在则取之，否则按 incdirs 顺序取首个存在者） |
+| `hash` | string | 是 | 内容 blake3-128 |
+| `size` | int | 是 | 字节数 |
+| `mtime` | int | 是 | unix 秒 |
+
+缓存命中判定（生产者内部行为，消费者只读忽略即可）：
+
+1. 全局闸门：旧 `index.xml` 的 `tool`、`definesFp`、`incdirsFp` 与当前运行完全一致，否则整库重解析；
+2. 每文件：源码（`mtime`+`srcSize`，漂移则以 `srcHash` 仲裁）与 `<includes>` 全体成员（`mtime`+`size`，漂移则以 `hash` 仲裁）均一致 ⇒ 由缓存 XML 直接重建分析结果，不再解析；
+3. 任一员变更、缺 `srcHash`（错误文件 / 宏计算 include `` `include \`FOO `` 等扫描分歧）、或 XML 缺失 ⇒ 该文件重解析；
+4. `--refresh` 无视缓存全量重解析并重写。
+
+增量运行的输出与全量运行**字节一致**（`@generated` 与缓存元数据的 `mtime` 除外）；`index.xml` 的 GC 语义不变（§2）。
+
 
 ## 6. 一致性与错误语义
 

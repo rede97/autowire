@@ -24,7 +24,10 @@ describe("workspace", () => {
 		expect(cfg.root).toBe(dir);
 		expect(cfg.indexDir).toBe(join(dir, ".autowire/hdxml"));
 		expect(cfg.dumpDir).toBe(join(dir, "gen"));
-		expect(hdxmlArgs(cfg)).toEqual(["--xml", join(dir, ".autowire/hdxml")]);
+		expect(hdxmlArgs(cfg)).toEqual([
+			"--output-dir",
+			join(dir, ".autowire/hdxml"),
+		]);
 	});
 
 	test("[connect.<id>] parses html + deps and resolves paths", async () => {
@@ -108,7 +111,7 @@ DEPTH = 16
 			"--keep-raw",
 			"ENV_MACRO",
 			"WIDTH",
-			"--xml",
+			"--output-dir",
 			join(dir, ".autowire/hdxml"),
 		]);
 	});

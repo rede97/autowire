@@ -101,6 +101,7 @@ deps = ["phy_wrap"]
 说明：
 
 - **hdxml 不读 toml**：`autowire analysis` 把 `[analysis.*]` 映射为 hdxml CLI 参数（映射表见 `help analysis`）；hdxml 侧只认 CLI 旗标。
+- **增量模式**：`autowire analysis` 默认增量——未变更文件复用 `.autowire/hdxml/` 缓存（`` `include `` 闭包追踪；`--refresh` 强制全量并重写缓存）；语义见 `hdxml/cli.md` 与 `hdxml/rtlindex-xml.md` §5.8。
 - **`[hdxml] bin`** 只给 autowire 定位二进制用，**不**映射为 hdxml 参数；设置了但文件不存在 ⇒ analysis 直接报错（不静默回退）。未设置时按默认链查找，最终落到 PATH。  
 - **宏集合** = `[analysis.defines]`（展开）+ `keep_raw`（保原文哨兵）；二者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。覆盖顺序 `[analysis.defines]` → `keep_raw`；`[analysis.defines]` 同时作为 `define_headers` 预处理的种子（header 内 `` `ifdef `` 可见），同名 header 宏随后再被其压顶。空串保原文约定已**废弃**（空串值直接报错）。哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。
 - **宏作用域**：CLI/toml 宏作为 pre_defines 对**每个文件**一致生效（编译单元级种子）；各文件内 `` `define `` 不外泄（按文件独立预处理）。跨文件一致的宏**必须**走本表，禁止依赖文件间宏传递。

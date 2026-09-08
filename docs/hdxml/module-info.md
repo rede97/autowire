@@ -125,9 +125,11 @@ interface_sig = blake3(canonical)
 
 ## 5. RtlIndex XML Schema
 
-导出目录布局（`hdxml --xml DIR`）：每源文件一个 XML，路径**镜像源码相对 CWD 的路径**并追加 `.xml`（`src/foo.sv` → `src/foo.sv.xml`；CWD 之外剥掉根/父级分量），按构造唯一、无哈希；顶层 `index.xml`。
+导出目录布局（`hdxml -o DIR`）：每源文件一个 XML，路径**镜像源码相对 CWD 的路径**并追加 `.xml`（`src/foo.sv` → `src/foo.sv.xml`；CWD 之外剥掉根/父级分量），按构造唯一、无哈希；顶层 `index.xml`。
 
 失效清理（manifest 驱动 GC）：`index.xml` 即产物清单。每次运行读旧 manifest，删除"旧产物集 − 本次产物集"的 XML 并修剪空目录——源码被删除或移出输入集后，其 XML 下次运行必被清理，不污染索引；目录内非产物文件不受影响。`index.xml` 最后写入，中途崩溃旧 manifest 仍在，下次 GC 依然正确。
+
+增量缓存（有 `-o` 即默认开启）：索引目录即缓存基，不新增产物类型。每文件 XML 携带 `srcHash`/`srcSize` 与 `<includes>`（`` `include `` 闭包逐成员指纹；闭包由词法级扫描器得出，解析规则镜像预处理器）——下次运行全局闸门（`tool`/`definesFp`/`incdirsFp`）一致且全体成员新鲜（mtime+size 快路径，blake3 哈希仲裁 touch/切分支场景）的文件直接从缓存 XML 重建 ModuleDecl，只重解析失效文件；含分析错误或宏计算 include（`` `include \`FOO ``）的文件不写缓存元数据，每次重解析。`--refresh` 强制全量并重写缓存。增量输出与全量字节一致（`generated` 与缓存 mtime 除外）；缓存读取只认自产格式行扫描，格式漂移自动降级为重解析。hdxml 行为变更而版本号未升的开发场景须用 `--refresh`。
 
 固定排序规则（字节级确定）：`<files>` 按源路径字典序；`<module>` 按模块名字典序；`<module>` 子结构固定次序 `<imports>` → `<params>` → `<ports>` → `<instances>`，组内按源码声明序（`<import>` 的 scope 条目按 `(package,symbol)` 去重殿后）；`<hierarchy>` 子节点按目标模块名字典序。所有数据走属性；`span` 为预处理后文本字节偏移 `[start:end]`（§3 勘定）。
 

@@ -1,13 +1,14 @@
 //! DesignDb — 模块信息数据底座（docs/hdxml/module-info.md）。
 //! 纯净分析层：无条件全量收集 params/ports/instances/层级，零功能标志位。
 
+pub mod cache;
 pub mod extract;
 pub mod strip;
 pub mod xml;
 
 use anyhow::Result;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// 表达式：原文保真 + 依赖符号集（B-1：不求值）
 #[derive(Debug, Clone, PartialEq)]
@@ -98,9 +99,18 @@ impl ParamKind {
             Self::Type => "type",
         }
     }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "parameter" => Some(Self::Parameter),
+            "localparam" => Some(Self::Localparam),
+            "type" => Some(Self::Type),
+            _ => None,
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParamInfo {
     pub name: String,
     pub kind: ParamKind,
@@ -129,9 +139,21 @@ impl PortDir {
             Self::Interface => "interface",
         }
     }
+
+    /// 缓存 XML 标签名还原方向（`<port>` 为方向未知，由调用方映射 None）
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "input" => Some(Self::Input),
+            "output" => Some(Self::Output),
+            "inout" => Some(Self::Inout),
+            "ref" => Some(Self::Ref),
+            "interface" => Some(Self::Interface),
+            _ => None,
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PortInfo {
     pub name: String,
     pub dir: Option<PortDir>,
@@ -146,7 +168,7 @@ pub struct PortInfo {
 }
 
 /// 实例参数覆盖（v1 存表达式原文，不含 `.name(...)` 包裹与注释；不求值）
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParamConn {
     /// 命名覆盖的参数名；位置连接为 None
     pub name: Option<String>,
@@ -154,7 +176,7 @@ pub struct ParamConn {
     pub value: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstanceInfo {
     pub inst: String,
     pub target: String,
@@ -176,9 +198,17 @@ impl ModKind {
             Self::Interface => "interface",
         }
     }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "module" => Some(Self::Module),
+            "interface" => Some(Self::Interface),
+            _ => None,
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModuleDecl {
     pub name: String,
     pub kind: ModKind,
@@ -241,7 +271,7 @@ pub fn short_hash(data: &[u8]) -> String {
 }
 
 /// 单文件分析错误（定位参考 ipchecker：sv-parser 错误 Debug 串尾部字节偏移 → 行列）
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FileError {
     pub message: String,
     /// 预处理后文本字节偏移（可定位时）
@@ -440,28 +470,39 @@ pub fn build_defines(
     Ok(defines)
 }
 
-/// 并行解析 + 提取（barrier 后 DesignDb 不可变）。
-/// 单文件失败不中止：错误（含行列定位）收入 `DesignDb.errors`，由导出层写入对应 XML。
-/// `sub_bars`：每线程子进度条（spinner 显示当前处理文件，svo 同款渲染样式）。
-pub fn analyze_files(
-    files: &[PathBuf],
-    defines: &HashMap<String, Option<Define>>,
-    incdirs: &[PathBuf],
-    pool: &rayon::ThreadPool,
-    pc: &crate::progress::ProgressCenter,
-    sub_bars: bool,
-) -> Result<DesignDb> {
+/// 分析驱动上下文：输入集 + 宏 + incdirs + 线程池/进度
+pub struct Drive<'a> {
+    pub files: &'a [PathBuf],
+    pub defines: &'a HashMap<String, Option<Define>>,
+    pub incdirs: &'a [PathBuf],
+    pub pool: &'a rayon::ThreadPool,
+    pub pc: &'a crate::progress::ProgressCenter,
+    /// 每线程子进度条（spinner 显示当前处理文件，svo 同款渲染样式）
+    pub sub_bars: bool,
+}
+
+/// parse_many 产出：成功文件声明组、失败文件错误、缓存指纹表
+struct ParseOut {
+    by_file: BTreeMap<PathBuf, Vec<ModuleDecl>>,
+    errors: BTreeMap<PathBuf, Vec<FileError>>,
+    stamps: BTreeMap<PathBuf, cache::CacheMeta>,
+}
+
+/// 并行解析 + 提取（不合并）：成功文件 → 声明组 + 缓存指纹（`include 闭包 + 内容哈希），
+/// 失败文件 → 错误（含行列定位），不中止整体分析。
+fn parse_many(d: &Drive, files: &[PathBuf]) -> ParseOut {
     use dashmap::DashMap;
     use rayon::prelude::*;
 
-    let collected: DashMap<String, ModuleDecl> = DashMap::new();
+    let parsed: DashMap<PathBuf, Vec<ModuleDecl>> = DashMap::new();
+    let stamps: DashMap<PathBuf, cache::CacheMeta> = DashMap::new();
     let errors: DashMap<PathBuf, Vec<FileError>> = DashMap::new();
 
-    let pb = pc.phase("Analyzing", files.len() as u64);
-    pool.install(|| {
+    let pb = d.pc.phase("Analyzing", files.len() as u64);
+    d.pool.install(|| {
         files.par_iter().for_each(|path| {
-            let sub = sub_bars.then(|| {
-                pc.sub_bar(
+            let sub = d.sub_bars.then(|| {
+                d.pc.sub_bar(
                     rayon::current_thread_index().unwrap_or(0),
                     &path.display().to_string(),
                 )
@@ -476,7 +517,7 @@ pub fn analyze_files(
                     .map_err(|e| FileError::new(format!("read failed: {e}")))?;
                 let stripped = strip::strip_specify_blocks(&raw);
                 let (pp, pp_defines) =
-                    sv_parser::preprocess_str(&stripped, path, defines, incdirs, false, false, 0, 0)
+                    sv_parser::preprocess_str(&stripped, path, d.defines, d.incdirs, false, false, 0, 0)
                         .map_err(|e| FileError::new(format!("preprocess failed: {e}")))?;
                 let src = pp.text().to_string();
                 let (tree, _) = sv_parser::parse_sv_pp(pp, pp_defines, false).map_err(|e| {
@@ -486,21 +527,15 @@ pub fn analyze_files(
                 for m in &mut mods {
                     m.file = path.clone();
                 }
+                // 缓存指纹：`include 闭包 + 内容哈希；宏计算 include 等扫描分歧 → 不入缓存
+                if let Some(meta) = cache::CacheMeta::capture(path, &raw, d.incdirs) {
+                    stamps.insert(path.clone(), meta);
+                }
                 Ok(mods)
             })();
             match result {
                 Ok(mods) => {
-                    for m in mods {
-                        if let Some(prev) = collected.insert(m.name.clone(), m) {
-                            errors.entry(path.clone()).or_default().push(FileError::new(
-                                format!(
-                                    "module redefined: {} (also see {})",
-                                    prev.name,
-                                    prev.file.display()
-                                ),
-                            ));
-                        }
-                    }
+                    parsed.insert(path.clone(), mods);
                 }
                 Err(e) => {
                     errors.entry(path.clone()).or_default().push(e);
@@ -514,10 +549,85 @@ pub fn analyze_files(
     });
     pb.finish_and_clear();
 
-    Ok(DesignDb::new(
-        collected.into_iter().collect(),
-        errors.into_iter().collect(),
-    ))
+    ParseOut {
+        by_file: parsed.into_iter().collect(),
+        errors: errors.into_iter().collect(),
+        stamps: stamps.into_iter().collect(),
+    }
+}
+
+/// 确定性合并（按文件路径字典序）：模块重定义错误归后到文件；屏障后 DesignDb 不可变。
+fn assemble(
+    by_file: BTreeMap<PathBuf, Vec<ModuleDecl>>,
+    mut errors: BTreeMap<PathBuf, Vec<FileError>>,
+) -> DesignDb {
+    let mut defs = BTreeMap::new();
+    for (file, mods) in by_file {
+        for m in mods {
+            if let Some(prev) = defs.insert(m.name.clone(), m) {
+                errors.entry(file.clone()).or_default().push(FileError::new(format!(
+                    "module redefined: {} (also see {})",
+                    prev.name,
+                    prev.file.display()
+                )));
+            }
+        }
+    }
+    DesignDb::new(defs, errors)
+}
+
+/// 全量分析：解析全部输入文件并合并。
+/// 返回（db, 缓存指纹表）——指纹表供 XML 导出层写缓存元数据，与是否增量无关。
+pub fn analyze_files(d: &Drive) -> Result<(DesignDb, BTreeMap<PathBuf, cache::CacheMeta>)> {
+    let out = parse_many(d, d.files);
+    Ok((assemble(out.by_file, out.errors), out.stamps))
+}
+
+/// 增量分析（有输出目录即默认）：以 xml_dir 旧产物为缓存——全局闸门（tool/definesFp/incdirsFp）
+/// 一致且每文件指纹（源码 + `include 闭包）新鲜的文件直接由缓存 XML 重建声明，只重解析
+/// 失效文件；`refresh` 无视缓存强制全量。返回（db, 缓存指纹表, 缓存命中文件数）。
+pub fn analyze_incremental(
+    d: &Drive,
+    define_pairs: &[(String, Option<String>)],
+    xml_dir: &Path,
+    refresh: bool,
+) -> Result<(DesignDb, BTreeMap<PathBuf, cache::CacheMeta>, usize)> {
+    let files = d.files;
+    let mut cached: BTreeMap<PathBuf, Vec<ModuleDecl>> = BTreeMap::new();
+    let mut stamps: BTreeMap<PathBuf, cache::CacheMeta> = BTreeMap::new();
+    if !refresh
+        && let Some(old) = cache::read_old_index(xml_dir)
+        && old.tool == format!("hdxml {}", env!("CARGO_PKG_VERSION"))
+        && old.defines_fp == cache::defines_fingerprint(define_pairs)
+        && old.incdirs_fp == cache::incdirs_fingerprint(d.incdirs)
+    {
+        for f in files {
+            let Some(rel) = old.manifest.get(f.to_string_lossy().as_ref()) else {
+                continue;
+            };
+            let Some((mods, meta)) = cache::load_cached_file(&xml_dir.join(rel), f) else {
+                continue;
+            };
+            if !meta.is_fresh(f) {
+                continue;
+            }
+            stamps.insert(f.clone(), meta);
+            cached.insert(f.clone(), mods);
+        }
+    }
+    let fresh: Vec<PathBuf> = files
+        .iter()
+        .filter(|f| !cached.contains_key(*f))
+        .cloned()
+        .collect();
+    let reused = cached.len();
+    let out = parse_many(d, &fresh);
+    let (mut by_file, errors, fresh_stamps) = (out.by_file, out.errors, out.stamps);
+    for (f, mods) in cached {
+        by_file.insert(f, mods);
+    }
+    stamps.extend(fresh_stamps);
+    Ok((assemble(by_file, errors), stamps, reused))
 }
 
 /// 依赖树打印（termtree；黑盒标 [blackbox]）

@@ -52,7 +52,26 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
     }
     pc.println(&format!("input files: {}", files.len()));
 
-    let db = db::analyze_files(&files, &defines, &a.input.incdirs, pool, &pc, a.sub_bars)?;
+    let drive = db::Drive {
+        files: &files,
+        defines: &defines,
+        incdirs: &a.input.incdirs,
+        pool,
+        pc,
+        sub_bars: a.sub_bars,
+    };
+    // 有输出目录即增量：未变更文件复用缓存（--refresh 强制全量）；无输出目录纯终端分析
+    let (db, stamps) = if let Some(dir) = &a.output_dir {
+        let (db, stamps, reused) = db::analyze_incremental(&drive, &define_pairs, dir, a.refresh)?;
+        pc.println(&format!(
+            "incremental: reused {reused} files, parsed {} files{}",
+            files.len() - reused,
+            if a.refresh { " (--refresh)" } else { "" },
+        ));
+        (db, stamps)
+    } else {
+        db::analyze_files(&drive)?
+    };
 
     // 摘要
     pc.println(&format!(
@@ -80,9 +99,9 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
         }
     }
 
-    // XML 导出（--xml）
-    if let Some(dir) = &a.xml {
-        let stats = XmlExport::new(&db, &files, &define_pairs).write(dir)?;
+    // XML 导出（-o/--output-dir）
+    if let Some(dir) = &a.output_dir {
+        let stats = XmlExport::new(&db, &files, &define_pairs, &stamps, &a.input.incdirs).write(dir)?;
         pc.println(&format!(
             "XML written: {} (files {}, modules {})",
             dir.display(),

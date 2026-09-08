@@ -43,7 +43,7 @@ function analyzeWithSidecar(
 	incdirs: string[],
 ): string {
 	const outDir = join(import.meta.dir, ".autowire/hdxml");
-	const args = ["-w", rtlDir, "--xml", outDir];
+	const args = ["-w", rtlDir, "-o", outDir];
 	for (const i of incdirs) args.push("-I", i);
 	const proc = Bun.spawnSync({
 		cmd: [hdxmlBin, ...args],
@@ -148,8 +148,17 @@ program
 		"--sub-bars",
 		"per-thread sub progress bars (current file per worker)",
 	)
+	.option(
+		"--refresh",
+		"force full re-parse (analysis is incremental by default; this rewrites the cache)",
+	)
 	.action(
-		async (opts: { workspace?: string; hdxml?: string; subBars?: boolean }) => {
+		async (opts: {
+			workspace?: string;
+			hdxml?: string;
+			subBars?: boolean;
+			refresh?: boolean;
+		}) => {
 			const start = opts.workspace ?? process.cwd();
 			const tomlPath = start.endsWith(".toml") ? start : findWorkspace(start);
 			if (!tomlPath || !existsSync(tomlPath)) {
@@ -170,6 +179,7 @@ program
 			}
 			const args = hdxmlArgs(cfg);
 			if (opts.subBars) args.push("--sub-bars");
+			if (opts.refresh) args.push("--refresh");
 			const proc = Bun.spawnSync({
 				cmd: [findHdxml(opts.hdxml, cfg.hdxmlBin), ...args],
 				stdout: "inherit",

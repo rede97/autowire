@@ -117,7 +117,7 @@ Boundaries
 autowire init / analysis (landed)
 
   autowire init
-  autowire analysis [--workspace dir|file] [--hdxml bin] [--sub-bars]
+  autowire analysis [--workspace dir|file] [--hdxml bin] [--sub-bars] [--refresh]
 
 init: create default autowire.toml in CWD (refuses to overwrite).
 analysis: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
@@ -126,7 +126,7 @@ analysis: load toml (upward from CWD, or --workspace) and run hdxml with mapped 
       → -f / -s / -w / --exclude-filenames
   [analysis.defines] NAME="v" → -D NAME=v
   [analysis] keep_raw = [...] → --keep-raw
-  [analysis.index] dir → --xml (default .autowire/hdxml)
+  [analysis.index] dir → -o/--output-dir (default .autowire/hdxml)
   [hdxml] bin → binary path only (not an hdxml arg; must exist if set)
 
 hdxml binary lookup: --hdxml > toml [hdxml] bin > $HDXML_BIN
@@ -135,6 +135,10 @@ hdxml never reads toml; autowire maps everything.
 Paths in toml are relative to the workspace root (toml location).
 No [analysis.rtl] sources configured → error.
 Error files keep the index usable; hdxml exit code is passed through.
+--refresh: analysis is incremental by default — unchanged files are reused from the
+  RtlIndex dir (mtime fast path, content-hash arbiter; \`include closure tracked;
+  defines/incdirs/tool change → full re-parse). --refresh forces a full re-parse
+  and rewrites the cache.
 `,
 
 	connect: `\
