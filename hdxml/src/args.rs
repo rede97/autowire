@@ -49,6 +49,10 @@ pub struct InputArgs {
     #[arg(long, num_args = 1..)]
     pub exclude_filenames: Vec<String>,
 
+    /// Exclude files under any directory with this name (any path component, e.g. dv/tb)
+    #[arg(long, num_args = 1..)]
+    pub exclude_dirs: Vec<String>,
+
     /// Macro defines (NAME=VALUE; bare NAME means NAME=1)
     #[arg(short = 'D', long, num_args = 1..)]
     pub defines: Vec<String>,

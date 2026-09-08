@@ -124,10 +124,14 @@ impl FilesSet {
             files.insert(c);
         }
         let exclude: HashSet<&str> = input.exclude_filenames.iter().map(String::as_str).collect();
+        let exclude_dirs: HashSet<&str> = input.exclude_dirs.iter().map(String::as_str).collect();
         files.retain(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
                 .is_none_or(|n| !exclude.contains(n))
+                && !p.components().any(|c| {
+                    c.as_os_str().to_str().is_some_and(|n| exclude_dirs.contains(n))
+                })
         });
         let mut files: Vec<PathBuf> = files.into_iter().collect();
         files.sort(); // 稳定顺序：进度与日志可复现
@@ -197,16 +201,6 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("hdxml_test_svh_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("top.sv"), "module t; endmodule\n").unwrap();
-
-    #[test]
-    fn absolute_path_keeps_leading_slash() {
-        let entries = parse_lines("/tmp/ws/rtl/top.sv\n");
-        assert!(
-            matches!(&entries[0], Ok(FileEntry::Source(p)) if p == Path::new("/tmp/ws/rtl/top.sv")),
-            "leading / of an absolute path must not be lost"
-        );
-    }
-
         std::fs::write(dir.join("defs.svh"), "`define W 8\n").unwrap();
         let list = dir.join("rtl.list");
         std::fs::write(
@@ -224,6 +218,34 @@ mod tests {
         assert!(fs.files[0].ends_with("top.sv"));
         assert_eq!(fs.warnings.len(), 1, "exactly one warning must be produced");
         assert!(fs.warnings[0].contains("defs.svh"));
+    }
+
+    #[test]
+    fn absolute_path_keeps_leading_slash() {
+        let entries = parse_lines("/tmp/ws/rtl/top.sv\n");
+        assert!(
+            matches!(&entries[0], Ok(FileEntry::Source(p)) if p == Path::new("/tmp/ws/rtl/top.sv")),
+            "leading / of an absolute path must not be lost"
+        );
+    }
+
+    #[test]
+    fn exclude_dirs_prunes_matching_components() {
+        let dir = std::env::temp_dir().join(format!("hdxml_test_xdirs_{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("rtl")).unwrap();
+        std::fs::create_dir_all(dir.join("dv/uvm")).unwrap();
+        std::fs::write(dir.join("rtl/keep.sv"), "module keep; endmodule\n").unwrap();
+        std::fs::write(dir.join("dv/uvm/tb.sv"), "module tb; endmodule\n").unwrap();
+
+        let input = crate::args::InputArgs {
+            walk_dirs: vec![dir.clone()],
+            exclude_dirs: vec!["dv".to_string()],
+            ..Default::default()
+        };
+        let fs = FilesSet::collect(&input).unwrap();
+        assert_eq!(fs.files.len(), 1, "dv subtree must be excluded: {:?}", fs.files);
+        assert!(fs.files[0].ends_with("keep.sv"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn parse_lines(content: &str) -> Vec<Result<FileEntry>> {

@@ -19,9 +19,10 @@ for a in "$@"; do
   if [ "$a" = "--refresh" ]; then refresh=(--refresh); else extra+=("$a"); fi
 done
 
-# 跨项目依赖（pulp 系 `include "common_cells/…"` 等）：projects 组共享全部 include 目录，
-# 目标自身的 include 在前（同名头文件本地优先）
-mapfile -t sibling_incdirs < <(find "$ROOT/projects" -type d -name include -not -path '*/.git/*')
+# incdirs 探测：含 .svh 的目录**及其父目录**（同时覆盖 "regs.svh" 源相对式与
+# "common_cells/regs.svh" 前缀式 include；sv-parser-pp 只做 CWD/incdirs 解析）。
+# projects 组跨项目共享（pulp 系），目标自身在前（同名头文件本地优先）
+mapfile -t sibling_incdirs < <(find "$ROOT/projects" -name '*.svh' -not -path '*/.git/*' -printf '%h\n%h/../\n' | xargs -n1 realpath -m | sort -u)
 
 names=() files_col=() modules_col=() tops_col=() blackbox_col=() errors_col=() notes=()
 fail=0
@@ -29,15 +30,16 @@ for group in projects corpus; do
   for dir in "$ROOT/$group"/*/; do
     name="$group/$(basename "$dir")"
     dest="$OUT/$group-$(basename "$dir")"
-    mapfile -t incdirs < <(find "$dir" -type d -name include -not -path '*/.git/*')
+    mapfile -t incdirs < <(find "$dir" -name '*.svh' -not -path '*/.git/*' -printf '%h\n%h/../\n' | xargs -n1 realpath -m | sort -u)
     args=(-w "$dir" -o "$dest" --summary "$dest/summary.txt")
     for i in ${incdirs[@]+"${incdirs[@]}"}; do args+=(-I "$i"); done
     if [ "$group" = projects ]; then
+      # 验证侧目录（UVM/FPV 库不在分析范围）—— sharpening：剩余错误即真 RTL 问题
+      args+=(--exclude-dirs dv verif tb testbench)
       for i in ${sibling_incdirs[@]+"${sibling_incdirs[@]}"}; do
         case " ${incdirs[*]-} " in *" $i "*) ;; *) args+=(-I "$i");; esac
       done
     fi
-    echo "================ $name ================"
     echo "+ hdxml ${args[*]} --sub-bars ${refresh[*]+"${refresh[*]}"} ${extra[*]+"${extra[*]}"}"
     # 进度条（Analyzing 聚合条 + --sub-bars 每线程 spinner）直接渲染终端；
     # 统计从 --summary 报告文件读取，无需重定向
@@ -45,9 +47,9 @@ for group in projects corpus; do
     code=$?
     echo
     names+=("$name")
-    if [ ! -f "$dest/index.xml" ]; then
+    if [ ! -f "$dest/index.xml" ] || [ ! -f "$dest/summary.txt" ]; then
       files_col+=("-"); modules_col+=("-"); tops_col+=("-"); blackbox_col+=("-"); errors_col+=("-")
-      notes+=("FAILED (no index.xml, exit $code)")
+      notes+=("FAILED (exit $code)")
       fail=1
       continue
     fi
