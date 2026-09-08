@@ -1,8 +1,8 @@
 # Autowire 插件与自定义标签
 
 > 状态：**草稿，先约束后实现**。不堵连接核心轨道。  
-> Wishbone regfile 是插件的**一个实例**：[`wishbone-regfile.md`](./wishbone-regfile.md)。  
-> 改本文时同步 `help status` Parallel 条与 [`architecture.md`](./architecture.md) §5。
+> Wishbone 实例：[`wishbone-regfile.md`](./wishbone-regfile.md)（叶子）、[`wishbone-bus.md`](./wishbone-bus.md)（块内配置树）。  
+> 改本文时同步 `help status` Parallel 条与 [`../architecture.md`](../architecture.md) §5。
 
 关键字「必须 / 应当 / 可以」按 RFC 2119。
 
@@ -21,7 +21,7 @@
 | **A. 生成器（Generator）** | 印独立 SV（regfile、decoder、arbiter、其它 IP 骨架） | 声明图 / 参数；**不**直接当 netlist | 先落盘 → `analysis` → connect 用普通 `aw-inst` 例化 |
 | **B. 展开器（Elaborate）** | 在 elaborate 中把标签**展开成核心 `aw-*` 节点** | 最终必须变成合法 `aw-content` / `aw-inst` / … | 与核心相同：只认冻结后的 `aw-render` |
 
-- Wishbone regfile / cfg 树 → **类型 A**。  
+- Wishbone regfile 叶子 + 块内 cfg 树 → **类型 A**（见 wishbone-regfile / wishbone-bus）。  
 - 「一键例化某标准包装并打好 template」→ **类型 B**（展开后与手写 connect 无异）。  
 - **禁止**混用：类型 A 的标签 **禁止**假装已经是 `aw-submods` 里的包装模却不经 analysis；类型 B **禁止**直接往磁盘写 SV 绕过 dump。
 

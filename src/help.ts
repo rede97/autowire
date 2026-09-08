@@ -73,8 +73,12 @@ Not landed
   autowire cli              build only after Web cases/goldens prove stable
 
 Parallel (does not block connect)
-  Plugin registry (docs/plugins.md): custom tags; generator vs elaborate kinds
-  Wishbone regfile/decoder = one generator plugin (docs/wishbone-regfile.md)
+  Plugin registry (docs/plugins/): custom tags; generator vs elaborate kinds
+  Wishbone regfile leaf (docs/plugins/wishbone-regfile.md)
+  Wishbone IP-local cfg tree: bridge/arb/decoder + slice pipe (docs/plugins/wishbone-bus.md);
+    default topology=tree not matrix; SoC interconnect stays with commercial EDA;
+    firmware = memory window + DMA later (classic block-cycle writes; not thousands of Cells)
+
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
   Do not treat connect aw-submods as a code-gen hook — generators emit SV then aw-inst
@@ -311,7 +315,7 @@ Do not
   treat dump as the only validation (use autowire check on aw-content + deps; dump reads aw-render)
   require render before check (wrong direction: Render depends on Check; Check does not depend on Render)
   skip check before render or dump (?render=1 / [Render] must auto-run Check first)
-  generate regfile/cfgbus from connect aw-submods custom tags (register a generator plugin; docs/plugins.md + wishbone-regfile.md)
+  generate regfile/cfgbus from connect aw-submods custom tags (register a generator plugin; docs/plugins/)
 `,
 };
 
