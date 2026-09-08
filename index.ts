@@ -9,8 +9,8 @@
 import { Command } from "commander";
 import { registerAnalysis } from "./src/cli/analysis.ts";
 import { registerDeps } from "./src/cli/deps.ts";
+import { renderHelp } from "./src/cli/help.ts";
 import { registerCheck, registerWeb } from "./src/cli/web.ts";
-import { renderHelp } from "./src/help.js";
 
 const program = new Command();
 program

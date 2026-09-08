@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { HELP_TOPICS, renderHelp } from "../src/help.ts";
+import { HELP_TOPICS, renderHelp } from "../src/cli/help.ts";
 
 test("no topic prints command index and one-line agent pointer", () => {
 	const text = renderHelp();

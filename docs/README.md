@@ -22,4 +22,4 @@
 ## 不做
 
 - 把连接关系写进 `autowire.toml`（toml 只做工程/RTL 宇宙配置）。
-- 把 README 写成第二套约定却不改 `src/help.ts` / 本目录约束文。
+- 把 README 写成第二套约定却不改 `src/cli/help.ts` / 本目录约束文。

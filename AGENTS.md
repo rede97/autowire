@@ -2,7 +2,7 @@
 
 接手前先跑：`bun index.ts help agent`（工作约定；不要另写项目提示词）。
 
-命令总览：`bun index.ts help`；切片：`bun index.ts help topics`。改行为时同步改 `src/help.ts`。
+命令总览：`bun index.ts help`；切片：`bun index.ts help topics`。改行为时同步改 `src/cli/help.ts`。
 
 一律用 Bun（`bun` / `bun test` / `bunx`），不用 Node/npm/npx 等价物。
 
