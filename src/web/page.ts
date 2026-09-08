@@ -600,7 +600,7 @@ async function init(): Promise<void> {
 	$("#btn-dump").addEventListener("click", () => runChain({ dump: true }));
 	$("#btn-save").addEventListener("click", async () => {
 		// Debug drop (docs/mcp/README.md): persist the live DOM to
-		// .autowire/dump/<unit>.html; never writes the author HTML.
+		// .autowire/save/<unit>.html; never writes the author HTML.
 		const entry = state.current ? state.docs.get(state.current) : undefined;
 		const root = entry?.container.querySelector(":scope > autowire");
 		if (!root) {

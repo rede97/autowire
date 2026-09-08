@@ -63,5 +63,5 @@ A 仍用于「改完源之后，在页上看 elaborate 是否正确」。
 ## 5. 仍开放
 
 1. B 的传输：stdio MCP server vs 仅 CLI（Agent 调 CLI）。  
-2. ~~作者面写回是否允许「从 Playwright 会话导出到文件」~~ → **已裁定**：禁止写回作者 HTML；允许经 `POST /api/save` 把活 DOM 落到 `.autowire/dump/<id>.html`（临时目录），是否合回由本地决定（已实现：页内 [Save] 按钮 + 端点）。
+2. ~~作者面写回是否允许「从 Playwright 会话导出到文件」~~ → **已裁定**：禁止写回作者 HTML；允许经 `POST /api/save` 把活 DOM 落到 `.autowire/save/<id>.html`（临时目录），是否合回由本地决定（已实现：页内 [Save] 按钮 + 端点）。
 3. B 与插件声明 HTML（`docs/plugins/`）是否共用同一套节点 Edit API。

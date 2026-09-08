@@ -109,7 +109,7 @@ Dirs
   .autowire/connect/  per-unit snapshot: <id>.xml only (abstract module info,
                       hdxml-style, no timestamps/hashes) — dump + cross-unit deps
                       via GET /api/connect?id=; never author SoT; no html snapshot
-  .autowire/dump/     debug drop: POST /api/save persists live DOM <id>.html
+  .autowire/save/     debug drop: POST /api/save persists live DOM <id>.html
                       (edited aw-content + aw-render) — temp, never author SoT
 
 Load rules (docs/workspace-toml.md §4.2 / docs/web-ui.md §5)
@@ -229,7 +229,7 @@ GET (same actions / same prereqs; docs/web-ui.md §3)
 Endpoints: GET /api/rtlindex, GET /api/module?name=  (.autowire/hdxml),
   GET /api/connect?id= (.autowire/connect <id>.xml snapshots; not author HTML),
   POST /api/check (validate only), POST /api/dump (only RTL write path; may refresh connect/),
-  POST /api/save (debug drop → .autowire/dump/<id>.html; browser never writes author HTML).
+  POST /api/save (debug drop → .autowire/save/<id>.html; browser never writes author HTML).
 Isolation: 127.0.0.1 / localhost only. File writes only via autowire API.
 Agent workflow: help agent.
 `,

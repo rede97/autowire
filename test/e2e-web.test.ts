@@ -167,14 +167,14 @@ describe("autowire web e2e", () => {
 		expect(badId.status).toBe(400);
 	});
 
-	test("save: [Save] drops live DOM to .autowire/dump; API guards id/body", async () => {
+	test("save: [Save] drops live DOM to .autowire/save; API guards id/body", async () => {
 		const page = await browser.newPage();
 		await page.goto(`${base}?unit=phy_wrap&check=1`);
 		await waitStatus(page);
 		await page.locator("#btn-save").click();
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain(".autowire/dump/phy_wrap.html");
+		expect(status.text).toContain(".autowire/save/phy_wrap.html");
 		await page.close();
 		const saved = await readFile(
 			join(ROOT, ".autowire", "dump", "phy_wrap.html"),

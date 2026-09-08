@@ -86,7 +86,7 @@ A: browser reload or GET ?render=1 → 看 aw-render
 A/工具: dump → .sv
 ```
 
-- A **不**把调试 DOM 写回作者 HTML；调试产物可以经 `POST /api/save` 落到 `.autowire/dump/`（临时目录，已实现），合回作者面由本地人工决定。
+- A **不**把调试 DOM 写回作者 HTML；调试产物可以经 `POST /api/save` 落到 `.autowire/save/`（临时目录，已实现），合回作者面由本地人工决定。
 
 ## 5. 实现提示（非规范）
 

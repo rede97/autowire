@@ -117,7 +117,7 @@ deps = ["phy_wrap"]
   - `.autowire/hdxml/` — RtlIndex  
   - `.autowire/connect/` — 各连接单元 elaborate 后的快照，**只有** `<id>.xml`（抽象模块信息：params / ports / imports；hdxml 风格规范：属性承载、方向标签名、模块字典序、无时间戳/哈希；跨单元 deps 加载与 dump 都读它）。**完整 `aw-render` 不再落盘**（无 `<id>.html`）；dump 印 SV 只认 POST 体活 DOM。**禁止** dump 直接 load 作者 HTML
   - dump RTL 产物目录（默认 `gen/`）与临时目录分开。
-  - `.autowire/dump/` — 调试落盘：`POST /api/save` 把活 DOM（调试后的 `aw-content` + `aw-render`）写成 `<id>.html`；**临时产物**，不充当作者 SoT，是否合回作者 HTML 由本地决定（见 [`mcp/README.md`](./mcp/README.md) §5）
+  - `.autowire/save/` — 调试落盘：`POST /api/save` 把活 DOM（调试后的 `aw-content` + `aw-render`）写成 `<id>.html`；**临时产物**，不充当作者 SoT，是否合回作者 HTML 由本地决定（见 [`mcp/README.md`](./mcp/README.md) §5）
 
 ### 4.2 HTML / web 如何加载这两类 XML（必须）
 

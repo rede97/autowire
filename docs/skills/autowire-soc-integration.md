@@ -46,11 +46,11 @@ Playwright MCP（浏览器 A 面）
   → 读 live DOM：querySelector("aw-content").outerHTML（整树可取；原文件另有 GET /api/author?id=）
   → 改 live DOM：setAttribute / 插删节点（Render 前任意改，引擎吃的就是活 DOM）
   → 点 [Check]/[Render] 或 GET ?check=1/?render=1 验证
-  → 点 [Save]（或 POST /api/save {id, html}）→ .autowire/dump/<id>.html
-  → 本地 diff connect/<id>.html .autowire/dump/<id>.html，人工决定是否合回
+  → 点 [Save]（或 POST /api/save {id, html}）→ .autowire/save/<id>.html
+  → 本地 diff connect/<id>.html .autowire/save/<id>.html，人工决定是否合回
 ```
 
-红线：**浏览器永不写工作区**；唯一 RTL 写路径是 `POST /api/dump`；`/api/save` 只写 `.autowire/dump/` 临时目录，作者面 SoT 只在 `connect/*.html`。页面 [Reset] 一键回作者面。
+红线：**浏览器永不写工作区**；唯一 RTL 写路径是 `POST /api/dump`；`/api/save` 只写 `.autowire/save/` 临时目录，作者面 SoT 只在 `connect/*.html`。页面 [Reset] 一键回作者面。
 
 端点速查：`GET /api/author?id=`（作者原文）、`GET /api/connect?id=`（xml 快照）、`POST /api/check`、`POST /api/dump`、`POST /api/save`。
 
