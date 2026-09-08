@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Browser, chromium } from "playwright";
-import { startWeb } from "../src/web.ts";
+import { startWeb } from "../src/web/server.ts";
 import type { WorkspaceConfig } from "../src/workspace.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 

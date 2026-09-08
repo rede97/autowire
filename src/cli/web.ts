@@ -5,7 +5,7 @@ import type { Command } from "commander";
 import { check as awCheck } from "../core/aw.ts";
 import { buildEngineCtx, loadUnitDoc, topoUnits } from "../core/connect.ts";
 import { LeafDb } from "../rtl/leaf.ts";
-import { startWeb } from "../web.js";
+import { startWeb } from "../web/server.ts";
 import { requireWorkspace } from "./shared.ts";
 
 export function registerWeb(program: Command): void {

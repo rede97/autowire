@@ -9,25 +9,25 @@ import { join, resolve } from "node:path";
 // Browser assets embedded as text: same source in dev (`bun index.ts`) and in
 // the compiled binary (`bun build --compile`); web/aw.js is the built bundle.
 // @ts-expect-error Bun text import (typed via src/assets.d.ts for editors that resolve it)
-import awBundle from "../web/aw.js" with { type: "text" };
+import awBundle from "../../web/aw.js" with { type: "text" };
 // @ts-expect-error Bun text import
-import pageJs from "../web/page.js" with { type: "text" };
-import { check as awCheck } from "./core/aw.ts";
+import pageJs from "../../web/page.js" with { type: "text" };
+import { check as awCheck } from "../core/aw.ts";
 import {
 	buildEngineCtx,
 	connectDir,
 	loadUnitDoc,
 	topoUnits,
-} from "./core/connect.ts";
-import { connectXml } from "./core/connectxml.ts";
+} from "../core/connect.ts";
+import { connectXml } from "../core/connectxml.ts";
 import {
 	assertPrintable,
 	parseSnapshot,
 	writeSvFiles,
-} from "./core/printer.ts";
-import { LeafDb } from "./rtl/leaf.ts";
-import { loadRtlIndex } from "./rtl/rtlindex.ts";
-import type { WorkspaceConfig } from "./workspace.ts";
+} from "../core/printer.ts";
+import { LeafDb } from "../rtl/leaf.ts";
+import { loadRtlIndex } from "../rtl/rtlindex.ts";
+import type { WorkspaceConfig } from "../workspace.ts";
 
 const UNIT_ID = /^[A-Za-z0-9_-]+$/;
 

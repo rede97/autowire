@@ -5,13 +5,15 @@ import { readFile } from "node:fs/promises";
 // when the checked-in bundle is stale; regenerate with `bun run build:web`.
 test("web/aw.js matches a fresh build of src/core/aw.ts", async () => {
 	const result = await Bun.build({
-		entrypoints: ["src/core/aw.ts"],
+		entrypoints: ["src/core/aw.ts", "src/web/page.ts"],
+		external: ["/aw.js"],
 		target: "browser",
 		format: "esm",
 	});
-	const output = result.outputs[0];
-	if (!output) throw new Error("bun build produced no output");
-	const fresh = await output.text();
-	const committed = await readFile("web/aw.js", "utf8");
-	expect(committed).toBe(fresh);
+	expect(result.outputs).toHaveLength(2);
+	for (const output of result.outputs) {
+		const name = output.path.split("/").pop();
+		if (!name) throw new Error("unnamed build output");
+		expect(await readFile(`web/${name}`, "utf8")).toBe(await output.text());
+	}
 });
