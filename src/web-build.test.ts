@@ -9,7 +9,9 @@ test("web/aw.js matches a fresh build of web/aw.ts", async () => {
 		target: "browser",
 		format: "esm",
 	});
-	const fresh = await result.outputs[0]?.text();
+	const output = result.outputs[0];
+	if (!output) throw new Error("bun build produced no output");
+	const fresh = await output.text();
 	const committed = await readFile("web/aw.js", "utf8");
 	expect(committed).toBe(fresh);
 });

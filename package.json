@@ -8,7 +8,7 @@
 	},
 	"scripts": {
 		"help": "bun index.ts help",
-		"lint": "biome check .",
+		"lint": "biome check . && tsc --noEmit -p tsconfig.json",
 		"test": "bun test",
 		"build:web": "bun build web/aw.ts --target browser --format esm --outfile web/aw.js"
 	},
