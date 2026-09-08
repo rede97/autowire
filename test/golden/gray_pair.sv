@@ -2,19 +2,23 @@
 module gray_pair #(
 	parameter GWIDTH = 8
 ) (
-	input [GWIDTH-1:0] pair_in,
-	output [GWIDTH-1:0] pair_out
+	input wire [GWIDTH-1:0] pair_in,
+	output wire [GWIDTH-1:0] pair_out
 );
 	localparam gray_pair__u_b2g__Width = GWIDTH;
 	localparam gray_pair__u_g2b__Width = GWIDTH;
 
 	logic [gray_pair__u_b2g__Width-1:0] pair_mid;
 
-	cc_binary_to_gray #(.Width(gray_pair__u_b2g__Width)) u_b2g (
+	cc_binary_to_gray #(
+		.Width(gray_pair__u_b2g__Width)
+	) u_b2g (
 		.a_i(pair_in),
 		.z_o(pair_mid)
 	);
-	cc_gray_to_binary #(.Width(gray_pair__u_g2b__Width)) u_g2b (
+	cc_gray_to_binary #(
+		.Width(gray_pair__u_g2b__Width)
+	) u_g2b (
 		.a_i(pair_mid),
 		.z_o(pair_out)
 	);

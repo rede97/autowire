@@ -79,8 +79,8 @@ describe("printer", () => {
 		const sv = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1");
 		expect(sv).toContain("module top #(");
 		expect(sv).toContain("parameter W = 8");
-		expect(sv).toContain("input clk_i,");
-		expect(sv).toContain("output [W-1:0] data_o");
+		expect(sv).toContain("input wire clk_i,");
+		expect(sv).toContain("output wire [W-1:0] data_o");
 		// import at module head, inside the module
 		expect(sv).toMatch(/\);\n\timport cc_pkg::\*;/);
 		expect(sv).toContain("localparam top__u0__Width = W;");
@@ -88,7 +88,9 @@ describe("printer", () => {
 		expect(sv).not.toContain("wire clk_i;");
 		expect(sv).toContain("logic [W-1:0] mid;");
 		expect(sv).toContain("wire [7:0] arr [0:3];");
-		expect(sv).toContain("leaf #(.Width(top__u0__Width)) u0 (");
+		expect(sv).toContain("leaf #(");
+		expect(sv).toContain(".Width(top__u0__Width)");
+		expect(sv).toContain(") u0 (");
 		expect(sv).toContain(".clk(clk_i),");
 		expect(sv).toContain(".d(arr[2]),");
 		// constant tie-offs inline verbatim (no part-select wrapping)

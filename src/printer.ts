@@ -250,7 +250,8 @@ export function printSv(m: RenderModule, unitId: string): string {
 			const mp = p.modport ? `.${p.modport}` : "";
 			return `${p.interface}${mp} ${p.name}`;
 		}
-		const t = p.nettype === "logic" ? " logic" : "";
+		// Ports always carry a type keyword (logic / wire; interface above).
+		const t = p.nettype === "logic" ? " logic" : " wire";
 		const pd = packedSv(p.packed);
 		const ud = p.unpacked
 			? ` ${p.unpacked.startsWith("[") ? p.unpacked : `[${p.unpacked}]`}`
@@ -293,12 +294,18 @@ export function printSv(m: RenderModule, unitId: string): string {
 		...m.localparams.map((l) => l.name),
 	]);
 	for (const inst of m.insts) {
-		const ptext = inst.params.map((p) => `.${p.name}(${p.value})`);
-		const head =
-			ptext.length > 0
-				? `\t${inst.mod} #(${ptext.join(", ")}) ${inst.id} (`
-				: `\t${inst.mod} ${inst.id} (`;
-		lines.push(head);
+		if (inst.params.length > 0) {
+			// One parameter override per line, even a single constant.
+			lines.push(`\t${inst.mod} #(`);
+			for (const [i, p] of inst.params.entries()) {
+				lines.push(
+					`\t\t.${p.name}(${p.value})${i < inst.params.length - 1 ? "," : ""}`,
+				);
+			}
+			lines.push(`\t) ${inst.id} (`);
+		} else {
+			lines.push(`\t${inst.mod} ${inst.id} (`);
+		}
 		for (const [i, c] of inst.connects.entries()) {
 			const netForm =
 				/^[A-Za-z_][A-Za-z0-9_]*$/.test(c.to) && !constNames.has(c.to);

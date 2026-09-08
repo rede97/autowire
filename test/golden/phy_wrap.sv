@@ -2,14 +2,14 @@
 module phy_wrap #(
 	parameter CNT_W = 8
 ) (
-	output [2*CNT_W-1:0] phy_gray_o,
-	output [(((CNT_W)) == 1 ? 1:$clog2(((CNT_W))))-1:0] phy_bin_o,
+	output wire [2*CNT_W-1:0] phy_gray_o,
+	output wire [(((CNT_W)) == 1 ? 1:$clog2(((CNT_W))))-1:0] phy_bin_o,
 	input logic clk_i,
 	input logic rst_ni,
 	input logic cnt_0_clr,
 	input logic cnt_0_en,
 	input logic cnt_0_load,
-	input [15:0] cnt_d_bus,
+	input wire [15:0] cnt_d_bus,
 	input logic cnt_shared_down,
 	input logic cnt_1_clr,
 	input logic cnt_alt_en_1,
@@ -23,7 +23,9 @@ module phy_wrap #(
 
 	wire [15:0] cnt_q_bus;
 
-	cc_counter #(.Width(phy_wrap__u_cnt_0__Width)) u_cnt_0 (
+	cc_counter #(
+		.Width(phy_wrap__u_cnt_0__Width)
+	) u_cnt_0 (
 		.clk_i(clk_i),
 		.rst_ni(rst_ni),
 		.clr_i(cnt_0_clr),
@@ -34,7 +36,9 @@ module phy_wrap #(
 		.q_o(cnt_q_bus[7:0]),
 		.overflow_o()
 	);
-	cc_counter #(.Width(phy_wrap__u_cnt_1__Width)) u_cnt_1 (
+	cc_counter #(
+		.Width(phy_wrap__u_cnt_1__Width)
+	) u_cnt_1 (
 		.clk_i(clk_i),
 		.rst_ni(rst_ni),
 		.clr_i(cnt_1_clr),
@@ -49,7 +53,9 @@ module phy_wrap #(
 		.tap_out_o(phy_gray_o),
 		.tap_in(cnt_q_bus)
 	);
-	cc_onehot_to_bin #(.OnehotWidth(phy_wrap__u_oh2b__OnehotWidth)) u_oh2b (
+	cc_onehot_to_bin #(
+		.OnehotWidth(phy_wrap__u_oh2b__OnehotWidth)
+	) u_oh2b (
 		.onehot_i(oh_onehot),
 		.bin_o(phy_bin_o)
 	);

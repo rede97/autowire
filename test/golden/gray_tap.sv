@@ -2,12 +2,14 @@
 module gray_tap #(
 	parameter TW = 16
 ) (
-	output [TW-1:0] tap_out_o,
-	input [(TW)-1:0] tap_in
+	output wire [TW-1:0] tap_out_o,
+	input wire [(TW)-1:0] tap_in
 );
 	localparam gray_tap__u_pair__GWIDTH = TW;
 
-	gray_pair #(.GWIDTH(gray_tap__u_pair__GWIDTH)) u_pair (
+	gray_pair #(
+		.GWIDTH(gray_tap__u_pair__GWIDTH)
+	) u_pair (
 		.pair_in(tap_in),
 		.pair_out(tap_out_o)
 	);

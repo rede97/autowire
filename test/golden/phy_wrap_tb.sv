@@ -2,19 +2,19 @@
 module phy_wrap_tb #(
 	parameter TB_W = 16
 ) (
-	output [TB_W-1:0] tb_gray_o,
-	output [((((TB_W/2))) == 1 ? 1:$clog2((((TB_W/2)))))-1:0] tb_bin_o,
-	input tb_clk,
-	input tb_rst_n,
-	input tb_cnt0_clr,
-	input tb_cnt0_en,
-	input tb_cnt1_clr,
-	input tb_alt_en,
-	input tb_cnt0_load,
-	input tb_cnt1_load,
-	input [15:0] tb_d_bus,
-	input tb_down,
-	input [(((TB_W/2)))-1:0] tb_onehot,
+	output wire [TB_W-1:0] tb_gray_o,
+	output wire [((((TB_W/2))) == 1 ? 1:$clog2((((TB_W/2)))))-1:0] tb_bin_o,
+	input wire tb_clk,
+	input wire tb_rst_n,
+	input wire tb_cnt0_clr,
+	input wire tb_cnt0_en,
+	input wire tb_cnt1_clr,
+	input wire tb_alt_en,
+	input wire tb_cnt0_load,
+	input wire tb_cnt1_load,
+	input wire [15:0] tb_d_bus,
+	input wire tb_down,
+	input wire [(((TB_W/2)))-1:0] tb_onehot,
 	input logic lfsr_en
 );
 	localparam phy_wrap_tb__u_dut__CNT_W = TB_W/2;
@@ -23,7 +23,9 @@ module phy_wrap_tb #(
 
 	logic [phy_wrap_tb__u_lfsr__OutWidth-1:0] lfsr_out;
 
-	phy_wrap #(.CNT_W(phy_wrap_tb__u_dut__CNT_W)) u_dut (
+	phy_wrap #(
+		.CNT_W(phy_wrap_tb__u_dut__CNT_W)
+	) u_dut (
 		.phy_gray_o(tb_gray_o),
 		.phy_bin_o(tb_bin_o),
 		.clk_i(tb_clk),
@@ -38,7 +40,10 @@ module phy_wrap_tb #(
 		.cnt_1_load(tb_cnt1_load),
 		.oh_onehot(tb_onehot)
 	);
-	cc_lfsr #(.LfsrWidth(phy_wrap_tb__u_lfsr__LfsrWidth), .OutWidth(phy_wrap_tb__u_lfsr__OutWidth)) u_lfsr (
+	cc_lfsr #(
+		.LfsrWidth(phy_wrap_tb__u_lfsr__LfsrWidth),
+		.OutWidth(phy_wrap_tb__u_lfsr__OutWidth)
+	) u_lfsr (
 		.clk_i(tb_clk),
 		.rst_ni(tb_rst_n),
 		.clr_i(1'b0),

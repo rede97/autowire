@@ -6,7 +6,14 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!web/aw.js", "!demo/soc/ip"]
+		"includes": [
+			"**",
+			"!web/aw.js",
+			"!demo/soc/ip",
+			"!.vscode",
+			"!.autowire",
+			"!gen"
+		]
 	},
 	"formatter": {
 		"enabled": true,
