@@ -8,6 +8,8 @@
 
 格式与实现约束统一在 [`docs/`](docs/README.md)。改约束同步改对应文档与 help 摘要；**先不要实现**未在 `help status` 中开放的步骤。
 
+实战手册（非约束，评审中）：[`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md) —— demo/soc 集成食谱、验证纪律、MCP 调试回路、踩坑清单。
+
 ## 规则
 
 - **语言**：代码与配置中的注释、错误/提示信息一律**英文**（`docs/` 中文文档除外）。TS 侧由 `src/lang-guard.test.ts` 强制（CJK 即红）。

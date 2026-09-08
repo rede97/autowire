@@ -20,6 +20,7 @@
 | [hdxml/module-info.md](./hdxml/module-info.md) | hdxml DesignDb / 模块信息模型 | 已实现参考 |
 | [hdxml/cli.md](./hdxml/cli.md) | hdxml `analysis` CLI | 已实现 |
 | [hdxml/testing.md](./hdxml/testing.md) | hdxml 测试脚本（fetch/scan/smoke，Bun）与错误基线分类 | 已实现 |
+| [skills/autowire-soc-integration.md](./skills/autowire-soc-integration.md) | 实战手册：demo/soc 集成食谱 / 验证纪律 / MCP 调试回路 / 踩坑清单 | 草稿，评审中 |
 
 ## 不做
 
