@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 全量扫描测试：对 tests/projects/* 与 tests/corpus/* 逐一跑 hdxml 分析。
 # 与 gen_index.sh（仓库工作区索引，只扫 common_cells）不同——本脚本面向 hdxml
-# 自身：每个目标独立 hdxml 进程、完整输出实时可见，跑完后统一打印统计汇总。
-# 判失败仅当 index.xml 缺失（崩溃/中断）；错误文件作基线数据上报。
-# 产物在 tests/out/scan/<group>-<name>/（增量缓存：重复跑只重解析变更文件）。
+# 自身：每个目标独立 hdxml 进程、进度条直接渲染在终端，统计走 hdxml --summary
+# 报告文件，跑完后统一打印汇总。判失败仅当 index.xml 缺失（崩溃/中断）；
+# 错误文件作基线数据上报。产物在 tests/out/scan/<group>-<name>/（增量缓存）。
 # 用法: tests/scan.sh [--refresh] [额外 hdxml 参数...]
 set -u
 ROOT=$(cd "$(dirname "$0")" && pwd)
@@ -11,8 +11,7 @@ HDXML="$ROOT/../target/debug/hdxml"
 [ -x "$HDXML" ] || HDXML="$ROOT/../target/release/hdxml"
 [ -x "$HDXML" ] || { echo "hdxml binary not found; run: cargo build" >&2; exit 1; }
 OUT="$ROOT/out/scan"
-LOGD="$OUT/logs"
-mkdir -p "$LOGD"
+mkdir -p "$OUT"
 
 refresh=()
 extra=()
@@ -31,7 +30,7 @@ for group in projects corpus; do
     name="$group/$(basename "$dir")"
     dest="$OUT/$group-$(basename "$dir")"
     mapfile -t incdirs < <(find "$dir" -type d -name include -not -path '*/.git/*')
-    args=(-w "$dir" -o "$dest")
+    args=(-w "$dir" -o "$dest" --summary "$dest/summary.txt")
     for i in ${incdirs[@]+"${incdirs[@]}"}; do args+=(-I "$i"); done
     if [ "$group" = projects ]; then
       for i in ${sibling_incdirs[@]+"${sibling_incdirs[@]}"}; do
@@ -39,9 +38,11 @@ for group in projects corpus; do
       done
     fi
     echo "================ $name ================"
-    echo "+ hdxml ${args[*]} ${refresh[*]+"${refresh[*]}"} ${extra[*]+"${extra[*]}"}"
-    "$HDXML" "${args[@]}" ${refresh[@]+"${refresh[@]}"} ${extra[@]+"${extra[@]}"} 2>&1 | tee "$LOGD/$group-$(basename "$dir").log"
-    code=${PIPESTATUS[0]}
+    echo "+ hdxml ${args[*]} --sub-bars ${refresh[*]+"${refresh[*]}"} ${extra[*]+"${extra[*]}"}"
+    # 进度条（Analyzing 聚合条 + --sub-bars 每线程 spinner）直接渲染终端；
+    # 统计从 --summary 报告文件读取，无需重定向
+    "$HDXML" "${args[@]}" --sub-bars ${refresh[@]+"${refresh[@]}"} ${extra[@]+"${extra[@]}"}
+    code=$?
     echo
     names+=("$name")
     if [ ! -f "$dest/index.xml" ]; then
@@ -50,12 +51,11 @@ for group in projects corpus; do
       fail=1
       continue
     fi
-    stats=$(grep '^modules:' "$LOGD/$group-$(basename "$dir").log" || true)
-    files_col+=("$(sed -n 's/^XML written: .* (files \([0-9]*\),.*/\1/p' "$LOGD/$group-$(basename "$dir").log")")
-    modules_col+=("$(echo "$stats" | sed -n 's/^modules: \([0-9]*\).*/\1/p')")
-    tops_col+=("$(echo "$stats" | sed -n 's/.*tops: \([0-9]*\).*/\1/p')")
-    blackbox_col+=("$(echo "$stats" | sed -n 's/.*blackbox: \([0-9]*\).*/\1/p')")
-    errors_col+=("$(echo "$stats" | sed -n 's/.*error files: \([0-9]*\).*/\1/p')")
+    files_col+=("$(sed -n 's/^files: //p' "$dest/summary.txt")")
+    modules_col+=("$(sed -n 's/^modules: //p' "$dest/summary.txt")")
+    tops_col+=("$(sed -n 's/^tops: //p' "$dest/summary.txt")")
+    blackbox_col+=("$(sed -n 's/^blackbox: //p' "$dest/summary.txt")")
+    errors_col+=("$(sed -n 's/^error_files: //p' "$dest/summary.txt")")
     note="ok"; [ "$code" -ne 0 ] && note="exit $code (error files)"
     notes+=("$note")
   done

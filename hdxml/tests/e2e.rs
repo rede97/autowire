@@ -286,10 +286,41 @@ fn export_is_byte_deterministic_modulo_generated() {
                 hit = Some(e);
             }
         }
+
         hit.unwrap()
     })
     .unwrap();
     assert_eq!(x1, x2, "per-file XML must be byte-identical");
+}
+
+#[test]
+fn summary_file_reports_run_stats() {
+    let c = Case::new("summary");
+    let good = c.write("good.sv", "module good; endmodule\n");
+    let bad = c.write("bad.sv", "module bad(\n");
+    let sum = c.dir.join("summary.txt");
+    let args = vec![
+        "-s".into(),
+        s(&good),
+        s(&bad),
+        "-o".into(),
+        s(&c.out()),
+        "--summary".into(),
+        s(&sum),
+    ];
+    let (code, _) = c.run(&args);
+    assert_eq!(code, 1, "error file → exit 1, but summary must still be written");
+    let body = std::fs::read_to_string(&sum).unwrap();
+    assert!(body.contains("files: 2\n"), "{body}");
+    assert!(body.contains("modules: 1\n"), "{body}");
+    assert!(body.contains("error_files: 1\n"), "{body}");
+    assert!(body.contains("reused: 0\n"), "{body}");
+    assert!(body.contains("parsed: 2\n"), "{body}");
+    // 第二轮：good 命中缓存
+    c.run(&args);
+    let body = std::fs::read_to_string(&sum).unwrap();
+    assert!(body.contains("reused: 1\n"), "{body}");
+    assert!(body.contains("parsed: 1\n"), "{body}");
 }
 
 fn walk(dir: &Path) -> Vec<PathBuf> {

@@ -90,6 +90,10 @@ pub struct AnalysisArgs {
     #[arg(long)]
     pub refresh: bool,
 
+    /// Write a machine-readable run summary (key: value lines) to FILE
+    #[arg(long)]
+    pub summary: Option<PathBuf>,
+
     /// Exit code 1 when blackbox (undef) modules exist
     #[arg(long)]
     pub fail_on_undef: bool,

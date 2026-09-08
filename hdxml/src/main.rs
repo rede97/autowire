@@ -61,8 +61,10 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
         sub_bars: a.sub_bars,
     };
     // 有输出目录即增量：未变更文件复用缓存（--refresh 强制全量）；无输出目录纯终端分析
+    let mut inc: Option<(usize, usize)> = None; // (reused, parsed)，供 --summary
     let (db, stamps) = if let Some(dir) = &a.output_dir {
         let (db, stamps, reused) = db::analyze_incremental(&drive, &define_pairs, dir, a.refresh)?;
+        inc = Some((reused, files.len() - reused));
         pc.println(&format!(
             "incremental: reused {reused} files, parsed {} files{}",
             files.len() - reused,
@@ -108,6 +110,23 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
             stats.files,
             stats.modules
         ));
+    }
+
+    // 机器可读摘要（--summary；key: value 行，供脚本/CI 采集）
+    if let Some(path) = &a.summary {
+        let mut out = format!(
+            "files: {}\nmodules: {}\ntops: {}\nblackbox: {}\nerror_files: {}\n",
+            files.len(),
+            db.defs.len(),
+            db.tops.len(),
+            db.undef.len(),
+            db.errors.len()
+        );
+        if let Some((reused, parsed)) = inc {
+            out.push_str(&format!("reused: {reused}\nparsed: {parsed}\n"));
+        }
+        std::fs::write(path, out)
+            .with_context(|| format!("failed to write summary {}", path.display()))?;
     }
 
     if !db.errors.is_empty() {
