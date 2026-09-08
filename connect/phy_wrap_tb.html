@@ -51,7 +51,7 @@
                 <aw-param name="OutWidth" expr="TB_W/2"></aw-param>
                 <aw-connect port="clk_i" to="tb_clk"></aw-connect>
                 <aw-connect port="rst_ni" to="tb_rst_n"></aw-connect>
-                <!-- constant tie-off (connect-const-proposal): no net created -->
+                <!-- constant tie-off (connect-to-rules): no net created -->
                 <aw-connect port="clr_i" to="1'b0" type="const"></aw-connect>
                 <aw-connect port="en_i" to="lfsr_en"></aw-connect>
                 <aw-connect port="out_o" to="lfsr_out" packed="auto"></aw-connect>
