@@ -173,18 +173,41 @@ impl<'a> XmlExport<'a> {
             w.close("includes");
         }
         for m in mods {
-            let attrs = vec![
+            // package 无 interfaceSig（契约 §5.2：无端口，签名无意义）
+            let mut attrs = vec![
                 ("name", m.name.clone()),
                 ("kind", m.kind.as_str().to_string()),
                 ("span", span_text(m.span)),
                 ("contentHash", m.content_hash.clone()),
-                ("interfaceSig", m.interface_sig.clone()),
+                ("normHash", m.norm_hash.clone()),
             ];
-            if m.params.is_empty() && m.ports.is_empty() && m.instances.is_empty() {
+            if m.kind != super::ModKind::Package {
+                attrs.push(("interfaceSig", m.interface_sig.clone()));
+            }
+            if m.imports.is_empty()
+                && m.params.is_empty()
+                && m.ports.is_empty()
+                && m.instances.is_empty()
+            {
                 w.empty("module", &attrs);
                 continue;
             }
             w.open("module", &attrs);
+            if m.kind != super::ModKind::Package && !m.imports.is_empty() {
+                w.open("imports", &[]);
+                for i in &m.imports {
+                    w.empty(
+                        "import",
+                        &[
+                            ("package", i.package.clone()),
+                            ("symbol", i.symbol.clone()),
+                            ("via", i.via.as_str().to_string()),
+                            ("span", span_text(i.span)),
+                        ],
+                    );
+                }
+                w.close("imports");
+            }
             if !m.params.is_empty() {
                 w.open("params", &[]);
                 for p in &m.params {
@@ -283,8 +306,17 @@ impl<'a> XmlExport<'a> {
                 ("tool", format!("hdxml {}", env!("CARGO_PKG_VERSION"))),
                 ("generated", self.generated.to_string()),
                 ("files", inputs.len().to_string()),
-                ("modules", self.db.defs.len().to_string()),
+                ("modules", self.db.defs.values().filter(|m| m.kind != super::ModKind::Package).count().to_string()),
                 ("errorFiles", self.db.errors.len().to_string()),
+                (
+                    "packages",
+                    self.db
+                        .defs
+                        .values()
+                        .filter(|m| m.kind == super::ModKind::Package)
+                        .count()
+                        .to_string(),
+                ),
                 ("definesFp", defines_fp),
                 ("incdirsFp", incdirs_fp),
             ],
@@ -322,12 +354,26 @@ impl<'a> XmlExport<'a> {
         w.close("files");
         w.open("modules", &[]);
         for (name, m) in &self.db.defs {
+            if m.kind == super::ModKind::Package {
+                continue;
+            }
             w.empty(
                 "module",
                 &[("name", name.clone()), ("index", index_of[&m.file].clone())],
             );
         }
         w.close("modules");
+        w.open("packages", &[]);
+        for (name, m) in &self.db.defs {
+            if m.kind != super::ModKind::Package {
+                continue;
+            }
+            w.empty(
+                "package",
+                &[("name", name.clone()), ("index", index_of[&m.file].clone())],
+            );
+        }
+        w.close("packages");
         w.open("hierarchy", &[]);
         for t in &self.db.tops {
             let mut visited = std::collections::BTreeSet::new();
@@ -533,8 +579,10 @@ mod tests {
 
     fn demo_db(file: &Path) -> DesignDb {
         let sub = ModuleDecl {
+            imports: vec![],
             name: "sub".into(),
             kind: ModKind::Module,
+            norm_hash: "n_sub".into(),
             file: file.to_path_buf(),
             span: [0, 50],
             params: vec![ParamInfo {

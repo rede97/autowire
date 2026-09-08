@@ -242,7 +242,7 @@ fn fail_on_undef_only_with_flag() {
 fn duplicate_module_definition_is_an_error_naming_both_files() {
     let c = Case::new("dup");
     let a = c.write("a.sv", "module dup; endmodule\n");
-    let b = c.write("b.sv", "module dup; endmodule\n");
+    let b = c.write("b.sv", "module dup; logic x; endmodule\n");
     let (code, text) = c.run(&["-s".into(), s(&a), s(&b), "--tree".into()]);
     assert_eq!(code, 1, "{text}");
     assert!(text.contains("redefined"), "{text}");
@@ -430,4 +430,39 @@ fn expand_headers_macros_really_expand_and_parse_as_module_items() {
     assert_eq!(code, 0, "{text}");
     let xml = std::fs::read_to_string(c.find_out("top.sv.xml").unwrap()).unwrap();
     assert!(xml.contains("packed=\"[((3) + 1)-1:0]\""), "macro must really expand: {xml}");
+}
+
+#[test]
+fn packages_and_imports_exported_and_cached() {
+    let c = Case::new("pkgxml");
+    let src = c.write(
+        "m.sv",
+        "package axi_pkg;\n  parameter int W = 8;\nendpackage\nmodule m import axi_pkg::*; (input logic clk, input axi_pkg::axi_t d);\n  sub u0 (.c(clk));\nendmodule\nmodule sub(input logic c);\nendmodule\n",
+    );
+    let args = vec!["-s".into(), s(&src), "-o".into(), s(&c.out())];
+    let (code, text) = c.run(&args);
+    assert_eq!(code, 0, "{text}");
+
+    let index = std::fs::read_to_string(c.out().join("index.xml")).unwrap();
+    assert!(index.contains("packages=\"1\""), "{index}");
+    assert!(index.contains("modules=\"2\""), "packages not counted as modules: {index}");
+    assert!(index.contains("<package name=\"axi_pkg\""), "{index}");
+    // package 不进层级树（永不被例化）
+    assert!(index.contains("<top module=\"m\">"), "{index}");
+    assert!(!index.contains("<top module=\"axi_pkg\""), "{index}");
+
+    let xml = std::fs::read_to_string(c.find_out("m.sv.xml").unwrap()).unwrap();
+    assert!(xml.contains("<module name=\"axi_pkg\" kind=\"package\""), "{xml}");
+    assert!(!xml.contains("<module name=\"axi_pkg\" kind=\"package\" span=\"0:33\" contentHash"), "{xml}");
+    let pkg_mod = xml.split("<module name=\"axi_pkg\"").nth(1).unwrap();
+    assert!(!pkg_mod[..pkg_mod.find('>').unwrap()].contains("interfaceSig"), "package has no interfaceSig");
+    assert!(xml.contains("<import package=\"axi_pkg\" symbol=\"*\" via=\"decl\""), "{xml}");
+    assert!(xml.contains("<import package=\"axi_pkg\" symbol=\"axi_t\" via=\"scope\""), "{xml}");
+
+    // 增量往返：缓存重建的 imports 与解析一致（第二轮复用且 XML 字节不变）
+    let first = std::fs::read_to_string(c.find_out("m.sv.xml").unwrap()).unwrap();
+    let (_, text) = c.run(&args);
+    assert!(text.contains("reused 1 files, parsed 0 files"), "{text}");
+    let second = std::fs::read_to_string(c.find_out("m.sv.xml").unwrap()).unwrap();
+    assert_eq!(first, second, "cached reload must round-trip imports");
 }

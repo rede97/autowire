@@ -74,11 +74,16 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
     } else {
         db::analyze_files(&drive)?
     };
-
-    // 摘要
     pc.println(&format!(
-        "modules: {}  tops: {}  blackbox: {}  error files: {}",
-        db.defs.len(),
+        "modules: {}  packages: {}  tops: {}  blackbox: {}  error files: {}",
+        db.defs
+            .values()
+            .filter(|m| m.kind != db::ModKind::Package)
+            .count(),
+        db.defs
+            .values()
+            .filter(|m| m.kind == db::ModKind::Package)
+            .count(),
         db.tops.len(),
         db.undef.len(),
         db.errors.len()
@@ -114,10 +119,17 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
 
     // 机器可读摘要（--summary；key: value 行，供脚本/CI 采集）
     if let Some(path) = &a.summary {
+        let modules = db
+            .defs
+            .values()
+            .filter(|m| m.kind != db::ModKind::Package)
+            .count();
+        let packages = db.defs.len() - modules;
         let mut out = format!(
-            "files: {}\nmodules: {}\ntops: {}\nblackbox: {}\nerror_files: {}\n",
+            "files: {}\nmodules: {}\npackages: {}\ntops: {}\nblackbox: {}\nerror_files: {}\n",
             files.len(),
-            db.defs.len(),
+            modules,
+            packages,
             db.tops.len(),
             db.undef.len(),
             db.errors.len()

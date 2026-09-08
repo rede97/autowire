@@ -175,6 +175,7 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 | `name` | string | 是 | 模块名 |
 | `kind` | `module` \| `interface` \| `package` | 是 | 声明种类 |
 | `contentHash` | string | 是 | 模块文本内容哈希（blake3-128）；回答"这个文件要不要重分析" |
+| `normHash` | string | 是 | 规范化内容哈希（剥离全部空白后 blake3-128）；重定义良性判定——同一定义经 include+walk 双采时接缝空白漂移，字节级 contentHash 过严 |
 | `interfaceSig` | string | module/interface 是 | 接口签名（参数+端口规范化哈希，顺序敏感、格式不敏感）；回答"父模块要不要重连线"；`kind="package"` 时省略（无端口，签名无意义） |
 子结构固定次序 `<imports>` → `<params>` → `<ports>` → `<instances>`（§3）；空组**必须**整体省略（无参数则不出现 `<params>`）。`kind="package"` 只有 `<params>`（包内 parameter/localparam 声明），无 `<ports>`/`<instances>`。
 

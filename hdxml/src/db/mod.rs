@@ -1,5 +1,5 @@
 //! DesignDb — 模块信息数据底座（docs/hdxml/module-info.md）。
-//! 纯净分析层：无条件全量收集 params/ports/instances/层级，零功能标志位。
+//! 纯净分析层：无条件全量收集 params/ports/instances/imports/层级，零功能标志位。
 
 pub mod cache;
 pub mod extract;
@@ -167,6 +167,42 @@ pub struct PortInfo {
     pub span: [usize; 2],
 }
 
+/// 导入途径（rtlindex-xml.md §5.3）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportVia {
+    /// 显式 `import pkg::sym;` 声明（含编译单元级）
+    Decl,
+    /// 类型/表达式中的 `pkg::sym` 作用域引用（隐式依赖）
+    Scope,
+}
+
+impl ImportVia {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Decl => "decl",
+            Self::Scope => "scope",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "decl" => Some(Self::Decl),
+            "scope" => Some(Self::Scope),
+            _ => None,
+        }
+    }
+}
+
+/// package 依赖条目：显式 import + 作用域引用（见 ImportVia）
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportInfo {
+    pub package: String,
+    /// 导入/引用的符号；通配导入为 "*"
+    pub symbol: String,
+    pub via: ImportVia,
+    pub span: [usize; 2],
+}
+
 /// 实例参数覆盖（v1 存表达式原文，不含 `.name(...)` 包裹与注释；不求值）
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamConn {
@@ -189,6 +225,7 @@ pub enum ModKind {
     #[default]
     Module,
     Interface,
+    Package,
 }
 
 impl ModKind {
@@ -196,6 +233,7 @@ impl ModKind {
         match self {
             Self::Module => "module",
             Self::Interface => "interface",
+            Self::Package => "package",
         }
     }
 
@@ -203,6 +241,7 @@ impl ModKind {
         match s {
             "module" => Some(Self::Module),
             "interface" => Some(Self::Interface),
+            "package" => Some(Self::Package),
             _ => None,
         }
     }
@@ -217,12 +256,17 @@ pub struct ModuleDecl {
     pub params: Vec<ParamInfo>,
     pub ports: Vec<PortInfo>,
     pub instances: Vec<InstanceInfo>,
+    /// package 依赖（显式 import + 作用域引用；rtlindex-xml.md §5.3）
+    pub imports: Vec<ImportInfo>,
     pub content_hash: String,
+    /// 规范化内容哈希（剥离全部空白）：重定义良性判定（同一定义经 include+walk 双采时
+    /// 接缝空白会漂移，字节级 content_hash 过严）
+    pub norm_hash: String,
     pub interface_sig: String,
 }
 
 /// 规范化：剥离全部空白（签名对格式不敏感，对内容敏感）
-fn normalize(s: &str) -> String {
+pub(crate) fn normalize(s: &str) -> String {
     s.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
@@ -368,9 +412,9 @@ impl DesignDb {
             .collect();
         self.tops = self
             .defs
-            .keys()
-            .filter(|n| !referenced.contains(*n))
-            .cloned()
+            .values()
+            .filter(|m| m.kind != ModKind::Package && !referenced.contains(&m.name))
+            .map(|m| m.name.clone())
             .collect();
     }
     /// 直接子模块名（去重，有序）
@@ -584,6 +628,10 @@ fn assemble(
     for (file, mods) in by_file {
         for m in mods {
             if let Some(prev) = defs.insert(m.name.clone(), m) {
+                // 同名且规范化内容相同（文件既被 include 展开又被作为源扫描）= 良性重复
+                if prev.norm_hash == defs[&prev.name].norm_hash {
+                    continue;
+                }
                 errors.entry(file.clone()).or_default().push(FileError::new(format!(
                     "module redefined: {} (also see {})",
                     prev.name,

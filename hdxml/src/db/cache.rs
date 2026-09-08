@@ -332,8 +332,19 @@ pub fn load_cached_file(xml_path: &Path, source: &Path) -> Option<(Vec<ModuleDec
                     params: Vec::new(),
                     ports: Vec::new(),
                     instances: Vec::new(),
+                    imports: Vec::new(),
                     content_hash: attrs.get("contentHash")?.clone(),
-                    interface_sig: attrs.get("interfaceSig")?.clone(),
+                    // package 无 interfaceSig（契约 §5.2）
+                    norm_hash: attrs.get("normHash")?.clone(),
+                    interface_sig: attrs.get("interfaceSig").cloned().unwrap_or_default(),
+                });
+            }
+            "import" if stack.last().is_some_and(|t| t == "imports") => {
+                mods.last_mut()?.imports.push(super::ImportInfo {
+                    package: attrs.get("package")?.clone(),
+                    symbol: attrs.get("symbol")?.clone(),
+                    via: super::ImportVia::parse(attrs.get("via")?)?,
+                    span: parse_span(attrs.get("span")?)?,
                 });
             }
             "param" => match stack.last().map(String::as_str) {

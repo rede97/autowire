@@ -2,8 +2,8 @@
 //! 名称用节点字段直取（XxxIdentifier.nodes.0），文本用窗口 min/max offset 切原文。
 
 use super::{
-    ExprText, InstanceInfo, ModKind, ModuleDecl, ParamConn, ParamInfo, ParamKind, PortDir, PortInfo,
-    short_hash,
+    ExprText, ImportInfo, ImportVia, InstanceInfo, ModKind, ModuleDecl, ParamConn, ParamInfo,
+    ParamKind, PortDir, PortInfo, short_hash,
 };
 use std::path::Path;
 use sv_parser::{Identifier, Locate, NodeEvent, RefNode, SyntaxTree};
@@ -64,6 +64,8 @@ struct ModB {
     params: Vec<ParamInfo>,
     ports: Vec<PortInfo>,
     instances: Vec<InstanceInfo>,
+    /// 本模块内显式 import（via=decl；编译单元级见 Extractor::unit_imports）
+    imports: Vec<ImportInfo>,
 }
 
 impl Default for Win {
@@ -110,6 +112,14 @@ struct HierB {
     win: Win,
 }
 
+
+/// 显式 import 条目（`import pkg::sym` / `import pkg::*`）构建中状态
+#[derive(Default)]
+struct ImportB {
+    package: String,
+    symbol: String,
+    win: Win,
+}
 enum Frame {
     Mod(ModB),
     /// ParameterDeclaration/LocalParameterDeclaration 窗口（kind 适用于其内全部 assignment）
@@ -117,19 +127,25 @@ enum Frame {
         kind: ParamKind,
         dtype: Option<String>,
     },
+    /// `import pkg::…` 声明窗口（屏蔽其内 PackageIdentifier 被当作包名）
+    ImportDecl,
+    /// 单个导入条目（List<Symbol, PackageImportItem> 的每一项）
+    ImportItem(ImportB),
     ParamAssign(ParamB),
     Port(PortB),
     Inst(InstB),
     Hier(HierB),
 	Cap(Cap, Win),
-	/// 被抑制的嵌套表达式节点占位（配对 leave，不捕获）
-	Skip,
+    /// 被抑制的嵌套表达式节点占位（配对 leave，不捕获）
+    Skip,
 }
 
 pub struct Extractor<'a> {
     src: &'a str,
     stack: Vec<Frame>,
     pub modules: Vec<ModuleDecl>,
+    /// 编译单元级 import（模块之外；对每个模块可见，合并进各模块 imports）
+    unit_imports: Vec<ImportInfo>,
 }
 
 impl<'a> Extractor<'a> {
@@ -138,6 +154,7 @@ impl<'a> Extractor<'a> {
             src,
             stack: Vec::new(),
             modules: Vec::new(),
+            unit_imports: Vec::new(),
         }
     }
 
@@ -191,6 +208,10 @@ impl<'a> Extractor<'a> {
             .any(|f| matches!(f, Frame::ParamDecl { .. } | Frame::ParamAssign(_)))
     }
 
+    fn in_port_decl(&self) -> bool {
+        self.stack.iter().any(|f| matches!(f, Frame::Port(_)))
+    }
+
     fn feed_locate(&mut self, l: &Locate) {
         for f in &mut self.stack {
             match f {
@@ -200,7 +221,8 @@ impl<'a> Extractor<'a> {
                 Frame::Inst(i) => i.win.feed(l),
                 Frame::Hier(h) => h.win.feed(l),
                 Frame::Cap(_, w) => w.feed(l),
-                Frame::ParamDecl { .. } | Frame::Skip => {}
+                Frame::ParamDecl { .. } | Frame::Skip | Frame::ImportDecl => {}
+                Frame::ImportItem(i) => i.win.feed(l),
             }
         }
     }
@@ -221,6 +243,30 @@ impl<'a> Extractor<'a> {
                 self.stack.push(Frame::Mod(ModB {
                     kind: ModKind::Interface,
                     ..Default::default()
+                }));
+            }
+            RefNode::PackageDeclaration(_) => {
+                self.stack.push(Frame::Mod(ModB {
+                    kind: ModKind::Package,
+                    ..Default::default()
+                }));
+            }
+            RefNode::PackageImportDeclaration(_) => {
+                self.stack.push(Frame::ImportDecl);
+            }
+            // 显式导入条目：import pkg::sym / import pkg::*（含模块头部与编译单元级）
+            RefNode::PackageImportItemIdentifier(item) => {
+                self.stack.push(Frame::ImportItem(ImportB {
+                    package: ident_text(self.src, &item.nodes.0.nodes.0),
+                    symbol: ident_text(self.src, &item.nodes.2),
+                    win: Win::new(),
+                }));
+            }
+            RefNode::PackageImportItemAsterisk(item) => {
+                self.stack.push(Frame::ImportItem(ImportB {
+                    package: ident_text(self.src, &item.nodes.0.nodes.0),
+                    symbol: "*".to_string(),
+                    win: Win::new(),
                 }));
             }
             RefNode::ModuleDeclaration(m) => {
@@ -387,16 +433,29 @@ impl<'a> Extractor<'a> {
                     m.name = name;
                 }
             }
+            RefNode::PackageIdentifier(id) => {
+                // import 窗口内的包名已由条目自身取得；此处只认 package 声明名
+                let in_import = self
+                    .stack
+                    .iter()
+                    .any(|f| matches!(f, Frame::ImportDecl | Frame::ImportItem(_)));
+                if in_import {
+                    return;
+                }
+                let name = ident_text(self.src, &id.nodes.0);
+                if let Some(m) = self.cur_mod()
+                    && m.kind == ModKind::Package
+                    && m.name.is_empty()
+                {
+                    m.name = name;
+                }
+            }
             RefNode::NamedParameterAssignment(_) | RefNode::OrderedParameterAssignment(_) => {
                 self.stack.push(Frame::Cap(Cap::ParamConn, Win::new()));
             }
             RefNode::Locate(l) => self.feed_locate(l),
             _ => {}
         }
-    }
-
-    fn in_port_decl(&self) -> bool {
-        self.stack.iter().any(|f| matches!(f, Frame::Port(_)))
     }
 
     /// 是否处于实例参数连接窗口内（覆盖值表达式需要捕获）
@@ -420,9 +479,28 @@ impl<'a> Extractor<'a> {
             | RefNode::ModuleDeclarationWildcard(_)
             | RefNode::InterfaceDeclarationAnsi(_)
             | RefNode::InterfaceDeclarationNonansi(_)
-            | RefNode::InterfaceDeclarationWildcard(_) => {
+            | RefNode::InterfaceDeclarationWildcard(_)
+            | RefNode::PackageDeclaration(_) => {
                 if let Some(Frame::Mod(m)) = self.stack.pop() {
                     self.finish_module(m);
+                }
+            }
+            RefNode::PackageImportDeclaration(_) => {
+                self.stack.pop(); // ImportDecl 标记帧
+            }
+            RefNode::PackageImportItemIdentifier(_) | RefNode::PackageImportItemAsterisk(_) => {
+                if let Some(Frame::ImportItem(b)) = self.stack.pop() {
+                    let info = ImportInfo {
+                        package: b.package,
+                        symbol: b.symbol,
+                        via: ImportVia::Decl,
+                        span: b.win.span(),
+                    };
+                    // 模块内（含头部）→ 该模块；模块之外 → 编译单元级
+                    match self.cur_mod() {
+                        Some(m) => m.imports.push(info),
+                        None => self.unit_imports.push(info),
+                    }
                 }
             }
             RefNode::ParameterDeclaration(_) | RefNode::LocalParameterDeclaration(_) => {
@@ -617,6 +695,10 @@ impl<'a> Extractor<'a> {
         } else {
             ""
         };
+        // imports：编译单元级在前（对全文件可见），模块自身显式声明随后；
+        // 作用域引用（via=scope）去重殿后
+        let mut imports = self.unit_imports.clone();
+        imports.extend(m.imports);
         let mut decl = ModuleDecl {
             name: m.name,
             kind: m.kind,
@@ -625,9 +707,12 @@ impl<'a> Extractor<'a> {
             params: m.params,
             ports: m.ports,
             instances: m.instances,
+            imports,
             content_hash: short_hash(text.as_bytes()),
+            norm_hash: short_hash(super::normalize(text).as_bytes()),
             interface_sig: String::new(),
         };
+        collect_scope_imports(&mut decl, self.src);
         decl.interface_sig = decl.compute_sig();
         self.modules.push(decl);
     }
@@ -658,6 +743,92 @@ fn parse_conn_name(text: &str) -> Option<String> {
         .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
         .collect();
     (!name.is_empty()).then_some(name)
+}
+
+/// 作用域引用收集（via=scope）：类型/表达式文本中的 `pkg::sym`，按 (package, symbol)
+/// 去重殿后；已由显式 import 声明的同名条目不重复记录；`$unit::` 不算 package 依赖。
+/// span 定位到宿主声明区间内的引用原文（找不到退化为宿主 span）。
+fn collect_scope_imports(m: &mut ModuleDecl, src: &str) {
+    use std::collections::BTreeSet;
+    let mut seen: BTreeSet<(String, String)> = m
+        .imports
+        .iter()
+        .filter(|i| i.via == ImportVia::Decl)
+        .map(|i| (i.package.clone(), i.symbol.clone()))
+        .collect();
+    let mut fields: Vec<(&str, [usize; 2])> = Vec::new();
+    for p in &m.params {
+        if let Some(t) = &p.data_type {
+            fields.push((t, p.span));
+        }
+        if let Some(d) = &p.default {
+            fields.push((&d.text, p.span));
+        }
+    }
+    for p in &m.ports {
+        if let Some(t) = &p.data_type {
+            fields.push((t, p.span));
+        }
+        if let Some(t) = &p.interface {
+            fields.push((t, p.span));
+        }
+        for d in p.packed.iter().chain(&p.unpacked) {
+            fields.push((&d.text, p.span));
+        }
+        if let Some(d) = &p.default {
+            fields.push((&d.text, p.span));
+        }
+    }
+    for (text, host) in fields {
+        for (pkg, sym) in scope_refs(text) {
+            if pkg == "$unit" || !seen.insert((pkg.clone(), sym.clone())) {
+                continue;
+            }
+            let needle = format!("{pkg}::{sym}");
+            let span = src
+                .get(host[0]..host[1])
+                .and_then(|s| s.find(&needle))
+                .map_or(host, |o| [host[0] + o, host[0] + o + needle.len()]);
+            m.imports.push(ImportInfo {
+                package: pkg,
+                symbol: sym,
+                via: ImportVia::Scope,
+                span,
+            });
+        }
+    }
+}
+
+/// 文本中的 `ident::ident` 引用对（词法级，非完整解析）
+fn scope_refs(text: &str) -> Vec<(String, String)> {
+    let b = text.as_bytes();
+    let is_ident = |c: u8| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'$');
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if !(b[i].is_ascii_alphabetic() || matches!(b[i], b'_' | b'$')) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < b.len() && is_ident(b[i]) {
+            i += 1;
+        }
+        let first = &text[start..i];
+        if b[i..].starts_with(b"::") {
+            let s2 = i + 2;
+            let mut j = s2;
+            while j < b.len() && is_ident(b[j]) {
+                j += 1;
+            }
+            if j > s2 {
+                out.push((first.to_string(), text[s2..j].to_string()));
+                i = j;
+                continue;
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -696,6 +867,42 @@ mod tests {
             m.content_hash,
             "span slice hash must equal content_hash; slice={slice:?}"
         );
+    }
+
+    #[test]
+    fn package_and_imports_collected() {
+        let src = r#"package axi_pkg;
+  parameter int W = 8;
+  parameter int D = 32;
+endpackage
+module m
+  import axi_pkg::*;
+#(parameter int X = axi_pkg::W) (
+  input logic clk,
+  input axi_pkg::axi_t d
+);
+  import axi_pkg::D;
+endmodule
+"#;
+        let (mods, _) = extract_src("pkg_imports", src);
+        assert_eq!(mods.len(), 2, "{mods:?}");
+        let pkg = &mods[0];
+        assert_eq!(pkg.kind, ModKind::Package);
+        assert_eq!(pkg.name, "axi_pkg");
+        assert_eq!(pkg.params.len(), 2, "package params collected");
+        let m = &mods[1];
+        assert_eq!(m.kind, ModKind::Module);
+        // 头部 import（decl, *）+ 体内 import（decl, D）+ 作用域引用（axi_pkg::W / axi_pkg::axi_t）
+        let decls: Vec<_> = m.imports.iter().filter(|i| i.via == ImportVia::Decl).collect();
+        assert_eq!(decls.len(), 2, "{:?}", m.imports);
+        assert_eq!(decls[0].symbol, "*");
+        assert_eq!(decls[1].symbol, "D");
+        assert!(decls.iter().all(|i| i.package == "axi_pkg"));
+        let scopes: Vec<_> = m.imports.iter().filter(|i| i.via == ImportVia::Scope).collect();
+        let syms: Vec<_> = scopes.iter().map(|i| i.symbol.as_str()).collect();
+        assert!(syms.contains(&"W"), "param default scope ref: {syms:?}");
+        assert!(syms.contains(&"axi_t"), "port type scope ref: {syms:?}");
+        assert!(scopes.iter().all(|i| i.package == "axi_pkg"));
     }
 
     #[test]
@@ -810,3 +1017,4 @@ endmodule
         );
     }
 }
+
