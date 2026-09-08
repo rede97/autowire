@@ -3,8 +3,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Command } from "commander";
-import { loadRtlIndex } from "../rtlindex.js";
-import { renderSummary, renderTrees } from "../tree.js";
+import { loadRtlIndex } from "../rtl/rtlindex.ts";
+import { renderSummary, renderTrees } from "../rtl/tree.ts";
 import { analyzeWithSidecar, findHdxml } from "./shared.ts";
 
 export function registerDeps(program: Command): void {

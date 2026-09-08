@@ -27,8 +27,11 @@ Other topics are command/dialect reference: autowire help topics
 What it is
   Connectivity is one HTML + <script>. After the browser runs the script, the live DOM is the netlist.
   Hand the render result to autowire; it writes RTL, then DV.
-  Early path: aw.js + local web page; debug via Playwright (headless + Playwright MCP).
-  Later: headless cli, locked by Web / Playwright goldens. No connection-specific MCP.
+  Early path: aw.js + local web page; debug via Playwright MCP (browser, isolated).
+  Later: headless cli, locked by Web / Playwright goldens.
+  MCP vs tools: tools own generate/check/render/dump; MCPs must not be a live netlist engine.
+  Two MCP paths (docs/mcp/): Playwright = runtime debug; Workspace = author HTML + RtlIndex
+  (edit/search/analysis) — not landed; generating still requires explicit Web tool path.
 
 Pipeline
   autowire.toml (.f + svh / macros)
@@ -45,6 +48,8 @@ You can do now
   3. Author connect HTML per docs/connect-html.md.
   4. autowire web [unit]; wait for first paint (or #aw-status when GET params auto-run).
   2. Playwright MCP: navigate / snapshot / evaluate / click — inspect live DOM, not source HTML.
+     Workspace MCP (docs/mcp/workspace.md, not landed): node-level author HTML edit + RtlIndex
+     search; does not elaborate; call web for check/render/dump when results are needed.
   3. Run check on aw-content (legality + deps) separately from render/dump; dump should refuse unclean check.
   4. Dump via same-origin POST /api/dump (reads aw-render); browser must not write the workspace.
   5. Do not build cli before Web cases and goldens exist.
@@ -71,6 +76,7 @@ Landed
 
 Not landed
   autowire cli              build only after Web cases/goldens prove stable
+  Workspace MCP             author HTML node edit + RtlIndex search (docs/mcp/workspace.md)
 
 Parallel (does not block connect)
   Plugin registry (docs/plugins/): custom tags; generator vs elaborate kinds
@@ -303,7 +309,9 @@ deps must not rewrite RTL; connect page reads port tables read-only.
 Do not
 
   connectivity SoT in XML / one-file-per-level files (RtlIndex XML is an index, not connectivity)
-  connection-specific MCP (outline, apply, rewrite, …)
+  blur tools vs MCP: no MCP that mutates connect and returns live netlist/RTL in-process
+    (old outline/apply/rewrite all-in-one). Allowed: Playwright MCP (debug) and Workspace MCP
+    (author-file edit + RtlIndex query; docs/mcp/) — generate still via web/cli tools only
   browser writing the workspace directly
   build cli before Web cases
   two wiring semantics (Web and cli must share aw.js + goldens)
@@ -316,6 +324,7 @@ Do not
   require render before check (wrong direction: Render depends on Check; Check does not depend on Render)
   skip check before render or dump (?render=1 / [Render] must auto-run Check first)
   generate regfile/cfgbus from connect aw-submods custom tags (register a generator plugin; docs/plugins/)
+  treat Workspace MCP html_write as elaborate (must still run web check/render/dump for netlist)
 `,
 };
 

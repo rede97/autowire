@@ -1,7 +1,7 @@
 // Colored dependency tree printing (termtree-style box-drawing + chalk colors).
 
 import chalk from "chalk";
-import type { HierNode, RtlIndex } from "./rtlindex.js";
+import type { HierNode, RtlIndex } from "./rtlindex.ts";
 
 function label(node: HierNode, source?: string, isTop = false): string {
 	let name = node.cycle

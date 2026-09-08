@@ -65,9 +65,12 @@ test("each slice prints independently", () => {
 	expect(renderHelp("cli")).toContain("do not build now");
 	expect(renderHelp("cli")).toContain("--check");
 	expect(renderHelp("deps")).toContain("RtlIndex");
-	expect(renderHelp("dont")).toContain("connection-specific MCP");
+	expect(renderHelp("dont")).toContain("blur tools vs MCP");
+	expect(renderHelp("dont")).toContain("Workspace MCP");
 	expect(renderHelp("dont")).toContain("treat dump as the only validation");
 	expect(renderHelp("dont")).toContain("skip check before render");
+	expect(renderHelp("agent")).toContain("docs/mcp/");
+	expect(renderHelp("status")).toContain("Workspace MCP");
 	for (const topic of HELP_TOPICS) {
 		expect(renderHelp(topic).trim().length).toBeGreaterThan(20);
 	}

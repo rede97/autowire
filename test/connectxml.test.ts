@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { connectXml, parseConnectXml } from "../src/connectxml.ts";
-import { parseSnapshot } from "../src/printer.ts";
+import { connectXml, parseConnectXml } from "../src/core/connectxml.ts";
+import { parseSnapshot } from "../src/core/printer.ts";
 
 // The connect XML sidecar mirrors hdxml conventions minus timestamps/hashes.
 

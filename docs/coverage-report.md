@@ -9,9 +9,9 @@
 | elaboration 引擎 | `web/aw.js` | check + elaborate + 生命周期钩子 + 快照序列化；浏览器与 linkedom 同码运行 |
 | 页面控制器 | `web/page.js` | 布局（web-ui.md §1）、按钮与 GET 共用动作链、`#aw-status` 完成信号 |
 | Web 服务 | `src/web.ts` | 127.0.0.1 绑定；`/api/units|rtlindex|module|author|connect|check|dump` |
-| 单元加载/跨单元 | `src/connect.ts` | 作者 HTML 加载、deps 快照解析、引擎 ctx 构建 |
-| 叶子端口表 | `src/leaf.ts` | RtlIndex 只读消费（`docs/hdxml/rtlindex-xml.md`） |
-| SV 打印机 | `src/printer.ts` | `aw-render` 快照 → `.sv`；dump 门禁（拒绝残留 template/rewrite） |
+| 单元加载/跨单元 | `src/core/connect.ts` | 作者 HTML 加载、deps 快照解析、引擎 ctx 构建 |
+| 叶子端口表 | `src/rtl/leaf.ts` | RtlIndex 只读消费（`docs/hdxml/rtlindex-xml.md`） |
+| SV 打印机 | `src/core/printer.ts` | `aw-render` 快照 → `.sv`；dump 门禁（拒绝残留 template/rewrite） |
 | CLI 接线 | `index.ts` | `autowire web [unit]`、`autowire check [unit]` |
 | 测试 | `src/aw.test.ts`（17）、`src/printer.test.ts`（4）、`src/examples.test.ts`（3）、`src/e2e-web.test.ts`（7，Playwright 无头 Chromium） | 48 用例全绿 |
 

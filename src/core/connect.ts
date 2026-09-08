@@ -7,9 +7,9 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseHTML } from "linkedom";
+import type { LeafDb, LeafModule } from "../rtl/leaf.ts";
+import type { ConnectUnit, WorkspaceConfig } from "../workspace.ts";
 import { parseConnectXml } from "./connectxml.ts";
-import type { LeafDb, LeafModule } from "./leaf.ts";
-import type { ConnectUnit, WorkspaceConfig } from "./workspace.ts";
 
 export interface WrapperFacts {
 	name: string;

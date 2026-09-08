@@ -2,9 +2,9 @@
 // author-face validation (docs/web-ui.md).
 
 import type { Command } from "commander";
-import { buildEngineCtx, loadUnitDoc, topoUnits } from "../connect.js";
 import { check as awCheck } from "../core/aw.ts";
-import { LeafDb } from "../leaf.js";
+import { buildEngineCtx, loadUnitDoc, topoUnits } from "../core/connect.ts";
+import { LeafDb } from "../rtl/leaf.ts";
 import { startWeb } from "../web.js";
 import { requireWorkspace } from "./shared.ts";
 
