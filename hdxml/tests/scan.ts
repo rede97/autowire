@@ -67,14 +67,33 @@ const perTarget: Record<string, TargetCfg> = {
 	},
 	"projects/cva6": {
 		extraWalkDirs: ["../cv-hpdcache/rtl/src"],
-		excludeDirs: ["blackbox"],
+		// 配置包变体（Bender target 二选一）取主线 hpdcache 配置；deprecated 与旧 riscv 包排除
+		excludeDirs: ["blackbox", "deprecated_packages"],
+		defines: ["HPDCACHE_ASSERT_OFF"], // 结构断言 generate-if 内含 inside，超 sv-parser 语法覆盖
+		excludeFilenames: [
+			"riscv.sv", // pmp/include 旧版 riscv 包，与 riscv_pkg.sv 撞名
+			"cv32a60x_config_pkg.sv",
+			"cv32a65x_config_pkg.sv",
+			"cv32a6_ima_sv32_fpga_config_pkg.sv",
+			"cv32a6_imac_sv32_config_pkg.sv",
+			"cv64a60ax_config_pkg.sv",
+			"cv64a60ax_config_pkg_cvfpu-uvm.sv",
+			"cv64a6_imafdc_sv39_config_pkg.sv",
+			"cv64a6_imafdc_sv39_hpdcache_wb_config_pkg.sv",
+			"cv64a6_imafdc_sv39_openpiton_config_pkg.sv",
+			"cv64a6_imafdc_sv39_wb_config_pkg.sv",
+			"cv64a6_imafdch_sv39_config_pkg.sv",
+			"cv64a6_imafdch_sv39_wb_config_pkg.sv",
+			"cv64a6_imafdcv_sv39_config_pkg.sv",
+		],
 	},
 	"projects/cv-hpdcache": {
 		excludeDirs: ["blackbox", "syn"],
+		defines: ["HPDCACHE_ASSERT_OFF"], // 同上
 	},
 	"projects/veer-el2": {
 		gen: {
-			cmd: ["sh", "-c", "RV_ROOT=\"$PWD\" perl configs/veer.config >/dev/null"],
+			cmd: ["sh", "-c", 'RV_ROOT="$PWD" perl configs/veer.config >/dev/null'],
 			marker: "snapshots/default/pic_map_auto.h",
 		},
 		expandHeaders: ["design/lib/el2_assert.sv"],
@@ -93,7 +112,7 @@ const perTarget: Record<string, TargetCfg> = {
 			"vendor/lowrisc_ip/ip/prim/rtl/prim_assert.sv",
 			"vendor/lowrisc_ip/ip/prim/rtl/prim_flop_macros.sv",
 		],
-		defines: ["VERILATOR"],
+		defines: ["VERILATOR", "RVFI"], // RVFI：tracing 包装层的 `ifndef RVFI` 内含 elaboration $fatal（超语法覆盖），定义即退化
 	},
 };
 
