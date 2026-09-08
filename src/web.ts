@@ -54,6 +54,7 @@ async function handleApi(
 		const units = topoUnits(ws.connectUnits);
 		return json({
 			workspace: ws.root,
+			style: { param: ws.styleParam },
 			units: units.map((u) => ({ id: u.id, html: u.html, deps: u.deps })),
 			defaultUnit: state.defaultUnit,
 		});

@@ -88,6 +88,7 @@ Shared by deps / web / cli for the RTL universe:
   [analysis.*]  .f / sources / walk / incdirs / defines / keep_raw / index dir
   [connect.<id>]        named HTML unit: html= + optional deps= (DAG; no wiring)
   [dump] dir="gen"      dumped RTL output (not under .autowire)
+  [style] param         inline (default) | localparam (Mod__Inst__Param folding)
 
 Dirs
   .autowire/          generated temp (deletable; never hand-authored)

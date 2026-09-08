@@ -72,6 +72,12 @@ dir = ".autowire/hdxml"
 # dump 写出的 RTL 目录（产物，交给 DV；不放 .autowire）
 dir = "gen"
 
+[style]
+# 例化参数风格（connect-rules §7）：
+#   "inline"（默认）——override 表达式直接写进例化 #(.W(CNT_W))，不产生 localparam；
+#   "localparam"      ——每个 override 折叠成 Mod__Inst__Param localparam（可追溯/占位）。
+# param = "inline"
+
 # 具名连接单元（禁止旧式 [connect] html = [...] 扁平列表）
 # id 仅用于 toml 依赖图；连线细节仍只在 HTML 内
 [connect.phy_wrap]

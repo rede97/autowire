@@ -17,14 +17,11 @@ module phy_wrap #(
 	input logic [((CNT_W))-1:0] oh_onehot
 );
 	localparam GRAY_W = CNT_W;
-	localparam phy_wrap__u_cnt_0__Width = CNT_W;
-	localparam phy_wrap__u_cnt_1__Width = CNT_W;
-	localparam phy_wrap__u_oh2b__OnehotWidth = GRAY_W;
 
 	wire [15:0] cnt_q_bus;
 
 	cc_counter #(
-		.Width(phy_wrap__u_cnt_0__Width)
+		.Width(CNT_W)
 	) u_cnt_0 (
 		.clk_i(clk_i),
 		.rst_ni(rst_ni),
@@ -37,7 +34,7 @@ module phy_wrap #(
 		.overflow_o()
 	);
 	cc_counter #(
-		.Width(phy_wrap__u_cnt_1__Width)
+		.Width(CNT_W)
 	) u_cnt_1 (
 		.clk_i(clk_i),
 		.rst_ni(rst_ni),
@@ -54,7 +51,7 @@ module phy_wrap #(
 		.tap_in(cnt_q_bus)
 	);
 	cc_onehot_to_bin #(
-		.OnehotWidth(phy_wrap__u_oh2b__OnehotWidth)
+		.OnehotWidth(GRAY_W)
 	) u_oh2b (
 		.onehot_i(oh_onehot),
 		.bin_o(phy_bin_o)

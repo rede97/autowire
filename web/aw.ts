@@ -34,6 +34,8 @@ export interface ModFacts {
 
 /** Engine inputs: leaf tables (RtlIndex), elaborated wrapper facts, unit deps. */
 export interface EngineCtx {
+	/** [style] from autowire.toml; param defaults to "inline". */
+	style?: { param?: "inline" | "localparam" };
 	unitId?: string;
 	unitDeps?: string[];
 	unitMods?: Map<string, string>;
@@ -91,7 +93,7 @@ interface RuleConnect {
 interface RenderInstDraft {
 	id: string;
 	mod: string;
-	params: Map<string, { expr: string; uniq: string }>;
+	params: Map<string, { expr: string; uniq: string; renderValue: string }>;
 	connects: Map<string, RuleConnect>;
 	order: string[];
 	leafParams: Map<string, ParamFacts>;
@@ -468,8 +470,8 @@ function classifyExpr(
  *  reference another param (e.g. BinWidth = $clog2(OnehotWidth)). */
 function rewriteDims(
 	text: string | null,
-	instParams: Map<string, { expr: string; uniq: string }>,
-	uniqName: (p: { expr: string; uniq: string }) => string,
+	instParams: Map<string, { expr: string; uniq: string; renderValue: string }>,
+	uniqName: (p: { expr: string; uniq: string; renderValue: string }) => string,
 	leafParams: Map<string, ParamFacts>,
 	res: CheckResult,
 	where: string,
@@ -1114,17 +1116,33 @@ function elaborateMod(
 					paramRules.set(attr(r, "name"), attr(r, "expr") ?? "");
 			}
 		}
-		const instParams = new Map(); // param → {expr, uniq}
+		// [style] param (autowire.toml): "inline" (default) writes the override
+		// expression into the instance; "localparam" folds each override into a
+		// Mod__Inst__Param localparam (connect-rules §7).
+		const inlineParams = ctx.style?.param !== "localparam";
+		const instParams = new Map<
+			string,
+			{ expr: string; uniq: string; renderValue: string }
+		>();
 		for (const [pname, expr0] of paramRules) {
 			const expr = substVars(expr0, vars, res, `${iwhere} aw-param "${pname}"`);
 			const cls = classifyExpr(expr, scope);
 			const uniq = `${name}__${instName}__${pname}`;
+			if (inlineParams) {
+				// Inline: dims rewrite substitutes the parenthesized expression.
+				instParams.set(pname, {
+					expr: cls.value,
+					uniq: `(${cls.value})`,
+					renderValue: cls.value,
+				});
+				continue;
+			}
 			if (usedUniqNames.has(uniq)) {
 				res.errors.push(`${iwhere}: localparam ${uniq} generated twice`);
 				continue;
 			}
 			usedUniqNames.add(uniq);
-			instParams.set(pname, { expr: cls.value, uniq });
+			instParams.set(pname, { expr: cls.value, uniq, renderValue: uniq });
 			uniqLocalparams.push({
 				name: uniq,
 				value: cls.value,
@@ -1544,7 +1562,11 @@ function resolveDims(
 		if (!nettype && dt) nettype = dt[1] ?? null;
 	}
 	// §7.4: overridden leaf params become Mod__Inst__Param in copied dims.
-	const uniqName = (p: { expr: string; uniq: string }): string => p.uniq;
+	const uniqName = (p: {
+		expr: string;
+		uniq: string;
+		renderValue: string;
+	}): string => p.uniq;
 	if (packed)
 		packed = rewriteDims(
 			packed,
@@ -1681,7 +1703,7 @@ function writeRender(mod: Element, m: WriteModel): void {
 	for (const ri of m.renderInsts) {
 		const el = mk("aw-inst", { id: ri.id, mod: ri.mod });
 		for (const [pname, p] of ri.params)
-			el.appendChild(mk("aw-param", { name: pname, value: p.uniq }));
+			el.appendChild(mk("aw-param", { name: pname, value: p.renderValue }));
 		const sorted = [...ri.connects.entries()].sort((a, b) => {
 			const ia = ri.order.indexOf(a[0]);
 			const ib = ri.order.indexOf(b[0]);

@@ -24,6 +24,8 @@ export interface WrapperFacts {
 }
 
 export interface EngineCtx {
+	/** [style] from autowire.toml (param inline/localparam). */
+	style: { param: "inline" | "localparam" };
 	unitId: string;
 	unitDeps: string[];
 	unitMods: Map<string, string>; // mod name → owning unit id (top-level mods)
@@ -129,6 +131,7 @@ export async function buildEngineCtx(
 		return cache.get(mod) ?? null;
 	};
 	const ctx: EngineCtx = {
+		style: { param: ws.styleParam },
 		unitId: unit.id,
 		unitDeps: unit.deps,
 		unitMods,

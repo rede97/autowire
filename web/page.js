@@ -11,6 +11,7 @@ const statusEl = $("#aw-status");
 
 const state = {
 	workspace: "",
+	style: { param: "inline" },
 	units: [], // topo order: deps first
 	unitMods: new Map(), // mod name → unit id (top-level aw-mod of each unit)
 	current: null, // current unit id
@@ -164,6 +165,7 @@ async function buildCtx(id) {
 	return {
 		errors,
 		ctx: {
+			style: state.style,
 			unitId: id,
 			unitDeps: unit.deps,
 			unitMods: state.unitMods,
@@ -423,6 +425,7 @@ async function init() {
 	const meta = await fetchJson("/api/units");
 	state.units = meta.units;
 	state.workspace = meta.workspace;
+	if (meta.style) state.style = meta.style;
 	$("#ws-name").textContent = meta.workspace.split("/").pop();
 	const sel = $("#unit-select");
 	for (const u of state.units) {

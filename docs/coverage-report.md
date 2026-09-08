@@ -38,6 +38,7 @@
 | `part` 常量求值（`8*${idx}+7` → `15:8`） | ✅ | aw.test + demo |
 | 多维 packed / unpacked | ✅ | examples.test(04)（common_cells 无多维叶子，见 §5 缺口） |
 | 参数折叠 §7.2（修正后，见 §4-C） | ✅ | aw.test 四形态 + demo（`CNT_W` 不折叠 / `LfsrWidth=16` 折叠 / `TB_W/2` 表达式不折叠） |
+| `[style] param`：inline 展开（默认，override 直接写进例化，override 安全）/ localparam 折叠 | ✅ | aw.test 双模式 + demo golden（inline） |
 | 内部 localparam 链 | ✅ | demo（`GRAY_W=CNT_W`） |
 | 同名信号维度冲突（常量折叠后语义比较） | ✅ | aw.test 负例 + demo（`pair_mid` 双侧 uniquify 名不同但同值不误报） |
 | 自动导出端口（仅 input 网→input；含 inout→inout；output 驱动保持内部） | ✅ | aw.test + examples.test(03) + demo |

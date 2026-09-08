@@ -746,17 +746,26 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
           paramRules.set(attr(r, "name"), attr(r, "expr") ?? "");
       }
     }
+    const inlineParams = ctx.style?.param !== "localparam";
     const instParams = new Map;
     for (const [pname, expr0] of paramRules) {
       const expr = substVars(expr0, vars, res, `${iwhere} aw-param "${pname}"`);
       const cls = classifyExpr(expr, scope);
       const uniq = `${name}__${instName}__${pname}`;
+      if (inlineParams) {
+        instParams.set(pname, {
+          expr: cls.value,
+          uniq: `(${cls.value})`,
+          renderValue: cls.value
+        });
+        continue;
+      }
       if (usedUniqNames.has(uniq)) {
         res.errors.push(`${iwhere}: localparam ${uniq} generated twice`);
         continue;
       }
       usedUniqNames.add(uniq);
-      instParams.set(pname, { expr: cls.value, uniq });
+      instParams.set(pname, { expr: cls.value, uniq, renderValue: uniq });
       uniqLocalparams.push({
         name: uniq,
         value: cls.value,
@@ -1165,7 +1174,7 @@ function writeRender(mod, m) {
   for (const ri of m.renderInsts) {
     const el = mk("aw-inst", { id: ri.id, mod: ri.mod });
     for (const [pname, p] of ri.params)
-      el.appendChild(mk("aw-param", { name: pname, value: p.uniq }));
+      el.appendChild(mk("aw-param", { name: pname, value: p.renderValue }));
     const sorted = [...ri.connects.entries()].sort((a, b) => {
       const ia = ri.order.indexOf(a[0]);
       const ib = ri.order.indexOf(b[0]);

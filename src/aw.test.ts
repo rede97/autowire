@@ -265,7 +265,7 @@ describe("elaborate (render)", () => {
 		expect(sig.getAttribute("packed")).toBe("[15:0]");
 	});
 
-	test("param folding: constant folds; module param name stays symbolic; expression kept", () => {
+	test("param folding (style param=localparam): constant folds; module param name stays symbolic; expression kept", () => {
 		const doc = docOf(
 			`<aw-mod name="m"><aw-content>
 				<aw-params><aw-param name="W" expr="8"></aw-param></aw-params>
@@ -278,7 +278,10 @@ describe("elaborate (render)", () => {
 				</aw-insts>
 			</aw-content></aw-mod>`,
 		);
-		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		const res = elaborate(
+			doc,
+			ctxWith({ leaf: counterLeaf }, { style: { param: "localparam" } }),
+		);
 		expect(res.errors).toEqual([]);
 		const lps = [...doc.querySelectorAll("aw-render aw-localparam")].map(
 			(l) => [
@@ -295,7 +298,24 @@ describe("elaborate (render)", () => {
 		expect(lps).toContainEqual(["m__d__Width", "W+1", "false"]);
 	});
 
-	test("overridden leaf param rewrites auto port dims to Mod__Inst__Param (§7.4)", () => {
+	test("overridden leaf param rewrites auto port dims to Mod__Inst__Param (§7.4, localparam mode)", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-param name="Width" expr="8"></aw-param>
+					<aw-connect port="d_i" to="d" packed="auto"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(
+			doc,
+			ctxWith({ leaf: counterLeaf }, { style: { param: "localparam" } }),
+		);
+		expect(res.errors).toEqual([]);
+		const sig = mustQuery(doc, 'aw-signals aw-signal[name="d"]');
+		expect(sig.getAttribute("packed")).toBe("[m__u__Width-1:0]");
+	});
+	test("inline mode (default): override expression lands on the instance, dims substitute it", () => {
 		const doc = docOf(
 			`<aw-mod name="m"><aw-content><aw-insts>
 				<aw-inst id="u" mod="leaf"><aw-template>
@@ -306,8 +326,12 @@ describe("elaborate (render)", () => {
 		);
 		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
 		expect(res.errors).toEqual([]);
+		// no Mod__Inst__Param localparams in inline mode
+		expect(doc.querySelectorAll("aw-render aw-localparam")).toHaveLength(0);
+		const p = mustQuery(doc, 'aw-render aw-inst aw-param[name="Width"]');
+		expect(p.getAttribute("value")).toBe("8");
 		const sig = mustQuery(doc, 'aw-signals aw-signal[name="d"]');
-		expect(sig.getAttribute("packed")).toBe("[m__u__Width-1:0]");
+		expect(sig.getAttribute("packed")).toBe("[(8)-1:0]");
 	});
 
 	test("auto-export: input-only nets become input ports; output-driven nets stay internal", () => {

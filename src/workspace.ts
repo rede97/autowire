@@ -28,6 +28,9 @@ export interface WorkspaceConfig {
 	indexDir: string;
 	/** Dump RTL output dir ([dump] dir, default gen) */
 	dumpDir: string;
+	/** Param style ([style] param): "inline" (default) writes overrides into the
+	 *  instance; "localparam" folds them into Mod__Inst__Param localparams. */
+	styleParam: "inline" | "localparam";
 	/** Named connect units ([connect.<id>] html + deps); DAG validated at load */
 	connectUnits: ConnectUnit[];
 }
@@ -158,6 +161,15 @@ export async function loadWorkspace(
 	const index = isObj(analysis.index) ? analysis.index : {};
 	const dump = isObj(doc.dump) ? doc.dump : {};
 	const connect = isObj(doc.connect) ? doc.connect : {};
+	const style = isObj(doc.style) ? doc.style : {};
+	if (
+		style.param !== undefined &&
+		style.param !== "inline" &&
+		style.param !== "localparam"
+	)
+		throw new Error(
+			`autowire.toml: [style] param must be "inline" or "localparam"`,
+		);
 	const hdxml = isObj(doc.hdxml) ? doc.hdxml : {};
 	if (hdxml.bin !== undefined && typeof hdxml.bin !== "string")
 		throw new Error("autowire.toml: [hdxml] bin must be a string");
@@ -204,6 +216,7 @@ export async function loadWorkspace(
 			typeof index.dir === "string" ? index.dir : ".autowire/hdxml",
 		),
 		dumpDir: rel(typeof dump.dir === "string" ? dump.dir : "gen"),
+		styleParam: style.param === "localparam" ? "localparam" : "inline",
 		connectUnits: parseConnectUnits(connect, rel),
 	};
 }
@@ -271,6 +284,12 @@ dir = ".autowire/hdxml"
 [dump]
 # Dumped RTL output dir (product for DV; not under .autowire)
 dir = "gen"
+
+[style]
+# Param overrides: "inline" (default) writes the expression into the instance
+# (#(.W(8))); "localparam" folds each override into a Mod__Inst__Param
+# localparam (connect-rules §7).
+# param = "inline"
 
 # Named connect units (DAG). Do not use flat [connect] html = [...].
 # Cross-unit references require deps=; cycles / unknown ids fail at load.

@@ -105,7 +105,11 @@
 
 同端口多条规则：后写覆盖。
 
-## 7. `aw-param` → 唯一 `localparam`（可折叠）
+## 7. `aw-param`：inline 展开（默认）或唯一 `localparam`
+
+`autowire.toml [style] param` 控制：
+- **`inline`（默认）**：override 表达式（常量 / 引用本模 param·localparam / 宏 / 表达式）直接写进例化 `#(.W(CNT_W))`；端口维度里的形参符号替换为该表达式（加括号）。**不**产生 `Mod__Inst__Param`。
+- **`localparam`**：每个 override 折叠成父模唯一 localparam（下文 §7.1–7.6 全部细节仅适用该模式）。
 
 作者：`<aw-param name="PIPE_NUM" expr="BUS_PIPE_NUM">`（在 `aw-template` 内）。  
 render：每个例化覆盖生成父模唯一 localparam，回传例化，并改写依赖该 param 的端口宽度。

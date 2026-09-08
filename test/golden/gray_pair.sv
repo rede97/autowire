@@ -5,19 +5,16 @@ module gray_pair #(
 	input wire [GWIDTH-1:0] pair_in,
 	output wire [GWIDTH-1:0] pair_out
 );
-	localparam gray_pair__u_b2g__Width = GWIDTH;
-	localparam gray_pair__u_g2b__Width = GWIDTH;
-
-	logic [gray_pair__u_b2g__Width-1:0] pair_mid;
+	logic [(GWIDTH)-1:0] pair_mid;
 
 	cc_binary_to_gray #(
-		.Width(gray_pair__u_b2g__Width)
+		.Width(GWIDTH)
 	) u_b2g (
 		.a_i(pair_in),
 		.z_o(pair_mid)
 	);
 	cc_gray_to_binary #(
-		.Width(gray_pair__u_g2b__Width)
+		.Width(GWIDTH)
 	) u_g2b (
 		.a_i(pair_mid),
 		.z_o(pair_out)
