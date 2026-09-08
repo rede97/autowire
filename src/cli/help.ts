@@ -45,7 +45,7 @@ Pipeline
 You can do now
   1. Follow help dont; use help status for landed vs not landed.
   2. autowire init / analysis / deps for workspace + RtlIndex.
-  3. Author connect HTML per docs/connect-html.md.
+  3. Author connect HTML per docs/connect/html.md.
   4. autowire web [unit]; wait for first paint (or #aw-status when GET params auto-run).
   2. Playwright MCP: navigate / snapshot / evaluate / click — inspect live DOM, not source HTML.
      Workspace MCP (docs/mcp/workspace.md, not landed): node-level author HTML edit + RtlIndex
@@ -93,7 +93,7 @@ Parallel (does not block connect)
 	workspace: `\
 autowire.toml — workspace config
 
-Full constraints: docs/workspace-toml.md
+Full constraints: docs/workspace/toml.md
 Commands: autowire init | autowire analysis  (see help analysis)
 
 Shared by deps / web / cli for the RTL universe:
@@ -112,7 +112,7 @@ Dirs
   .autowire/save/     debug drop: POST /api/save persists live DOM <id>.html
                       (edited aw-content + aw-render) — temp, never author SoT
 
-Load rules (docs/workspace-toml.md §4.2 / docs/web-ui.md §5)
+Load rules (docs/workspace/toml.md §4.2 / docs/workspace/web-ui.md §5)
   leaf ports: hdxml only (missing/stale definesFp → error when needed)
   cross-unit: require dep unit snapshot under connect/ (or elaborate deps first)
   browser never reads workspace files directly; dump never reloads author html=
@@ -135,7 +135,7 @@ autowire init / analysis (landed)
 
 init: create default autowire.toml in CWD (refuses to overwrite).
 analysis: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
-(docs/workspace-toml.md):
+(docs/workspace/toml.md):
   [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames
       → -f / -s / -w / --exclude-filenames
   [analysis.defines] NAME="v" → -D NAME=v
@@ -159,11 +159,11 @@ Error files keep the index usable; hdxml exit code is passed through.
 Connect HTML dialect (landed: web/aw.js)
 
 Constraints:
-  docs/connect-html.md
-  docs/connect-rules.md
-  docs/connect-lifecycle.md
+  docs/connect/html.md
+  docs/connect/rules.md
+  docs/connect/lifecycle.md
   docs/examples/connect/
-  docs/workspace-toml.md   ([connect.<id>] html + deps DAG;
+  docs/workspace/toml.md   ([connect.<id>] html + deps DAG;
                            missing cross-unit ref = error; unused dep = warn at elaborate)
 
 Two layers; do not mix
@@ -173,13 +173,13 @@ Two layers; do not mix
 
 Dump / golden only accept aw-render (every related mod; nested + multi-HTML).
 aw-rewrite: RegExp match + String.replace ($1 / $<name>) + \${…}; match+to only.
-aw-connect@to: net (default) | const | open — const/open must declare type=; docs/connect-to-rules.md;
+aw-connect@to: net (default) | const | open — const/open must declare type=; docs/connect/to-rules.md;
   aw-param@expr / aw-template@inst_name: variable expressions only (no $1).
 aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlIndex form),
   unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; default wire);
-  to is net name only — no [] suffix. See docs/connect-html.md §3.5.1–3.5.2;
+  to is net name only — no [] suffix. See docs/connect/html.md §3.5.1–3.5.2;
   multidim example: docs/examples/connect/04-author-multidim.html.
-Lifecycle scripts: docs/connect-lifecycle.md —
+Lifecycle scripts: docs/connect/lifecycle.md —
   before-instances (mutate aw-content) → on-template (per-inst expand) → aw-render frozen;
   before-dump read-only (no patching render).
 Templates are per-aw-mod only. Connected nets → aw-signals; unconnected may auto-export ports.
@@ -209,7 +209,7 @@ autowire web (landed)
   autowire web [html]
 
 Local HTTP page for headed browsers and headless Chromium.
-Layout / GET action contract: docs/web-ui.md.
+Layout / GET action contract: docs/workspace/web-ui.md.
 
 Page: header must expose [Render] [Check] [Dump] [Reset] for humans;
   left = dep tree + db summary;
@@ -218,7 +218,7 @@ Page: header must expose [Render] [Check] [Dump] [Reset] for humans;
   [Render] depends on Check (auto-runs Check first; abort render on check errors).
   [Dump] depends on Render (thus Check); dump reads aw-render only.
 
-GET (same actions / same prereqs; docs/web-ui.md §3)
+GET (same actions / same prereqs; docs/workspace/web-ui.md §3)
   no action params   load only; use header buttons
   ?check=1           validate aw-content + deps only (no render, no .sv)
   ?render=1          check → render (render depends on check)
@@ -244,7 +244,7 @@ Validate author-face connect HTML (aw-content + aw-submods) and dependency graph
 Does NOT inspect aw-render as SoT. Does NOT write .sv / gen/. Does NOT require render.
 
 Must check
-  dialect constraints on aw-content (docs/connect-html.md / connect-rules.md)
+  dialect constraints on aw-content (docs/connect/html.md / docs/connect/rules.md)
   [connect.<id>] toml deps: missing ref = error; unused = warn; cycle = error
   aw-mod@deps + path-accumulated visible set (same discipline; refs seen in content)
 
@@ -253,7 +253,7 @@ Not check's job
 
 Web header [Check] / GET ?check=1 / POST /api/check / cli --check share the same checker.
 Render depends on Check (auto-check before elaborate). Dump depends on Render.
-See docs/web-ui.md §3.1 and docs/architecture.md.
+See docs/workspace/web-ui.md §3.1 and docs/architecture.md.
 `,
 
 	dump: `\

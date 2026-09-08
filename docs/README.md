@@ -2,25 +2,59 @@
 
 统一放在本目录。Agent 接手以 `bun index.ts help agent` 为准；命令总览 `bun index.ts help`。**格式与实现约束**以本目录文档为准（改约定时同步改 help 摘要）。
 
+## 总览
+
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [architecture.md](./architecture.md) | 架构设计：组件（hdxml / aw.js / web / check / dump / cli）、MCP 双途径、入口阶段 | 草稿 |
-| [mcp/](./mcp/) | 工具 vs MCP 边界；Playwright vs 工作区 MCP；本地 Edit/检索合同 | 草稿 |
-| [plugins/](./plugins/) | 并列插件：登记 / 自定义标签；Wishbone regfile + 块内 bus 树 | 草稿 |
-| [plugins/](./plugins/) | 并列插件：登记 / 自定义标签；Wishbone regfile + 块内 bus 树 | 草稿 |
-| [workspace-toml.md](./workspace-toml.md) | 顶层 `autowire.toml`：`.f`、宏/`.svh`、与 RtlIndex / 连接衔接 | 已实现（cli 除外） |
-| [connect-html.md](./connect-html.md) | 连接 HTML：骨架 / dump / 多模与多 HTML 规则 | 已实现 |
-| [connect-rules.md](./connect-rules.md) | 细则：template、rewrite、`inst_name`、param→`Mod__Inst__Param` | 已实现（§7.2 折叠规则有实现裁定修正） |
-| [web-ui.md](./web-ui.md) | `autowire web` 页面布局与 GET 动作 API | 已实现 |
-| [connect-lifecycle.md](./connect-lifecycle.md) | 渲染生命周期嵌入脚本（高级） | 已实现 |
-| [examples/connect/](./examples/connect/) | 连接 HTML 示例（作者面 + 渲染后示意） | 草稿 |
-| [coverage-report.md](./coverage-report.md) | Web 实现功能覆盖报告 + 设计修改意见 | 2026-09-08 |
-| [connect-to-rules.md](./connect-to-rules.md) | `to` 目标三态规则：net（默认）/ const / open；`type` 属性 | 已实现 |
-| [hdxml/rtlindex-xml.md](./hdxml/rtlindex-xml.md) | RtlIndex XML 格式契约（hdxml ↔ autowire） | 草案 |
-| [hdxml/module-info.md](./hdxml/module-info.md) | hdxml DesignDb / 模块信息模型 | 已实现参考 |
+| [architecture.md](./architecture.md) | 组件、流水线、MCP 双途径、入口阶段 | 草稿 |
+
+## 连接方言 · [`connect/`](./connect/)
+
+| 文档 | 内容 | 状态 |
+|---|---|---|
+| [connect/html.md](./connect/html.md) | 骨架 / dump / 多模与多 HTML | 已实现 |
+| [connect/rules.md](./connect/rules.md) | template、rewrite、`inst_name`、param 折叠 | 已实现 |
+| [connect/to-rules.md](./connect/to-rules.md) | `to`：net / const / open | 已实现 |
+| [connect/lifecycle.md](./connect/lifecycle.md) | 生命周期钩子（高级） | 已实现 |
+| [examples/connect/](./examples/connect/) | 作者面 + render 示意 | 草稿 |
+
+## 工作区 · [`workspace/`](./workspace/)
+
+| 文档 | 内容 | 状态 |
+|---|---|---|
+| [workspace/toml.md](./workspace/toml.md) | `autowire.toml`、`.f` / 宏、connect 单元 DAG | 已实现（cli 除外） |
+| [workspace/web-ui.md](./workspace/web-ui.md) | `autowire web` 布局与 GET 动作 | 已实现 |
+
+## 分析 sidecar · [`hdxml/`](./hdxml/)
+
+| 文档 | 内容 | 状态 |
+|---|---|---|
+| [hdxml/rtlindex-xml.md](./hdxml/rtlindex-xml.md) | RtlIndex XML 契约 | 草案 |
+| [hdxml/module-info.md](./hdxml/module-info.md) | DesignDb / 模块信息模型 | 已实现参考 |
 | [hdxml/cli.md](./hdxml/cli.md) | hdxml `analysis` CLI | 已实现 |
-| [hdxml/testing.md](./hdxml/testing.md) | hdxml 测试脚本（fetch/scan/smoke，Bun）与错误基线分类 | 已实现 |
-| [skills/autowire-soc-integration.md](./skills/autowire-soc-integration.md) | 实战手册：demo/soc 集成食谱 / 验证纪律 / MCP 调试回路 / 踩坑清单 | 草稿，评审中 |
+| [hdxml/testing.md](./hdxml/testing.md) | fetch/scan/smoke 与错误基线 | 已实现 |
+
+## Agent · [`mcp/`](./mcp/)
+
+| 文档 | 内容 | 状态 |
+|---|---|---|
+| [mcp/](./mcp/) | 工具 vs MCP；Playwright vs 工作区 MCP | 草稿 |
+| [mcp/workspace.md](./mcp/workspace.md) | 本地 Edit / RtlIndex 检索合同 | 草稿 |
+
+## 并列插件 · [`plugins/`](./plugins/)
+
+| 文档 | 内容 | 状态 |
+|---|---|---|
+| [plugins/](./plugins/) | 登记 / 自定义标签；生成器 vs 展开器 | 草稿 |
+| [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md) | Wishbone regfile 叶子 | 草稿 |
+| [plugins/wishbone-bus.md](./plugins/wishbone-bus.md) | 块内 cfg 树（非 SoC fabric） | 草稿 |
+
+## 实战与报告
+
+| 文档 | 内容 | 状态 |
+|---|---|---|
+| [skills/autowire-soc-integration.md](./skills/autowire-soc-integration.md) | demo/soc 集成 / 验证 / MCP 调试 | 草稿 |
+| [reports/coverage-report.md](./reports/coverage-report.md) | Web 覆盖报告（2026-09-08） | 归档 |
 
 ## 不做
 

@@ -73,7 +73,7 @@ export async function unitModNames(
 	return map;
 }
 
-/** Snapshot dir: fixed generated temp (docs/workspace-toml.md §4.1). */
+/** Snapshot dir: fixed generated temp (docs/workspace/toml.md §4.1). */
 export const connectDir = (ws: WorkspaceConfig) =>
 	join(ws.root, ".autowire", "connect");
 

@@ -1,6 +1,6 @@
 # 连接规则细则小结（template / rewrite / inst_name / param）
 
-> 速查卡。完整骨架与流水线见 [`connect-html.md`](./connect-html.md)；示例见 [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html)。  
+> 速查卡。完整骨架与流水线见 [`html.md`](./html.md)；示例见 [`examples/connect/01-author-simple.html`](../examples/connect/01-author-simple.html)。  
 > 状态：草稿，先约束后实现。
 
 ## 1. 三条硬约束
@@ -12,7 +12,7 @@
    `aw-templates` 与作者面 `aw-rewrite` 不进 netlist；展开后是逐条 `aw-connect`。
 
 3. **rewrite = JS `RegExp` + `String.replace`**  
-   核心属性 `match` + `to`（可选 `flags` / `width` / `part`）。`to` 仅为净网名。超出能力走 [`connect-lifecycle.md`](./connect-lifecycle.md)。
+   核心属性 `match` + `to`（可选 `flags` / `width` / `part`）。`to` 仅为净网名。超出能力走 [`lifecycle.md`](./lifecycle.md)。
 
 ## 2. `aw-template`：放哪、怎么叠
 
@@ -70,7 +70,7 @@
 `to` 也接受**常量表达式**（字面量 / 拼接复制 / 宏 / param·localparam 引用，变量先代入）：
 常量不建网、只能连 input 端口、禁 `part`/维度属性；rewrite 产常量 = 批量 tie-off（禁捕获）。
 显式悬空：`type="open"`（无 `to`；只 output/inout；dump 出 `.port()`；未覆盖端口 warning）。
-完整细则：[`connect-to-rules.md`](./connect-to-rules.md)；示例 `examples/connect/05-*.html`。
+完整细则：[`to-rules.md`](./to-rules.md)；示例 `../examples/connect/05-*.html`。
 
 ```html
 <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>
@@ -92,7 +92,7 @@
 ```
 
 `net = port.replace(…)` → `aw-connect`（继承维 / `part` / `nettype`）。  
-细则：[`connect-html.md`](./connect-html.md) §3.5.1–3.5.2。多维示例：[`examples/connect/04-author-multidim.html`](./examples/connect/04-author-multidim.html)。
+细则：[`html.md`](./html.md) §3.5.1–3.5.2。多维示例：[`examples/connect/04-author-multidim.html`](../examples/connect/04-author-multidim.html)。
 
 ## 6. Overwrite 速记
 

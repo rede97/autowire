@@ -3,9 +3,9 @@
 > 状态：**已实现**（`web/aw.js`；`autowire web` / `check` / `/api/dump` 落地；Playwright 用例与 golden 见 `src/e2e-web.test.ts` / `test/golden/`）。  
 > 摘要切片：`bun index.ts help connect`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
-> 结构以 [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) 为准。  
-> **细则速查**：[`connect-rules.md`](./connect-rules.md)。  
-> **高级脚本**：[`connect-lifecycle.md`](./connect-lifecycle.md)。
+> 结构以 [`examples/connect/01-author-simple.html`](../examples/connect/01-author-simple.html) 为准。  
+> **细则速查**：[`rules.md`](./rules.md)。  
+> **高级脚本**：[`lifecycle.md`](./lifecycle.md)。
 
 ## 1. 目标与边界
 
@@ -18,7 +18,7 @@
 
 打印机、`/api/dump`、Playwright golden **必须**只认各 `aw-mod` 下的 **`<aw-render>`**，**禁止**把 `aw-content` / `aw-templates` 原文当 netlist。
 
-`aw-rewrite` 使用浏览器 **`RegExp` + `String.replace`**（`$1` / `$<name>` + 变量 `` `${…}` ``）。非常规生成挂在渲染生命周期脚本上（[`connect-lifecycle.md`](./connect-lifecycle.md)），不挂在 rewrite 属性上。
+`aw-rewrite` 使用浏览器 **`RegExp` + `String.replace`**（`$1` / `$<name>` + 变量 `` `${…}` ``）。非常规生成挂在渲染生命周期脚本上（[`lifecycle.md`](./lifecycle.md)），不挂在 rewrite 属性上。
 
 ## 2. 两层，禁止混淆
 
@@ -78,7 +78,7 @@
 |---|---|
 | `aw-imports` | package 导入；接口（本模或子模）引用 package 类型时，**自底向上自动继承**汇总到各层；作者无需逐层手抄 |
 | `aw-params` | 本模参数 |
-| `aw-localparams` | 可选：本模内部 localparam（`name`+`expr`）；可供例化 `aw-param@expr` 引用并参与折叠（[`connect-rules.md`](./connect-rules.md) §7） |
+| `aw-localparams` | 可选：本模内部 localparam（`name`+`expr`）；可供例化 `aw-param@expr` 引用并参与折叠（[`rules.md`](./rules.md) §7） |
 | `aw-ports` | **显式要导出**的端口 |
 | `aw-templates` | 具名连接规则库（仅本 `aw-mod` 可见；**禁止**跨 `aw-mod` 引用） |
 | `aw-insts` | 例化列表；每个 `aw-inst` 下**只能**放 `aw-template`；`mod` 引用已有模块，**禁止**在此定义子模体 |
@@ -119,7 +119,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ### 3.4 `<aw-template>`（复用 + overwrite）
 
-> 细则：[`connect-rules.md`](./connect-rules.md) §1–3、§6。
+> 细则：[`rules.md`](./rules.md) §1–3、§6。
 
 例化下的 `aw-param` / `aw-connect` / `aw-rewrite` **禁止**作为 `aw-inst` 的直接子节点，**必须**包在 `<aw-template>` 里。
 
@@ -177,7 +177,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ### 3.5 `<aw-rewrite>`
 
-> 细则：[`connect-rules.md`](./connect-rules.md) §4–5。
+> 细则：[`rules.md`](./rules.md) §4–5。
 
 | 属性 | 必须 | 含义 |
 |---|---|---|
@@ -205,7 +205,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ### 3.5.1 `packed` / `unpacked` / `width` / `part`（声明维 vs 连线选位）
 
-`aw-connect` 与 `aw-rewrite` 共用。对齐 RtlIndex：`packed` / `unpacked` 分列（见 [`hdxml/rtlindex-xml.md`](./hdxml/rtlindex-xml.md)）。**不对齐** emacs 名字后缀 `signal[]`。
+`aw-connect` 与 `aw-rewrite` 共用。对齐 RtlIndex：`packed` / `unpacked` 分列（见 [`hdxml/rtlindex-xml.md`](../hdxml/rtlindex-xml.md)）。**不对齐** emacs 名字后缀 `signal[]`。
 
 | 属性 | 含义 | 落地 |
 |---|---|---|
@@ -251,7 +251,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ### 3.5.3 常量连线（`to` = 常量表达式）
 
-> 细则与评审记录：[`connect-to-rules.md`](./connect-to-rules.md)（已转正式约束）。
+> 细则与评审记录：[`to-rules.md`](./to-rules.md)（已转正式约束）。
 
 `aw-connect@to`（以及 `aw-rewrite@to`）在 `${…}` 变量代入后分类：
 
@@ -268,11 +268,11 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 - `aw-rewrite` 产常量 = 批量 tie-off（match 须覆盖全端口名），此时**禁止**正则捕获。
 - `type="net|const"` 可选断言：与引擎推断不一致 → 报错。
 - **能力边界**：更复杂的信号·常量组合（三元、位运算等）不内嵌于连接方言，**必须**单独写集成小模块再例化。
-- 示例：[`examples/connect/05-author-const.html`](./examples/connect/05-author-const.html) / [`05-rendered-const.html`](./examples/connect/05-rendered-const.html)。
+- 示例：[`examples/connect/05-author-const.html`](../examples/connect/05-author-const.html) / [`05-rendered-const.html`](../examples/connect/05-rendered-const.html)。
 
 ### 3.5.4 显式悬空（`type="open"`）
 
-> 细则：[`connect-to-rules.md`](./connect-to-rules.md) §2.3。
+> 细则：[`to-rules.md`](./to-rules.md) §2.3。
 
 - `<aw-connect port="q_o" type="open">`：显式悬空；**只允许 output / inout**（input 悬空报错，改用常量绑死）；**禁止** `to` / `part` / 维度属性。
 - `aw-rewrite` 可批量悬空（`match` 命中端口全部 open，不写 `to`）。
@@ -302,7 +302,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 ### 3.7 脚本
 
 - 常规连接用 `aw-template` / `aw-rewrite` / `aw-connect`。  
-- 高级处理挂生命周期钩子：[`connect-lifecycle.md`](./connect-lifecycle.md)——**仅** `before-instances`（写 `aw-content`）与 `on-template`（写展开中间态）；**`aw-render` 写满后冻结**；`before-dump` 只读。  
+- 高级处理挂生命周期钩子：[`lifecycle.md`](./lifecycle.md)——**仅** `before-instances`（写 `aw-content`）与 `on-template`（写展开中间态）；**`aw-render` 写满后冻结**；`before-dump` 只读。  
 - `<script type="module">` **必须**只用 DOM / `aw.*`；**禁止** layout / 对外 `fetch` / 写工作区磁盘。
 
 ### 3.8 可访问性
@@ -319,7 +319,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 |---|---|
 | `aw-params` | 本模 parameter（宜 `value`） |
 | `aw-imports` | 自底向上汇总的 package 导入；dump 时写成 SV `import`，位于**模块最头部**，**必须去重** |
-| `aw-localparams` | 作者内部 localparam 落盘 + 例化 uniquify `Mod__Inst__Param`（[`connect-rules.md`](./connect-rules.md) §7） |
+| `aw-localparams` | 作者内部 localparam 落盘 + 例化 uniquify `Mod__Inst__Param`（[`rules.md`](./rules.md) §7） |
 | `aw-ports` | 导出端口（显式 ∪ 符合自动导出规则者） |
 | `aw-signals` | 本层内部 net |
 | `aw-insts` | 具体实例；仅展开后的 `aw-param` / `aw-connect`（无 rewrite / template） |
@@ -338,7 +338,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ## 5. Elaboration 顺序
 
-1. **`before-instances` 钩子**（可选）：只改本模 `aw-content`（动态 inst / template）。见 [`connect-lifecycle.md`](./connect-lifecycle.md)。  
+1. **`before-instances` 钩子**（可选）：只改本模 `aw-content`（动态 inst / template）。见 [`lifecycle.md`](./lifecycle.md)。  
 2. **顶 → 底（param）**  
    求值本模内部 localparam 与例化 `aw-param`（常量 / 继承本模 param / 匹配本模内部 localparam → 折叠；表达式与宏不折）；求值 `inst_name`；写入 `aw-localparams`。  
 3. **展开 template**（`match`+`to` → connect）+ **`on-template` 钩子**（可选）：按例化改中间态，**禁止**写已完成的 `aw-render`。  
@@ -367,38 +367,38 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 | 多份连接 HTML | 必须在 `autowire.toml` 注册为 `[connect.<id>]`；跨单元引用 **必须**写在 `deps` 里，否则非法引用报错；`deps` 写了但未实际引用 → **警告**；`deps` 图无环；就绪单元可**并行** elaborate |
 | toml | **禁止**连线细节；只允许 `html` + `deps` |
 
-详见 [`workspace-toml.md`](./workspace-toml.md) §4.1。
+详见 [`../workspace/toml.md`](../workspace/toml.md) §4.1。
 
 ## 7. 与 RtlIndex / 工作区
 
-- `.f` / 宏 / `.svh` 与 [`workspace-toml.md`](./workspace-toml.md) 一致（`definesFp`）。  
+- `.f` / 宏 / `.svh` 与 [`../workspace/toml.md`](../workspace/toml.md) 一致（`definesFp`）。  
 - 叶子 `aw-inst@mod` 端口表来自 **`.autowire/hdxml/`**（经 web API），只读。  
-- 跨 `[connect.<id>]` 包装模符号来自 **`.autowire/connect/`** 依赖单元快照（经 API / DAG elaborate）；见 workspace-toml §4.2。  
+- 跨 `[connect.<id>]` 包装模符号来自 **`.autowire/connect/`** 依赖单元快照（经 API / DAG elaborate）；见 workspace/toml.md §4.2。  
 - hdxml **不**表达连接关系。
 
 ## 8. 示例索引
 
 | 文件 | 说明 |
 |---|---|
-| [`examples/connect/01-author-simple.html`](./examples/connect/01-author-simple.html) | 完整骨架；`packed=auto` / `part` 切片 |
-| [`examples/connect/01-rendered-simple.html`](./examples/connect/01-rendered-simple.html) | render 示意（含 `slice_data_bus` + `part`） |
-| [`examples/connect/02-author-nested.html`](./examples/connect/02-author-nested.html) | `aw-submods` 嵌套（无兄弟互引时可省略 `deps`） |
-| [`examples/connect/03-author-template-reuse.html`](./examples/connect/03-author-template-reuse.html) | template 复用 / overwrite + `packed`/`part` |
-| [`examples/connect/03-rendered-template-reuse.html`](./examples/connect/03-rendered-template-reuse.html) | 复用后 render（共享 bus + part） |
-| [`examples/connect/04-author-multidim.html`](./examples/connect/04-author-multidim.html) | 多维：`packed` + `unpacked`；`packed=auto` |
-| [`examples/connect/04-rendered-multidim.html`](./examples/connect/04-rendered-multidim.html) | 多维 render 示意 |
-| [`examples/connect/05-author-const.html`](./examples/connect/05-author-const.html) | 常量连线：字面量 / 拼接复制 / 宏 / param·localparam 引用 |
-| [`examples/connect/05-rendered-const.html`](./examples/connect/05-rendered-const.html) | 常量 render（引擎实际产物） |
-| [`examples/connect/06-author-open.html`](./examples/connect/06-author-open.html) | 显式悬空 `type="open"`（批量 + 覆盖回挂网） |
-| [`examples/connect/06-rendered-open.html`](./examples/connect/06-rendered-open.html) | open render（引擎实际产物） |
+| [`examples/connect/01-author-simple.html`](../examples/connect/01-author-simple.html) | 完整骨架；`packed=auto` / `part` 切片 |
+| [`examples/connect/01-rendered-simple.html`](../examples/connect/01-rendered-simple.html) | render 示意（含 `slice_data_bus` + `part`） |
+| [`examples/connect/02-author-nested.html`](../examples/connect/02-author-nested.html) | `aw-submods` 嵌套（无兄弟互引时可省略 `deps`） |
+| [`examples/connect/03-author-template-reuse.html`](../examples/connect/03-author-template-reuse.html) | template 复用 / overwrite + `packed`/`part` |
+| [`examples/connect/03-rendered-template-reuse.html`](../examples/connect/03-rendered-template-reuse.html) | 复用后 render（共享 bus + part） |
+| [`examples/connect/04-author-multidim.html`](../examples/connect/04-author-multidim.html) | 多维：`packed` + `unpacked`；`packed=auto` |
+| [`examples/connect/04-rendered-multidim.html`](../examples/connect/04-rendered-multidim.html) | 多维 render 示意 |
+| [`examples/connect/05-author-const.html`](../examples/connect/05-author-const.html) | 常量连线：字面量 / 拼接复制 / 宏 / param·localparam 引用 |
+| [`examples/connect/05-rendered-const.html`](../examples/connect/05-rendered-const.html) | 常量 render（引擎实际产物） |
+| [`examples/connect/06-author-open.html`](../examples/connect/06-author-open.html) | 显式悬空 `type="open"`（批量 + 覆盖回挂网） |
+| [`examples/connect/06-rendered-open.html`](../examples/connect/06-rendered-open.html) | open render（引擎实际产物） |
 
 ## 9. 渲染生命周期
 
-高级 / 不规则处理：[`connect-lifecycle.md`](./connect-lifecycle.md)。  
+高级 / 不规则处理：[`lifecycle.md`](./lifecycle.md)。  
 两写一冻：`before-instances` → `on-template` → 引擎写 `aw-render`（冻结）→ `before-dump` 只读。产物 **必须**只来自引擎写出的 `aw-render`，**禁止**脚本事后改 render。
 
 ## 10. 仍开放
 
-1. 工作区 toml：多包/多 chip 是否允许多份 toml（见 [`workspace-toml.md`](./workspace-toml.md) §6）。
+1. 工作区 toml：多包/多 chip 是否允许多份 toml（见 [`../workspace/toml.md`](../workspace/toml.md) §6）。
 
-已裁定（随 aw.js 落地）：生命周期钩子 = `aw.on(phase, fn)`，按连接单元隔离；钩子同步；子模整段先于父模连线 elaborate（connect-lifecycle.md §6）。
+已裁定（随 aw.js 落地）：生命周期钩子 = `aw.on(phase, fn)`，按连接单元隔离；钩子同步；子模整段先于父模连线 elaborate（lifecycle.md §6）。

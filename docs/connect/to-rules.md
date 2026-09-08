@@ -1,7 +1,7 @@
 # `aw-connect` / `aw-rewrite` 的 `to` 目标规则（net / const / open）
 
 > 状态：**已实现**（评审记录见文末）。本文是 `to` 目标（连线挂到什么）的**唯一细则**；
-> 骨架与总流程见 [`connect-html.md`](./connect-html.md)，速查见 [`connect-rules.md`](./connect-rules.md)。
+> 骨架与总流程见 [`html.md`](./html.md)，速查见 [`rules.md`](./rules.md)。
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。
 
 ## 1. 三态总表

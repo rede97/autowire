@@ -3,7 +3,7 @@
 > 状态：**已实现**（`init` / `analysis` / `web` / `check` / `/api/dump` 全链路落地；`cli` 未落地）。  
 > 摘要切片：`bun index.ts help workspace`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
-> 关联：[`connect-html.md`](./connect-html.md)（连接 elaboration）、[`hdxml/cli.md`](./hdxml/cli.md)、[`hdxml/rtlindex-xml.md`](./hdxml/rtlindex-xml.md)。
+> 关联：[`../connect/html.md`](../connect/html.md)（连接 elaboration）、[`hdxml/cli.md`](../hdxml/cli.md)、[`hdxml/rtlindex-xml.md`](../hdxml/rtlindex-xml.md)。
 
 ## 1. 为什么要有一份顶层配置
 
@@ -27,7 +27,7 @@ RtlIndex 用 `definesFp` 把宏集合绑进索引有效性（见 `rtlindex-xml.m
 | RtlIndex 索引目录（固定 `.autowire/hdxml`）、dump RTL 输出目录、**具名连接单元** `[connect.<id>]`（路径 + `deps`） | HTML 方言 / 连线细节本身 |
 
 
-- 连接 SoT **只有** HTML（`connect-html.md`）。  
+- 连接 SoT **只有** HTML（`../connect/html.md`）。  
 - 本文件是 **autowire 工程配置**：喂给 hdxml `analysis` 与连接页只读索引，**不是** hdxml 内部缓存格式的回归。
 
 ## 3. 查找与作用域
@@ -102,7 +102,7 @@ deps = ["phy_wrap"]
 2. **多余 deps → 警告**：单元 A 的 `deps` 列出了 B，但 elaborate 后 A 的 HTML **未实际引用** B 中任何符号 → **警告**（不失败；提示删掉死边，以免假依赖阻塞并行）。检查发生在 **elaborate**（需对照引用图），不是 toml 加载时。  
 3. **`deps` 图必须无环**：加载 toml 时做拓扑检查；成环 → **报错**。未知 id / 重复 id / 自依赖 → **报错**。  
 4. **并行 elaborate**：DAG 就绪后，**无依赖边的单元可以并行**处理；仅列表、无 deps 时只能保守串行——这是具名 `deps` 相对扁平 `html = []` 的结构优势。  
-5. toml **仍然禁止**连线细节；`deps` 只表达**包级**依赖。单文件内层级见 [`connect-html.md`](./connect-html.md)（`aw-submods`）。  
+5. toml **仍然禁止**连线细节；`deps` 只表达**包级**依赖。单文件内层级见 [`../connect/html.md`](../connect/html.md)（`aw-submods`）。  
 6. dump / `.autowire/connect/` 快照 **应当**按单元 id 落盘（`<id>.xml`；生成物，可删重建）。
 
 说明：
@@ -117,7 +117,7 @@ deps = ["phy_wrap"]
   - `.autowire/hdxml/` — RtlIndex  
   - `.autowire/connect/` — 各连接单元 elaborate 后的快照，**只有** `<id>.xml`（抽象模块信息：params / ports / imports；hdxml 风格规范：属性承载、方向标签名、模块字典序、无时间戳/哈希；跨单元 deps 加载与 dump 都读它）。**完整 `aw-render` 不再落盘**（无 `<id>.html`）；dump 印 SV 只认 POST 体活 DOM。**禁止** dump 直接 load 作者 HTML
   - dump RTL 产物目录（默认 `gen/`）与临时目录分开。
-  - `.autowire/save/` — 调试落盘：`POST /api/save` 把活 DOM（调试后的 `aw-content` + `aw-render`）写成 `<id>.html`；**临时产物**，不充当作者 SoT，是否合回作者 HTML 由本地决定（见 [`mcp/README.md`](./mcp/README.md) §5）
+  - `.autowire/save/` — 调试落盘：`POST /api/save` 把活 DOM（调试后的 `aw-content` + `aw-render`）写成 `<id>.html`；**临时产物**，不充当作者 SoT，是否合回作者 HTML 由本地决定（见 [`mcp/README.md`](../mcp/README.md) §5）
 
 ### 4.2 HTML / web 如何加载这两类 XML（必须）
 
@@ -149,7 +149,7 @@ autowire.toml（.f + svh/宏 + [connect.<id>] DAG）
     →  dump（读 POST 体 aw-render）→ .sv → DV；同时刷新 .autowire/connect/<id>.xml 快照
 ```
 
-细节见 [`connect-html.md`](./connect-html.md)。
+细节见 [`../connect/html.md`](../connect/html.md)。
 
 ## 6. 开放项（实现前裁定）
 

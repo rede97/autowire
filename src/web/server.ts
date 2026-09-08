@@ -1,5 +1,5 @@
 // `autowire web [unit|html]` — local page server (127.0.0.1 only).
-// Contract: docs/web-ui.md (layout, GET actions, #aw-status), docs/workspace-toml.md §4.2.
+// Contract: docs/workspace/web-ui.md (layout, GET actions, #aw-status), docs/workspace/toml.md §4.2.
 // The browser never touches the workspace: RtlIndex via /api/rtlindex + /api/module,
 // dep snapshots via /api/connect, the only write path is POST /api/dump.
 

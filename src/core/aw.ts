@@ -43,7 +43,7 @@ export interface EngineCtx {
 	wrapper?: (mod: string) => ModFacts | null;
 }
 
-/** Lifecycle hook payloads (connect-lifecycle.md). */
+/** Lifecycle hook payloads (docs/connect/lifecycle.md). */
 export interface HookArgs {
 	mod?: Element;
 	doc?: Document;
@@ -248,7 +248,7 @@ function foldDims(
 	return t;
 }
 
-// Contract: docs/connect-html.md, docs/connect-rules.md, docs/connect-lifecycle.md.
+// Contract: docs/connect/html.md, docs/connect/rules.md, docs/connect/lifecycle.md.
 // Two faces: aw-content (author) → elaboration → aw-render (frozen, dump SoT).
 // The engine is synchronous: callers pre-fetch leaf port tables into ctx.
 
@@ -285,7 +285,7 @@ const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const LITERAL = /^(\d+('[bodhBODH][0-9a-fA-F_xXzZ?]+)?|\d+("[^"]*")?|"[^"]*")$/;
 
 /** Classify an aw-connect@to text (after ${…} substitution): "net" or "const".
- *  Rules (docs/connect-to-rules.md §2.2): a plain identifier is a net,
+ *  Rules (docs/connect/to-rules.md §2.2): a plain identifier is a net,
  *  unless it names a module param/localparam (constant reference); texts
  *  starting with a digit / ' / { / ` are constant literals; expression texts
  *  are constants only when every identifier is a known param/localparam.
@@ -809,7 +809,7 @@ function checkTemplate(
 	for (const [k, v] of scope.params) modVars[k] = v.value;
 	for (const [k, v] of scope.localparams) modVars[k] = v.value;
 	// Probe substitution stands variables for plausible text so `to` can be
-	// classified at check time (docs/connect-to-rules.md §2.2).
+	// classified at check time (docs/connect/to-rules.md §2.2).
 	const probeVars = { id: "u", idx: "0", mod: "m", ...modVars };
 	const probeTo = (r: Element): string | null => {
 		const raw = attr(r, "to");

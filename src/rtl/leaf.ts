@@ -1,6 +1,6 @@
 // Leaf module facts from the RtlIndex (`.autowire/hdxml`): params + ports + imports
 // for one module, parsed from its file XML. Read-only; the connect page and the
-// check path share this shape (web-ui.md §5: leaf facts come only from hdxml).
+// check path share this shape (docs/workspace/web-ui.md §5: leaf facts come only from hdxml).
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";

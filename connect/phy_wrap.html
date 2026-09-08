@@ -6,7 +6,7 @@
   shared bus, packed=auto with §7.4 param width rewrite, module param /
   localparam folding chains, nested aw-submods with sibling deps
   (path-accumulated visible set), before-instances + on-template lifecycle
-  hooks. Contract: docs/connect-html.md.
+  hooks. Contract: docs/connect/html.md.
 -->
 <html lang="en">
   <head>
@@ -135,7 +135,7 @@
       </aw-mod>
     </autowire>
     <script type="module">
-      // Lifecycle demo (docs/connect-lifecycle.md): two write phases only.
+      // Lifecycle demo (docs/connect/lifecycle.md): two write phases only.
       // before-instances: generate the one-hot decoder instance (not present in
       // the static author face; check stays on the static content).
       aw.on("before-instances", ({ mod }) => {

@@ -1,4 +1,4 @@
-// autowire.toml loading and hdxml argument mapping (contract: docs/workspace-toml.md).
+// autowire.toml loading and hdxml argument mapping (contract: docs/workspace/toml.md).
 // hdxml never reads the toml: everything is mapped to hdxml CLI args by this module.
 // Lookup: nearest autowire.toml upward from CWD (or --workspace); relative paths in the
 // toml resolve against its own directory (the workspace root).
@@ -35,7 +35,7 @@ export interface WorkspaceConfig {
 	connectUnits: ConnectUnit[];
 }
 
-/** One [connect.<id>] entry (docs/workspace-toml.md §4.1) */
+/** One [connect.<id>] entry (docs/workspace/toml.md §4.1) */
 export interface ConnectUnit {
 	id: string;
 	/** Absolute path to the connect HTML */
@@ -244,8 +244,8 @@ export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
 	return args;
 }
 
-/** Default config written by init (aligned with docs/workspace-toml.md §4) */
-export const DEFAULT_TOML = `# autowire workspace config (contract: docs/workspace-toml.md)
+/** Default config written by init (aligned with docs/workspace/toml.md §4) */
+export const DEFAULT_TOML = `# autowire workspace config (contract: docs/workspace/toml.md)
 # hdxml never reads this file: autowire analysis maps it to hdxml CLI args.
 
 [hdxml]

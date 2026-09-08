@@ -1,4 +1,4 @@
-// autowire web page controller (docs/web-ui.md). Runs in the browser only.
+// autowire web page controller (docs/workspace/web-ui.md). Runs in the browser only.
 // Buttons and GET params share the same action chain: select → check → render → dump.
 // Check has no prerequisite; Render depends on Check; Dump depends on Render.
 
@@ -356,7 +356,7 @@ async function runDump(id: string): Promise<{ files: string[] }> {
 	return { files };
 }
 
-/** One action chain: select → check → render → dump (web-ui.md §3). */
+/** One action chain: select → check → render → dump (docs/workspace/web-ui.md §3). */
 async function runChain({
 	select,
 	check,
@@ -626,7 +626,7 @@ async function init(): Promise<void> {
 	await buildLeft();
 	if (!state.current) throw new Error("no unit selected");
 	await loadUnit(state.current);
-	// GET action contract (web-ui.md §3.2): fixed order select → check → render → dump.
+	// GET action contract (docs/workspace/web-ui.md §3.2): fixed order select → check → render → dump.
 	const actions = {
 		select: params.get("select"),
 		check: params.get("check") === "1",

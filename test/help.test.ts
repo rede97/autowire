@@ -22,7 +22,7 @@ test("agent topic holds the working contract", () => {
 	expect(text).toContain("Playwright MCP");
 	expect(text).toContain("POST /api/dump");
 	expect(text).toContain("help status");
-	expect(text).toContain("docs/connect-html.md");
+	expect(text).toContain("docs/connect/html.md");
 });
 
 test("each slice prints independently", () => {
@@ -38,8 +38,8 @@ test("each slice prints independently", () => {
 	expect(renderHelp("connect")).toContain("do not fold expressions or macros");
 	expect(renderHelp("connect")).toContain("aw-localparams");
 	expect(renderHelp("connect")).toContain("Mod__Inst__Param");
-	expect(renderHelp("connect")).toContain("docs/connect-rules.md");
-	expect(renderHelp("connect")).toContain("docs/connect-html.md");
+	expect(renderHelp("connect")).toContain("docs/connect/rules.md");
+	expect(renderHelp("connect")).toContain("docs/connect/html.md");
 	expect(renderHelp("connect")).toContain("aw-content");
 	expect(renderHelp("connect")).toContain("aw-render");
 	expect(renderHelp("connect")).toContain("overwrite");

@@ -7,7 +7,7 @@ import {
 	printSv,
 } from "../src/core/printer.ts";
 
-// Printer contract: snapshot XML → SV text (docs/connect-html.md §4, help dump).
+// Printer contract: snapshot XML → SV text (docs/connect/html.md §4, help dump).
 
 const SNAP = `<autowire>
   <aw-mod name="top">

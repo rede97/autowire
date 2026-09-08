@@ -1,5 +1,5 @@
 // aw-render snapshot → SystemVerilog printer (dump output path).
-// Contract: docs/connect-html.md §4 (aw-render is the only dump SoT).
+// Contract: docs/connect/html.md §4 (aw-render is the only dump SoT).
 // Input is the deterministic snapshot produced by web/aw.js serializeSnapshot():
 // <autowire> → aw-mod (name) → aw-render (params/imports/localparams/ports/signals/insts),
 // with nested aw-mod after the render. All data lives on attributes.
@@ -284,7 +284,7 @@ export function printSv(m: RenderModule, unitId: string): string {
 		lines.push(`\t${signalDecl(s.nettype, s.packed, s.unpacked, s.name)}`);
 	}
 	if (printedSignals > 0) lines.push("");
-	// Constant tie-offs (docs/connect-to-rules.md): a connect whose `to`
+	// Constant tie-offs (docs/connect/to-rules.md): a connect whose `to`
 	// is a plain identifier names a net, UNLESS it matches a module
 	// param/localparam (constant reference); anything else is inlined as a
 	// constant expression. Part-selects exist only on nets (engine-enforced).

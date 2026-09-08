@@ -25,7 +25,7 @@ export function registerAnalysis(program: Command): void {
 	program
 		.command("analysis")
 		.description(
-			"Run hdxml analysis with args mapped from autowire.toml (docs/workspace-toml.md)",
+			"Run hdxml analysis with args mapped from autowire.toml (docs/workspace/toml.md)",
 		)
 		.option(
 			"--workspace <path>",

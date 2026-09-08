@@ -3,7 +3,7 @@
 # Goes through the autowire entry: config lives in the repo-root autowire.toml
 # (walk_dirs / incdirs / index dir); the hdxml binary is resolved by autowire
 # (--hdxml > toml [hdxml] bin > $HDXML_BIN > repo target > PATH).
-# Output dir is the fixed temp dir .autowire/hdxml (docs/workspace-toml.md).
+# Output dir is the fixed temp dir .autowire/hdxml (docs/workspace/toml.md).
 # To change macros/incdirs etc., edit autowire.toml — hdxml args are no longer passed through.
 # Usage: ./gen_index.sh [extra autowire analysis flags, e.g. --sub-bars]
 #        analysis then prints the dependency tree via `autowire deps`

@@ -9,7 +9,7 @@ autowire 的 RTL 分析 sidecar 子项目（由 stune 迁移裁剪而来，历�
 | [`docs/hdxml/rtlindex-xml.md`](../docs/hdxml/rtlindex-xml.md) | **RtlIndex XML 格式约束（契约草案，与 autowire 的唯一格式约定）** |
 | [`docs/hdxml/module-info.md`](../docs/hdxml/module-info.md) | DesignDb / 模块信息模型 |
 | [`docs/hdxml/cli.md`](../docs/hdxml/cli.md) | CLI 选项与行为 |
-| [`docs/workspace-toml.md`](../docs/workspace-toml.md) | autowire 工作区 toml（喂 hdxml 的 .f / 宏；未实现） |
+| [`docs/workspace/toml.md`](../docs/workspace/toml.md) | autowire 工作区 toml（喂 hdxml 的 .f / 宏；未实现） |
 | [`docs/README.md`](../docs/README.md) | 全仓库文档索引（含连接 HTML 方言） |
 
 ## 开发命令

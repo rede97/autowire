@@ -39,7 +39,7 @@ autowire.toml（.f + svh/宏）
 ```
 
 组件、写回、Playwright 隔离、入口阶段：[docs/architecture.md](docs/architecture.md)。
-工作区配置：[docs/workspace-toml.md](docs/workspace-toml.md)。连接方言：[docs/connect-html.md](docs/connect-html.md)。细则小结：[docs/connect-rules.md](docs/connect-rules.md)。
+工作区配置：[docs/workspace/toml.md](docs/workspace/toml.md)。连接方言：[docs/connect/html.md](docs/connect/html.md)。细则小结：[docs/connect/rules.md](docs/connect/rules.md)。
 
 ## 不做
 

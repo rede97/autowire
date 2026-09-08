@@ -1,7 +1,7 @@
 # 架构设计
 
 > 综述（思想 / 目标 / 方法论）见根 [README](../README.md)；本文档承载**结构与机制**。
-> 格式契约不在此重复：连接方言 [connect-html.md](./connect-html.md)、工作区配置 [workspace-toml.md](./workspace-toml.md)、RtlIndex [hdxml/rtlindex-xml.md](./hdxml/rtlindex-xml.md)。
+> 格式契约不在此重复：连接方言 [connect/html.md](./connect/html.md)、工作区配置 [workspace/toml.md](./workspace/toml.md)、RtlIndex [hdxml/rtlindex-xml.md](./hdxml/rtlindex-xml.md)。
 
 ## 1. 流水线
 
@@ -16,7 +16,7 @@ autowire.toml（.f + svh/宏）
     →  DV
 ```
 
-打印机看的是 **script 跑完的 DOM**，不是源文件原文。打印机、`/api/dump`、Playwright golden 只认各 `aw-mod` 下的 `aw-render`（connect-html.md §2）。**合法性 / 依赖检查**走独立的 **check**，校验 **`aw-content`（作者面）**，与 dump 读 render 写 RTL 分开（`help check`）。
+打印机看的是 **script 跑完的 DOM**，不是源文件原文。打印机、`/api/dump`、Playwright golden 只认各 `aw-mod` 下的 `aw-render`（connect/html.md §2）。**合法性 / 依赖检查**走独立的 **check**，校验 **`aw-content`（作者面）**，与 dump 读 render 写 RTL 分开（`help check`）。
 
 ## 2. 组件
 
@@ -29,7 +29,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 `aw.js` + 约束 HTML，完全跑在浏览器里（Custom Elements）。
 源码是 **`src/core/aw.ts`**（TypeScript）；`web/aw.js` 由 `bun run build:web` 生成（浏览器单文件，签入；新鲜度由 `src/web-build.test.ts` 守卫，禁止手改）。服务端 check 与单测直接 import `src/core/aw.ts`（Bun 原生 TS），同一源码无分叉。
 
-**两层**（完整约束：[connect-html.md](./connect-html.md)；示例：[examples/connect/](./examples/connect/)）：
+**两层**（完整约束：[connect/html.md](./connect/html.md)；示例：[examples/connect/](./examples/connect/)）：
 
 | | `aw-content`（作者） | `aw-render`（结果） |
 |---|---|---|
@@ -40,7 +40,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 - 根 `<autowire>`；每模：`aw-content` → `aw-submods` → `aw-render`
 - `aw-template`：`aw-inst` 下规则**必须**用其包裹；同标签 `base`+子规则 = overwrite；也可多个 template 组合
 - `aw-rewrite`：`match` + `to`（JS RegExp / `String.replace`）
-- 高级处理：渲染生命周期嵌入脚本（[connect-lifecycle.md](./connect-lifecycle.md)）
+- 高级处理：渲染生命周期嵌入脚本（[connect/lifecycle.md](./connect/lifecycle.md)）
 - Elaboration：顶→底 param → template/rewrite → 底→顶写入 `aw-render`
 - dump：收集全部相关 `aw-mod` 的 `aw-render`；`aw-imports` 写在模块头并去重  
 - check：独立动作，校验 **作者面** `aw-content` / submods / toml deps；**不写** `.sv`；**不**以 `aw-render` 为检查 SoT；dump **应当**在 check 无 error 且已有可印 render 后才写  
@@ -50,9 +50,9 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 ### 2.3 `autowire web [html]`
 
 本机起服务：给人用有头浏览器，给 Agent 用无头。`127.0.0.1` 同源。
-页面布局与 GET 动作见 [web-ui.md](./web-ui.md)：**Check → Render → Dump**（Render 依赖 Check；Check 只验 aw-content）。
+页面布局与 GET 动作见 [workspace/web-ui.md](./workspace/web-ui.md)：**Check → Render → Dump**（Render 依赖 Check；Check 只验 aw-content）。
 
-**生成 XML 加载**（详见 [workspace-toml.md](./workspace-toml.md) §4.2、[web-ui.md](./web-ui.md) §5）：
+**生成 XML 加载**（详见 [workspace/toml.md](./workspace/toml.md) §4.2、[workspace/web-ui.md](./workspace/web-ui.md) §5）：
 
 | 来源 | API | 用途 |
 |---|---|---|
@@ -69,7 +69,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 ### 2.5 写回（`/api/dump`）
 
 浏览器不碰磁盘。页面或 Playwright 把渲染结果 `POST` 到同源 `/api/dump`，autowire 校验工作区路径后写 RTL。对错由 DV 测文件，不靠禁止 dump。  
-dump **应当**隐含 `check → render`（**Render 依赖 Check**，见 [web-ui.md](./web-ui.md) §3.1）；check 有 error 时 **必须**拒绝 render 与写盘。render 可印性（无残留 template/rewrite）由 dump 门禁负责，**不是** Check 按钮的职责。
+dump **应当**隐含 `check → render`（**Render 依赖 Check**，见 [workspace/web-ui.md](./workspace/web-ui.md) §3.1）；check 有 error 时 **必须**拒绝 render 与写盘。render 可印性（无残留 template/rewrite）由 dump 门禁负责，**不是** Check 按钮的职责。
 
 ### 2.6 `autowire cli`（后期）
 

@@ -1,4 +1,4 @@
-# autowire workspace config (contract: docs/workspace-toml.md)
+# autowire workspace config (contract: docs/workspace/toml.md)
 # This repo's own workspace: RtlIndex over the hdxml test sample (common_cells).
 # Refresh via ./gen_index.sh (calls `bun index.ts analysis`).
 

@@ -1,7 +1,7 @@
 # 渲染生命周期与嵌入脚本（高级）
 
 > 状态：**已实现**（`web/aw.js`；钩子 API 为 `aw.on(phase, fn)`）。  
-> 常规连接：[`connect-html.md`](./connect-html.md) / [`connect-rules.md`](./connect-rules.md)。  
+> 常规连接：[`html.md`](./html.md) / [`rules.md`](./rules.md)。  
 > 摘要：`bun index.ts help connect`。改本文时同步改 help。
 
 ## 1. 用途
@@ -24,7 +24,7 @@
 
 ## 3. 钩子挂点（两写一冻）
 
-与 [`connect-html.md`](./connect-html.md) §5 对齐。实现可钉死为 `aw.on(phase, …)` 或等价 CustomEvent（API 形态见 §6）。
+与 [`html.md`](./html.md) §5 对齐。实现可钉死为 `aw.on(phase, …)` 或等价 CustomEvent（API 形态见 §6）。
 
 ```text
 (per aw-mod)

@@ -1,5 +1,5 @@
 // `autowire web [unit]` + `autowire check [unit]` — connect page server and
-// author-face validation (docs/web-ui.md).
+// author-face validation (docs/workspace/web-ui.md).
 
 import type { Command } from "commander";
 import { check as awCheck } from "../core/aw.ts";
@@ -11,7 +11,7 @@ import { requireWorkspace } from "./shared.ts";
 export function registerWeb(program: Command): void {
 	program
 		.command("web")
-		.description("Local connect page (127.0.0.1 only; docs/web-ui.md)")
+		.description("Local connect page (127.0.0.1 only; docs/workspace/web-ui.md)")
 		.argument(
 			"[unit]",
 			"connect unit id or author HTML path (default: first unit in deps topo order)",
@@ -60,7 +60,7 @@ export function registerCheck(program: Command): void {
 	program
 		.command("check")
 		.description(
-			"Validate author-face connect HTML + deps (no write; docs/web-ui.md §3.1)",
+			"Validate author-face connect HTML + deps (no write; docs/workspace/web-ui.md §3.1)",
 		)
 		.argument(
 			"[unit]",
