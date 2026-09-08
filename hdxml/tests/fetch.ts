@@ -109,7 +109,7 @@ const TARGETS: Target[] = [
 		kind: "projects",
 		url: "https://github.com/chipsalliance/Cores-VeeR-EL2.git",
 		branch: "main",
-		sparse: ["design", "configs"],
+		sparse: ["design", "configs", "tools"],
 	},
 	{
 		name: "opentitan",
