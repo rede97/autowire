@@ -18,6 +18,7 @@ autowire 的 RTL 分析 sidecar 子项目（由 stune 迁移裁剪而来，历�
 cargo build          # dev 构建
 cargo test           # 单元测试
 cargo run -- -w <rtl_dir> --tree   # 目录扫描 + 依赖树（无子命令）
+./dist.sh            # 发布构建：bun 模式 cargo-zigbuild 钉 glibc 2.17（CentOS 7+），产出 hdxml-linux-x64.tar.xz
 ```
 
 ## 约定

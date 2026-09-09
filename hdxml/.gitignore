@@ -7,3 +7,5 @@
 # 输出工件
 /svo_out.log
 /name-map.txt
+/hdxml-linux-x64.tar.xz
+/target/dist/

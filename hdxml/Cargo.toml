@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.97"
-blake3 = "1.5"
+blake3 = { version = "1.5", features = ["pure"] }
 clap = { version = "4.5.23", features = ["derive"] }
 dashmap = "6.1.0"
 indicatif = "0.17.9"
