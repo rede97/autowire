@@ -1135,6 +1135,7 @@ function elaborateMod(
 	const name = attr(mod, "name") ?? "?";
 	const here = [...path, name];
 	const where = `${tb ? "aw-tb-mod" : "aw-mod"} ${here.join(".")}`;
+	const errAtEntry = res.errors.length;
 	const content = child(mod, "aw-content");
 	if (!content) {
 		res.errors.push(`${where}: missing aw-content`);
@@ -1539,6 +1540,10 @@ function elaborateMod(
 			if (m) addImport(m[1] ?? null, "*");
 		}
 	}
+
+	// Commit aw-render only when this mod (and its subtree) added no errors —
+	// never freeze a partial/wrong render (docs/connect/lifecycle.md).
+	if (res.errors.length > errAtEntry) return null;
 
 	writeRender(mod, {
 		scope,

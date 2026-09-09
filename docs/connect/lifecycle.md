@@ -43,7 +43,7 @@
 | （引擎）写 `aw-render` | 产物面 | — | 此后任何钩子改 render |
 | `before-dump` | 活 DOM / 元数据 | **只读**校验、补非 netlist 元数据 | 改 `aw-render` 内 instances/signals/ports/connects；写工作区磁盘；对外 `fetch` |
 
-### 3.1 目标编排（含插件；落地时统一 page/cli）
+### 3.1 编排（含插件；web 已落地）
 
 作者面突变（类型 B 标签 expand、脚本 `before-instances`）**必须**发生在 **check 之前**，否则 Check 绿无法覆盖钩子/插件产物。类型 A `generate` **在连接流水线外**（见 [`../plugins/README.md`](../plugins/README.md) §6）。
 
@@ -57,9 +57,7 @@
   → before-dump（只读）→ POST /api/dump
 ```
 
-> 现状（实现债）：web 仍可能「先 check、再 `runBeforeInstances`」。契约以本小节为准；改编排与插件注册一并联调，**不要**长期保持双叙事。
-
-同一 HTML → 同一 `aw-render`（钩子 **应当**幂等）。
+同一 HTML → 同一 `aw-render`（钩子 **应当**幂等）。elaborate **仅在本模（含子树）无新增 error 时** write/freeze `aw-render`（失败不留下半成品冻结面）。
 
 ## 4. 嵌入方式
 

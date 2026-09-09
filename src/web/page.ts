@@ -302,21 +302,25 @@ async function buildCtx(
 // Actions (shared by buttons and GET params).
 // ---------------------------------------------------------------------------
 
+/** Run before-instances once per loaded unit (mutates aw-content). Must precede check. */
+function ensureAuthorMutations(entry: UnitEntry, id: string): void {
+	if (entry.hooksRan) return;
+	entry.hooksRan = true;
+	AW.runBeforeInstances(entry.doc as unknown as Document, id);
+}
+
 async function runCheck(id: string): Promise<AwEngine.CheckResult> {
+	const entry = await loadUnit(id);
+	// lifecycle §3.1: author-face mutators before check (hook-generated insts visible).
+	ensureAuthorMutations(entry, id);
 	const { errors: ctxErrors, ctx } = await buildCtx(id);
-	const { doc } = await loadUnit(id);
-	const res = AW.check(doc as unknown as Document, ctx);
+	const res = AW.check(entry.doc as unknown as Document, ctx);
 	return { errors: [...ctxErrors, ...res.errors], warnings: res.warnings };
 }
 
 async function runRender(id: string): Promise<AwEngine.CheckResult> {
 	const entry = await loadUnit(id);
-	// before-instances prepass once per document; then leaf tables cover
-	// hook-generated instances too (elaborate() itself does not run hooks).
-	if (!entry.hooksRan) {
-		entry.hooksRan = true;
-		AW.runBeforeInstances(entry.doc as unknown as Document, id);
-	}
+	ensureAuthorMutations(entry, id);
 	const { errors: ctxErrors, ctx } = await buildCtx(id);
 	if (ctxErrors.length > 0) return { errors: ctxErrors, warnings: [] };
 	const res = AW.elaborate(entry.doc as unknown as Document, ctx);

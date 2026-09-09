@@ -738,6 +738,7 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
   const name = attr(mod, "name") ?? "?";
   const here = [...path, name];
   const where = `${tb ? "aw-tb-mod" : "aw-mod"} ${here.join(".")}`;
+  const errAtEntry = res.errors.length;
   const content = child(mod, "aw-content");
   if (!content) {
     res.errors.push(`${where}: missing aw-content`);
@@ -1070,6 +1071,8 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
         addImport(m[1] ?? null, "*");
     }
   }
+  if (res.errors.length > errAtEntry)
+    return null;
   writeRender(mod, {
     scope,
     imports,
@@ -1220,6 +1223,8 @@ function mergeSignal(signals, net, dims, foldVals, res, where) {
   }
   if (dims.nettype && prev.nettype && dims.nettype !== prev.nettype) {
     res.errors.push(`${where}: net "${net}" nettype conflict (${prev.nettype} vs ${dims.nettype})`);
+  } else if (dims.nettype && !prev.nettype) {
+    prev.nettype = dims.nettype;
   }
 }
 function writeRender(mod, m) {

@@ -192,18 +192,22 @@ async function buildCtx(id) {
     }
   };
 }
+function ensureAuthorMutations(entry, id) {
+  if (entry.hooksRan)
+    return;
+  entry.hooksRan = true;
+  AW.runBeforeInstances(entry.doc, id);
+}
 async function runCheck(id) {
+  const entry = await loadUnit(id);
+  ensureAuthorMutations(entry, id);
   const { errors: ctxErrors, ctx } = await buildCtx(id);
-  const { doc } = await loadUnit(id);
-  const res = AW.check(doc, ctx);
+  const res = AW.check(entry.doc, ctx);
   return { errors: [...ctxErrors, ...res.errors], warnings: res.warnings };
 }
 async function runRender(id) {
   const entry = await loadUnit(id);
-  if (!entry.hooksRan) {
-    entry.hooksRan = true;
-    AW.runBeforeInstances(entry.doc, id);
-  }
+  ensureAuthorMutations(entry, id);
   const { errors: ctxErrors, ctx } = await buildCtx(id);
   if (ctxErrors.length > 0)
     return { errors: ctxErrors, warnings: [] };

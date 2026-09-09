@@ -84,10 +84,7 @@ Parallel (does not block connect)
     (hash incremental; no plugin-private port API);
     type B = expand → core aw-* like submods (childRenders); then check → elaborate;
     orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
-  Wishbone regfile leaf (docs/plugins/wishbone-regfile.md) — type A
-  Wishbone IP-local cfg tree: bridge/arb/decoder + slice pipe (docs/plugins/wishbone-bus.md);
-    default topology=tree not matrix; SoC interconnect stays with commercial EDA;
-    firmware = memory window + DMA later (classic block-cycle writes; not thousands of Cells)
+  Wishbone regfile/bus docs only — not implementing now (docs/plugins/wishbone-*.md)
 
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)

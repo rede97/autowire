@@ -100,5 +100,5 @@ visible(M) = { M 的直接子 aw-mod name }
 
 - `autowire check`、页内 [Check]、GET `?check=1`、`POST /api/check` **同一** `check()`。  
 - [Render] / `?render=1` **必须**先过 check（无 error）；elaborate 仍可再报 error。  
-- 目标编排：作者面突变（插件 B expand / `before-instances`）在 check **之前**（[`lifecycle.md`](./lifecycle.md) §3.1）；实现债见该节。  
+- 目标编排：作者面突变（插件 B expand / `before-instances`）在 check **之前**（[`lifecycle.md`](./lifecycle.md) §3.1；web 已对齐）。  
 - 详见 [`../workspace/web-ui.md`](../workspace/web-ui.md) §3.1。

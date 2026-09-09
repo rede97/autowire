@@ -766,6 +766,9 @@ describe("open pins (connect-to-rules §2.3)", () => {
 		);
 		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
 		expect(res.errors.some((e) => e.includes("output drivers"))).toBe(true);
+		// Failed elaborate must not commit aw-render (no frozen partial netlist).
+		expect(doc.querySelector("aw-render aw-inst")).toBeNull();
+		expect(doc.querySelector("aw-render aw-connect")).toBeNull();
 	});
 });
 
