@@ -21,8 +21,8 @@ IP 源码就位（submodule / vendored 目录）
   → connect/*.html（aw-content 作者面）
   → bun <repo>/index.ts check             # 作者面合法性 + deps（先于 render）
   → bun <repo>/index.ts web <top_unit>    # 起 127.0.0.1 页面
-  → 浏览器打开 ?dump=1                    # check → render（deps 单元自动先行）→ 写 gen/*.sv
-  → iverilog/verilator 冒烟               # gen/ + rtl/ + ip/ + tb
+  → 浏览器打开 ?dump=1                    # check → render（deps 单元自动先行）→ 写 gen/connect|sim
+  → verilator 冒烟                         # sim/verilator/run.sh[+ --sd]；见 §6 / fw/README.md（主路径，不要求 iverilog）
 ```
 
 `.autowire/` 全部是可删生成物：`hdxml/`（RtlIndex）、`connect/<id>.xml`（抽象模块快照，唯一形式，无 html 快照）、`dump/<id>.html`（调试落盘）。
@@ -36,13 +36,18 @@ IP 源码就位（submodule / vendored 目录）
 - **跨单元封装**：被引方独立 `[connect.<id>]` 单元（如 sha256wb），引用方 toml `deps=[...]`；dump 链会自动按拓扑先 elaborate 依赖。reset 极性不一致（`rst_ni` vs `wb_rst_i`/`i_sd_reset`）用一个小桥接模块，别想在连接方言里内嵌逻辑。
 - **打印结果**：固件经 WB 写 testout 寄存器 → 顶层 `test_valid/test_data` 引脚，tb 直接观测。
 
-## 3. 验证纪律（demo/soc/sim/ 模式）
+## 3. 验证纪律（demo/soc/sim/ + fw/ 模式）
 
-- 固件 SoT 是**生成器脚本**（`gen_firmware.py`，迷你汇编器 + python 解释器模型先跑通语义），不是 hex 文本。
-- 每条指令**先机器译码核对**再进 hex。
-- 已知答案测试（KAT）：直接复用 IP 自带 bench 的期望向量（zynq_sha256 bench 的 digest 按字节序翻转后即寄存器读值）。
-- **阴性控制必须做**：改 1 字节消息 → 必须 FAIL。demo 曾因此抓到「fail 分支跳错位置、失败反而写 pass 标记」的固件 bug。
-- 分支目标布局：`bne fail` 目标必须是 fail 块**首条**指令；若 compare 与 fail 之间隔着 pass 跳转占位，目标 = 占位 + 1。
+- **主冒烟路径：Verilator + C 固件**（不要求 iverilog）：
+  - 基础：`./sim/verilator/run.sh` → `fw/basic_smoke`：① SRAM 64×0 软填充→DMA0→SHA0；② Flash XIP `0x0100_1000` 划区 KAT（同旧 `gen_firmware.py` 向量）→DMA0（`src_inc`）→SHA0。
+  - SD：`./sim/verilator/run.sh --sd` → `fw/sd_sha256` + GPL-3 `third_party/sdspisim` + `images/zeros_sha.img`。
+  - GPL 边界：`sdspisim` 只进 Verilator C++ harness；固件侧用 MIT `fw/common/sdspi_regs.h`。
+- **遗留（非门禁）**：`sim/gen_firmware.py` + `sim/run_smoke.sh`（iverilog 迷你汇编器）；`sim/run_fw_zeros.sh` 已转发到 Verilator。
+- C 固件 SoT 是 **`.c` + Makefile**，不是手改 hex；hex 为构建产物（`fw/**/build/` gitignore）。
+- 仿真 SRAM 上电为 **X**：消息缓冲必须由固件显式清零/写入，不能假设上电为 0。
+- 已知答案测试（KAT）：`hashlib` / IP bench 向量；寄存器侧为 **每 32-bit 字字节反序**（与 `gen_firmware.py` 一致）。
+- **阴性控制必须做**：改 1 字节消息 → 必须 FAIL。
+- TB 观测：`test_valid/test_data`；pass=`0x600d600d` / fail=`0xdead0001` / alive=`0x1`。
 
 ## 4. MCP 调试回路（已落地的官方路径）
 
@@ -69,6 +74,8 @@ Playwright MCP（浏览器 A 面）
 6. 多个 `always @*` 共享同一个 `integer` 循环变量 → iverilog 下互相重触发、仿真时间爬行。**每块独立 loop var**。
 7. 组合 ack 链路里把 `ack` 反馈进 `we`（`we = sel & ack & we_i` 且 `ack` 依赖 `wait(we)`）→ 零延迟振荡隐患；写使能别过 ack。
 8. 固定地址 DMA 读内存缓冲 → 同一 word 重复 32 次。FIFO 固定地址 / 内存扫址两种模式要分开（`src_inc`）。
+11. picorv32 WB 读事务 `sel=0`：ZipCPU `sdspi` 仅在 `sel!=0` 时推进 FIFO 指针——**不要**用 CPU `lw` 抽 FIFO，用 DMA（`sel=0xF`）。
+12. `sdspi` 流水 ACK：主设备若一直拉高 STB 直到 ACK，FIFO 指针会每拍自增；已在 `sdspi.v` 用 `!dly_stb` 限制为每事务一次（与 `sd_rd_dma` 兼容）。
 9. filelist 路径相对**工作区根**而非 `.f` 所在目录。
 10. 子模块缺失模块（如 sdspi 的 llsdspi）→ analysis 报 blackbox，补齐进 soc.f 即可。
 
@@ -77,4 +84,7 @@ Playwright MCP（浏览器 A 面）
 - `autowire cli` 未落地（等 Web 用例/golden 稳定）。
 - 工作区 MCP（docs/mcp/workspace.md）：草稿，节点级 html_edit 未实现；传输未定（stdio MCP vs CLI）。
 - 插件机制（docs/plugins/）：草稿。
-- demo/soc 未做：真实 SD 卡模型（sdspi 目前只例化+编译验证，功能路径用 SRAM 当数据源跑通 DMA→sha256）；固件拉 UART 打印（testout 已覆盖等价观测）。
+- demo/soc 验证路线（与 `fw/README.md` 对齐；**Verilator 为主，不要求 iverilog**）：
+  1. **基础冒烟**：`sim/verilator/run.sh` — `fw/basic_smoke`（SRAM zeros SHA + Flash `0x0100_1000` KAT SHA）。
+  2. **SD 冒烟**：`sim/verilator/run.sh --sd` — `sdspisim` + `fw/sd_sha256`（CMD17→FIFO→DMA→SHA）。
+- 固件拉 UART 打印仍可选（testout 已覆盖等价观测）。

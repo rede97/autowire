@@ -134,6 +134,7 @@ module sd_rd_dma (
 				end
 			end
 			ST_READ: begin
+				// Hold STB until ACK (classic WB through the interconnect).
 				wbm_cyc_o <= 1'b1;
 				wbm_stb_o <= 1'b1;
 				wbm_we_o  <= 1'b0;

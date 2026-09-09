@@ -1,0 +1,16 @@
+diff --git a/rtl/spi/sdspi.v b/rtl/spi/sdspi.v
+index ebaf5b4..953381e 100644
+--- a/rtl/spi/sdspi.v
++++ b/rtl/spi/sdspi.v
+@@ -384,7 +384,10 @@ module	sdspi #(
+ 		begin // Command write
+ 			// Clear the read/write address
+ 			fifo_wb_addr <= {(LGFIFOLN){1'b0}};
+-		end else if ((wb_stb)&&(wb_addr[1] && wb_sel != 0))
++		// Advance once per WB beat: masters (e.g. sd_rd_dma) hold STB until
++		// ACK, and our ACK is pipelined (dly_stb). Without !dly_stb, the
++		// pointer would increment every clock STB is held and skip words.
++		end else if ((wb_stb)&&(!dly_stb)&&(wb_addr[1] && wb_sel != 0))
+ 		begin // On read or write, of either FIFO,
+ 			// we increase our pointer
+ 			// if (wb_sel[0])

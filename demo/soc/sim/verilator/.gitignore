@@ -1,0 +1,4 @@
+obj_dir/
+obj_dir_sd/
+*.vcd
+images/*.img
