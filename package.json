@@ -11,7 +11,7 @@
 		"lint": "biome check . && tsc --noEmit -p tsconfig.json",
 		"test": "bun test",
 		"build:web": "bun build src/core/aw.ts --target browser --format esm --outfile web/aw.js && bun build src/web/page.ts --target browser --format esm --outfile web/page.js --external /aw.js",
-		"build:bin": "bun run build:web && bun build --compile index.ts --outfile out/autowire"
+		"build:bin": "bun run build:web && bun build index.ts --outfile out/autowire.js --target bun && bun build --compile index.ts --outfile out/autowire"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.12",

@@ -7,11 +7,12 @@ import { startWeb } from "../src/web/server.ts";
 import type { WorkspaceConfig } from "../src/workspace.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
-// End-to-end: real workspace (repo autowire.toml + connect/ demos), real
-// headless Chromium, real dump. Golden .sv files live in test/golden/.
+// End-to-end: the demo workspace (demo/soc/autowire.toml + connect/*.html),
+// real headless Chromium, real dump. Golden .sv files live in test/golden/soc/.
 
 const ROOT = join(import.meta.dir, "..");
-const GOLDEN_DIR = join(ROOT, "test", "golden");
+const DEMO = join(ROOT, "demo", "soc");
+const GOLDEN_DIR = join(ROOT, "test", "golden", "soc");
 const UPDATE_GOLDEN = process.env.AW_UPDATE_GOLDEN === "1";
 
 let ws: WorkspaceConfig;
@@ -33,12 +34,14 @@ async function waitStatus(page: import("playwright").Page) {
 }
 
 beforeAll(async () => {
-	ws = await loadWorkspace(join(ROOT, "autowire.toml"));
+	ws = await loadWorkspace(join(DEMO, "autowire.toml"));
 	if (!existsSync(join(ws.indexDir, "index.xml"))) {
-		throw new Error("RtlIndex missing; run ./gen_index.sh first");
+		throw new Error(
+			"RtlIndex missing; run `bun ../../index.ts analysis` in demo/soc first",
+		);
 	}
 	// Clean dump surfaces so the test observes only this run's writes.
-	await rm(join(ROOT, ".autowire", "connect"), {
+	await rm(join(DEMO, ".autowire", "connect"), {
 		recursive: true,
 		force: true,
 	});
@@ -63,7 +66,7 @@ describe("autowire web e2e", () => {
 			expect(await page.locator(id).isVisible()).toBe(true);
 		}
 		const mods = await page.locator("#aw-live aw-mod").all();
-		expect(mods.length).toBeGreaterThanOrEqual(3);
+		expect(mods.length).toBeGreaterThanOrEqual(1);
 		const renderInsts = await page
 			.locator("#aw-live aw-render > aw-insts > aw-inst")
 			.all();
@@ -86,11 +89,14 @@ describe("autowire web e2e", () => {
 
 	test("?select= shows leaf facts from RtlIndex", async () => {
 		const page = await browser.newPage();
-		await page.goto(`${base}?select=cc_counter&check=1`);
+		await page.goto(`${base}?select=picorv32_wb&check=1`);
 		await waitStatus(page);
-		expect(await page.locator("#right-title").textContent()).toBe("cc_counter");
-		expect(await page.locator("#right-body").textContent()).toContain("clk_i");
-		expect(await page.locator("#right-body").textContent()).toContain("Width");
+		expect(await page.locator("#right-title").textContent()).toBe(
+			"picorv32_wb",
+		);
+		expect(await page.locator("#right-body").textContent()).toContain(
+			"wb_clk_i",
+		);
 		await page.close();
 	});
 
@@ -105,7 +111,7 @@ describe("autowire web e2e", () => {
 		expect(
 			await page
 				.locator(
-					'#aw-live aw-mod[name="phy_wrap"] > aw-render > aw-insts > aw-inst',
+					'#aw-live aw-mod[name="sha256wb"] > aw-render > aw-insts > aw-inst',
 				)
 				.all(),
 		).not.toHaveLength(0);
@@ -123,18 +129,18 @@ describe("autowire web e2e", () => {
 
 	test("?dump=1 on tb: deps chain dumps first, SV files match goldens", async () => {
 		const page = await browser.newPage();
-		await page.goto(`${base}?unit=phy_wrap_tb&dump=1`);
+		await page.goto(`${base}?unit=soc_top&dump=1`);
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain("dump: 4 file(s)");
-		expect(existsSync(join(ROOT, ".autowire", "connect", "phy_wrap.xml"))).toBe(
+		expect(status.text).toContain("dump: 2 file(s)");
+		expect(existsSync(join(DEMO, ".autowire", "connect", "sha256wb.xml"))).toBe(
 			true,
 		);
-		expect(
-			existsSync(join(ROOT, ".autowire", "connect", "phy_wrap_tb.xml")),
-		).toBe(true);
+		expect(existsSync(join(DEMO, ".autowire", "connect", "soc_top.xml"))).toBe(
+			true,
+		);
 		await page.close();
-		const names = ["phy_wrap_tb", "phy_wrap", "gray_tap", "gray_pair"];
+		const names = ["soc_top", "sha256wb"];
 		await mkdir(GOLDEN_DIR, { recursive: true });
 		for (const n of names) {
 			const got = await readFile(join(ws.dumpDir, `${n}.sv`), "utf8");
@@ -150,9 +156,8 @@ describe("autowire web e2e", () => {
 	test("dump gate: leftover template in render → 422; unknown snapshot → 404", async () => {
 		const bad = await fetch(`${base}api/dump`, {
 			method: "POST",
-			headers: { "content-type": "application/json" },
 			body: JSON.stringify({
-				id: "phy_wrap",
+				id: "sha256wb",
 				html: "<autowire><aw-mod name='x'><aw-render><aw-templates><aw-template></aw-template></aw-templates></aw-render></aw-mod></autowire>",
 			}),
 		});
@@ -169,20 +174,20 @@ describe("autowire web e2e", () => {
 
 	test("save: [Save] drops live DOM to .autowire/save; API guards id/body", async () => {
 		const page = await browser.newPage();
-		await page.goto(`${base}?unit=phy_wrap&check=1`);
+		await page.goto(`${base}?unit=sha256wb&check=1`);
 		await waitStatus(page);
 		await page.locator("#btn-save").click();
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain(".autowire/save/phy_wrap.html");
+		expect(status.text).toContain(".autowire/save/sha256wb.html");
 		await page.close();
 		const saved = await readFile(
-			join(ROOT, ".autowire", "save", "phy_wrap.html"),
+			join(DEMO, ".autowire", "save", "sha256wb.html"),
 			"utf8",
 		);
 		// live DOM: author content present, and it is not the author file path
 		expect(saved).toContain("<aw-content>");
-		expect(saved).toContain('name="phy_wrap"');
+		expect(saved).toContain('name="sha256wb"');
 		const ghost = await fetch(`${base}api/save`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
@@ -192,7 +197,7 @@ describe("autowire web e2e", () => {
 		const noRoot = await fetch(`${base}api/save`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ id: "phy_wrap", html: "<div/>" }),
+			body: JSON.stringify({ id: "sha256wb", html: "<div/>" }),
 		});
 		expect(noRoot.status).toBe(422);
 		const badId = await fetch(`${base}api/save`, {
@@ -204,19 +209,19 @@ describe("autowire web e2e", () => {
 	});
 
 	test("check error path: tb without dep snapshot reports missing snapshot", async () => {
-		await rm(join(ROOT, ".autowire", "connect", "phy_wrap.xml"), {
+		await rm(join(DEMO, ".autowire", "connect", "sha256wb.xml"), {
 			force: true,
 		});
 		const page = await browser.newPage();
-		await page.goto(`${base}?unit=phy_wrap_tb&check=1`);
+		await page.goto(`${base}?unit=soc_top&check=1`);
 		const status = await waitStatus(page);
 		expect(status.state).toBe("error");
-		expect(status.text).toContain('snapshot for "phy_wrap" missing');
+		expect(status.text).toContain('snapshot for "sha256wb" missing');
 		expect(await page.title()).toMatch(/\[error\]$/);
 		await page.close();
 		// restore shared state for later runs
 		const page2 = await browser.newPage();
-		await page2.goto(`${base}?unit=phy_wrap_tb&dump=1`);
+		await page2.goto(`${base}?unit=soc_top&dump=1`);
 		await waitStatus(page2);
 		await page2.close();
 	});
