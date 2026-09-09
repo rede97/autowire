@@ -48,20 +48,23 @@ WB slave  ←──  (协议见 wishbone-bus.md)
 宿主机制见 [`README.md`](./README.md)。本叶子 **必须**登记为 **类型 A**；可与 bus 生成器同插件或分立，但 **禁止**改写 connect 核心方言。
 
 ```text
-generate：Table → *_regfile.sv
-    →  analysis → RtlIndex
+generate：Table → plugins_dir/<plugin-id>/*_regfile.sv
+    →  analysis（hdxml hash 增量）→ RtlIndex
     →  connect：<aw-inst mod="…_regfile"> + aw-connect 接 WB 口
+       （口表只认 ctx.leaf；禁止插件 providePorts 旁路）
 ```
 
 - **禁止**在 `aw-submods` 下用自定义标签直接吐 regfile 源码。  
-- 声明标签（如 `awx-wb-regfile`）**可以**有，但所在页 **禁止**登记为 `[connect.<id>]`；只驱动 generate。
+- 声明标签（如 `awx-wb-regfile`）**可以**有，但所在页 **禁止**登记为 `[connect.<id>]` / `[sim.<id>]`；只驱动 generate。  
+- 字段重叠等 **插件自检**在 generate 时失败即不落盘；**不是** `aw.check()` 的职责。  
+- 生成目录默认 `plugins_dir`（见 workspace toml §4.0）；**禁止**作者化进 `.autowire/`，**禁止**写入 `connect_dir` / `sim_dir`。
 
 ## 5. 工作区（草案）
 
 ```toml
 [regfile.phy]
 tables = "regpy/"
-out = "gen/regfile"
+# out 默认落到 [dump] plugins_dir/<plugin-id>/；勿指向 connect_dir/sim_dir
 
 [regfile.phy.wishbone]
 data_width = 32

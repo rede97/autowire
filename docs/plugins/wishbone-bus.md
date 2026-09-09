@@ -115,8 +115,9 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 ## 6. 与 regfile 插件的关系
 
 - 协议子集与 pipe **以本文为准**；叶子口 **必须**遵守。  
-- 生成编排 **可以**同一 plugin id 一次打出 arb+decoder+regfile，或分插件；connect 侧一律 `aw-inst` 例化。  
-- 地址图数据在 Table/端口模型里；**禁止**把 pin 级连线写进 `autowire.toml`。
+- 生成编排 **可以**同一 plugin id 一次打出 arb+decoder+regfile，或分插件；每个生成模经 **analysis → RtlIndex 普通叶子**；connect 侧一律 `aw-inst` 例化（**禁止**插件树私有口表向上递推）。  
+- 地址图数据在 Table/端口模型里；**禁止**把 pin 级连线写进 `autowire.toml`。  
+- 产物进 `plugins_dir/<plugin-id>/`；与 connect/sim dump 目录分家（[`README.md`](./README.md) §3）。
 
 ## 7. 工作区（草案）
 

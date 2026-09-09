@@ -117,6 +117,9 @@ A 只打浏览器调试工作区；B 只改作者面/索引——出结果仍须
 
 ## 5. 并列子系统（不堵连接）
 
-- **插件机制**（草稿）：登记自定义标签；分 **生成器**（印 SV → analysis → connect 例化）与 **展开器**（elaborate 成核心 `aw-*`）。见 [plugins/](./plugins/)。  
-- **寄存器 / Wishbone**：叶子见 [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md)；块内配置树（arbiter/decoder/pipe，默认非 matrix；SoC fabric 交给商业 EDA）见 [plugins/wishbone-bus.md](./plugins/wishbone-bus.md)。  
+- **插件机制**（草稿，接口已裁定）：见 [plugins/](./plugins/)。  
+  - **类型 A 生成器**（Wishbone regfile/bus）：`generate` → `plugins_dir` → **analysis / RtlIndex 黑盒叶子**（hash 增量）；connect 只 `aw-inst`。  
+  - **类型 B 展开器**：标签 → 核心 `aw-*`，像本单元 submods 内存递推；**禁止**插件私有口表/XML。  
+  - 编排：`generate`(外) → expand → before-instances → **check** → elaborate → dump（[connect/lifecycle.md](./connect/lifecycle.md) §3.1）。  
+- **寄存器 / Wishbone**：叶子 [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md)；块内配置树 [plugins/wishbone-bus.md](./plugins/wishbone-bus.md)。  
 - 叶子 RTL：Rust sidecar 出 RtlIndex，连接页只读端口表。

@@ -43,16 +43,21 @@
 | （引擎）写 `aw-render` | 产物面 | — | 此后任何钩子改 render |
 | `before-dump` | 活 DOM / 元数据 | **只读**校验、补非 netlist 元数据 | 改 `aw-render` 内 instances/signals/ports/connects；写工作区磁盘；对外 `fetch` |
 
-流水线单向：
+### 3.1 目标编排（含插件；落地时统一 page/cli）
+
+作者面突变（类型 B 标签 expand、脚本 `before-instances`）**必须**发生在 **check 之前**，否则 Check 绿无法覆盖钩子/插件产物。类型 A `generate` **在连接流水线外**（见 [`../plugins/README.md`](../plugins/README.md) §6）。
 
 ```text
-check（作者面 aw-content + deps；可单独跑，见 help check）
-  → content (+ before-instances)
-  → params / uniquify（引擎）
-  → template expand (+ on-template)
-  → aw-render（冻结）
-  → before-dump（钩子只读）→ POST /api/dump（dump 门禁验 render 可印）
+[可选] plugin generate (A) → plugins_dir → analysis → RtlIndex
+单元内：
+  → [B] expand 自定义标签 → 核心 aw-*
+  → before-instances（脚本）
+  → check（作者面 + deps；help check / check.md）
+  → elaborate（params → on-template → identity/wires → 冻结 aw-render）
+  → before-dump（只读）→ POST /api/dump
 ```
+
+> 现状（实现债）：web 仍可能「先 check、再 `runBeforeInstances`」。契约以本小节为准；改编排与插件注册一并联调，**不要**长期保持双叙事。
 
 同一 HTML → 同一 `aw-render`（钩子 **应当**幂等）。
 
@@ -78,17 +83,18 @@ check（作者面 aw-content + deps；可单独跑，见 help check）
 
 ## 5. check / dump / Playwright
 
-- 正式 **check** 走 **`autowire check` / `POST /api/check`**：校验 **作者面 `aw-content`** + deps（**不写盘**；**不以 `aw-render` 为 SoT**）；见 `help check`。  
+- 正式 **check** 走 **`autowire check` / `POST /api/check`**：校验 **作者面 `aw-content`** + deps（**不写盘**；**不以 `aw-render` 为 SoT**）；见 `help check` / [`check.md`](./check.md)。目标上 check 在 expand / `before-instances` **之后**（§3.1）。  
 - snapshot 活 DOM（`aw-render` 为引擎写出后的冻结结果，供 dump / golden）。  
 - 写回仍 `POST /api/dump`（全部相关 `aw-render`）；dump **应当**在 content check 无 error 且 render 可印后才写。  
 - golden 比对 render，不比对脚本源。  
-- **禁止**在 golden / dump 前用脚本改 render 来「对齐」期望。
+- **禁止**在 golden / dump 前用脚本改 render 来「对齐」期望。  
+- 插件：类型 A generate 在流水线外；类型 B expand 见 [`../plugins/README.md`](../plugins/README.md)。
 
 ## 6. 裁定（随 aw.js 落地）
 
 1. 稳定 API：**`aw.on(phase, fn)`**（`window.aw`；无 CustomEvent）。  
 2. 钩子作用域：**按连接单元**（单元 id 注册表）；回调收到 `{ mod }` / `{ mod, inst, template, connects }` / `{ doc }`，自行按模过滤。  
 3. 文档序：**子模整段 elaborate 完成后父模才连线**（父模可例化子包装模）。`before-instances` 是引擎前置 prepass（`runBeforeInstances`），跑完后才取叶子端口表——钩子生成的例化同样可见。  
-4. **`async` 钩子不支持**（引擎同步；回调不要返回 Promise）。
+4. **`async` 钩子不支持**（引擎同步；回调不要返回 Promise）。插件类型 B 同此裁定（[`../plugins/README.md`](../plugins/README.md)）。
 
-已裁定（勿再打开）：**仅两写相位**；**render 完成后不可改**；`before-dump` **只读**。
+已裁定（勿再打开）：**仅两写相位**；**render 完成后不可改**；`before-dump` **只读**；**作者面突变（expand / before-instances）在 check 前**（§3.1）。

@@ -74,7 +74,11 @@ test("each slice prints independently", () => {
 	expect(renderHelp("dont")).toContain("treat dump as the only validation");
 	expect(renderHelp("dont")).toContain("skip check before render");
 	expect(renderHelp("agent")).toContain("docs/mcp/");
+	expect(renderHelp("status")).toContain("type A = generate");
+	expect(renderHelp("status")).toContain("no plugin-private port API");
 	expect(renderHelp("status")).toContain("Workspace MCP");
+	expect(renderHelp("connect")).toContain("target order");
+	expect(renderHelp("connect")).toContain("docs/plugins/");
 	for (const topic of HELP_TOPICS) {
 		expect(renderHelp(topic).trim().length).toBeGreaterThan(20);
 	}

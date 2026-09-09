@@ -80,8 +80,11 @@ Not landed
   Workspace MCP             author HTML node edit + RtlIndex search (docs/mcp/workspace.md)
 
 Parallel (does not block connect)
-  Plugin registry (docs/plugins/): custom tags; generator vs elaborate kinds
-  Wishbone regfile leaf (docs/plugins/wishbone-regfile.md)
+  Plugin registry (docs/plugins/): type A = generate → plugins_dir → analysis/RtlIndex leaf
+    (hash incremental; no plugin-private port API);
+    type B = expand → core aw-* like submods (childRenders); then check → elaborate;
+    orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
+  Wishbone regfile leaf (docs/plugins/wishbone-regfile.md) — type A
   Wishbone IP-local cfg tree: bridge/arb/decoder + slice pipe (docs/plugins/wishbone-bus.md);
     default topology=tree not matrix; SoC interconnect stays with commercial EDA;
     firmware = memory window + DMA later (classic block-cycle writes; not thousands of Cells)
@@ -197,8 +200,8 @@ aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlI
   to is net name only — no [] suffix. See docs/connect/html.md §3.5.1–3.5.2;
   multidim example: docs/examples/connect/04-author-multidim.html.
 Lifecycle scripts: docs/connect/lifecycle.md —
-  before-instances (mutate aw-content) → on-template (per-inst expand) → aw-render frozen;
-  before-dump read-only (no patching render).
+  target order: [B expand] → before-instances → check → elaborate (on-template) → aw-render frozen;
+  before-dump read-only; type-A plugin generate stays outside this pipeline (docs/plugins/).
 Templates are per-aw-mod only. Connected nets → aw-signals; identity/export may auto-export ports.
 aw-imports → SV import at module head (deduped).
 
@@ -218,6 +221,7 @@ aw-param → Mod__Inst__Param; fold constants / inherited params / internal loca
            do not fold expressions or macros.
 
 Elaboration: before-instances → params → on-template → identity nets → wires → frozen aw-render → before-dump.
+  (Author-face mutators run before check when orchestration is aligned; docs/connect/lifecycle.md §3.1.)
 `,
 
 	web: `\

@@ -43,6 +43,11 @@ dump（可印性）──error──▶ 拒绝写盘
 | `aw-tb-mod`：禁 params/ports/submods/`@deps`；`body-*-include` 仅 TB | **check** | error | DOM |
 | `type="raw"`：仅 TB；禁 rewrite 产 raw；禁 part/维 | **check** | error | DOM |
 | include 路径存在性 | — | （不做） | DV filelist / `+incdir` |
+| 未注册自定义标签（插件前缀） | **check**（插件落地后） | error | 注册表 |
+| 类型 B 展开后的核心 aw-* | **check**（expand 之后） | 同核心 | DOM |
+| 类型 A 字段/地址等插件自检 | **generate**（非 aw.check） | error | 插件 |
+
+> 插件口表：**禁止**第四条旁路；类型 A = RtlIndex `leaf`，类型 B = 展开后像 submods。见 [`../plugins/README.md`](../plugins/README.md) §3、§6。目标编排：expand → before-instances → **check** → elaborate（[`lifecycle.md`](./lifecycle.md) §3.1）。
 
 ## 3. check 必须覆盖（对照实现）
 
@@ -95,4 +100,5 @@ visible(M) = { M 的直接子 aw-mod name }
 
 - `autowire check`、页内 [Check]、GET `?check=1`、`POST /api/check` **同一** `check()`。  
 - [Render] / `?render=1` **必须**先过 check（无 error）；elaborate 仍可再报 error。  
+- 目标编排：作者面突变（插件 B expand / `before-instances`）在 check **之前**（[`lifecycle.md`](./lifecycle.md) §3.1）；实现债见该节。  
 - 详见 [`../workspace/web-ui.md`](../workspace/web-ui.md) §3.1。

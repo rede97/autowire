@@ -47,8 +47,8 @@
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [plugins/](./plugins/) | 登记 / 自定义标签；生成器 vs 展开器 | 草稿 |
-| [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md) | Wishbone regfile 叶子 | 草稿 |
+| [plugins/](./plugins/) | 登记；A=RtlIndex 叶子 / B=像 submods；无私有口表 | 草稿（接口已裁定） |
+| [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md) | Wishbone regfile 叶子（类型 A） | 草稿 |
 | [plugins/wishbone-bus.md](./plugins/wishbone-bus.md) | 块内 cfg 树（非 SoC fabric） | 草稿 |
 
 ## 实战与报告
