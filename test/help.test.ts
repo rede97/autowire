@@ -53,6 +53,10 @@ test("each slice prints independently", () => {
 	expect(renderHelp("web")).toContain("depends on Check");
 	expect(renderHelp("web")).toContain("?check=1");
 	expect(renderHelp("web")).toContain("?dump=1");
+	expect(renderHelp("connect")).toContain("docs/connect/check.md");
+	expect(renderHelp("connect")).toContain("identity same-name");
+	expect(renderHelp("check")).toContain("docs/connect/check.md");
+	expect(renderHelp("check")).toContain("Check green is not dump-ready");
 	expect(renderHelp("check")).toContain("autowire check");
 	expect(renderHelp("check")).toContain("aw-content");
 	expect(renderHelp("check")).toContain("Does NOT require render");

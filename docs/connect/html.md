@@ -98,7 +98,8 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 ```
 
 往下走时可见集只增不减：子层可看见祖先路径上已声明的依赖，不必整条链重写。
-**兄弟不自动可见**（实现裁定：原公式 `visible(child) ⊇ {parent 的子 aw-mod}` 会让兄弟免 deps 可见，与「兄弟互引必须写 deps」冲突；以此为准）。
+**兄弟不自动可见**（实现裁定：原公式 `visible(child) ⊇ {parent 的子 aw-mod}` 会让兄弟免 deps 可见，与「兄弟互引必须写 deps」冲突；以此为准）。  
+下降到子模时传入 `祖先可见 ∪ 本模 deps`；**禁止**把先遍历兄弟的 `deps` 并进后兄弟的可见集（见 [`check.md`](./check.md) §3.3）。
 
 **`aw-inst@mod` 解析**
 
@@ -249,6 +250,13 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 ></aw-connect>
 ```
 
+### 3.5.2 `nettype`（`wire` / `logic`）
+
+- dump 默认 **`wire`**（互联网）。  
+- `packed="auto"` 时 **可以**继承叶子端口 `dataType` 若为 `wire`/`logic`；否则用默认。  
+- 可选 `nettype="wire|logic"` 覆盖；**不是**必填。  
+- 自定义类型 / interface 不靠本属性（见 `aw-port` / RtlIndex `dataType`）。
+
 ### 3.5.3 常量连线（`to` = 常量表达式）
 
 > 细则与评审记录：[`to-rules.md`](./to-rules.md)（已转正式约束）。
@@ -282,16 +290,18 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ### 3.5.5 同名推导（identity inference）
 
+> 细则：[`to-rules.md`](./to-rules.md) §2.4。
+
 - **未被任何规则覆盖的端口**（非 interface）elaborate 时**自动连到同名网**——同名连接是推导出来的，作者面**原则省略不写**，只描述非同名信息（避免底层 IP 统一换名时逐行同步 HTML 的负担）。
-- 同名网天然**合流**（如各例化的 `clk` 汇成一网）；显式规则与 `type="open"` **永远优先**于推导。
-- 安全网：同一网有 **>1 个全网（无 part-select）output 驱动** → **报错**（短路）；part-select 分片驱动允许共网（不相交性不校验）。多例化的同名 output（如 sdspi `o_debug`）必须显式 open 或显式改名。
+- 同名网天然**合流**（如各例化的 `clk` 汇成一网）；显式规则与 `type="open"` / `type="const"` **永远优先**于推导。
+- 安全网：同一网有 **>1 个全网（无 part-select）output 驱动** → **报错**（短路）；part-select 分片驱动允许共网（**不相交性不校验**，EDA/DV 兜底）。多例化的同名 output（如 sdspi `o_debug`）必须显式 open 或显式改名。
 
-### 3.5.2 `nettype`（`wire` / `logic`）
-
-- dump 默认 **`wire`**（互联网）。  
-- `packed="auto"` 时 **可以**继承叶子端口 `dataType` 若为 `wire`/`logic`；否则用默认。  
-- 可选 `nettype="wire|logic"` 覆盖；**不是**必填。  
-- 自定义类型 / interface 不靠本属性（见 `aw-port` / RtlIndex `dataType`）。
+| 意图 | 写法 |
+|---|---|
+| 同名贯通 | 省略 |
+| 改名 / 汇合 | 显式 `to=` |
+| 不要这根网 / 消自动导出 | `type="open"` 或显式改名 |
+| 多实例同名 output | 必须 open 或改名（否则短路 error） |
 
 ### 3.6 其余标签
 

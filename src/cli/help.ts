@@ -167,10 +167,12 @@ Connect HTML dialect (landed: web/aw.js)
 Constraints:
   docs/connect/html.md
   docs/connect/rules.md
+  docs/connect/to-rules.md
+  docs/connect/check.md
   docs/connect/lifecycle.md
   docs/examples/connect/
   docs/workspace/toml.md   ([connect.<id>] html + deps DAG;
-                           missing cross-unit ref = error; unused dep = warn at elaborate)
+                           missing cross-unit ref = error; unused dep = warn at check)
 
 Two layers; do not mix
   aw-content   imports / params / localparams / ports; aw-template; inst + overwrite
@@ -180,6 +182,7 @@ Two layers; do not mix
 Dump / golden only accept aw-render (every related mod; nested + multi-HTML).
 aw-rewrite: RegExp match + String.replace ($1 / $<name>) + \${…}; match+to only.
 aw-connect@to: net (default) | const | open — const/open must declare type=; docs/connect/to-rules.md;
+  uncovered ports → identity same-name nets (not a warning); open/rename to avoid short circuits;
   aw-param@expr / aw-template@inst_name: variable expressions only (no $1).
 aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlIndex form),
   unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; default wire);
@@ -188,7 +191,7 @@ aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlI
 Lifecycle scripts: docs/connect/lifecycle.md —
   before-instances (mutate aw-content) → on-template (per-inst expand) → aw-render frozen;
   before-dump read-only (no patching render).
-Templates are per-aw-mod only. Connected nets → aw-signals; unconnected may auto-export ports.
+Templates are per-aw-mod only. Connected nets → aw-signals; identity/export may auto-export ports.
 aw-imports → SV import at module head (deduped).
 
 Skeleton
@@ -206,7 +209,7 @@ aw-port: dir=input|output|inout|interface; interface requires interface=, option
 aw-param → Mod__Inst__Param; fold constants / inherited params / internal localparams;
            do not fold expressions or macros.
 
-Elaboration: before-instances → params → on-template → wires → frozen aw-render → before-dump.
+Elaboration: before-instances → params → on-template → identity nets → wires → frozen aw-render → before-dump.
 `,
 
 	web: `\
@@ -248,18 +251,22 @@ autowire check (landed; separate from dump / render)
 
 Validate author-face connect HTML (aw-content + aw-submods) and dependency graphs.
 Does NOT inspect aw-render as SoT. Does NOT write .sv / gen/. Does NOT require render.
+Full checklist: docs/connect/check.md (what check vs elaborate vs dump own).
 
-Must check
+Must check (author-face + RtlIndex/deps context)
   dialect constraints on aw-content (docs/connect/html.md / docs/connect/rules.md)
+  type=/to legality (docs/connect/to-rules.md) without needing expand results
   [connect.<id>] toml deps: missing ref = error; unused = warn; cycle = error
-  aw-mod@deps + path-accumulated visible set (same discipline; refs seen in content)
+  aw-mod@deps + path-accumulated visible set (siblings do not inherit each other's deps)
 
-Not check's job
+Not check's job (elaborate / dump still gate)
+  identity same-name wiring, short-circuit, const/open direction, dim merge
   aw-render dumpability (no leftover template/rewrite) — dump gate after render
 
 Web header [Check] / GET ?check=1 / POST /api/check / cli --check share the same checker.
 Render depends on Check (auto-check before elaborate). Dump depends on Render.
-See docs/workspace/web-ui.md §3.1 and docs/architecture.md.
+Check green is not dump-ready: elaborate errors still block write-back.
+See docs/connect/check.md, docs/workspace/web-ui.md §3.1, docs/architecture.md.
 `,
 
 	dump: `\

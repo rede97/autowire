@@ -55,7 +55,8 @@
 | Render 依赖 Check / Dump 依赖 Render（自动前序） | ✅ | e2e（按钮与 GET） |
 | 常量连线（`to` = 字面量/拼接/宏/param·localparam 引用；不建网；禁 part/维度；常量 rewrite 批量 tie-off 禁捕获；能力边界=复杂组合走集成小模块） | ✅ | aw.test 7 例 + printer.test + examples.test(05) + demo（soc_top 的 `pcpi_*` 常量绑死，iverilog 仿真闭合） |
 | `type` 三态（net 默认；const/open 必须显式；推断校验不一致报错） | ✅ | aw.test（缺声明报错/声明不符报错） |
-| 显式悬空 `type="open"`（output/inout；input 报错；批量 rewrite；`.port()` 打印；覆盖往返；未覆盖端口 warning） | ✅ | aw.test 4 例 + printer.test + demo（`pcpi_valid()` 等 open → PINMISSING 归零） |
+| 显式悬空 `type="open"`（output/inout；input 报错；批量 rewrite；`.port()` 打印；覆盖往返） | ✅ | aw.test + printer.test + demo（open → PINMISSING 归零） |
+| 同名推导 identity（未覆盖端口自动同名连；显式/open 优先；全网多 output 短路 error） | ✅ | aw.test（identity + short-circuit）；取代「未覆盖 warning」 |
 | 快照字节稳定（golden） | ✅ | `test/golden/*.sv` 逐字节比对 |
 | 127.0.0.1 隔离 / 路径逃逸拒绝 | ✅ | e2e（`../escape` → 400） |
 

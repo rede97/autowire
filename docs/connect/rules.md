@@ -1,7 +1,7 @@
 # 连接规则细则小结（template / rewrite / inst_name / param）
 
 > 速查卡。完整骨架与流水线见 [`html.md`](./html.md)；示例见 [`examples/connect/01-author-simple.html`](../examples/connect/01-author-simple.html)。  
-> 状态：草稿，先约束后实现。
+> 状态：**已实现**（与 `html.md` / `to-rules.md` / `check.md` 对齐；改约定同步改 help）。
 
 ## 1. 三条硬约束
 
@@ -69,8 +69,9 @@
 
 `to` 也接受**常量表达式**（字面量 / 拼接复制 / 宏 / param·localparam 引用，变量先代入）：
 常量不建网、只能连 input 端口、禁 `part`/维度属性；rewrite 产常量 = 批量 tie-off（禁捕获）。
-显式悬空：`type="open"`（无 `to`；只 output/inout；dump 出 `.port()`；未覆盖端口 warning）。
-完整细则：[`to-rules.md`](./to-rules.md)；示例 `../examples/connect/05-*.html`。
+显式悬空：`type="open"`（无 `to`；只 output/inout；dump 出 `.port()`）。
+未覆盖端口 → **同名推导（identity）**，非 warning；多全网 output 共网 → 短路 error。
+完整细则：[`to-rules.md`](./to-rules.md) §2.4；示例 `../examples/connect/05-*.html`。
 
 ```html
 <aw-connect port="dec_clk" to="dfi_clk"></aw-connect>

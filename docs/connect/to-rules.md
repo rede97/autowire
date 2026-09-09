@@ -37,7 +37,7 @@ printer 侧同判（render 快照自带 `aw-params` / `aw-localparams` 名单）
 
 - `to` 只有网名（+ `${…}` 插值），**禁止**夹带 `[]` / part-select（选位用 `part`，声明维用 `packed`/`unpacked`/`width`）。
 - `aw-rewrite@to` 允许正则捕获（`$1`/`$&`/`$<name>`，先捕获替换再 `${…}`）；`aw-connect@to` **禁止**捕获。
-- 维度 / `part` / `nettype` 规则见 connect-html §3.5.1–3.5.2。
+- 维度 / `part` / `nettype` 规则见 [`html.md`](./html.md) §3.5.1–3.5.2。
 - 同端口多条规则：后写覆盖（template 栈文档序）。
 
 ### 2.2 const（常量 / 常量表达式）
@@ -69,9 +69,20 @@ printer 侧同判（render 快照自带 `aw-params` / `aw-localparams` 名单）
 - 不建网；render 落 `<aw-connect port="q_o" type="open">`（golden 可见的意图记录）；dump 打印 `.q_o()`（消 PINMISSING）。
 - 覆盖语义同 net（后写覆盖：open 可被后续 net/const 覆盖，反之亦然）。
 
-### 2.4 未覆盖端口告警
+### 2.4 同名推导（identity；取代「未覆盖 warning」）
 
-elaborate 时，目标端口表中**未被任何规则覆盖**的端口（既未连线、也未 const、也未 open）逐一产生 **warning**（不阻止），文案列出 `inst.port`。open 是消警的显式手段。
+elaborate 时，目标端口表中**未被任何规则覆盖**的端口（非 interface）**自动连到同名网**——不产生 warning。同名连接是推导出来的，作者面**原则省略不写**，只描述非同名信息。
+
+| 意图 | 写法 |
+|---|---|
+| 同名贯通 | 省略（identity） |
+| 改名 / 汇合 | 显式 `to=`（net） |
+| 不要这根网 / 消自动导出 | `type="open"` 或显式改名 |
+| 多实例同名 output | **必须** open 或改名，否则短路 error |
+
+- 显式规则与 `type="open"` / `type="const"` **永远优先**于推导。
+- 同一网 **>1 个全网（无 part-select）output 驱动** → **报错**（短路）。part-select 分片可共网；**不相交性不校验**（EDA / DV 兜底）。
+- 骨架摘要：[`html.md`](./html.md) §3.5.5。
 
 ### 2.5 能力边界
 
@@ -88,5 +99,6 @@ elaborate 时，目标端口表中**未被任何规则覆盖**的端口（既未
 
 - 2026-09-08 初评：常量方案 A（推断）通过；宏按常量原样内联；宽度不检查；字面量+拼接/复制+变量代入，不做算术求值；param/localparam 引擎自动甄别，不设专门属性。
 - 2026-09-08 二审：常量 rewrite 支持（禁捕获）；`type` 属性引入。
-- 2026-09-08 三审：**`type` 默认 `net`；const / open 必须显式写明**；open 采用建议默认值（input 报错、遗漏告警纳入、inout 允许）。
+- 2026-09-08 三审：**`type` 默认 `net`；const / open 必须显式写明**；open 采用建议默认值（input 报错、inout 允许）；当时「未覆盖 → warning」后被 identity 取代。
+- 2026-09-09：未覆盖端口改为 **identity 同名自动连**（无 warning）；短路门禁保留；open/显式改名优先。
 - 文档史：`connect-const-proposal.md` 与 `connect-open-proposal.md` 两份提案合并为本文（net/const/open 规则集中于此）。

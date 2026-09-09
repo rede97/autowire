@@ -43,9 +43,9 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 - 高级处理：渲染生命周期嵌入脚本（[connect/lifecycle.md](./connect/lifecycle.md)）
 - Elaboration：顶→底 param → template/rewrite → 底→顶写入 `aw-render`
 - dump：收集全部相关 `aw-mod` 的 `aw-render`；`aw-imports` 写在模块头并去重  
-- check：独立动作，校验 **作者面** `aw-content` / submods / toml deps；**不写** `.sv`；**不**以 `aw-render` 为检查 SoT；dump **应当**在 check 无 error 且已有可印 render 后才写  
+- check：独立动作，校验 **作者面** `aw-content` / submods / toml deps；**不写** `.sv`；**不**以 `aw-render` 为检查 SoT；清单见 [connect/check.md](./connect/check.md)；dump **应当**在 check 无 error 且 elaborate 无 error、已有可印 render 后才写  
 - template 仅本模可见；同级 submods 互引须 `aw-mod@deps`（路径累积可见集；缺边报错）
-- **先文档约束，未实现前不要假装能渲染、check 或 dump**
+- 未在 `help status` 开放的步骤：**先不要实现**
 
 ### 2.3 `autowire web [html]`
 
@@ -64,7 +64,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 ### 2.4 check（校验作者面，不写盘）
 
 独立于 render / dump：`autowire check` / 页内 [Check] / `POST /api/check` / GET `check=1`。  
-校验 **`aw-content` + `aw-submods` + 依赖图**（`[connect.<id>] deps`、`aw-mod@deps` 路径累积可见集、环、缺边/多余边）。**禁止**以 `aw-render` 为 check 的 SoT；**禁止**借 check 写 `.sv` / `gen/`。详见 `help check`。
+校验 **`aw-content` + `aw-submods` + 依赖图**（`[connect.<id>] deps`、`aw-mod@deps` 路径累积可见集、环、缺边/多余边）。**禁止**以 `aw-render` 为 check 的 SoT；**禁止**借 check 写 `.sv` / `gen/`。完整清单：[connect/check.md](./connect/check.md)；摘要 `help check`。
 
 ### 2.5 写回（`/api/dump`）
 
