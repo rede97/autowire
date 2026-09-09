@@ -11,7 +11,9 @@ import { requireWorkspace } from "./shared.ts";
 export function registerWeb(program: Command): void {
 	program
 		.command("web")
-		.description("Local connect page (127.0.0.1 only; docs/workspace/web-ui.md)")
+		.description(
+			"Local connect page (127.0.0.1 only; docs/workspace/web-ui.md)",
+		)
 		.argument(
 			"[unit]",
 			"connect unit id or author HTML path (default: first unit in deps topo order)",

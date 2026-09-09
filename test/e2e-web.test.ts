@@ -177,7 +177,7 @@ describe("autowire web e2e", () => {
 		expect(status.text).toContain(".autowire/save/phy_wrap.html");
 		await page.close();
 		const saved = await readFile(
-			join(ROOT, ".autowire", "dump", "phy_wrap.html"),
+			join(ROOT, ".autowire", "save", "phy_wrap.html"),
 			"utf8",
 		);
 		// live DOM: author content present, and it is not the author file path
