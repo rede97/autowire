@@ -1,4 +1,4 @@
-// Text-import declarations for embedded browser assets (src/web.ts).
+// Text-import declarations for embedded browser assets (src/web/server.ts).
 // tsc has no attribute-driven module typing (`with { type: "text" }` is a Bun
 // feature), so the two asset paths are declared here explicitly.
 

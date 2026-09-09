@@ -1,6 +1,6 @@
 # Web 界面与 GET 动作 API（`autowire web`）
 
-> 状态：**已实现**（`autowire web`；引擎 `web/aw.js`，页面控制 `web/page.js`，服务 `src/web.ts`）。本文约束页面布局与「GET 参数 → 自动动作」契约；组件定位见 [architecture.md](../architecture.md) §2.3–2.5；校验见 `help check`，写回见 `/api/dump`（`help dump`）。
+> 状态：**已实现**（`autowire web`；引擎 `src/core/aw.ts`（打包产物 `web/aw.js`），页面控制 `src/web/page.ts`（打包产物 `web/page.js`），服务 `src/web/server.ts`）。本文约束页面布局与「GET 参数 → 自动动作」契约；组件定位见 [architecture.md](../architecture.md) §2.3–2.5；校验见 `help check`，写回见 `/api/dump`（`help dump`）。
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。
 
 ## 1. 页面布局
@@ -24,7 +24,7 @@
 
 - 左栏数据 **必须**只读 RtlIndex（index.xml 摘要 + 各文件 XML）；**禁止**在页面重解析 RTL。
 - 右栏默认展示 RtlIndex 事实；`aw-render` 预览只在 render 之后存在。
-- header **必须**提供人工按钮 **[Render] [Check] [Dump] [Reset]**；无 GET 时靠按钮触发（见 §2–§3）。另提供 **[Save]**：把当前单元的活 DOM（调试后的 `aw-content` + `aw-render`）经 `POST /api/save` 落到 **`.autowire/dump/<id>.html`**（临时产物，**不**写回作者 HTML，是否采用由本地决定）；Save 是调试旁路，**不**进入 §3 的 GET 动作链。
+- header **必须**提供人工按钮 **[Render] [Check] [Dump] [Reset]**；无 GET 时靠按钮触发（见 §2–§3）。另提供 **[Save]**：把当前单元的活 DOM（调试后的 `aw-content` + `aw-render`）经 `POST /api/save` 落到 **`.autowire/save/<id>.html`**（临时产物，**不**写回作者 HTML，是否采用由本地决定）；Save 是调试旁路，**不**进入 §3 的 GET 动作链。
 - 节点 **应当**带可访问名字（docs/connect/html.md §3.8），便于 Playwright snapshot。
 
 ## 2. 两种模式
@@ -111,7 +111,7 @@ Dump             ←── 依赖 Render（传递依赖 Check）
 | `/api/connect?id=` | GET | **`.autowire/connect/`** 该单元快照 | 已 elaborate 的 `aw-render`（跨单元 deps / 预览）；**不是**作者 HTML |
 | `/api/check` | POST | 作者 HTML +（按需）上列只读 API | 校验 **aw-content** + deps；**不写盘** |
 | `/api/dump` | POST | 活 DOM `aw-render` → 可写入 **`.autowire/connect/`** 再印 SV | 唯一 RTL 写路径 |
-| `/api/save` | POST | 活 DOM `<autowire>` 原文 → 写入 **`.autowire/dump/`** `<id>.html` | 调试落盘（写临时目录）；**禁止**写作者 `html=` 路径 |
+| `/api/save` | POST | 活 DOM `<autowire>` 原文 → 写入 **`.autowire/save/`** `<id>.html` | 调试落盘（写临时目录）；**禁止**写作者 `html=` 路径 |
 
 加载要求（与 [`toml.md`](./toml.md) §4.2 一致）：
 

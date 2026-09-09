@@ -1,6 +1,6 @@
 # Web 部分实现：功能覆盖报告与设计修改意见
 
-> 日期：2026-09-08。范围：`aw.js` 引擎、`autowire web` / `autowire check`、`POST /api/check` / `POST /api/dump`、Playwright 用例与 golden、demo（`connect/phy_wrap*.html`，基于 common_cells 测试材料）。
+> 日期：2026-09-08。范围：`aw.js` 引擎、`autowire web` / `autowire check`、`POST /api/check` / `POST /api/dump`、Playwright 用例与 golden、demo（`demo/soc/connect/*.html`：sha256wb + soc_top，基于 picorv32/simpleuart/sdspi/sha256 等真实 IP）。
 
 ## 1. 落地组件
 
@@ -8,21 +8,23 @@
 |---|---|---|
 | elaboration 引擎 | `web/aw.js` | check + elaborate + 生命周期钩子 + 快照序列化；浏览器与 linkedom 同码运行 |
 | 页面控制器 | `web/page.js` | 布局（docs/workspace/web-ui.md §1）、按钮与 GET 共用动作链、`#aw-status` 完成信号 |
-| Web 服务 | `src/web.ts` | 127.0.0.1 绑定；`/api/units|rtlindex|module|author|connect|check|dump` |
+| Web 服务 | `src/web/server.ts` | 127.0.0.1 绑定；`/api/units|rtlindex|module|author|connect|check|dump` |
 | 单元加载/跨单元 | `src/core/connect.ts` | 作者 HTML 加载、deps 快照解析、引擎 ctx 构建 |
 | 叶子端口表 | `src/rtl/leaf.ts` | RtlIndex 只读消费（`docs/hdxml/rtlindex-xml.md`） |
 | SV 打印机 | `src/core/printer.ts` | `aw-render` 快照 → `.sv`；dump 门禁（拒绝残留 template/rewrite） |
 | CLI 接线 | `index.ts` | `autowire web [unit]`、`autowire check [unit]` |
 | 测试 | `src/aw.test.ts`（17）、`src/printer.test.ts`（4）、`src/examples.test.ts`（3）、`src/e2e-web.test.ts`（7，Playwright 无头 Chromium） | 48 用例全绿 |
 
-## 2. Demo 案例（`autowire.toml` 既有 `[connect.phy_wrap]` / `[connect.phy_wrap_tb]`）
+## 2. Demo 案例（`demo/soc/autowire.toml`：`[connect.sha256wb]` / `[connect.soc_top]`（deps））
 
 | 单元 | 内容 | 覆盖点 |
 |---|---|---|
-| `connect/phy_wrap.html` | 两个 `cc_counter` 切片 + 嵌套 `gray_pair`（`cc_binary_to_gray`/`cc_gray_to_binary`）+ 兄弟 `gray_tap`（deps=gray_pair）+ 钩子生成 `cc_onehot_to_bin` | 模板复用/overwrite、`$1` 捕获 + `${idx}`、共享总线 width+part、`packed=auto`、嵌套 submods、兄弟 deps、`before-instances`/`on-template` |
-| `connect/phy_wrap_tb.html` | 跨单元例化 `phy_wrap` 包装模 + `cc_lfsr` | 跨单元快照引用、包装模参数 override（非折叠表达式 `TB_W/2`）、`before-dump` 只读钩子 |
+| `demo/soc/connect/sha256wb.html` | sha256 流核 + Wishbone 寄存器叶的再包装 | 模板、`packed=auto`、跨层端口 |
+| `demo/soc/connect/soc_top.html` | 完整 SoC（picorv32 + SRAM + flash + uart + 2×sdspi + 2×DMA + 2×sha256wb；deps=sha256wb） | 跨单元快照引用、模板复用、共享总线 part 切片、iWB 从槽位选位、常量 tie-off、open 悬空、[style] 对齐开关 |
 
-产物：`gen/{phy_wrap,phy_wrap_tb,gray_pair,gray_tap}.sv`；快照 `.autowire/connect/{id}.html` + 抽象模块信息 `{id}.xml`（hdxml 风格，无时间戳/哈希，dump 时同写；跨单元 deps 优先读 XML）；golden 锁定于 `test/golden/`。
+（早期 common_cells `phy_wrap` demo 已删除；以 demo/soc 为准。）
+
+产物：`demo/soc/gen/{soc_top,sha256wb}.sv`；快照 `.autowire/connect/{id}.html` + 抽象模块信息 `{id}.xml`（hdxml 风格，无时间戳/哈希，dump 时同写；跨单元 deps 优先读 XML）；golden 锁定于 `test/golden/`。
 
 ## 3. 功能覆盖矩阵
 
@@ -34,7 +36,7 @@
 | `aw-rewrite` RegExp + `$1`/`$<name>` + 变量 | ✅ | demo + examples.test |
 | 捕获仅限 `aw-rewrite@to`；`to` 禁 `[]` | ✅ | aw.test 负例 |
 | `packed/width/unpacked/part/nettype`；width=一维简写；冲突报错 | ✅ | aw.test + examples.test(04) + demo |
-| `packed=auto` 跟叶子端口（含 §7.4 参数改写 `Mod__Inst__Param`） | ✅ | aw.test + demo（`phy_wrap__u_cnt_0__Width`） |
+| `packed=auto` 跟叶子端口（含 §7.4 参数改写 `Mod__Inst__Param`） | ✅ | aw.test + demo（`soc_top__u_cpu_0__BARREL_SHIFTER` 等） |
 | `part` 常量求值（`8*${idx}+7` → `15:8`） | ✅ | aw.test + demo |
 | 多维 packed / unpacked | ✅ | examples.test(04)（common_cells 无多维叶子，见 §5 缺口） |
 | 参数折叠 §7.2（修正后，见 §4-C） | ✅ | aw.test 四形态 + demo（`CNT_W` 不折叠 / `LfsrWidth=16` 折叠 / `TB_W/2` 表达式不折叠） |
@@ -51,9 +53,9 @@
 | GET `?check/?render/?dump/?select` 与按钮同链；`?check=1` 不 render 不写盘 | ✅ | e2e 7 用例 |
 | `#aw-status[data-state]` + `document.title` 完成信号 | ✅ | e2e |
 | Render 依赖 Check / Dump 依赖 Render（自动前序） | ✅ | e2e（按钮与 GET） |
-| 常量连线（`to` = 字面量/拼接/宏/param·localparam 引用；不建网；禁 part/维度；常量 rewrite 批量 tie-off 禁捕获；能力边界=复杂组合走集成小模块） | ✅ | aw.test 7 例 + printer.test + examples.test(05) + demo（tb `clr_i`→`1'b0`，Verilator 闭合） |
+| 常量连线（`to` = 字面量/拼接/宏/param·localparam 引用；不建网；禁 part/维度；常量 rewrite 批量 tie-off 禁捕获；能力边界=复杂组合走集成小模块） | ✅ | aw.test 7 例 + printer.test + examples.test(05) + demo（soc_top 的 `pcpi_*` 常量绑死，iverilog 仿真闭合） |
 | `type` 三态（net 默认；const/open 必须显式；推断校验不一致报错） | ✅ | aw.test（缺声明报错/声明不符报错） |
-| 显式悬空 `type="open"`（output/inout；input 报错；批量 rewrite；`.port()` 打印；覆盖往返；未覆盖端口 warning） | ✅ | aw.test 4 例 + printer.test + demo（`overflow_o` open → PINMISSING 归零） |
+| 显式悬空 `type="open"`（output/inout；input 报错；批量 rewrite；`.port()` 打印；覆盖往返；未覆盖端口 warning） | ✅ | aw.test 4 例 + printer.test + demo（`pcpi_valid()` 等 open → PINMISSING 归零） |
 | 快照字节稳定（golden） | ✅ | `test/golden/*.sv` 逐字节比对 |
 | 127.0.0.1 隔离 / 路径逃逸拒绝 | ✅ | e2e（`../escape` → 400） |
 
@@ -84,8 +86,8 @@
 **验证**
 - `bun test`：48 用例全绿（引擎/打印机/文档示例/Playwright e2e）。
 - `bun run lint`（Biome）：0 error；`src/lang-guard.test.ts` 强制 TS 英文注释。
-- Verilator `--lint-only`（真实叶子源码闭合）：`phy_wrap` 子树**零告警**；含 tb 全链仅剩 `cc_lfsr` 上游断言代码自身在 `LfsrWidth=16` 下的两条宽度告警（测试材料固有，非生成代码缺陷）。
-- iverilog 交叉验证：iverilog 对 common_cells 上游 SV 特性（断言/typedef）不支持，仅作记录，不采信。
+- Verilator `--lint-only`（真实叶子源码闭合）：早期 phy 子树零告警；现 demo/soc 以 iverilog 功能仿真为准（见下）。
+- iverilog 交叉验证：common_cells 子树（断言/typedef）iverilog 不支持，仅记录；**demo/soc 全 SoC iverilog 功能仿真通过**（`demo/soc/sim/run_smoke.sh`：CPU boot + SRAM copy + DMA→AXI4-Stream→SHA256 digest，`SMOKE PASS`）。
 - 无头浏览器实测（headless Chromium）：首屏 idle、按钮链、GET 各组合、错误路径（缺快照 → `#aw-status[data-state=error]` + 标题 `[error]`）、dump 门禁 422、未知 GET 参数忽略。
 
 **已知缺口（诚实清单）**

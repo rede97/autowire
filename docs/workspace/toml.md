@@ -88,12 +88,12 @@ dir = "gen"
 
 # 具名连接单元（禁止旧式 [connect] html = [...] 扁平列表）
 # id 仅用于 toml 依赖图；连线细节仍只在 HTML 内
-[connect.phy_wrap]
-html = "connect/phy_wrap.html"
+[connect.sha256wb]
+html = "connect/sha256wb.html"
 
-[connect.phy_wrap_tb]
-html = "connect/phy_wrap_tb.html"
-deps = ["phy_wrap"]
+[connect.soc_top]
+html = "connect/soc_top.html"
+deps = ["sha256wb"]
 ```
 
 ### 4.1 `[connect.<id>]`（连接单元 DAG）

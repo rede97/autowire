@@ -55,7 +55,7 @@ You can do now
   5. Do not build cli before Web cases and goldens exist.
 
 Rules of engagement
-  Edit this help (src/help.ts) when behavior changes; format constraints live in docs/.
+  Edit this help (src/cli/help.ts) when behavior changes; format constraints live in docs/.
   Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
 `,
 
@@ -324,7 +324,7 @@ Do not
   browser writing the workspace directly
   build cli before Web cases
   two wiring semantics (Web and cli must share aw.js + goldens)
-  copy a per-chip connect prompt (edit help agent / src/help.ts instead)
+  copy a per-chip connect prompt (edit help agent / src/cli/help.ts instead)
   make README a second contract without updating help
   put wiring into autowire.toml ([connect.<id>] allows only html= + deps= — no top, no wiring)
   patch aw-render after it is filled (lifecycle: only before-instances + on-template may write; before-dump is read-only)

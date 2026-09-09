@@ -327,9 +327,9 @@ dir = "gen"
 # Named connect units (DAG). Do not use flat [connect] html = [...].
 # Cross-unit references require deps=; cycles / unknown ids fail at load.
 # Ready units with no pending deps can elaborate in parallel.
-# [connect.phy_wrap]
-# html = "connect/phy_wrap.html"
-# [connect.phy_wrap_tb]
-# html = "connect/phy_wrap_tb.html"
-# deps = ["phy_wrap"]
+# [connect.sha256wb]
+# html = "connect/sha256wb.html"
+# [connect.soc_top]
+# html = "connect/soc_top.html"
+# deps = ["sha256wb"]
 `;
