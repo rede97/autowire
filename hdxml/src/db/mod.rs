@@ -601,6 +601,12 @@ fn parse_many(d: &Drive, files: &[PathBuf]) -> ParseOut {
                     parsed.insert(path.clone(), mods);
                 }
                 Err(e) => {
+                    // 单文件解析完成即报（长冷启动即时反馈；终端输出只走 ProgressCenter）
+                    let loc = match (e.line, e.column) {
+                        (Some(l), Some(c)) => format!(":{l}:{c}"),
+                        _ => String::new(),
+                    };
+                    d.pc.println(&format!("  error: {}{loc}: {}", path.display(), e.message));
                     errors.entry(path.clone()).or_default().push(e);
                 }
             }
@@ -619,8 +625,9 @@ fn parse_many(d: &Drive, files: &[PathBuf]) -> ParseOut {
     }
 }
 
-/// 确定性合并（按文件路径字典序）：模块重定义错误归后到文件；屏障后 DesignDb 不可变。
+/// 确定性合并（按文件路径字典序）：模块重定义错误归后到文件并即时输出；屏障后 DesignDb 不可变。
 fn assemble(
+    d: &Drive,
     by_file: BTreeMap<PathBuf, Vec<ModuleDecl>>,
     mut errors: BTreeMap<PathBuf, Vec<FileError>>,
 ) -> DesignDb {
@@ -632,11 +639,13 @@ fn assemble(
                 if prev.norm_hash == defs[&prev.name].norm_hash {
                     continue;
                 }
-                errors.entry(file.clone()).or_default().push(FileError::new(format!(
+                let msg = format!(
                     "module redefined: {} (also see {})",
                     prev.name,
                     prev.file.display()
-                )));
+                );
+                d.pc.println(&format!("  error: {}: {msg}", file.display()));
+                errors.entry(file.clone()).or_default().push(FileError::new(msg));
             }
         }
     }
@@ -647,7 +656,7 @@ fn assemble(
 /// 返回（db, 缓存指纹表）——指纹表供 XML 导出层写缓存元数据，与是否增量无关。
 pub fn analyze_files(d: &Drive) -> Result<(DesignDb, BTreeMap<PathBuf, cache::CacheMeta>)> {
     let out = parse_many(d, d.files);
-    Ok((assemble(out.by_file, out.errors), out.stamps))
+    Ok((assemble(d, out.by_file, out.errors), out.stamps))
 }
 
 /// 增量分析（有输出目录即默认）：以 xml_dir 旧产物为缓存——全局闸门（tool/definesFp/incdirsFp）
@@ -694,7 +703,7 @@ pub fn analyze_incremental(
         by_file.insert(f, mods);
     }
     stamps.extend(fresh_stamps);
-    Ok((assemble(by_file, errors), stamps, reused))
+    Ok((assemble(d, by_file, errors), stamps, reused))
 }
 
 /// 依赖树打印（termtree；黑盒标 [blackbox]）

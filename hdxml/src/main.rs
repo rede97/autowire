@@ -91,15 +91,6 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
     for u in &db.undef {
         pc.println(&format!("  blackbox: {u}"));
     }
-    for (path, errs) in &db.errors {
-        for e in errs {
-            let loc = match (e.line, e.column) {
-                (Some(l), Some(c)) => format!(":{l}:{c}"),
-                _ => String::new(),
-            };
-            pc.println(&format!("  error: {}{loc}: {}", path.display(), e.message));
-        }
-    }
     if a.tree {
         for t in db::dep_tree(&db) {
             pc.println(&format!("{t}"));
