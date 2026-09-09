@@ -18,45 +18,16 @@
           <aw-imports></aw-imports>
           <aw-params></aw-params>
           <aw-localparams></aw-localparams>
-          <aw-ports>
-            <aw-port dir="input" name="clk"></aw-port>
-            <aw-port dir="input" name="rst_ni"></aw-port>
-            <!-- Wishbone slave -->
-            <aw-port dir="input" name="i_wb_cyc"></aw-port>
-            <aw-port dir="input" name="i_wb_stb"></aw-port>
-            <aw-port dir="input" name="i_wb_we"></aw-port>
-            <aw-port dir="input" name="i_wb_addr" packed="[31:0]"></aw-port>
-            <aw-port dir="input" name="i_wb_data" packed="[31:0]"></aw-port>
-            <aw-port dir="input" name="i_wb_sel" packed="[3:0]"></aw-port>
-            <aw-port dir="output" name="o_wb_ack"></aw-port>
-            <aw-port dir="output" name="o_wb_data" packed="[31:0]"></aw-port>
-            <!-- AXI4-Stream slave (from the SD read DMA) -->
-            <aw-port dir="input" name="s_axis_tdata" packed="[31:0]"></aw-port>
-            <aw-port dir="input" name="s_axis_tvalid"></aw-port>
-            <aw-port dir="output" name="s_axis_tready"></aw-port>
-            <aw-port dir="input" name="s_axis_tlast"></aw-port>
-            <!-- sticky done interrupt -->
-            <aw-port dir="output" name="irq_o"></aw-port>
-          </aw-ports>
+          <!-- no author ports: unconnected nets auto-export upward
+               (wb/axis slaves in; ack/rdata/tready/irq out) -->
+          <aw-ports></aw-ports>
           <aw-templates></aw-templates>
           <aw-insts>
             <!-- register block + stream front-end -->
             <aw-inst id="u_regs" mod="sha256_wb_regs">
               <aw-template>
-                <aw-connect port="clk" to="clk"></aw-connect>
-                <aw-connect port="rst_ni" to="rst_ni"></aw-connect>
-                <aw-connect port="i_wb_cyc" to="i_wb_cyc"></aw-connect>
-                <aw-connect port="i_wb_stb" to="i_wb_stb"></aw-connect>
-                <aw-connect port="i_wb_we" to="i_wb_we"></aw-connect>
-                <aw-connect port="i_wb_addr" to="i_wb_addr" packed="auto"></aw-connect>
-                <aw-connect port="i_wb_data" to="i_wb_data" packed="auto"></aw-connect>
-                <aw-connect port="i_wb_sel" to="i_wb_sel" packed="auto"></aw-connect>
-                <aw-connect port="o_wb_ack" to="o_wb_ack"></aw-connect>
-                <aw-connect port="o_wb_data" to="o_wb_data" packed="auto"></aw-connect>
-                <aw-connect port="s_axis_tdata" to="s_axis_tdata" packed="auto"></aw-connect>
-                <aw-connect port="s_axis_tvalid" to="s_axis_tvalid"></aw-connect>
-                <aw-connect port="s_axis_tready" to="s_axis_tready"></aw-connect>
-                <aw-connect port="s_axis_tlast" to="s_axis_tlast"></aw-connect>
+                <!-- identity (clk / rst_ni / i_wb_* / s_axis_*) is inferred; only
+                     non-identity wiring is written -->
                 <aw-connect port="o_dat_valid" to="dat_valid"></aw-connect>
                 <aw-connect port="o_dat_lsb" to="dat_lsb" packed="auto"></aw-connect>
                 <aw-connect port="o_core_rst_n" to="core_rst_n"></aw-connect>
@@ -69,13 +40,12 @@
             <!-- streaming hash core (unmodified zynq_sha256) -->
             <aw-inst id="u_core" mod="sha256">
               <aw-template>
-                <aw-connect port="clk" to="clk"></aw-connect>
+                <!-- clk / irq_finish inferred by name -->
                 <aw-connect port="rst_n" to="core_rst_n"></aw-connect>
                 <aw-connect port="dat_vaild_i" to="dat_valid"></aw-connect>
                 <aw-connect port="dat_lsb_i" to="dat_lsb" packed="auto"></aw-connect>
                 <aw-rewrite match="^hash(\d)$" to="hash$1" packed="auto"></aw-rewrite>
                 <aw-connect port="hash_busy_o" to="hash_busy"></aw-connect>
-                <aw-connect port="irq_finish" to="irq_finish"></aw-connect>
               </aw-template>
             </aw-inst>
           </aw-insts>

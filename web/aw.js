@@ -854,9 +854,17 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
       connects.set(port, rest);
     }
     for (const p of ports) {
-      if (!connects.has(p.name)) {
-        res.warnings.push(`${iwhere}: port "${p.name}" of ${target} not covered by any rule (left unconnected)`);
-      }
+      if (connects.has(p.name) || p.dir === "interface")
+        continue;
+      connects.set(p.name, {
+        to: p.name,
+        packed: null,
+        width: null,
+        unpacked: null,
+        part: null,
+        nettype: null,
+        isConst: false
+      });
     }
     renderInsts.push({
       id: instName,
@@ -874,6 +882,7 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
     dimVals.set(lp.name, lp.value);
   const signals = new Map;
   const netDirs = new Map;
+  const fullDrivers = new Map;
   for (const ri of renderInsts) {
     const targetFacts = ctx.leaf?.(ri.mod) ?? childRenders.get(ri.mod) ?? ctx.wrapper?.(ri.mod) ?? null;
     const portFacts = new Map((targetFacts?.ports ?? []).map((p) => [p.name, p]));
@@ -892,6 +901,8 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
         continue;
       }
       const net0 = c.to ?? "";
+      if (pf?.dir === "output" && c.part == null)
+        fullDrivers.set(net0, (fullDrivers.get(net0) ?? 0) + 1);
       const dirs = netDirs.get(net0) ?? new Set;
       dirs.add(pf?.dir ?? "input");
       netDirs.set(net0, dirs);
@@ -899,6 +910,9 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
       mergeSignal(signals, net0, dims, dimVals, res, `${where} port "${port}"`);
     }
   }
+  for (const [net, n] of fullDrivers)
+    if (n > 1)
+      res.errors.push(`${where}: net "${net}" has ${n} full-net output drivers (short circuit)`);
   const foldPortDims = (packed, unpacked) => ({
     packed: packed ? canonicalDims(foldDims(packed, dimVals)) : null,
     unpacked: unpacked ? canonicalDims(foldDims(unpacked, dimVals)) : null
@@ -931,6 +945,8 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
       dir = "inout";
     else if ([...dirs].every((d) => d === "input"))
       dir = "input";
+    else if ([...dirs].every((d) => d === "output"))
+      dir = "output";
     if (!dir)
       continue;
     const folded = foldPortDims(sig.packed, sig.unpacked);

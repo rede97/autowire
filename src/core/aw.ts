@@ -1255,13 +1255,21 @@ function elaborateMod(
 			const { port, ...rest } = c;
 			connects.set(port, rest);
 		}
-		// Uncovered ports (no net/const/open rule) → warning per port.
+		// Uncovered ports auto-connect to a same-named net (authoring rule:
+		// identity connections are inferred, not written — the author only
+		// describes non-identity information; explicit rules and type="open"
+		// always win). Interface ports are never auto-wired.
 		for (const p of ports) {
-			if (!connects.has(p.name)) {
-				res.warnings.push(
-					`${iwhere}: port "${p.name}" of ${target} not covered by any rule (left unconnected)`,
-				);
-			}
+			if (connects.has(p.name) || p.dir === "interface") continue;
+			connects.set(p.name, {
+				to: p.name,
+				packed: null,
+				width: null,
+				unpacked: null,
+				part: null,
+				nettype: null,
+				isConst: false,
+			});
 		}
 		renderInsts.push({
 			id: instName,
@@ -1277,8 +1285,6 @@ function elaborateMod(
 	// folding: internal localparams → their text; uniquified localparams →
 	// their value text (constant, param name, or expression). Module params
 	// stay symbolic (overridable). After substitution, constants collapse via
-	// evalConst; two forms that reduce identically are the same dimension
-	// (connect-html §3.5.1 conflict rule). Port dims must never reference this
 	// module's uniquified localparams — they substitute to self-contained text.
 	const dimVals = new Map();
 	for (const [k, v] of scope.localparams) dimVals.set(k, v.resolved ?? v.value);
@@ -1287,6 +1293,9 @@ function elaborateMod(
 	// Wires: signals + auto-export ports.
 	const signals = new Map<string, SignalEntry>();
 	const netDirs = new Map<string, Set<string>>(); // net → Set of connected port directions
+	// Full-net (no part-select) output drivers per net; >1 is a short circuit.
+	// Part-select drivers may share a net (disjointness not verified).
+	const fullDrivers = new Map<string, number>();
 	for (const ri of renderInsts) {
 		const targetFacts =
 			ctx.leaf?.(ri.mod) ??
@@ -1317,6 +1326,8 @@ function elaborateMod(
 				continue;
 			}
 			const net0 = c.to ?? "";
+			if (pf?.dir === "output" && c.part == null)
+				fullDrivers.set(net0, (fullDrivers.get(net0) ?? 0) + 1);
 			const dirs = netDirs.get(net0) ?? new Set();
 			dirs.add(pf?.dir ?? "input");
 			netDirs.set(net0, dirs);
@@ -1324,6 +1335,12 @@ function elaborateMod(
 			mergeSignal(signals, net0, dims, dimVals, res, `${where} port "${port}"`);
 		}
 	}
+	for (const [net, n] of fullDrivers)
+		if (n > 1)
+			res.errors.push(
+				`${where}: net "${net}" has ${n} full-net output drivers (short circuit)`,
+			);
+
 	// Export ports: author explicit first, then auto-export.
 	const foldPortDims = (packed: string | null, unpacked: string | null) => ({
 		packed: packed ? canonicalDims(foldDims(packed, dimVals)) : null,
@@ -1356,7 +1373,8 @@ function elaborateMod(
 		let dir = null;
 		if (dirs.has("inout")) dir = "inout";
 		else if ([...dirs].every((d) => d === "input")) dir = "input";
-		if (!dir) continue; // driven internally → stays an internal signal
+		else if ([...dirs].every((d) => d === "output")) dir = "output";
+		if (!dir) continue; // driven AND consumed internally → internal signal
 		const folded = foldPortDims(sig.packed, sig.unpacked);
 		portsOut.push({
 			name: net,

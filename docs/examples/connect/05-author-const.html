@@ -33,6 +33,8 @@
               <aw-connect port="init_i" to="INIT_VAL" type="const"></aw-connect>
               <!-- 批量 tie-off：常量 rewrite 禁捕获，match 须覆盖全名 -->
               <aw-rewrite match="^test_.*_i$" to="1'b0" type="const"></aw-rewrite>
+              <!-- 输出悬空：显式 open（同名推导不会替你把两个输出短到一起） -->
+              <aw-rewrite match="^dout_o$" type="open"></aw-rewrite>
             </aw-template>
           </aw-templates>
           <aw-insts>

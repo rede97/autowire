@@ -258,7 +258,7 @@ describe("elaborate (render)", () => {
 		);
 		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
 		expect(res.errors).toEqual([]);
-		const c = mustQuery(doc, "aw-render aw-connect");
+		const c = mustQuery(doc, 'aw-render aw-connect[port="q_o"]');
 		expect(c.getAttribute("to")).toBe("bus");
 		expect(c.getAttribute("part")).toBe("15:8");
 		const sig = mustQuery(doc, 'aw-signals aw-signal[name="bus"]');
@@ -271,10 +271,10 @@ describe("elaborate (render)", () => {
 				<aw-params><aw-param name="W" expr="8"></aw-param></aw-params>
 				<aw-localparams><aw-localparam name="L" expr="3"></aw-localparam></aw-localparams>
 				<aw-insts>
-					<aw-inst id="a" mod="leaf"><aw-template><aw-param name="Width" expr="5"></aw-param></aw-template></aw-inst>
-					<aw-inst id="b" mod="leaf"><aw-template><aw-param name="Width" expr="W"></aw-param></aw-template></aw-inst>
-					<aw-inst id="c" mod="leaf"><aw-template><aw-param name="Width" expr="L"></aw-param></aw-template></aw-inst>
-					<aw-inst id="d" mod="leaf"><aw-template><aw-param name="Width" expr="W+1"></aw-param></aw-template></aw-inst>
+				<aw-inst id="a" mod="leaf"><aw-template><aw-param name="Width" expr="5"></aw-param><aw-connect port="d_i" to="0" type="const"></aw-connect><aw-rewrite match="^q_o$" type="open"></aw-rewrite></aw-template></aw-inst>
+				<aw-inst id="b" mod="leaf"><aw-template><aw-param name="Width" expr="W"></aw-param><aw-connect port="d_i" to="0" type="const"></aw-connect><aw-rewrite match="^q_o$" type="open"></aw-rewrite></aw-template></aw-inst>
+				<aw-inst id="c" mod="leaf"><aw-template><aw-param name="Width" expr="L"></aw-param><aw-connect port="d_i" to="0" type="const"></aw-connect><aw-rewrite match="^q_o$" type="open"></aw-rewrite></aw-template></aw-inst>
+				<aw-inst id="d" mod="leaf"><aw-template><aw-param name="Width" expr="W+1"></aw-param><aw-connect port="d_i" to="0" type="const"></aw-connect><aw-rewrite match="^q_o$" type="open"></aw-rewrite></aw-template></aw-inst>
 				</aw-insts>
 			</aw-content></aw-mod>`,
 		);
@@ -373,12 +373,20 @@ describe("elaborate (render)", () => {
 		expect(p.getAttribute("value")).toBe("m__u__Width");
 	});
 
-	test("auto-export: input-only nets become input ports; output-driven nets stay internal", () => {
+	test("auto-export: input-only nets become input ports; output-only nets become output ports; driven+loaded nets stay internal", () => {
 		const doc = docOf(
 			`<aw-mod name="m"><aw-content><aw-insts>
 				<aw-inst id="u" mod="leaf"><aw-template>
 					<aw-connect port="clk_i" to="ext_clk"></aw-connect>
 					<aw-connect port="q_o" to="int_q" packed="auto"></aw-connect>
+				</aw-template></aw-inst>
+				<aw-inst id="v" mod="leaf"><aw-template>
+					<aw-connect port="clk_i" to="ext_clk"></aw-connect>
+					<aw-connect port="q_o" to="shared" packed="auto"></aw-connect>
+				</aw-template></aw-inst>
+				<aw-inst id="w" mod="leaf"><aw-template>
+					<aw-connect port="clk_i" to="ext_clk"></aw-connect>
+					<aw-connect port="d_i" to="shared" packed="auto"></aw-connect>
 				</aw-template></aw-inst>
 			</aw-insts></aw-content></aw-mod>`,
 		);
@@ -389,9 +397,12 @@ describe("elaborate (render)", () => {
 			p.getAttribute("dir"),
 		]);
 		expect(ports).toContainEqual(["ext_clk", "input"]);
-		expect(ports.some(([n]) => n === "int_q")).toBe(false);
+		// driven by u.q_o, consumed nowhere → exports upward as output
+		expect(ports).toContainEqual(["int_q", "output"]);
+		// driven by v.q_o AND consumed by w.d_i → internal signal, not a port
+		expect(ports.some(([n]) => n === "shared")).toBe(false);
 		expect(
-			doc.querySelector('aw-signals aw-signal[name="int_q"]'),
+			doc.querySelector('aw-signals aw-signal[name="shared"]'),
 		).not.toBeNull();
 	});
 
@@ -524,9 +535,12 @@ describe("constant tie-off (connect-to-rules)", () => {
 		expect(connects).toContainEqual(["init_i", "{48{1'b1}}"]);
 		// ${idx} substitutes before classification
 		expect(connects).toContainEqual(["mode_i", "{2{1'b1}}"]);
-		// no nets / no ports were created for the constants
-		expect(doc.querySelectorAll("aw-render aw-signal")).toHaveLength(0);
-		expect(doc.querySelectorAll("aw-render aw-port")).toHaveLength(0);
+		// no nets were created for the constants; only inferred identity nets exist
+		expect(
+			[...doc.querySelectorAll("aw-render aw-signal")].map((s) =>
+				s.getAttribute("name"),
+			),
+		).toEqual(["clk_i", "test_a_i", "test_b_i", "q_o"]);
 	});
 
 	test("param/localparam reference is a constant; expression with all-known identifiers too", () => {
@@ -537,8 +551,12 @@ describe("constant tie-off (connect-to-rules)", () => {
 		);
 		expect(check(doc, ctxWith({ leaf })).errors).toEqual([]);
 		expect(elaborate(doc, ctxWith({ leaf })).errors).toEqual([]);
-		// no signal named W / INIT / "W+1" may appear
-		expect(doc.querySelectorAll("aw-render aw-signal")).toHaveLength(0);
+		// no signal named W / INIT / "W+1" may appear; only inferred identity nets
+		expect(
+			[...doc.querySelectorAll("aw-render aw-signal")].map((s) =>
+				s.getAttribute("name"),
+			),
+		).toEqual(["clk_i", "test_a_i", "test_b_i", "q_o"]);
 	});
 
 	test("unknown identifier in a constant expression is an error", () => {
@@ -675,13 +693,47 @@ describe("open pins (connect-to-rules §2.3)", () => {
 		).toBe(true);
 	});
 
-	test("uncovered ports produce warnings (not errors)", () => {
-		const doc = mkInst(`<aw-connect port="clk_i" to="clk"></aw-connect>`);
+	test("uncovered ports auto-connect same-name nets (identity inference), explicit rules win", () => {
+		const doc = mkInst(`<aw-connect port="en_i" to="shared_en"></aw-connect>`);
 		const res = elaborate(doc, ctxWith({ leaf }));
 		expect(res.errors).toEqual([]);
-		const warned = res.warnings.filter((w) => w.includes("not covered"));
-		expect(warned.some((w) => w.includes("en_i"))).toBe(true);
-		expect(warned.some((w) => w.includes("q_o"))).toBe(true);
-		expect(warned.some((w) => w.includes("clk_i"))).toBe(false);
+		// clk_i / d_i / q_o uncovered → same-named nets, no warnings
+		expect(res.warnings.filter((w) => w.includes("not covered"))).toEqual([]);
+		expect(
+			doc
+				.querySelector('aw-render aw-connect[port="clk_i"]')
+				?.getAttribute("to"),
+		).toBe("clk_i");
+		expect(
+			doc.querySelector('aw-render aw-connect[port="q_o"]')?.getAttribute("to"),
+		).toBe("q_o");
+		// explicit rule for en_i wins over inference
+		expect(
+			doc
+				.querySelector('aw-render aw-connect[port="en_i"]')
+				?.getAttribute("to"),
+		).toBe("shared_en");
+		// inferred nets export upward: clk_i input-only, q_o output-only
+		const ports = [...doc.querySelectorAll("aw-render aw-port")].map((p) => [
+			p.getAttribute("name"),
+			p.getAttribute("dir"),
+		]);
+		expect(ports).toContainEqual(["clk_i", "input"]);
+		expect(ports).toContainEqual(["q_o", "output"]);
+	});
+
+	test("two full-net output drivers on one net is a short-circuit error", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-connect port="q_o" to="x" packed="auto"></aw-connect>
+				</aw-template></aw-inst>
+				<aw-inst id="v" mod="leaf"><aw-template>
+					<aw-connect port="q_o" to="x" packed="auto"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors.some((e) => e.includes("output drivers"))).toBe(true);
 	});
 });

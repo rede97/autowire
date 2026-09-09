@@ -277,8 +277,14 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 - `<aw-connect port="q_o" type="open">`：显式悬空；**只允许 output / inout**（input 悬空报错，改用常量绑死）；**禁止** `to` / `part` / 维度属性。
 - `aw-rewrite` 可批量悬空（`match` 命中端口全部 open，不写 `to`）。
 - open 不建网；render 落 `type="open"`；dump 打印 `.port()`（消 PINMISSING）。
-- 缺 `to` 且未声明 `type="open"` → 报错（open 必须显式）；未被任何规则覆盖的端口 elaborate 时逐一 **warning**。
+- 缺 `to` 且未声明 `type="open"` → 报错（open 必须显式）。
 - 覆盖语义同 net：同端口后写覆盖。
+
+### 3.5.5 同名推导（identity inference）
+
+- **未被任何规则覆盖的端口**（非 interface）elaborate 时**自动连到同名网**——同名连接是推导出来的，作者面**原则省略不写**，只描述非同名信息（避免底层 IP 统一换名时逐行同步 HTML 的负担）。
+- 同名网天然**合流**（如各例化的 `clk` 汇成一网）；显式规则与 `type="open"` **永远优先**于推导。
+- 安全网：同一网有 **>1 个全网（无 part-select）output 驱动** → **报错**（短路）；part-select 分片驱动允许共网（不相交性不校验）。多例化的同名 output（如 sdspi `o_debug`）必须显式 open 或显式改名。
 
 ### 3.5.2 `nettype`（`wire` / `logic`）
 
@@ -326,9 +332,9 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ### 4.1 信号 vs 导出端口
 
-- 已被连线使用的 net **必须**进 `aw-signals`；**禁止**仅因被连线就升为导出 `aw-port`。  
-- **未连接**的信号 **可以**自动导出为 `aw-port`。  
-- 作者显式 `aw-content`/`aw-ports` **优先**于自动导出。
+- 驱动与负载都在本层内部的 net **必须**进 `aw-signals`（内部信号）。
+- 无驱动（只连叶子 input）的 net 自动导出为 **input** 端口；只被叶子 output 驱动、本层无负载的 net 自动导出为 **output** 端口；含 inout 导出为 **inout**。
+- 作者显式 `aw-content`/`aw-ports` **优先**于自动导出——`aw-ports` 只写需要显式控制的端口，**一般不应**罗列全部 IO。
 
 ### 4.2 dump 范围
 
