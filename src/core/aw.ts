@@ -642,12 +642,17 @@ function checkMod(
 			}
 		}
 		assertAcyclic(depsOf, res, where);
-		// Path-accumulated visible set: own children + own deps + ancestors' deps.
-		const acc = new Set(visibleFromAbove);
-		for (const s of sibs) {
-			for (const d of depsOf.get(attr(s, "name") ?? "") ?? []) acc.add(d);
-			checkMod(s, ctx, res, here, new Set(acc));
-		}
+		// Path-accumulated visible set for children:
+		//   visibleFromAbove ∪ this.mod.deps
+		// Each sibling gets the same ancestor set; a sibling's own deps are
+		// applied in checkContent / when that sibling descends further.
+		// Do NOT fold other siblings' deps into the shared set (html.md §3.3).
+		const parentDeps = (attr(mod, "deps") ?? "")
+			.split(/[\s,]+/)
+			.filter(Boolean);
+		const forChildren = new Set(visibleFromAbove);
+		for (const d of parentDeps) forChildren.add(d);
+		for (const s of sibs) checkMod(s, ctx, res, here, new Set(forChildren));
 	}
 }
 

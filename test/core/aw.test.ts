@@ -109,6 +109,37 @@ describe("check (author face)", () => {
 		expect(check(withDeps, ctxWith({})).errors).toEqual([]);
 	});
 
+	test("sibling does not inherit another sibling's deps (path-accum only ancestors)", () => {
+		// a deps=c makes c visible to a (and a's descendants), not to b.
+		const doc = docOf(
+			`<aw-mod name="top"><aw-content></aw-content><aw-submods>
+				<aw-mod name="a" deps="c"><aw-content></aw-content></aw-mod>
+				<aw-mod name="b"><aw-content><aw-insts>
+					<aw-inst id="u" mod="c"><aw-template></aw-template></aw-inst>
+				</aw-insts></aw-content></aw-mod>
+				<aw-mod name="c"><aw-content></aw-content></aw-mod>
+			</aw-submods></aw-mod>`,
+		);
+		const res = check(doc, ctxWith({}));
+		expect(
+			res.errors.some(
+				(e) => e.includes('mod "c"') && e.includes("visible set"),
+			),
+		).toBe(true);
+	});
+
+	test("child sees parent deps via path accumulation", () => {
+		const doc = docOf(
+			`<aw-mod name="top" deps="shared"><aw-content></aw-content><aw-submods>
+				<aw-mod name="child"><aw-content><aw-insts>
+					<aw-inst id="u" mod="shared"><aw-template></aw-template></aw-inst>
+				</aw-insts></aw-content></aw-mod>
+				<aw-mod name="shared"><aw-content></aw-content></aw-mod>
+			</aw-submods></aw-mod>`,
+		);
+		expect(check(doc, ctxWith({})).errors).toEqual([]);
+	});
+
 	test("deps cycle and self-dep are errors", () => {
 		const doc = docOf(
 			`<aw-mod name="top"><aw-content></aw-content><aw-submods>
