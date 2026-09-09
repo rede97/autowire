@@ -16,6 +16,7 @@ interface UnitMeta {
 	id: string;
 	html: string;
 	deps: string[];
+	kind?: "connect" | "sim";
 }
 
 interface UnitEntry {
@@ -287,6 +288,7 @@ async function buildCtx(
 		ctx: {
 			style: state.style,
 			unitId: id,
+			unitKind: unit.kind ?? "connect",
 			unitDeps: unit.deps,
 			unitMods: state.unitMods,
 			leaf: (m: string) => state.leafCache.get(m) ?? null,

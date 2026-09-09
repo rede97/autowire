@@ -42,7 +42,7 @@ toml section       可选：autowire.toml 中 [plugin.<id>] / [regfile.<id>] …
 
 1. 未知标签且未注册 → check **报错**（勿静默忽略）。  
 2. 核心 `aw-*` 标签 **禁止**被插件覆盖。  
-3. 类型 A 的 `generate` **禁止**在 `/api/dump` 路径里偷偷写盘；**应当**有独立命令或明确的 generate 相位（如 `autowire plugin generate <id>`）。  
+3. 类型 A 的 `generate` **禁止**在 `/api/dump` 路径里偷偷写盘；**应当**有独立命令或明确的 generate 相位（如 `autowire plugin generate <id>`）；产物 **必须**落在 `plugins_dir/<plugin-id>/`（见 [`../workspace/toml.md`](../workspace/toml.md) §4.0），**禁止**写入 `connect_dir` / `sim_dir`。  
 4. 类型 B 展开结果 **必须**能通过与核心相同的 connect check。
 
 ## 4. 自定义标签与 `aw-submods`
@@ -67,8 +67,9 @@ autowire.toml
   [plugin.other] …
   [connect.phy_wrap] html=…
 
-plugin generate  →  gen/*.sv  →  analysis  →  RtlIndex
-connect HTML     →  check → render → dump   # 只例化 RtlIndex / 包装模
+plugin generate  →  plugins_dir/<plugin-id>/*.sv  →  analysis  →  RtlIndex
+connect HTML     →  check → render → dump → connect_dir
+sim HTML (TB)    →  check → render → dump → sim_dir
 elaborate plugin tags → 核心 aw-* 节点后再走同一条 check/render
 ```
 

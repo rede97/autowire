@@ -170,4 +170,43 @@ describe("printer", () => {
 			/render first/,
 		);
 	});
+
+	test("aw-tb-mod: portless module, logic nets, includes, raw RHS", () => {
+		const snap = `<autowire>
+  <aw-tb-mod name="tb_top" body-pre-include="env.svh" body-post-include="stim.svh">
+    <aw-render tb="1" body-pre-include="env.svh" body-post-include="stim.svh">
+      <aw-localparams>
+        <aw-localparam name="IDLE" value="1'b1"></aw-localparam>
+      </aw-localparams>
+      <aw-signals>
+        <aw-signal name="clk"></aw-signal>
+        <aw-signal name="bus" packed="[31:0]"></aw-signal>
+      </aw-signals>
+      <aw-insts>
+        <aw-inst id="u0" mod="dut">
+          <aw-connect port="clk" to="clk"></aw-connect>
+          <aw-connect port="probe" to="tb_top.u0.irq" type="raw"></aw-connect>
+          <aw-connect port="dbg" type="open"></aw-connect>
+        </aw-inst>
+      </aw-insts>
+    </aw-render>
+  </aw-tb-mod>
+</autowire>`;
+		const m = parseSnapshot(snap)[0];
+		if (!m) throw new Error("no tb module");
+		expect(m.isTb).toBe(true);
+		expect(m.bodyPreInclude).toEqual(["env.svh"]);
+		expect(m.bodyPostInclude).toEqual(["stim.svh"]);
+		const sv = printSv(m, "soc_tb");
+		expect(sv).toContain("sim HTML");
+		expect(sv).toContain("module tb_top;");
+		expect(sv).toContain('`include "env.svh"');
+		expect(sv).toContain('`include "stim.svh"');
+		expect(sv).toContain("logic clk;");
+		expect(sv).toContain("logic [31:0] bus;");
+		expect(sv).toContain(".probe(tb_top.u0.irq)");
+		expect(sv).toContain(".dbg()");
+		expect(sv).not.toContain("module tb_top (");
+		expect(sv).not.toContain("input ");
+	});
 });

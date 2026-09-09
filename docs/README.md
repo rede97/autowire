@@ -17,14 +17,14 @@
 | [connect/to-rules.md](./connect/to-rules.md) | `to`：net / const / open；identity | 已实现 |
 | [connect/check.md](./connect/check.md) | check vs elaborate vs dump 职责清单 | 已实现 |
 | [connect/lifecycle.md](./connect/lifecycle.md) | 生命周期钩子（高级） | 已实现 |
-| [connect/tb-mod-proposal.md](./connect/tb-mod-proposal.md) | TB 顶层 `aw-tb-mod` / raw / include | 裁定已定 / 未落地 |
+| [connect/tb-mod-proposal.md](./connect/tb-mod-proposal.md) | TB 顶层 `aw-tb-mod` / raw / include | **已落地** |
 | [examples/connect/](./examples/connect/) | 作者面 + render 示意 | 草稿 |
 
 ## 工作区 · [`workspace/`](./workspace/)
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [workspace/toml.md](./workspace/toml.md) | `autowire.toml`、`.f` / 宏、connect 单元 DAG | 已实现（cli 除外） |
+| [workspace/toml.md](./workspace/toml.md) | `autowire.toml`、三分产物目录、`[connect.*]` / `[sim.*]` | 已实现 |
 | [workspace/web-ui.md](./workspace/web-ui.md) | `autowire web` 布局与 GET 动作 | 已实现 |
 
 ## 分析 sidecar · [`hdxml/`](./hdxml/)

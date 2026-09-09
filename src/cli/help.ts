@@ -73,6 +73,7 @@ Landed
   POST /api/check|/api/dump validate-only / only RTL write path; snapshots → .autowire/connect/
   Playwright cases/golden   src/e2e-web.test.ts + test/golden/*.sv (headless Chromium)
   Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
+  aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; dump → sim_dir
 
 Not landed
   autowire cli              build only after Web cases/goldens prove stable
@@ -99,8 +100,14 @@ Commands: autowire init | autowire analysis  (see help analysis)
 Shared by deps / web / cli for the RTL universe:
   [hdxml] bin="…"       hdxml binary path (unset: --hdxml > $HDXML_BIN > repo target > PATH)
   [analysis.*]  .f / sources / walk / incdirs / defines / keep_raw / index dir
-  [connect.<id>]        named HTML unit: html= + optional deps= (DAG; no wiring)
-  [dump] dir="gen"      dumped RTL output (not under .autowire)
+  [connect.<id>]        DE unit: html= + optional deps= (DAG; aw-mod root; → connect_dir)
+  [sim.<id>]            DV TB unit: html= under sim/; aw-tb-mod root; deps may list
+                        connect ids; dump → sim_dir (no .autowire/connect XML)
+  [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
+                        connect_dir="gen/connect"  DE wrappers
+                        sim_dir="gen/sim"          DV TB tops
+                        plugins_dir="gen/plugins"  type-A plugins; subdirs per plugin id
+                        dir="gen"                  deprecated single sink (compat warn)
   [style] param_inline      true (default) inline simple overrides | false: fold all to Mod__Inst__Param
   [style] port_align        declaration port columns: dir / type / packed, names left-aligned (default false)
   [style] param_align       declaration parameter = column (default false)
@@ -130,6 +137,7 @@ Macro policy (hdxml)
 
 Boundaries
   toml = project config; HTML = connectivity SoT (no wiring in toml)
+  DE vs DV: [connect.*] vs [sim.*] — separate HTML trees; never one file for both
   connect deps: missing ref = error; unused dep = warn (at elaborate); cycle = error; DAG enables parallel elaborate
 `,
 

@@ -45,7 +45,8 @@ beforeAll(async () => {
 		recursive: true,
 		force: true,
 	});
-	await rm(ws.dumpDir, { recursive: true, force: true });
+	await rm(ws.connectDir, { recursive: true, force: true });
+	await rm(ws.simDir, { recursive: true, force: true });
 	base = await startWeb(ws, 0, null);
 	browser = await chromium.launch({ headless: true });
 });
@@ -83,7 +84,7 @@ describe("autowire web e2e", () => {
 		expect(
 			await page.locator("#aw-live aw-render > aw-insts > aw-inst").all(),
 		).toHaveLength(0);
-		expect(existsSync(ws.dumpDir)).toBe(false);
+		expect(existsSync(ws.connectDir)).toBe(false);
 		await page.close();
 	});
 
@@ -143,13 +144,37 @@ describe("autowire web e2e", () => {
 		const names = ["soc_top", "sha256wb"];
 		await mkdir(GOLDEN_DIR, { recursive: true });
 		for (const n of names) {
-			const got = await readFile(join(ws.dumpDir, `${n}.sv`), "utf8");
+			const got = await readFile(join(ws.connectDir, `${n}.sv`), "utf8");
 			const goldenPath = join(GOLDEN_DIR, `${n}.sv`);
 			if (UPDATE_GOLDEN || !existsSync(goldenPath)) {
 				await writeFile(goldenPath, got, "utf8");
 			} else {
 				expect(got).toBe(await readFile(goldenPath, "utf8"));
 			}
+		}
+	});
+
+	test("?dump=1 on soc_tb: writes gen/sim/tb_soc.sv (no connect XML for sim)", async () => {
+		const page = await browser.newPage();
+		await page.goto(`${base}?unit=soc_tb&dump=1`);
+		const status = await waitStatus(page);
+		expect(status.state).toBe("done");
+		expect(status.text).toMatch(/dump: \d+ file\(s\)/);
+		await page.close();
+		expect(existsSync(join(DEMO, ".autowire", "connect", "soc_tb.xml"))).toBe(
+			false,
+		);
+		const got = await readFile(join(ws.simDir, "tb_soc.sv"), "utf8");
+		expect(got).toContain("module tb_soc;");
+		expect(got).toContain('`include "tb_env_setup.svh"');
+		expect(got).toContain('`include "tb_sim.svh"');
+		expect(got).toContain("soc_top u_dut");
+		const goldenPath = join(GOLDEN_DIR, "tb_soc.sv");
+		await mkdir(GOLDEN_DIR, { recursive: true });
+		if (UPDATE_GOLDEN || !existsSync(goldenPath)) {
+			await writeFile(goldenPath, got, "utf8");
+		} else {
+			expect(got).toBe(await readFile(goldenPath, "utf8"));
 		}
 	});
 

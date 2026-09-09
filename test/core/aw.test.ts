@@ -768,3 +768,100 @@ describe("open pins (connect-to-rules §2.3)", () => {
 		expect(res.errors.some((e) => e.includes("output drivers"))).toBe(true);
 	});
 });
+
+describe("aw-tb-mod / raw / includes", () => {
+	test("sim unit requires aw-tb-mod; connect forbids it", () => {
+		const tb = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts></aw-insts></aw-content></aw-mod>`,
+		);
+		expect(
+			check(tb, { unitKind: "sim" }).errors.some((e) =>
+				e.includes("aw-tb-mod"),
+			),
+		).toBe(true);
+		const ok = docOf(
+			`<aw-tb-mod name="tb"><aw-content><aw-insts></aw-insts></aw-content></aw-tb-mod>`,
+		);
+		expect(check(ok, { unitKind: "sim" }).errors).toEqual([]);
+		const badConnect = docOf(
+			`<aw-tb-mod name="tb"><aw-content><aw-insts></aw-insts></aw-content></aw-tb-mod>`,
+		);
+		expect(
+			check(badConnect, { unitKind: "connect" }).errors.some((e) =>
+				e.includes("must not contain <aw-tb-mod>"),
+			),
+		).toBe(true);
+	});
+
+	test("aw-tb-mod forbids params/ports/submods/deps; include only on tb", () => {
+		const doc = docOf(
+			`<aw-tb-mod name="tb" deps="x"><aw-content>
+				<aw-params><aw-param name="W" expr="8"></aw-param></aw-params>
+				<aw-ports><aw-port name="clk" dir="input"></aw-port></aw-ports>
+				<aw-insts></aw-insts>
+			</aw-content>
+			<aw-submods><aw-mod name="kid"><aw-content><aw-insts></aw-insts></aw-content></aw-mod></aw-submods>
+			</aw-tb-mod>`,
+		);
+		const errs = check(doc, { unitKind: "sim" }).errors.join("\n");
+		expect(errs).toContain("aw-tb-mod@deps");
+		expect(errs).toContain("forbids aw-params");
+		expect(errs).toContain("forbids aw-ports");
+		expect(errs).toContain("must not contain aw-submods");
+		const withInc = docOf(
+			`<aw-mod name="m" body-pre-include="x.svh"><aw-content><aw-insts></aw-insts></aw-content></aw-mod>`,
+		);
+		expect(
+			check(withInc, { unitKind: "connect" }).errors.some((e) =>
+				e.includes("body-*-include"),
+			),
+		).toBe(true);
+	});
+
+	test("type=raw only in aw-tb-mod; no net; snapshot carries raw", () => {
+		const leaf = leafOf([{ name: "probe", dir: "input" }]);
+		const inMod = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf"><aw-template>
+					<aw-connect port="probe" type="raw" to="tb.u.path"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		expect(
+			check(inMod, ctxWith({ leaf }, { unitKind: "connect" })).errors.some(
+				(e) => e.includes('type="raw"'),
+			),
+		).toBe(true);
+		const tb = docOf(
+			`<aw-tb-mod name="tb" body-pre-include="env.svh" body-post-include="stim.svh">
+				<aw-content><aw-insts>
+					<aw-inst id="u" mod="leaf"><aw-template>
+						<aw-connect port="probe" type="raw" to="\${id}.deep"></aw-connect>
+					</aw-template></aw-inst>
+				</aw-insts></aw-content>
+				<aw-render></aw-render>
+			</aw-tb-mod>`,
+		);
+		const chk = check(tb, ctxWith({ leaf }, { unitKind: "sim" }));
+		expect(chk.errors).toEqual([]);
+		const res = elaborate(tb, ctxWith({ leaf }, { unitKind: "sim" }));
+		expect(res.errors).toEqual([]);
+		expect(tb.querySelector("aw-render aw-signal")).toBeNull();
+		expect(
+			tb
+				.querySelector('aw-render aw-connect[port="probe"]')
+				?.getAttribute("type"),
+		).toBe("raw");
+		expect(
+			tb
+				.querySelector('aw-render aw-connect[port="probe"]')
+				?.getAttribute("to"),
+		).toBe("u.deep");
+		const snap = serializeSnapshot(tb);
+		expect(snap).toContain("aw-tb-mod");
+		expect(snap).toContain('body-pre-include="env.svh"');
+		expect(snap).toContain('body-post-include="stim.svh"');
+		expect(snap).toContain('type="raw"');
+		expect(tb.querySelector("aw-render aw-port")).toBeNull();
+	});
+});

@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  DV sim unit "soc_tb": aw-tb-mod top for SoC smoke.
+  Contract: docs/connect/tb-mod-proposal.md
+  toml: [sim.soc_tb] html=sim/soc_tb.html deps=["soc_top"]
+  Dump → gen/sim/tb_soc.sv; board clk/rst/flash/checker live in body includes.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>soc_tb</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-tb-mod
+        name="tb_soc"
+        body-pre-include="tb_env_setup.svh"
+        body-post-include="tb_sim.svh"
+      >
+        <aw-content>
+          <aw-imports></aw-imports>
+          <aw-localparams>
+            <aw-localparam name="SER_RX_IDLE" expr="1'b1"></aw-localparam>
+          </aw-localparams>
+          <aw-templates></aw-templates>
+          <aw-insts>
+            <aw-inst id="u_dut" mod="soc_top">
+              <aw-template>
+                <!-- clk / rst_ni / trap / ser_tx / test_* / flash_*_oe|do identity -->
+                <aw-connect port="ser_rx" to="SER_RX_IDLE" type="const"></aw-connect>
+                <!-- bidirectional pads: wire (logic forbids multi-driver / inout) -->
+                <aw-connect port="flash_io0_di" to="flash_io0" nettype="wire"></aw-connect>
+                <aw-connect port="flash_io1_di" to="flash_io1" nettype="wire"></aw-connect>
+                <aw-connect port="flash_io2_di" to="flash_io2" nettype="wire"></aw-connect>
+                <aw-connect port="flash_io3_di" to="flash_io3" nettype="wire"></aw-connect>
+                <aw-connect port="sd0_miso" to="1'b1" type="const"></aw-connect>
+                <aw-connect port="sd0_cd" to="1'b1" type="const"></aw-connect>
+                <aw-connect port="sd1_miso" to="1'b1" type="const"></aw-connect>
+                <aw-connect port="sd1_cd" to="1'b1" type="const"></aw-connect>
+                <aw-rewrite match="^sd[01]_(cs_n|sck|mosi)$" type="open"></aw-rewrite>
+              </aw-template>
+            </aw-inst>
+          </aw-insts>
+        </aw-content>
+        <aw-render></aw-render>
+      </aw-tb-mod>
+    </autowire>
+  </body>
+</html>

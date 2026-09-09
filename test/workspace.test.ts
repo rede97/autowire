@@ -23,7 +23,11 @@ describe("workspace", () => {
 		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
 		expect(cfg.root).toBe(dir);
 		expect(cfg.indexDir).toBe(join(dir, ".autowire/hdxml"));
-		expect(cfg.dumpDir).toBe(join(dir, "gen"));
+		expect(cfg.dumpDir).toBe(join(dir, "gen/connect"));
+		expect(cfg.connectDir).toBe(join(dir, "gen/connect"));
+		expect(cfg.simDir).toBe(join(dir, "gen/sim"));
+		expect(cfg.pluginsDir).toBe(join(dir, "gen/plugins"));
+		expect(cfg.simUnits).toEqual([]);
 		expect(hdxmlArgs(cfg)).toEqual([
 			"--output-dir",
 			join(dir, ".autowire/hdxml"),
@@ -41,9 +45,51 @@ deps = ["a"]
 `);
 		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
 		expect(cfg.connectUnits).toEqual([
-			{ id: "a", html: join(dir, "connect/a.html"), deps: [] },
-			{ id: "b", html: join(dir, "connect/b.html"), deps: ["a"] },
+			{
+				id: "a",
+				html: join(dir, "connect/a.html"),
+				deps: [],
+				kind: "connect",
+			},
+			{
+				id: "b",
+				html: join(dir, "connect/b.html"),
+				deps: ["a"],
+				kind: "connect",
+			},
 		]);
+	});
+
+	test("[sim.<id>] parses and may deps connect ids", async () => {
+		const dir = tempWorkspace(`
+[connect.soc]
+html = "connect/soc.html"
+[sim.tb]
+html = "sim/tb.html"
+deps = ["soc"]
+[dump]
+connect_dir = "gen/connect"
+sim_dir = "gen/sim"
+`);
+		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
+		expect(cfg.simUnits).toEqual([
+			{ id: "tb", html: join(dir, "sim/tb.html"), deps: ["soc"], kind: "sim" },
+		]);
+		expect(cfg.connectDir).toBe(join(dir, "gen/connect"));
+		expect(cfg.simDir).toBe(join(dir, "gen/sim"));
+	});
+
+	test("connect deps must not include sim ids", async () => {
+		const dir = tempWorkspace(`
+[connect.a]
+html = "a.html"
+deps = ["tb"]
+[sim.tb]
+html = "tb.html"
+`);
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"sim unit",
+		);
 	});
 
 	test("flat [connect] html= list is rejected", async () => {

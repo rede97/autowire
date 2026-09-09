@@ -19,8 +19,9 @@ exclude_filenames = []
 dir = ".autowire/hdxml"
 
 [dump]
-# dump output RTL directory (DV artifact)
-dir = "gen"
+connect_dir = "gen/connect"
+sim_dir = "gen/sim"
+plugins_dir = "gen/plugins"
 
 [style]
 # traditional RTL look: aligned declaration/inst ports + params + signals,
@@ -40,3 +41,8 @@ html = "connect/sha256wb.html"
 [connect.soc_top]
 html = "connect/soc_top.html"
 deps = ["sha256wb"]
+
+# DV TB top (aw-tb-mod) — dump → gen/sim/
+[sim.soc_tb]
+html = "sim/soc_tb.html"
+deps = ["soc_top"]

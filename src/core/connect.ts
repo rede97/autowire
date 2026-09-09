@@ -27,6 +27,7 @@ export interface EngineCtx {
 	/** [style] from autowire.toml (param_inline, localparam_upper). */
 	style: { paramInline: boolean; localparamUpper: boolean };
 	unitId: string;
+	unitKind: "connect" | "sim";
 	unitDeps: string[];
 	unitMods: Map<string, string>; // mod name → owning unit id (top-level mods)
 	leaf: (mod: string) => LeafModule | null;
@@ -109,6 +110,7 @@ export interface BuiltCtx {
 }
 
 /** Build the engine ctx for one unit: leaf tables + dep snapshots + unit mods. */
+/** Build the engine ctx for one unit: leaf tables + dep snapshots + unit mods. */
 export async function buildEngineCtx(
 	ws: WorkspaceConfig,
 	unit: ConnectUnit,
@@ -138,6 +140,7 @@ export async function buildEngineCtx(
 			localparamUpper: ws.styleLocalparamUpper,
 		},
 		unitId: unit.id,
+		unitKind: unit.kind,
 		unitDeps: unit.deps,
 		unitMods,
 		leaf,

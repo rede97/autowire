@@ -184,6 +184,7 @@ async function buildCtx(id) {
     ctx: {
       style: state.style,
       unitId: id,
+      unitKind: unit.kind ?? "connect",
       unitDeps: unit.deps,
       unitMods: state.unitMods,
       leaf: (m) => state.leafCache.get(m) ?? null,

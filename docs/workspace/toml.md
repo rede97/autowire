@@ -1,9 +1,10 @@
 # 工作区配置 `autowire.toml`（实现约束）
 
-> 状态：**已实现**（`init` / `analysis` / `web` / `check` / `/api/dump` 全链路落地；`cli` 未落地）。  
+> 状态：**已实现**（`init` / `analysis` / `web` / `check` / `/api/dump`；`cli` 未落地）。  
+> **产出三分目录 + `[sim.<id>]`**：文档已定（§4.0 / §4.1.1）；实现仍兼容旧 `[dump] dir`——迁移未完成前以代码为准，改实现时同步 help。  
 > 摘要切片：`bun index.ts help workspace`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
-> 关联：[`../connect/html.md`](../connect/html.md)（连接 elaboration）、[`hdxml/cli.md`](../hdxml/cli.md)、[`hdxml/rtlindex-xml.md`](../hdxml/rtlindex-xml.md)。
+> 关联：[`../connect/html.md`](../connect/html.md)、[`../connect/tb-mod-proposal.md`](../connect/tb-mod-proposal.md)、[`hdxml/cli.md`](../hdxml/cli.md)、[`hdxml/rtlindex-xml.md`](../hdxml/rtlindex-xml.md)。
 
 ## 1. 为什么要有一份顶层配置
 
@@ -24,7 +25,7 @@ RtlIndex 用 `definesFp` 把宏集合绑进索引有效性（见 `rtlindex-xml.m
 | 源码入口 `.f` / walk / sources | 连接关系、rewrite、例化模板 |
 | 宏：`defines` 与 define `.svh`（对齐 hdxml `--define-headers`） | 生成 `.sv` 的逐端口细节 |
 | `-I` incdirs、排除文件名等分析选项 | 平行模块 IR / 旧 stune `mods_info.toml` 缓存 |
-| RtlIndex 索引目录（固定 `.autowire/hdxml`）、dump RTL 输出目录、**具名连接单元** `[connect.<id>]`（路径 + `deps`） | HTML 方言 / 连线细节本身 |
+| RtlIndex 索引目录（固定 `.autowire/hdxml`）、**产物三分目录**（`connect_dir` / `sim_dir` / `plugins_dir`）、**具名单元** `[connect.<id>]` / `[sim.<id>]` | HTML 方言 / 连线细节本身 |
 
 
 - 连接 SoT **只有** HTML（`../connect/html.md`）。  
@@ -69,8 +70,12 @@ SYNTHESIS = "1"
 dir = ".autowire/hdxml"
 
 [dump]
-# dump 写出的 RTL 目录（产物，交给 DV；不放 .autowire）
-dir = "gen"
+# 产物目录三分（DE / DV / 插件）；相对工作区根。
+# 现状实现仍认单一 dir=（兼容）；迁移后以三分目录为准（见 §4.0）。
+connect_dir = "gen/connect"
+sim_dir     = "gen/sim"
+plugins_dir = "gen/plugins"
+# dir = "gen"   # 已弃用：勿与三分目录混用
 
 [style]
 # 例化参数风格（connect-rules §7）：
@@ -94,13 +99,33 @@ html = "connect/sha256wb.html"
 [connect.soc_top]
 html = "connect/soc_top.html"
 deps = ["sha256wb"]
+
+# DV 仿真顶（与 DE connect 分节、分目录；根必须为 aw-tb-mod）
+[sim.soc_tb]
+html = "sim/soc_tb.html"
+deps = ["soc_top"]
 ```
 
-### 4.1 `[connect.<id>]`（连接单元 DAG）
+### 4.0 产出目录三分（DE / DV / 插件）
+
+| 键 | 默认 | 谁写入 | 内容 |
+|---|---|---|---|
+| `connect_dir` | `gen/connect` | `[connect.<id>]` dump（`aw-mod` 包装） | DE 封装 RTL |
+| `sim_dir` | `gen/sim` | `[sim.<id>]` dump（`aw-tb-mod` TB 顶） | DV 仿真顶 |
+| `plugins_dir` | `gen/plugins` | 类型 A 插件 `generate` | 其下 **`plugins_dir/<plugin-id>/`** 再细分 |
+
+规则：
+
+1. **禁止** DE 包装与 DV TB 顶写在同一 HTML，或把 TB html 挂在 `connect/` 作者树下充 DE。  
+2. **禁止**再用单一 `dir` 混写三类产物（迁移期：仅设置了旧 `dir` 时，实现可临时把 connect dump 落到该目录并 **警告**；新工作区用三分目录）。  
+3. 插件 **禁止**往 `connect_dir` / `sim_dir` 写生成物；只进 `plugins_dir/<id>/`。  
+4. `.autowire/` 仍只放索引/快照/调试临时物，**不是**上述三类产物目录。
+
+### 4.1 `[connect.<id>]`（DE 连接单元 DAG）
 
 | 字段 | 必须 | 含义 |
 |---|---|---|
-| `html` | 是 | 该单元的连接 HTML 路径（相对工作区根）；**禁止**在此写 top / 连线 |
+| `html` | 是 | DE 连接 HTML（相对工作区根）；**应当**落在 `connect/`（或 DE 约定树）；**禁止**以 `aw-tb-mod` 为根 |
 | `deps` | 否 | 其它连接单元 **id** 列表（不是路径、不是 `aw-mod@name`）；缺省 = `[]` |
 
 规则：
@@ -110,7 +135,22 @@ deps = ["sha256wb"]
 3. **`deps` 图必须无环**：加载 toml 时做拓扑检查；成环 → **报错**。未知 id / 重复 id / 自依赖 → **报错**。  
 4. **并行 elaborate**：DAG 就绪后，**无依赖边的单元可以并行**处理；仅列表、无 deps 时只能保守串行——这是具名 `deps` 相对扁平 `html = []` 的结构优势。  
 5. toml **仍然禁止**连线细节；`deps` 只表达**包级**依赖。单文件内层级见 [`../connect/html.md`](../connect/html.md)（`aw-submods`）。  
-6. dump / `.autowire/connect/` 快照 **应当**按单元 id 落盘（`<id>.xml`；生成物，可删重建）。
+6. dump 写入 **`connect_dir`**；`.autowire/connect/` 快照按单元 id 落盘（`<id>.xml`；生成物，可删重建）。  
+7. **禁止** `deps` 指向 `[sim.<id>]`（DE 不例化 TB 顶）。
+
+### 4.1.1 `[sim.<id>]`（DV 仿真顶单元）
+
+| 字段 | 必须 | 含义 |
+|---|---|---|
+| `html` | 是 | DV TB HTML；**应当**落在 `sim/`（或 DV 约定树）；根 **必须**为 `aw-tb-mod` |
+| `deps` | 否 | 可依赖 `[connect.<id>]`（及若将来允许多 TB 互引则其它 sim id）；缺省 `[]` |
+
+规则：
+
+1. 与 §4.1 相同的缺边 / 多余 / 环纪律；**合入同一 DAG** 做拓扑（sim 为汇点）。  
+2. dump 写入 **`sim_dir`**；**不**写抽象接口到 `.autowire/connect/`（不可被例化）。  
+3. **禁止**与 DE 包装共文件；**禁止**登记在 `[connect.*]` 下充数。  
+4. 细则见 [`../connect/tb-mod-proposal.md`](../connect/tb-mod-proposal.md)。
 
 说明：
 
@@ -123,7 +163,7 @@ deps = ["sha256wb"]
 - **`.autowire/`** 是工作区**生成临时目录**（索引等缓存），可整体删除重建；**禁止**放入手写内容或任何 SoT。  
   - `.autowire/hdxml/` — RtlIndex  
   - `.autowire/connect/` — 各连接单元 elaborate 后的快照，**只有** `<id>.xml`（抽象模块信息：params / ports / imports；hdxml 风格规范：属性承载、方向标签名、模块字典序、无时间戳/哈希；跨单元 deps 加载与 dump 都读它）。**完整 `aw-render` 不再落盘**（无 `<id>.html`）；dump 印 SV 只认 POST 体活 DOM。**禁止** dump 直接 load 作者 HTML
-  - dump RTL 产物目录（默认 `gen/`）与临时目录分开。
+  - 产物目录：`connect_dir` / `sim_dir` / `plugins_dir`（§4.0），与临时目录分开。
   - `.autowire/save/` — 调试落盘：`POST /api/save` 把活 DOM（调试后的 `aw-content` + `aw-render`）写成 `<id>.html`；**临时产物**，不充当作者 SoT，是否合回作者 HTML 由本地决定（见 [`mcp/README.md`](../mcp/README.md) §5）
 
 ### 4.2 HTML / web 如何加载这两类 XML（必须）
@@ -137,7 +177,7 @@ deps = ["sha256wb"]
 
 补充纪律：
 
-1. **作者 HTML** 路径只来自 toml `[connect.<id>] html=`（或 `web` 打开的页）；**禁止**从 `.autowire/connect/` 当作者 SoT 打开编辑。  
+1. **作者 HTML** 路径只来自 toml `[connect.<id>]` / `[sim.<id>]` 的 `html=`（或 `web` 打开的页）；**禁止**从 `.autowire/connect/` 当作者 SoT 打开编辑。  
 2. **叶子事实**只认 `.autowire/hdxml/`；**禁止**页面重解析 `.sv` / 旁路 RtlIndex。  
 3. **跨 `[connect.<id>]` 依赖**：先按 deps DAG 保证被依赖单元已有 connect 快照（或本会话内已 elaborate 并写入），再处理依赖方；与 toml `deps` / 并行 elaborate 一致。  
 4. **dump** 读 POST 体活 DOM 印 SV，并刷新 `.autowire/connect/<id>.xml` 快照；**禁止**再 load 作者 `html=` 当 netlist。

@@ -27,7 +27,12 @@ import {
 } from "../core/printer.ts";
 import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex } from "../rtl/rtlindex.ts";
-import type { WorkspaceConfig } from "../workspace.ts";
+import {
+	allUnits,
+	findUnit,
+	unitDumpDir,
+	type WorkspaceConfig,
+} from "../workspace.ts";
 
 const UNIT_ID = /^[A-Za-z0-9_-]+$/;
 
@@ -60,14 +65,19 @@ async function handleApi(
 	const { ws, leafDb } = state;
 	const path = url.pathname;
 	if (req.method === "GET" && path === "/api/units") {
-		const units = topoUnits(ws.connectUnits);
+		const units = topoUnits(allUnits(ws));
 		return json({
 			workspace: ws.root,
 			style: {
 				paramInline: ws.styleParamInline,
 				localparamUpper: ws.styleLocalparamUpper,
 			},
-			units: units.map((u) => ({ id: u.id, html: u.html, deps: u.deps })),
+			units: units.map((u) => ({
+				id: u.id,
+				html: u.html,
+				deps: u.deps,
+				kind: u.kind,
+			})),
 			defaultUnit: state.defaultUnit,
 		});
 	}
@@ -99,7 +109,7 @@ async function handleApi(
 	}
 	if (req.method === "GET" && path === "/api/author") {
 		const id = url.searchParams.get("id") ?? "";
-		const unit = ws.connectUnits.find((u) => u.id === id);
+		const unit = findUnit(ws, id);
 		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
 		if (!existsSync(unit.html))
 			return json({ error: `author HTML not found: ${unit.html}` }, 404);
@@ -128,7 +138,7 @@ async function handleApi(
 		const id = typeof body.id === "string" ? body.id : "";
 		const html = typeof body.html === "string" ? body.html : "";
 		if (!UNIT_ID.test(id)) return json({ error: "bad unit id" }, 400);
-		const unit = ws.connectUnits.find((u) => u.id === id);
+		const unit = findUnit(ws, id);
 		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
 		if (!html.includes("<autowire"))
 			return json({ error: "body html has no <autowire> root" }, 422);
@@ -141,10 +151,10 @@ async function handleApi(
 	if (req.method === "POST" && path === "/api/check") {
 		const body = await readBody(req);
 		const id = typeof body.id === "string" ? body.id : "";
-		const unit = ws.connectUnits.find((u) => u.id === id);
+		const unit = findUnit(ws, id);
 		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
 		const { doc } = await loadUnitDoc(ws, unit);
-		const built = await buildEngineCtx(ws, unit, ws.connectUnits, leafDb);
+		const built = await buildEngineCtx(ws, unit, allUnits(ws), leafDb);
 		await built.prewarm(doc);
 		const res = awCheck(doc as never, built.ctx);
 		return json({
@@ -157,7 +167,7 @@ async function handleApi(
 		const id = typeof body.id === "string" ? body.id : "";
 		const html = typeof body.html === "string" ? body.html : "";
 		if (!UNIT_ID.test(id)) return json({ error: "bad unit id" }, 400);
-		const unit = ws.connectUnits.find((u) => u.id === id);
+		const unit = findUnit(ws, id);
 		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
 		try {
 			assertPrintable(html);
@@ -166,14 +176,17 @@ async function handleApi(
 		}
 		const mods = parseSnapshot(html);
 		if (mods.length === 0)
-			return json({ error: "snapshot has no aw-mod" }, 422);
-		await mkdir(connectDir(ws), { recursive: true });
-		await writeFile(
-			join(connectDir(ws), `${id}.xml`),
-			`${connectXml(id, mods)}\n`,
-			"utf8",
-		);
-		const files = await writeSvFiles(mods, resolve(ws.root, ws.dumpDir), id, {
+			return json({ error: "snapshot has no aw-mod / aw-tb-mod" }, 422);
+		if (unit.kind === "connect") {
+			await mkdir(connectDir(ws), { recursive: true });
+			await writeFile(
+				join(connectDir(ws), `${id}.xml`),
+				`${connectXml(id, mods)}\n`,
+				"utf8",
+			);
+		}
+		const outDir = unitDumpDir(ws, unit.kind);
+		const files = await writeSvFiles(mods, resolve(ws.root, outDir), id, {
 			portAlign: ws.stylePortAlign,
 			paramAlign: ws.styleParamAlign,
 			instPortAlign: ws.styleInstPortAlign,
@@ -210,9 +223,10 @@ const PAGE_HTML = `<!doctype html>
   .blackbox { color: #b80; }
   table { border-collapse: collapse; }
   td, th { border: 1px solid #8885; padding: .1em .5em; text-align: left; }
-  autowire, aw-mod, aw-content, aw-submods, aw-render, aw-imports, aw-params, aw-localparams,
+  autowire, aw-mod, aw-tb-mod, aw-content, aw-submods, aw-render, aw-imports, aw-params, aw-localparams,
   aw-ports, aw-templates, aw-insts, aw-signals { display: block; margin-left: 1em; border-left: 1px dotted #8885; padding-left: .6em; }
   aw-mod::before { content: "aw-mod " attr(name); color: #57c; }
+  aw-tb-mod::before { content: "aw-tb-mod " attr(name); color: #57c; }
   aw-render::before { content: "aw-render"; color: #4a4; }
   aw-content::before { content: "aw-content"; color: #b80; }
   aw-inst, aw-connect, aw-signal, aw-port, aw-param, aw-localparam, aw-import, aw-template, aw-rewrite { display: block; }

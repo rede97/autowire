@@ -37,6 +37,8 @@ export interface EngineCtx {
 	/** [style] from autowire.toml; paramInline defaults to true. */
 	style?: { paramInline?: boolean; localparamUpper?: boolean };
 	unitId?: string;
+	/** connect = DE aw-mod page; sim = DV aw-tb-mod page. */
+	unitKind?: "connect" | "sim";
 	unitDeps?: string[];
 	unitMods?: Map<string, string>;
 	leaf?: (mod: string) => ModFacts | null;
@@ -88,6 +90,7 @@ interface RuleConnect {
 	nettype: string | null;
 	isConst: boolean;
 	open?: boolean;
+	isRaw?: boolean;
 }
 
 interface RenderInstDraft {
@@ -133,6 +136,10 @@ interface WriteModel {
 	portsOut: PortOut[];
 	signals: Map<string, SignalEntry>;
 	renderInsts: RenderInstDraft[];
+	/** aw-tb-mod only: opaque include lists for the printer. */
+	bodyPreInclude?: string[];
+	bodyPostInclude?: string[];
+	isTb?: boolean;
 }
 
 /** Evaluate a fully-constant arithmetic expression (part-selects after ${…} substitution). Returns null when any identifier/macro remains. */
@@ -317,6 +324,23 @@ function children(el: Element | Document, tag: string): Element[] {
 		if ((c.tagName ?? "").toLowerCase() === tag) out.push(c);
 	}
 	return out;
+}
+
+function tagOf(el: Element): string {
+	return (el.tagName ?? "").toLowerCase();
+}
+
+function isTbMod(el: Element): boolean {
+	return tagOf(el) === "aw-tb-mod";
+}
+
+/** Top-level connect/sim modules under <autowire>. */
+function topMods(root: Element): Element[] {
+	return [...children(root, "aw-mod"), ...children(root, "aw-tb-mod")];
+}
+
+function splitIncludes(raw: string | null): string[] {
+	return (raw ?? "").split(/\s+/).filter(Boolean);
 }
 
 /** First direct child with the given tag, or null. */
@@ -573,20 +597,40 @@ function templateLib(content: Element): Map<string, Element> {
 
 export function check(doc: Document, ctx: EngineCtx = {}): CheckResult {
 	const res: CheckResult = { errors: [], warnings: [] };
-	const roots = all(doc, "autowire").filter((e) => !e.closest("aw-mod"));
+	const roots = all(doc, "autowire").filter(
+		(e) => !e.closest("aw-mod") && !e.closest("aw-tb-mod"),
+	);
 	if (roots.length === 0) res.errors.push("document: missing <autowire> root");
 	if (roots.length > 1)
 		res.errors.push("document: more than one top-level <autowire> root");
 	const root = roots[0];
 	if (!root) return res;
-	for (const mod of children(root, "aw-mod"))
-		checkMod(mod, ctx, res, [], new Set());
+	const tops = topMods(root);
+	if (ctx.unitKind === "sim") {
+		if (tops.length === 0)
+			res.errors.push("document: [sim] unit requires a top-level <aw-tb-mod>");
+		for (const mod of tops) {
+			if (!isTbMod(mod))
+				res.errors.push(
+					`document: [sim] unit must use <aw-tb-mod>, found <${tagOf(mod)}>`,
+				);
+		}
+	} else if (ctx.unitKind === "connect") {
+		for (const mod of tops) {
+			if (isTbMod(mod))
+				res.errors.push(
+					"document: [connect] unit must not contain <aw-tb-mod> (use [sim.<id>])",
+				);
+		}
+	}
+	for (const mod of tops) checkMod(mod, ctx, res, [], new Set());
 	checkUnitRefs(doc, ctx, res);
 	return res;
 }
 
 function checkUnitRefs(doc: Document, ctx: EngineCtx, res: CheckResult): void {
 	if (!ctx.unitMods) return;
+	const section = ctx.unitKind === "sim" ? "sim" : "connect";
 	const deps = new Set(ctx.unitDeps ?? []);
 	const used = new Set();
 	for (const inst of all(doc, "aw-inst")) {
@@ -596,7 +640,7 @@ function checkUnitRefs(doc: Document, ctx: EngineCtx, res: CheckResult): void {
 			used.add(owner);
 			if (!deps.has(owner)) {
 				res.errors.push(
-					`aw-inst mod="${target}": defined by unit "${owner}" but not listed in [connect.${ctx.unitId}] deps`,
+					`aw-inst mod="${target}": defined by unit "${owner}" but not listed in [${section}.${ctx.unitId}] deps`,
 				);
 			}
 		}
@@ -604,7 +648,7 @@ function checkUnitRefs(doc: Document, ctx: EngineCtx, res: CheckResult): void {
 	for (const d of deps) {
 		if (!used.has(d))
 			res.warnings.push(
-				`[connect.${ctx.unitId}] deps: "${d}" declared but never referenced`,
+				`[${section}.${ctx.unitId}] deps: "${d}" declared but never referenced`,
 			);
 	}
 }
@@ -616,14 +660,41 @@ function checkMod(
 	path: string[],
 	visibleFromAbove: Set<string>,
 ): void {
+	const tb = isTbMod(mod);
 	const name = attr(mod, "name");
 	const here = [...path, name ?? "?"];
-	const where = `aw-mod ${here.join(".")}`;
+	const where = `${tb ? "aw-tb-mod" : "aw-mod"} ${here.join(".")}`;
 	if (!name) res.errors.push(`${where}: missing name`);
+	if (tb) {
+		if (path.length > 0)
+			res.errors.push(`${where}: aw-tb-mod must be the unit top (no nesting)`);
+		if (attr(mod, "deps"))
+			res.errors.push(
+				`${where}: aw-tb-mod@deps is forbidden (use [sim.<id>] deps)`,
+			);
+		if (child(mod, "aw-submods"))
+			res.errors.push(`${where}: aw-tb-mod must not contain aw-submods`);
+		const content0 = child(mod, "aw-content");
+		if (content0) {
+			const params = child(content0, "aw-params");
+			if (params && [...(params.children ?? [])].length > 0)
+				res.errors.push(
+					`${where}: aw-tb-mod forbids aw-params (use aw-localparams)`,
+				);
+			const ports = child(content0, "aw-ports");
+			if (ports && [...(ports.children ?? [])].length > 0)
+				res.errors.push(
+					`${where}: aw-tb-mod forbids aw-ports (TB top has no ports)`,
+				);
+		}
+	} else {
+		if (attr(mod, "body-pre-include") || attr(mod, "body-post-include"))
+			res.errors.push(`${where}: body-*-include is only allowed on aw-tb-mod`);
+	}
 	const content = child(mod, "aw-content");
 	const submods = child(mod, "aw-submods");
 	if (!content) res.errors.push(`${where}: missing aw-content`);
-	if (content) checkContent(content, ctx, res, here, mod, visibleFromAbove);
+	if (content) checkContent(content, ctx, res, here, mod, visibleFromAbove, tb);
 	if (submods) {
 		const sibs = children(submods, "aw-mod");
 		const sibNames = new Set(sibs.map((s) => attr(s, "name")));
@@ -683,8 +754,9 @@ function checkContent(
 	path: string[],
 	mod: Element,
 	visibleFromAbove: Set<string>,
+	tb = false,
 ): void {
-	const where = `aw-mod ${path.join(".")}`;
+	const where = `${tb ? "aw-tb-mod" : "aw-mod"} ${path.join(".")}`;
 	const scope = moduleScope(content);
 	// Unknown groups / misplaced children.
 	for (const c of content.children ?? []) {
@@ -707,7 +779,7 @@ function checkContent(
 	for (const [k, v] of scope.localparams) modVars[k] = v.value;
 	// Template library legality.
 	for (const [tname, t] of lib)
-		checkTemplate(t, ctx, res, `${where} template "${tname}"`, lib, scope);
+		checkTemplate(t, ctx, res, `${where} template "${tname}"`, lib, scope, tb);
 	// Instances.
 	const sibs = children(child(mod, "aw-submods") ?? mod, "aw-mod");
 	const ownChildren = new Set(sibs.map((s) => attr(s, "name")));
@@ -745,7 +817,7 @@ function checkContent(
 			if (isLeaf) checkLeafInst(inst, ctx.leaf?.(target) ?? null, res, iwhere);
 		}
 		for (const t of children(inst, "aw-template")) {
-			checkTemplate(t, ctx, res, `${iwhere} template`, lib, scope);
+			checkTemplate(t, ctx, res, `${iwhere} template`, lib, scope, tb);
 			const base = attr(t, "base");
 			if (base && !lib.has(base))
 				res.errors.push(
@@ -809,6 +881,7 @@ function checkTemplate(
 	where: string,
 	lib: Map<string, Element>,
 	scope: ModScope,
+	tb = false,
 ): void {
 	const modVars: Record<string, string> = {};
 	for (const [k, v] of scope.params) modVars[k] = v.value;
@@ -827,7 +900,21 @@ function checkTemplate(
 	for (const r of walkRules(t)) {
 		const tag = (r.tagName ?? "").toLowerCase();
 		if (tag === "aw-rewrite" || tag === "aw-connect") {
-			const isOpen = attr(r, "type") === "open";
+			const typeAttr = attr(r, "type");
+			const isOpen = typeAttr === "open";
+			const isRaw = typeAttr === "raw";
+			if (isRaw) {
+				if (!tb)
+					res.errors.push(
+						`${where}: type="raw" is only allowed inside aw-tb-mod`,
+					);
+				if (tag === "aw-rewrite")
+					res.errors.push(`${where}: aw-rewrite must not produce type="raw"`);
+				for (const a of ["part", "packed", "width", "unpacked", "nettype"]) {
+					if (attr(r, a))
+						res.errors.push(`${where}: type="raw" takes no @${a}`);
+				}
+			}
 			if (tag === "aw-rewrite" && !attr(r, "match"))
 				res.errors.push(`${where}: aw-rewrite missing match`);
 			if (tag === "aw-connect" && !attr(r, "port"))
@@ -861,6 +948,10 @@ function checkTemplate(
 				res.errors.push(
 					`${where}: ${tag} missing to (declare type="open" for a dangling pin)`,
 				);
+				continue;
+			}
+			if (isRaw) {
+				probeTo(r); // ${…} only; no net/const classify
 				continue;
 			}
 			if (tag === "aw-connect")
@@ -973,9 +1064,9 @@ function checkTypeAttr(
 	where: string,
 ): void {
 	const asserted = attr(r, "type");
-	if (asserted != null && !["net", "const", "open"].includes(asserted)) {
+	if (asserted != null && !["net", "const", "open", "raw"].includes(asserted)) {
 		res.errors.push(
-			`${where}: type must be "net", "const" or "open", got "${asserted}"`,
+			`${where}: type must be "net", "const", "open" or "raw", got "${asserted}"`,
 		);
 		return;
 	}
@@ -1017,13 +1108,15 @@ export function isFrozen(renderEl: Element): boolean {
 
 export function elaborate(doc: Document, ctx: EngineCtx = {}): CheckResult {
 	const res: CheckResult = { errors: [], warnings: [] };
-	const root = all(doc, "autowire").filter((e) => !e.closest("aw-mod"))[0];
+	const root = all(doc, "autowire").filter(
+		(e) => !e.closest("aw-mod") && !e.closest("aw-tb-mod"),
+	)[0];
 	if (!root) {
 		res.errors.push("document: missing <autowire> root");
 		return res;
 	}
 	const hooks = hooksFor(ctx.unitId ?? "");
-	for (const mod of children(root, "aw-mod")) {
+	for (const mod of topMods(root)) {
 		elaborateMod(mod, ctx, res, [], hooks, new Map());
 	}
 	return res;
@@ -1038,9 +1131,10 @@ function elaborateMod(
 	hooks: Record<HookPhase, HookFn[]>,
 	sibRenders: Map<string, ModFacts>,
 ): ModFacts | null {
+	const tb = isTbMod(mod);
 	const name = attr(mod, "name") ?? "?";
 	const here = [...path, name];
-	const where = `aw-mod ${here.join(".")}`;
+	const where = `${tb ? "aw-tb-mod" : "aw-mod"} ${here.join(".")}`;
 	const content = child(mod, "aw-content");
 	if (!content) {
 		res.errors.push(`${where}: missing aw-content`);
@@ -1049,7 +1143,7 @@ function elaborateMod(
 	const scope = moduleScope(content);
 
 	// Children first (deps topological order among siblings).
-	const submods = child(mod, "aw-submods");
+	const submods = tb ? null : child(mod, "aw-submods");
 	const childRenders = new Map<string, ModFacts>();
 	if (submods) {
 		const sibs = children(submods, "aw-mod");
@@ -1321,6 +1415,10 @@ function elaborateMod(
 				}
 				continue;
 			}
+			if (c.isRaw) {
+				// Raw passthrough: no net, no direction check (TB escape hatch).
+				continue;
+			}
 			if (c.isConst) {
 				// Constants drive input ports only; no net is created.
 				if (pf?.dir !== "input") {
@@ -1346,14 +1444,14 @@ function elaborateMod(
 				`${where}: net "${net}" has ${n} full-net output drivers (short circuit)`,
 			);
 
-	// Export ports: author explicit first, then auto-export.
+	// Export ports: author explicit first, then auto-export (never on aw-tb-mod).
 	const foldPortDims = (packed: string | null, unpacked: string | null) => ({
 		packed: packed ? canonicalDims(foldDims(packed, dimVals)) : null,
 		unpacked: unpacked ? canonicalDims(foldDims(unpacked, dimVals)) : null,
 	});
 	const portsOut: PortOut[] = [];
 	const explicit = new Set();
-	const portsGroup = child(content, "aw-ports");
+	const portsGroup = tb ? null : child(content, "aw-ports");
 	for (const p of portsGroup ? children(portsGroup, "aw-port") : []) {
 		const pname = attr(p, "name");
 		if (!pname) continue;
@@ -1372,25 +1470,32 @@ function elaborateMod(
 			modport: attr(p, "modport") ?? null,
 		});
 	}
-	for (const [net, sig] of signals) {
-		if (explicit.has(net)) continue;
-		const dirs = netDirs.get(net) ?? new Set();
-		let dir = null;
-		if (dirs.has("inout")) dir = "inout";
-		else if ([...dirs].every((d) => d === "input")) dir = "input";
-		else if ([...dirs].every((d) => d === "output")) dir = "output";
-		if (!dir) continue; // driven AND consumed internally → internal signal
-		const folded = foldPortDims(sig.packed, sig.unpacked);
-		portsOut.push({
-			name: net,
-			dir,
-			packed: folded.packed,
-			unpacked: folded.unpacked,
-			nettype: sig.nettype,
-			interface: sig.interface ?? null,
-			modport: null,
-			auto: true,
-		});
+	if (!tb) {
+		for (const [net, sig] of signals) {
+			if (explicit.has(net)) continue;
+			const dirs = netDirs.get(net) ?? new Set();
+			let dir = null;
+			if (dirs.has("inout")) dir = "inout";
+			else if ([...dirs].every((d) => d === "input")) dir = "input";
+			else if ([...dirs].every((d) => d === "output")) dir = "output";
+			if (!dir) continue; // driven AND consumed internally → internal signal
+			const folded = foldPortDims(sig.packed, sig.unpacked);
+			portsOut.push({
+				name: net,
+				dir,
+				packed: folded.packed,
+				unpacked: folded.unpacked,
+				nettype: sig.nettype,
+				interface: sig.interface ?? null,
+				modport: null,
+				auto: true,
+			});
+		}
+	} else {
+		// TB default nettype is logic when unset.
+		for (const sig of signals.values()) {
+			if (sig.nettype == null) sig.nettype = "logic";
+		}
 	}
 
 	// Collision guard: uniquified localparams vs params/signals (connect-rules §7.5).
@@ -1442,6 +1547,9 @@ function elaborateMod(
 		portsOut,
 		signals,
 		renderInsts,
+		isTb: tb,
+		bodyPreInclude: tb ? splitIncludes(attr(mod, "body-pre-include")) : [],
+		bodyPostInclude: tb ? splitIncludes(attr(mod, "body-post-include")) : [],
 	});
 	frozen.add(child(mod, "aw-render")!);
 	return {
@@ -1509,6 +1617,18 @@ function ruleToConnect(
 			? null
 			: substVars(v, vars, res, `${where} @${a}`);
 	};
+	if (attr(r, "type") === "raw") {
+		return {
+			to: net,
+			packed: null,
+			width: null,
+			unpacked: null,
+			part: null,
+			nettype: null,
+			isConst: false,
+			isRaw: true,
+		};
+	}
 	const kind = classifyTo(net, scope);
 	if (kind == null) {
 		res.errors.push(
@@ -1619,7 +1739,9 @@ function resolveDims(
 	return {
 		packed: canonicalDims(packed),
 		unpacked: canonicalDims(unpacked),
-		nettype: nettype === "wire" ? null : nettype,
+		// Keep explicit "wire" (TB defaults unset→logic; connect printer treats
+		// null and "wire" the same).
+		nettype,
 	};
 }
 
@@ -1655,6 +1777,8 @@ function mergeSignal(
 		res.errors.push(
 			`${where}: net "${net}" nettype conflict (${prev.nettype} vs ${dims.nettype})`,
 		);
+	} else if (dims.nettype && !prev.nettype) {
+		prev.nettype = dims.nettype;
 	}
 }
 
@@ -1666,6 +1790,19 @@ function writeRender(mod: Element, m: WriteModel): void {
 		mod.appendChild(render);
 	}
 	render.textContent = "";
+	if (m.isTb) {
+		render.setAttribute("tb", "1");
+		const pre = (m.bodyPreInclude ?? []).join(" ");
+		const post = (m.bodyPostInclude ?? []).join(" ");
+		if (pre) render.setAttribute("body-pre-include", pre);
+		else render.removeAttribute("body-pre-include");
+		if (post) render.setAttribute("body-post-include", post);
+		else render.removeAttribute("body-post-include");
+	} else {
+		render.removeAttribute("tb");
+		render.removeAttribute("body-pre-include");
+		render.removeAttribute("body-post-include");
+	}
 	const doc = mod.ownerDocument;
 	const mk = (
 		tag: string,
@@ -1743,7 +1880,9 @@ function writeRender(mod: Element, m: WriteModel): void {
 			el.appendChild(
 				c.open
 					? mk("aw-connect", { port, type: "open" })
-					: mk("aw-connect", { port, to: c.to, part: c.part }),
+					: c.isRaw
+						? mk("aw-connect", { port, to: c.to, type: "raw" })
+						: mk("aw-connect", { port, to: c.to, part: c.part }),
 			);
 		}
 		groups["aw-insts"]!.appendChild(el);
@@ -1791,22 +1930,40 @@ function serializeModSnapshot(
 ): void {
 	const pad = "  ".repeat(indent);
 	const name = escapeXml(attr(mod, "name") ?? "");
-	out.push(`${pad}<aw-mod name="${name}">`);
+	const tag = isTbMod(mod) ? "aw-tb-mod" : "aw-mod";
+	const extras: string[] = [];
+	if (isTbMod(mod)) {
+		const pre = attr(mod, "body-pre-include");
+		const post = attr(mod, "body-post-include");
+		// Prefer attributes frozen onto aw-render during elaborate.
+		const render0 = child(mod, "aw-render");
+		const preR = render0 ? attr(render0, "body-pre-include") : null;
+		const postR = render0 ? attr(render0, "body-post-include") : null;
+		const preV = preR ?? pre;
+		const postV = postR ?? post;
+		if (preV) extras.push(`body-pre-include="${escapeXml(preV)}"`);
+		if (postV) extras.push(`body-post-include="${escapeXml(postV)}"`);
+	}
+	out.push(
+		`${pad}<${tag} name="${name}"${extras.length ? " " + extras.join(" ") : ""}>`,
+	);
 	const render = child(mod, "aw-render");
 	if (render) serializeEl(render, indent + 1, out);
 	const submods = child(mod, "aw-submods");
 	for (const sm of submods ? children(submods, "aw-mod") : [])
 		serializeModSnapshot(sm, indent + 1, out);
-	out.push(`${pad}</aw-mod>`);
+	out.push(`${pad}</${tag}>`);
 }
 
-/** Whole-document snapshot: <autowire> + every top-level aw-mod's render. */
+/** Whole-document snapshot: <autowire> + every top-level aw-mod / aw-tb-mod render. */
 export function serializeSnapshot(doc: Document): string {
 	const out = [];
-	const root = all(doc, "autowire").filter((e) => !e.closest("aw-mod"))[0];
+	const root = all(doc, "autowire").filter(
+		(e) => !e.closest("aw-mod") && !e.closest("aw-tb-mod"),
+	)[0];
 	if (!root) return "";
 	out.push("<autowire>");
-	for (const mod of children(root, "aw-mod")) serializeModSnapshot(mod, 1, out);
+	for (const mod of topMods(root)) serializeModSnapshot(mod, 1, out);
 	out.push("</autowire>");
 	void SNAPSHOT_ATTR_ORDER;
 	return out.join("\n");
@@ -1819,6 +1976,7 @@ export function serializeSnapshot(doc: Document): string {
 // queryable, just not upgradeable.
 const AW_TAGS = [
 	"aw-mod",
+	"aw-tb-mod",
 	"aw-content",
 	"aw-submods",
 	"aw-render",

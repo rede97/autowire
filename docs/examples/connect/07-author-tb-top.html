@@ -1,0 +1,60 @@
+<!doctype html>
+<!--
+  作者面规范示例：aw-tb-mod（docs/connect/tb-mod-proposal.md）。
+  引擎未落地；本文件只钉作者面形状，不做 examples.test 展开。
+  要点：扁平顶、body 内两端 include、localparam、identity + const/open/raw(${…})。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>07-author-tb-top</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-tb-mod
+        name="tb_top"
+        body-pre-include="tb_env_setup.svh"
+        body-post-include="tb_sim.svh"
+      >
+        <aw-content>
+          <aw-imports></aw-imports>
+          <aw-localparams>
+            <aw-localparam name="IDLE_1" expr="1'b1"></aw-localparam>
+          </aw-localparams>
+          <aw-ports></aw-ports>
+          <aw-templates>
+            <aw-template name="vip_probe" inst_name="${id}_${idx}">
+              <!-- VIP / agent interface：层次路径 + ${idx}，不建网 -->
+              <aw-connect
+                port="vif_sample"
+                type="raw"
+                to="tb_top.u_dut.u_core_${idx}.irq_o"
+              ></aw-connect>
+            </aw-template>
+          </aw-templates>
+          <aw-insts>
+            <aw-inst id="u_dut" mod="soc_wrap">
+              <aw-template>
+                <!-- clk / rst_n identity；其余显式 -->
+                <aw-connect port="uart_rx" to="IDLE_1" type="const"></aw-connect>
+                <aw-connect port="unused_dbg_o" type="open"></aw-connect>
+                <aw-connect
+                  port="mon_hier"
+                  type="raw"
+                  to="tb_top.u_dut.u_cpu_0.trap"
+                ></aw-connect>
+              </aw-template>
+            </aw-inst>
+            <aw-inst id="u_vip" mod="vip_agent_if" idx="0">
+              <aw-template base="vip_probe"></aw-template>
+            </aw-inst>
+            <aw-inst id="u_vip" mod="vip_agent_if" idx="1">
+              <aw-template base="vip_probe"></aw-template>
+            </aw-inst>
+          </aw-insts>
+        </aw-content>
+        <aw-render></aw-render>
+      </aw-tb-mod>
+    </autowire>
+  </body>
+</html>

@@ -6,6 +6,7 @@ import { check as awCheck } from "../core/aw.ts";
 import { buildEngineCtx, loadUnitDoc, topoUnits } from "../core/connect.ts";
 import { LeafDb } from "../rtl/leaf.ts";
 import { startWeb } from "../web/server.ts";
+import { allUnits } from "../workspace.ts";
 import { requireWorkspace } from "./shared.ts";
 
 export function registerWeb(program: Command): void {
@@ -16,7 +17,7 @@ export function registerWeb(program: Command): void {
 		)
 		.argument(
 			"[unit]",
-			"connect unit id or author HTML path (default: first unit in deps topo order)",
+			"connect/sim unit id or author HTML path (default: first unit in deps topo order)",
 		)
 		.option(
 			"--workspace <path>",
@@ -29,25 +30,28 @@ export function registerWeb(program: Command): void {
 				opts: { workspace?: string; port?: number },
 			) => {
 				const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
-				if (cfg.connectUnits.length === 0) {
-					console.error("autowire.toml: no [connect.<id>] units configured");
+				const units = allUnits(cfg);
+				if (units.length === 0) {
+					console.error(
+						"autowire.toml: no [connect.<id>] / [sim.<id>] units configured",
+					);
 					process.exit(1);
 				}
 				let defaultUnit: string | null = null;
 				if (unit) {
-					const byId = cfg.connectUnits.find((u) => u.id === unit);
-					const byHtml = cfg.connectUnits.find(
+					const byId = units.find((u) => u.id === unit);
+					const byHtml = units.find(
 						(u) => u.html === unit || u.html.endsWith(`/${unit}`),
 					);
 					defaultUnit = (byId ?? byHtml)?.id ?? null;
 					if (!defaultUnit) {
 						console.error(
-							`unknown connect unit "${unit}" (have: ${cfg.connectUnits.map((u) => u.id).join(", ")})`,
+							`unknown unit "${unit}" (have: ${units.map((u) => u.id).join(", ")})`,
 						);
 						process.exit(1);
 					}
 				} else {
-					defaultUnit = topoUnits(cfg.connectUnits)[0]?.id ?? null;
+					defaultUnit = topoUnits(units)[0]?.id ?? null;
 				}
 				const url = await startWeb(cfg, opts.port ?? 0, defaultUnit);
 				console.log(`autowire web: ${url} (unit ${defaultUnit})`);
@@ -62,11 +66,11 @@ export function registerCheck(program: Command): void {
 	program
 		.command("check")
 		.description(
-			"Validate author-face connect HTML + deps (no write; docs/workspace/web-ui.md §3.1)",
+			"Validate author-face connect/sim HTML + deps (no write; docs/workspace/web-ui.md §3.1)",
 		)
 		.argument(
 			"[unit]",
-			"connect unit id (default: all units in deps topo order)",
+			"unit id (default: all connect+sim units in deps topo order)",
 		)
 		.option(
 			"--workspace <path>",
@@ -74,14 +78,13 @@ export function registerCheck(program: Command): void {
 		)
 		.action(async (unit: string | undefined, opts: { workspace?: string }) => {
 			const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
-			const units = unit
-				? cfg.connectUnits.filter((u) => u.id === unit)
-				: topoUnits(cfg.connectUnits);
+			const all = allUnits(cfg);
+			const units = unit ? all.filter((u) => u.id === unit) : topoUnits(all);
 			if (units.length === 0) {
 				console.error(
 					unit
-						? `unknown connect unit "${unit}"`
-						: "no [connect.<id>] units configured",
+						? `unknown unit "${unit}"`
+						: "no [connect.<id>] / [sim.<id>] units configured",
 				);
 				process.exit(1);
 			}
@@ -89,7 +92,7 @@ export function registerCheck(program: Command): void {
 			let failed = false;
 			for (const u of units) {
 				const { doc } = await loadUnitDoc(cfg, u);
-				const built = await buildEngineCtx(cfg, u, cfg.connectUnits, leafDb);
+				const built = await buildEngineCtx(cfg, u, all, leafDb);
 				await built.prewarm(doc);
 				const res = awCheck(doc as never, built.ctx);
 				const errors = [...built.errors, ...res.errors];

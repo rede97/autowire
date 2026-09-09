@@ -39,8 +39,10 @@ dump（可印性）──error──▶ 拒绝写盘
 | identity 同名自动连；短路；维合并冲突 | **elaborate** | error（短路/维） | 端口表 + 展开结果 |
 | const 打到非 input；open 打到非 output/inout | **elaborate** | error | 端口方向 |
 | render 残留 template/rewrite | **dump** | error | aw-render |
-
-未落地（见 [`tb-mod-proposal.md`](./tb-mod-proposal.md)）：`aw-tb-mod` / `type="raw"` / include 路径存在性——落地后扩入上表 **check** 行。
+| `[sim]` 根必须 `aw-tb-mod`；`[connect]` 禁止 | **check** | error | unitKind |
+| `aw-tb-mod`：禁 params/ports/submods/`@deps`；`body-*-include` 仅 TB | **check** | error | DOM |
+| `type="raw"`：仅 TB；禁 rewrite 产 raw；禁 part/维 | **check** | error | DOM |
+| include 路径存在性 | — | （不做） | DV filelist / `+incdir` |
 
 ## 3. check 必须覆盖（对照实现）
 
