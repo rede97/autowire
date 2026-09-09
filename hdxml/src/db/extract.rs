@@ -141,21 +141,25 @@ enum Frame {
 }
 
 pub struct Extractor<'a> {
-    src: &'a str,
-    stack: Vec<Frame>,
-    pub modules: Vec<ModuleDecl>,
-    /// 编译单元级 import（模块之外；对每个模块可见，合并进各模块 imports）
-    unit_imports: Vec<ImportInfo>,
+	src: &'a str,
+	stack: Vec<Frame>,
+	pub modules: Vec<ModuleDecl>,
+	/// 编译单元级 import（模块之外；对每个模块可见，合并进各模块 imports）
+	unit_imports: Vec<ImportInfo>,
+	/// ANSI 端口列表方向继承（IEEE 1800 §23.2.2.3：省略方向时继承前一端口）；
+	/// 每个 module/interface 头部开始时复位。
+	last_ansi_dir: Option<PortDir>,
 }
 
 impl<'a> Extractor<'a> {
     pub fn new(src: &'a str) -> Self {
-        Self {
-            src,
-            stack: Vec::new(),
-            modules: Vec::new(),
-            unit_imports: Vec::new(),
-        }
+		Self {
+			src,
+			stack: Vec::new(),
+			modules: Vec::new(),
+			unit_imports: Vec::new(),
+			last_ansi_dir: None,
+		}
     }
 
     /// 最近的模块帧
@@ -232,6 +236,7 @@ impl<'a> Extractor<'a> {
             RefNode::ModuleDeclarationAnsi(_)
             | RefNode::ModuleDeclarationNonansi(_)
             | RefNode::ModuleDeclarationWildcard(_) => {
+                self.last_ansi_dir = None;
                 self.stack.push(Frame::Mod(ModB {
                     kind: ModKind::Module,
                     ..Default::default()
@@ -240,6 +245,7 @@ impl<'a> Extractor<'a> {
             RefNode::InterfaceDeclarationAnsi(_)
             | RefNode::InterfaceDeclarationNonansi(_)
             | RefNode::InterfaceDeclarationWildcard(_) => {
+                self.last_ansi_dir = None;
                 self.stack.push(Frame::Mod(ModB {
                     kind: ModKind::Interface,
                     ..Default::default()
@@ -522,7 +528,32 @@ impl<'a> Extractor<'a> {
                     }
                 }
             }
-            RefNode::AnsiPortDeclaration(_) | RefNode::PortDeclaration(_) => {
+            RefNode::AnsiPortDeclaration(_) => {
+                if let Some(Frame::Port(p)) = self.stack.pop() {
+                    let span = p.win.span();
+                    // IEEE 1800 §23.2.2.3：ANSI 列表中省略方向的端口继承前一端口方向
+                    let dir = p.dir.or(self.last_ansi_dir);
+                    if p.dir.is_some() {
+                        self.last_ansi_dir = p.dir;
+                    }
+                    if let Some(m) = self.cur_mod() {
+                        for name in &p.names {
+                            m.ports.push(PortInfo {
+                                name: name.clone(),
+                                dir,
+                                data_type: p.data_type.clone(),
+                                interface: p.interface.clone(),
+                                modport: p.modport.clone(),
+                                packed: p.packed.clone(),
+                                unpacked: p.unpacked.clone(),
+                                default: p.default.clone(),
+                                span,
+                            });
+                        }
+                    }
+                }
+            }
+            RefNode::PortDeclaration(_) => {
                 if let Some(Frame::Port(p)) = self.stack.pop() {
                     let span = p.win.span();
                     if let Some(m) = self.cur_mod() {
@@ -903,6 +934,38 @@ endmodule
         assert!(syms.contains(&"W"), "param default scope ref: {syms:?}");
         assert!(syms.contains(&"axi_t"), "port type scope ref: {syms:?}");
         assert!(scopes.iter().all(|i| i.package == "axi_pkg"));
+    }
+
+    #[test]
+    fn ansi_port_direction_inherits_from_previous() {
+        // IEEE 1800 §23.2.2.3: ANSI 列表里省略方向的端口继承前一端口方向。
+        // sdspi 实际形态：多名共用一行方向声明。
+        let src = r#"module sdspi_mini (
+  input wire i_clk, i_sd_reset,
+  output wire o_cs_n, o_sck, o_mosi,
+  input wire i_miso, i_card_detect
+);
+endmodule
+"#;
+        let (mods, _) = extract_src("ansi_dir_inherit", src);
+        let m = &mods[0];
+        let dirs: Vec<(&str, Option<PortDir>)> = m
+            .ports
+            .iter()
+            .map(|p| (p.name.as_str(), p.dir))
+            .collect();
+        assert_eq!(
+            dirs,
+            vec![
+                ("i_clk", Some(PortDir::Input)),
+                ("i_sd_reset", Some(PortDir::Input)),
+                ("o_cs_n", Some(PortDir::Output)),
+                ("o_sck", Some(PortDir::Output)),
+                ("o_mosi", Some(PortDir::Output)),
+                ("i_miso", Some(PortDir::Input)),
+                ("i_card_detect", Some(PortDir::Input)),
+            ]
+        );
     }
 
     #[test]
