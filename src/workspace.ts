@@ -28,9 +28,27 @@ export interface WorkspaceConfig {
 	indexDir: string;
 	/** Dump RTL output dir ([dump] dir, default gen) */
 	dumpDir: string;
-	/** Param style ([style] param): "inline" (default) writes overrides into the
-	 *  instance; "localparam" folds them into Mod__Inst__Param localparams. */
-	styleParam: "inline" | "localparam";
+	/** Param style ([style] param_inline, default true): inline simple overrides
+	 *  into the instance; false folds every override into Mod__Inst__Param. */
+	styleParamInline: boolean;
+	/** [style] port_align: align module declaration port list columns
+	 *  (dir / type / packed width; names left-aligned). Default false. */
+	stylePortAlign: boolean;
+	/** [style] param_align: align module declaration parameter names/=.
+	 *  Default false. */
+	styleParamAlign: boolean;
+	/** [style] inst_port_align: pad instantiation port names so the ( columns
+	 *  align. Default false. */
+	styleInstPortAlign: boolean;
+	/** [style] inst_param_align: pad instantiation parameter names so the (
+	 *  columns align. Default false. */
+	styleInstParamAlign: boolean;
+	/** [style] signal_align: align internal signal declaration columns
+	 *  (nettype / packed width; names left-aligned). Default false. */
+	styleSignalAlign: boolean;
+	/** [style] localparam_upper: uppercase the generated Mod__Inst__Param
+	 *  folding names (traditional RTL style); default false. */
+	styleLocalparamUpper: boolean;
 	/** Named connect units ([connect.<id>] html + deps); DAG validated at load */
 	connectUnits: ConnectUnit[];
 }
@@ -162,14 +180,23 @@ export async function loadWorkspace(
 	const dump = isObj(doc.dump) ? doc.dump : {};
 	const connect = isObj(doc.connect) ? doc.connect : {};
 	const style = isObj(doc.style) ? doc.style : {};
-	if (
-		style.param !== undefined &&
-		style.param !== "inline" &&
-		style.param !== "localparam"
-	)
+	if (style.param !== undefined)
 		throw new Error(
-			`autowire.toml: [style] param must be "inline" or "localparam"`,
+			`autowire.toml: [style] param is renamed to param_inline (boolean, default true)`,
 		);
+	for (const key of [
+		"param_inline",
+		"port_align",
+		"param_align",
+		"inst_port_align",
+		"inst_param_align",
+		"signal_align",
+		"localparam_upper",
+	]) {
+		const v = (style as Record<string, unknown>)[key];
+		if (v !== undefined && typeof v !== "boolean")
+			throw new Error(`autowire.toml: [style] ${key} must be a boolean`);
+	}
 	const hdxml = isObj(doc.hdxml) ? doc.hdxml : {};
 	if (hdxml.bin !== undefined && typeof hdxml.bin !== "string")
 		throw new Error("autowire.toml: [hdxml] bin must be a string");
@@ -216,7 +243,13 @@ export async function loadWorkspace(
 			typeof index.dir === "string" ? index.dir : ".autowire/hdxml",
 		),
 		dumpDir: rel(typeof dump.dir === "string" ? dump.dir : "gen"),
-		styleParam: style.param === "localparam" ? "localparam" : "inline",
+		styleParamInline: style.param_inline !== false,
+		stylePortAlign: style.port_align === true,
+		styleParamAlign: style.param_align === true,
+		styleInstPortAlign: style.inst_port_align === true,
+		styleInstParamAlign: style.inst_param_align === true,
+		styleSignalAlign: style.signal_align === true,
+		styleLocalparamUpper: style.localparam_upper === true,
 		connectUnits: parseConnectUnits(connect, rel),
 	};
 }

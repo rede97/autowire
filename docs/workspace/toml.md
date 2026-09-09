@@ -74,10 +74,17 @@ dir = "gen"
 
 [style]
 # 例化参数风格（connect-rules §7）：
-#   "inline"（默认）——非表达式 override（字面量/param·localparam 引用/宏）直接写进
+#   param_inline = true（默认）——非表达式 override（字面量/param·localparam 引用/宏）直接写进
 #     例化 #(.W(CNT_W))；含任何操作符的表达式（含 {} 拼接）不展开，仍折叠；
-#   "localparam"      ——每个 override 折叠成 Mod__Inst__Param localparam（可追溯/占位）。
-# param = "inline"
+#   param_inline = false ——每个 override 折叠成 Mod__Inst__Param localparam（可追溯/占位）。
+# 对齐开关（除 localparam_upper 外均为打印层，不影响 render；默认全 false）：
+#   port_align       ——模块声明端口表：dir（input/output/inout）/ 类型 / 宽度分列对齐，信号名左对齐。
+#   param_align      ——模块声明 parameter 的 `=` 列对齐。
+#   inst_port_align  ——例化端口 `.name (net)` 的 `(` 列对齐。
+#   inst_param_align ——例化参数 `.NAME (value)` 的 `(` 列对齐。
+#   signal_align     ——内部信号声明：nettype / 宽度分列对齐，信号名左对齐。
+# 折叠名大小写（render 层）：
+#   localparam_upper = true ——生成的 Mod__Inst__Param 名整体大写（传统习惯；默认 false）。
 
 # 具名连接单元（禁止旧式 [connect] html = [...] 扁平列表）
 # id 仅用于 toml 依赖图；连线细节仍只在 HTML 内

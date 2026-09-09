@@ -746,12 +746,13 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
           paramRules.set(attr(r, "name"), attr(r, "expr") ?? "");
       }
     }
-    const inlineParams = ctx.style?.param !== "localparam";
+    const inlineParams = ctx.style?.paramInline !== false;
     const instParams = new Map;
     for (const [pname, expr0] of paramRules) {
       const expr = substVars(expr0, vars, res, `${iwhere} aw-param "${pname}"`);
       const cls = classifyExpr(expr, scope);
-      const uniq = `${name}__${instName}__${pname}`;
+      const uniq0 = `${name}__${instName}__${pname}`;
+      const uniq = ctx.style?.localparamUpper ? uniq0.toUpperCase() : uniq0;
       const simple = LITERAL.test(cls.value) || IDENT.test(cls.value) || /^`[A-Za-z_]\w*$/.test(cls.value);
       if (inlineParams && simple) {
         instParams.set(pname, {

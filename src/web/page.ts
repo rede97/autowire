@@ -58,7 +58,7 @@ const statusEl = $("#aw-status");
 
 const state: {
 	workspace: string;
-	style: { param: "inline" | "localparam" };
+	style: { paramInline?: boolean };
 	units: UnitMeta[]; // topo order: deps first
 	unitMods: Map<string, string>; // mod name → unit id (top-level aw-mod of each unit)
 	current: string | null; // current unit id
@@ -66,7 +66,7 @@ const state: {
 	leafCache: Map<string, AwEngine.ModFacts | null>;
 } = {
 	workspace: "",
-	style: { param: "inline" },
+	style: { paramInline: true },
 	units: [],
 	unitMods: new Map(),
 	current: null,
@@ -88,7 +88,7 @@ const unitOf = (id: string): UnitMeta | undefined =>
 
 interface UnitsMeta {
 	workspace: string;
-	style?: { param: "inline" | "localparam" };
+	style?: { paramInline?: boolean };
 	units: UnitMeta[];
 	defaultUnit: string | null;
 }

@@ -101,7 +101,13 @@ Shared by deps / web / cli for the RTL universe:
   [analysis.*]  .f / sources / walk / incdirs / defines / keep_raw / index dir
   [connect.<id>]        named HTML unit: html= + optional deps= (DAG; no wiring)
   [dump] dir="gen"      dumped RTL output (not under .autowire)
-  [style] param         inline (default) | localparam (Mod__Inst__Param folding)
+  [style] param_inline      true (default) inline simple overrides | false: fold all to Mod__Inst__Param
+  [style] port_align        declaration port columns: dir / type / packed, names left-aligned (default false)
+  [style] param_align       declaration parameter = column (default false)
+  [style] inst_port_align   instantiation .port ( column alignment (default false)
+  [style] inst_param_align  instantiation .PARAM ( column alignment (default false)
+  [style] signal_align      internal signal columns: nettype / packed, names left-aligned (default false)
+  [style] localparam_upper  uppercase generated Mod__Inst__Param names (default false)
 
 Dirs
   .autowire/          generated temp (deletable; never hand-authored)

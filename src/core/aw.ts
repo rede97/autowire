@@ -34,8 +34,8 @@ export interface ModFacts {
 
 /** Engine inputs: leaf tables (RtlIndex), elaborated wrapper facts, unit deps. */
 export interface EngineCtx {
-	/** [style] from autowire.toml; param defaults to "inline". */
-	style?: { param?: "inline" | "localparam" };
+	/** [style] from autowire.toml; paramInline defaults to true. */
+	style?: { paramInline?: boolean; localparamUpper?: boolean };
 	unitId?: string;
 	unitDeps?: string[];
 	unitMods?: Map<string, string>;
@@ -1116,12 +1116,12 @@ function elaborateMod(
 					paramRules.set(attr(r, "name"), attr(r, "expr") ?? "");
 			}
 		}
-		// [style] param (autowire.toml): "inline" (default) writes NON-EXPRESSION
-		// overrides (literal / single identifier ref to a module param or
-		// localparam / macro) into the instance. Anything containing ANY
-		// operator (concat {}, arithmetic, ternary, …) always folds into a
-		// Mod__Inst__Param localparam; style "localparam" folds everything.
-		const inlineParams = ctx.style?.param !== "localparam";
+		// [style] param_inline (autowire.toml): true (default) writes
+		// NON-EXPRESSION overrides (literal / single identifier ref to a module
+		// param or localparam / macro) into the instance. Anything containing
+		// ANY operator (concat {}, arithmetic, ternary, …) always folds into a
+		// Mod__Inst__Param localparam; param_inline = false folds everything.
+		const inlineParams = ctx.style?.paramInline !== false;
 		const instParams = new Map<
 			string,
 			{ expr: string; uniq: string; renderValue: string }
@@ -1129,7 +1129,8 @@ function elaborateMod(
 		for (const [pname, expr0] of paramRules) {
 			const expr = substVars(expr0, vars, res, `${iwhere} aw-param "${pname}"`);
 			const cls = classifyExpr(expr, scope);
-			const uniq = `${name}__${instName}__${pname}`;
+			const uniq0 = `${name}__${instName}__${pname}`;
+			const uniq = ctx.style?.localparamUpper ? uniq0.toUpperCase() : uniq0;
 			const simple =
 				LITERAL.test(cls.value) ||
 				IDENT.test(cls.value) ||

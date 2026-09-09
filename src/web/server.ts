@@ -63,7 +63,10 @@ async function handleApi(
 		const units = topoUnits(ws.connectUnits);
 		return json({
 			workspace: ws.root,
-			style: { param: ws.styleParam },
+			style: {
+				paramInline: ws.styleParamInline,
+				localparamUpper: ws.styleLocalparamUpper,
+			},
 			units: units.map((u) => ({ id: u.id, html: u.html, deps: u.deps })),
 			defaultUnit: state.defaultUnit,
 		});
@@ -170,7 +173,13 @@ async function handleApi(
 			`${connectXml(id, mods)}\n`,
 			"utf8",
 		);
-		const files = await writeSvFiles(mods, resolve(ws.root, ws.dumpDir), id);
+		const files = await writeSvFiles(mods, resolve(ws.root, ws.dumpDir), id, {
+			portAlign: ws.stylePortAlign,
+			paramAlign: ws.styleParamAlign,
+			instPortAlign: ws.styleInstPortAlign,
+			instParamAlign: ws.styleInstParamAlign,
+			signalAlign: ws.styleSignalAlign,
+		});
 		return json({ files, mods: mods.map((m) => m.name) });
 	}
 	return json({ error: `no route ${req.method} ${path}` }, 404);

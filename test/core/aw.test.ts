@@ -280,7 +280,7 @@ describe("elaborate (render)", () => {
 		);
 		const res = elaborate(
 			doc,
-			ctxWith({ leaf: counterLeaf }, { style: { param: "localparam" } }),
+			ctxWith({ leaf: counterLeaf }, { style: { paramInline: false } }),
 		);
 		expect(res.errors).toEqual([]);
 		const lps = [...doc.querySelectorAll("aw-render aw-localparam")].map(
@@ -298,6 +298,23 @@ describe("elaborate (render)", () => {
 		expect(lps).toContainEqual(["m__d__Width", "W+1", "false"]);
 	});
 
+	test("style localparam_upper: generated folding names are uppercased (references included)", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-params><aw-param name="W" expr="8"></aw-param></aw-params><aw-insts>
+				<aw-inst id="u_a" mod="leaf"><aw-template><aw-param name="Width" expr="W+1"></aw-param></aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(
+			doc,
+			ctxWith({ leaf: counterLeaf }, { style: { localparamUpper: true } }),
+		);
+		expect(res.errors).toEqual([]);
+		const lp = doc.querySelector("aw-render aw-localparam");
+		expect(lp?.getAttribute("name")).toBe("M__U_A__WIDTH");
+		const instParam = doc.querySelector("aw-render aw-inst aw-param");
+		expect(instParam?.getAttribute("value")).toBe("M__U_A__WIDTH");
+	});
+
 	test("overridden leaf param rewrites auto port dims to Mod__Inst__Param (§7.4, localparam mode)", () => {
 		const doc = docOf(
 			`<aw-mod name="m"><aw-content><aw-insts>
@@ -309,7 +326,7 @@ describe("elaborate (render)", () => {
 		);
 		const res = elaborate(
 			doc,
-			ctxWith({ leaf: counterLeaf }, { style: { param: "localparam" } }),
+			ctxWith({ leaf: counterLeaf }, { style: { paramInline: false } }),
 		);
 		expect(res.errors).toEqual([]);
 		const sig = mustQuery(doc, 'aw-signals aw-signal[name="d"]');

@@ -12,7 +12,7 @@ var $ = (sel) => {
 var statusEl = $("#aw-status");
 var state = {
   workspace: "",
-  style: { param: "inline" },
+  style: { paramInline: true },
   units: [],
   unitMods: new Map,
   current: null,

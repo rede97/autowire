@@ -101,6 +101,56 @@ describe("printer", () => {
 		expect(sv).toContain(".dbg()");
 	});
 
+	test("printSv instPortAlign pads inst port names per instantiation", () => {
+		const sv = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1", {
+			instPortAlign: true,
+		});
+		// longest port name in u0 is "w_in" (4): shorter names padded so ( aligns
+		expect(sv).toContain(".d   (arr[2]),");
+		expect(sv).toContain(".en  (32'h0),");
+		expect(sv).toContain(".clk (clk_i),");
+		expect(sv).toContain(".w_in(W),");
+		// default (off) keeps the compact form
+		const plain = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1");
+		expect(plain).toContain(".clk(clk_i),");
+	});
+
+	test("printSv instParamAlign pads inst parameter names", () => {
+		const sv = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1", {
+			instParamAlign: true,
+		});
+		expect(sv).toContain(".Width(top__u0__Width)");
+		// single param: padding to self is a no-op; alignment is per-instance
+		const plain = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1");
+		expect(plain).toContain(".Width(top__u0__Width)");
+	});
+
+	test("printSv portAlign aligns declaration port columns", () => {
+		const sv = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1", {
+			portAlign: true,
+		});
+		// dir padded to 6 ("output"), type to 5 ("logic"), packed column
+		// padded to 7 ("[W-1:0]"); names left-aligned at one column
+		expect(sv).toContain("input  wire          clk_i,");
+		expect(sv).toContain("output wire  [W-1:0] data_o");
+	});
+
+	test("printSv signalAlign aligns signal declaration columns", () => {
+		const sv = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1", {
+			signalAlign: true,
+		});
+		// packed column width = "[W-1:0]" (7)
+		expect(sv).toContain("logic [W-1:0] mid;");
+		expect(sv).toContain("wire  [7:0]   arr [0:3];");
+	});
+
+	test("printSv paramAlign aligns declaration parameter = column", () => {
+		const sv = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1", {
+			paramAlign: true,
+		});
+		expect(sv).toContain("parameter W = 8");
+	});
+
 	test("interface ports print as type.modport", () => {
 		const kid = parseSnapshot(SNAP)[0]?.children[0];
 		if (!kid) throw new Error("snapshot has no child module");

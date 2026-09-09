@@ -22,6 +22,16 @@ dir = ".autowire/hdxml"
 # dump output RTL directory (DV artifact)
 dir = "gen"
 
+[style]
+# traditional RTL look: aligned declaration/inst ports + params + signals,
+# uppercased folding names (param_inline stays at its default true)
+port_align = true
+param_align = true
+inst_port_align = true
+inst_param_align = true
+signal_align = true
+localparam_upper = true
+
 # sha256 Wishbone re-wrap (regs leaf + streaming core)
 [connect.sha256wb]
 html = "connect/sha256wb.html"
