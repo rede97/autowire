@@ -349,7 +349,7 @@ rd_fire = CYC & STB & ~WE & hit
 | Access | 部分写行为 |
 |---|---|
 | RW / RWW（SW 写） | 按 lane 屏蔽的 read-modify-write（未选 lane 保持） |
-| W1C | 写数据先按 `SEL` 屏蔽再清（未选 lane 的 1 **不**清） |
+| W1C | 写数据先按 `SEL` 屏蔽再清（未选 lane 的 1 **不**清）；硬件 `_set` 不受 `SEL` 限制，和同拍软件清除相比 **set 优先** |
 | W1P | 脉冲数据按 `SEL` 屏蔽（未选 lane 不出脉冲位） |
 | RWE | 叶子导出 **`ext_<field>_wstrb`**（`_wren` 限定；位宽 = 字段覆盖的字节 lane 数）；外部窗 **必须** 按 wstrb 做部分写 |
 | RO / RC | 无写路径，不受影响 |

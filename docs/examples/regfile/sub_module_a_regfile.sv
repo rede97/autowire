@@ -323,6 +323,10 @@ module sub_module_a_regfile (
 		end else if (wr_sel_10) begin
 			if (sub_module_a_i_wb_sel[1]) begin
 				c_rg_irq_sticky_q <= (c_rg_irq_sticky_q & ~sub_module_a_i_wb_dat[8]) | c_rg_irq_sticky_set;
+			end else begin
+				if (|(c_rg_irq_sticky_set)) begin
+					c_rg_irq_sticky_q <= c_rg_irq_sticky_q | c_rg_irq_sticky_set;
+				end
 			end
 		end
 	end

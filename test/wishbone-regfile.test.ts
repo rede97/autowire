@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256_0, sha256_1 } from "../demo/soc/regs/sha256_wb.ts";
@@ -210,6 +210,67 @@ describe("wishbone-regfile smoke features", () => {
 		const sv = emitRegfileSv(layoutRegfile(smoke_shadow));
 		expect(sv).toContain("// one-hot mask → bin index (lowest set bit wins)");
 		expect(sv).toContain("for (int __i = 3; __i >= 0; __i--)");
+	});
+
+	test("W1C hardware set survives a zero-lane write", () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_w1c_"));
+		try {
+			const dut = join(dir, "smoke_w1c_regfile.sv");
+			const tb = join(dir, "tb.sv");
+			const vvp = join(dir, "tb.vvp");
+			writeFileSync(dut, emitRegfileSv(layoutRegfile(smoke_w1c)));
+			writeFileSync(
+				tb,
+				`module tb;
+	logic i_clk = 1'b0;
+	logic i_rst_n = 1'b0;
+	logic smoke_w1c_i_wb_cyc = 1'b0;
+	logic smoke_w1c_i_wb_stb = 1'b0;
+	logic smoke_w1c_i_wb_we = 1'b0;
+	logic [7:0] smoke_w1c_i_wb_adr = 8'h0;
+	logic [31:0] smoke_w1c_i_wb_dat = 32'h0;
+	logic [3:0] smoke_w1c_i_wb_sel = 4'h0;
+	logic smoke_w1c_o_wb_ack;
+	logic [31:0] smoke_w1c_o_wb_dat;
+	logic c_rg_sticky;
+	logic c_rg_sticky_set = 1'b0;
+
+	always #5 i_clk = ~i_clk;
+
+	smoke_w1c_regfile dut (.*);
+
+	initial begin
+		#12 i_rst_n = 1'b1;
+		@(negedge i_clk);
+		smoke_w1c_i_wb_cyc = 1'b1;
+		smoke_w1c_i_wb_stb = 1'b1;
+		smoke_w1c_i_wb_we = 1'b1;
+		smoke_w1c_i_wb_sel = 4'b0000;
+		c_rg_sticky_set = 1'b1;
+		@(posedge i_clk);
+		#1;
+		if (c_rg_sticky !== 1'b1)
+			$fatal(1, "W1C hardware set was lost");
+		$finish;
+	end
+endmodule
+`,
+			);
+			const compile = Bun.spawnSync({
+				cmd: ["iverilog", "-g2012", "-o", vvp, tb, dut],
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			expect(compile.exitCode).toBe(0);
+			const sim = Bun.spawnSync({
+				cmd: ["vvp", vvp],
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			expect(sim.exitCode).toBe(0);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	test("smoke.ts generates all feature leaves via plugin generate", async () => {

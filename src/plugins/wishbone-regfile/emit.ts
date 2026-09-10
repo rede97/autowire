@@ -772,6 +772,7 @@ function chunkSel(ch: LaneChunk, width: number): string {
 /**
  * One storage DFF block per cell (master regbit_block style):
  * reset → ~wr (HW writes: RWW strb / W1C set) → wr (per-byte-lane SEL blocks).
+ * A W1C HW set remains eligible when a SW write omits its byte lane.
  * Assign columns are aligned per branch.
  */
 function emitCellStorage(
@@ -905,9 +906,10 @@ function emitCellStorage(
 	}
 
 	// --- SW branch: per-byte-lane blocks ---
-	const lanes: { lane: number; rows: Row[] }[] = [];
+	const lanes: { lane: number; rows: Row[]; w1cFallbackRows: Row[] }[] = [];
 	for (let k = 0; k < 4; k++) {
 		const rows: Row[] = [];
+		const w1cFallbackRows: Row[] = [];
 		for (const lf of dff) {
 			const f = lf.field;
 			const stem = sidebandStem(f);
@@ -918,22 +920,36 @@ function emitCellStorage(
 				const dat = `${i_wb_dat}${bitRange(ch.gHi, ch.gLo)}`;
 				const w = ch.fHi - ch.fLo + 1;
 				if (f.access === Access.W1C) {
+					const w1cSetExpr = (copy: number | null): string =>
+						copy === null
+							? `${stem}_set${sel}`
+							: muxed
+								? `((o_${sh?.name ?? ""}_sel == ${sw}'d${copy}) ? ${stem}_set${sel} : ${w}'h0)`
+								: `${stem}_set[${copy}]${sel}`;
 					const w1c = (copy: number | null): Row => {
 						const lhs = `${lhsAt(lf, copy)}${sel}`;
-						const setExpr =
-							copy === null
-								? `${stem}_set${sel}`
-								: muxed
-									? `((o_${sh?.name ?? ""}_sel == ${sw}'d${copy}) ? ${stem}_set${sel} : ${w}'h0)`
-									: `${stem}_set[${copy}]${sel}`;
+						const setExpr = w1cSetExpr(copy);
 						return {
 							guard: sh ? `mask_${sh?.name ?? ""}[${copy ?? 0}]` : null,
 							lhs,
 							rhs: `(${lhs} & ~${dat}) | ${setExpr}`,
 						};
 					};
+					const w1cFallback = (copy: number | null): Row => {
+						const lhs = `${lhsAt(lf, copy)}${sel}`;
+						const setExpr = w1cSetExpr(copy);
+						const hasSet = `|(${setExpr})`;
+						return {
+							guard: sh
+								? `mask_${sh?.name ?? ""}[${copy ?? 0}] && ${hasSet}`
+								: hasSet,
+							lhs,
+							rhs: `${lhs} | ${setExpr}`,
+						};
+					};
 					for (let i = 0; i < (sh ? ncopy : 1); i++) {
 						rows.push(w1c(sh ? i : null));
+						w1cFallbackRows.push(w1cFallback(sh ? i : null));
 					}
 				} else {
 					const rw = (copy: number | null): Row => ({
@@ -947,7 +963,7 @@ function emitCellStorage(
 				}
 			}
 		}
-		if (rows.length > 0) lanes.push({ lane: k, rows });
+		if (rows.length > 0) lanes.push({ lane: k, rows, w1cFallbackRows });
 	}
 
 	out.push("\talways_ff @(posedge i_clk or negedge i_rst_n) begin");
@@ -958,9 +974,13 @@ function emitCellStorage(
 		pushRows("\t\t\t", hw);
 	}
 	out.push(`\t\tend else if (${wr}) begin`);
-	for (const { lane, rows } of lanes) {
+	for (const { lane, rows, w1cFallbackRows } of lanes) {
 		out.push(`\t\t\tif (${i_wb_sel}[${lane}]) begin`);
 		pushRows("\t\t\t\t", rows);
+		if (w1cFallbackRows.length > 0) {
+			out.push("\t\t\tend else begin");
+			pushRows("\t\t\t\t", w1cFallbackRows);
+		}
 		out.push("\t\t\tend");
 	}
 	out.push("\t\tend");
