@@ -1,5 +1,7 @@
 // SoT for demo/soc sha256 Wishbone CSR map (CTRL + HASH0..7).
 // Glue (AXIS front-end, sticky done, core reset) stays in rtl/sha256_wb_regs.v.
+// Generate: autowire plugin generate wishbone-regfile
+//   → gen/plugins/wishbone-regfile/sha256_wb_regfile.sv
 
 export {
 	Access,

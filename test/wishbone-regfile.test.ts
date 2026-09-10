@@ -53,6 +53,10 @@ describe("wishbone-regfile", () => {
 		// field "ext_data" already starts with Access prefix "ext" → no double prefix
 		expect(sv).toContain("ext_data_wren");
 		expect(sv).toContain("ext_data_ready");
+		expect(sv).toContain("rwe_stall_ext_data");
+		expect(sv).toContain(
+			"o_wb_ack = i_wb_cyc && i_wb_stb && hit && !rwe_stall_ext_data",
+		);
 		expect(sv).not.toContain("o_enable");
 		expect(sv).not.toContain("i_busy");
 	});
@@ -74,6 +78,35 @@ describe("wishbone-regfile", () => {
 		expect(sv).toContain("o_wb_ack");
 		expect(sv).toContain("i_wb_cyc && i_wb_stb && hit");
 		expect(sv).toContain("16'h1");
+	});
+
+	test("emit carries SoT desc into header / ports / cells", () => {
+		const sv = emitRegfileSv(layoutRegfile(sub_module_a));
+		expect(sv).toContain("//  Module: sub_module_a_regfile");
+		expect(sv).toContain("//  Desc:");
+		expect(sv).toContain("//  Address map:");
+		expect(sv).toContain("// Wishbone classic slave");
+		expect(sv).toContain("// Field / shadow sidebands");
+		expect(sv).toContain("//  2. Address decode / hit / wr_sel / rd_sel");
+		expect(sv).toMatch(/\/\/ Addr: 0x0+\s+RegCell: CFG0\s+—/);
+		expect(sv).toMatch(/\/\/\s+(\[\d+\]|\[\d+:\d+\])\s+RW\s+enable\s+—/);
+	});
+
+	test("emit aligns field map comment columns", () => {
+		const sv = emitRegfileSv(layoutRegfile(sub_module_a));
+		const enable = sv
+			.split("\n")
+			.find((l) => /\/\/\s+\[0\]\s+RW\s+enable\s+— Soft enable/.test(l));
+		const mode = sv
+			.split("\n")
+			.find((l) => /\/\/\s+\[10:8\]\s+RW\s+mode\s+—/.test(l));
+		expect(enable).toBeDefined();
+		expect(mode).toBeDefined();
+		if (!enable || !mode) return;
+		// longer bits pad shorter ones so Access columns line up
+		expect(enable.indexOf("RW", enable.indexOf("[0]"))).toBe(
+			mode.indexOf("RW", mode.indexOf("[10:8]")),
+		);
 	});
 
 	test("one SoT file generates all RegfileDef exports", async () => {

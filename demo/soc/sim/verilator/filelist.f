@@ -12,10 +12,12 @@ rtl/wb_testout.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v
 rtl/sd_rd_dma.v
-rtl/sha256_wb_regfile.sv
 rtl/sha256_wb_regs.v
-rtl/smoke_regfile.sv
 rtl/smoke_wb.v
+
+# Type-A wishbone-regfile (run: bun ../../index.ts plugin generate wishbone-regfile)
+gen/plugins/wishbone-regfile/sha256_wb_regfile.sv
+gen/plugins/wishbone-regfile/smoke_regfile.sv
 
 ip/picorv32/picorv32.v
 ip/picorv32/picosoc/simpleuart.v

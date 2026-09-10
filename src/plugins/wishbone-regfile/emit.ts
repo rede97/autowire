@@ -43,6 +43,8 @@ type PortDecl = {
 	name: string;
 	/** Unpacked dimension after the name, e.g. "[4]". */
 	unpacked?: string;
+	/** Optional line(s) printed above the port (field / bus docs). */
+	comment?: string;
 };
 
 type SigDecl = {
@@ -56,11 +58,95 @@ function formatPortLines(ports: readonly PortDecl[]): string[] {
 	const dirPad = Math.max(...ports.map((p) => p.dir.length), 0);
 	const typePad = 5; // "logic"
 	const packPad = Math.max(...ports.map((p) => p.packed.length), 0);
-	return ports.map((p) => {
+	const lines: string[] = [];
+	for (const p of ports) {
+		if (p.comment) {
+			for (const c of p.comment.split("\n")) {
+				lines.push(`\t// ${c}`);
+			}
+		}
 		const packCol = packPad > 0 ? ` ${p.packed.padEnd(packPad)}` : "";
 		const ud = p.unpacked ? ` ${p.unpacked}` : "";
-		return `\t${p.dir.padEnd(dirPad)} ${"logic".padEnd(typePad)}${packCol} ${p.name}${ud}`;
-	});
+		lines.push(
+			`\t${p.dir.padEnd(dirPad)} ${"logic".padEnd(typePad)}${packCol} ${p.name}${ud}`,
+		);
+	}
+	return lines;
+}
+
+function section(title: string): string[] {
+	return [
+		"",
+		"\t//------------------------------------------------------------------------------",
+		`\t//  ${title}`,
+		"\t//------------------------------------------------------------------------------",
+		"",
+	];
+}
+
+function fieldBits(lf: LaidField): string {
+	const hi = lf.bit_offset + lf.field.width - 1;
+	const lo = lf.bit_offset;
+	return hi === lo ? `[${lo}]` : `[${hi}:${lo}]`;
+}
+
+/** Column pads for cell / field map comments (module-wide). */
+type FieldCommentPads = {
+	addrHexBits: number;
+	cellName: number;
+	bits: number;
+	access: number;
+	name: number;
+};
+
+function fieldCommentPads(
+	cells: readonly LaidCell[],
+	addrWidth: number,
+): FieldCommentPads {
+	let cellName = 0;
+	let bits = 0;
+	let access = 0;
+	let name = 0;
+	for (const c of cells) {
+		cellName = Math.max(cellName, c.name.length);
+		for (const lf of c.fields) {
+			bits = Math.max(bits, fieldBits(lf).length);
+			access = Math.max(access, lf.field.access.length);
+			name = Math.max(name, lf.field.name.length);
+		}
+	}
+	return {
+		addrHexBits: addrWidth,
+		cellName,
+		bits,
+		access,
+		name,
+	};
+}
+
+function fieldMapComment(c: LaidCell, pads: FieldCommentPads): string[] {
+	const lines = [
+		`\t// Addr: 0x${hex(c.byte_offset, pads.addrHexBits)}  RegCell: ${c.name.padEnd(pads.cellName)} — ${c.desc}`,
+	];
+	if (c.shadow) {
+		lines.push(`\t//   shadow=${c.shadow}`);
+	}
+	for (const lf of c.fields) {
+		const f = lf.field;
+		const slice =
+			lf.slice_index !== null
+				? ` (slice${lf.slice_index} of ${lf.logical_name})`
+				: "";
+		lines.push(
+			`\t//   ${fieldBits(lf).padEnd(pads.bits)}  ${f.access.padEnd(pads.access)}  ${f.name.padEnd(pads.name)} — ${f.desc}${slice}`,
+		);
+	}
+	return lines;
+}
+
+function fieldInlineComment(lf: LaidField, pads: FieldCommentPads): string {
+	const f = lf.field;
+	return `${f.access.padEnd(pads.access)} ${fieldBits(lf).padEnd(pads.bits)} ${f.name.padEnd(pads.name)} — ${f.desc}`;
 }
 
 /** Match printer signal_align: nettype / packed columns; names left-aligned. */
@@ -75,31 +161,119 @@ function formatSigLines(sigs: readonly SigDecl[]): string[] {
 	});
 }
 
+function wbPortComment(name: string): string {
+	switch (name) {
+		case "i_clk":
+			return "Clock";
+		case "i_rst_n":
+			return "Active-low asynchronous reset";
+		case "i_wb_cyc":
+			return "Wishbone CYC";
+		case "i_wb_stb":
+			return "Wishbone STB";
+		case "i_wb_we":
+			return "Wishbone WE (1=write, 0=read)";
+		case "i_wb_adr":
+			return "Wishbone ADR (byte address; word decode uses [addr_width-1:2])";
+		case "i_wb_dat":
+			return "Wishbone write data";
+		case "i_wb_sel":
+			return "Wishbone byte select";
+		case "i_wb_tga":
+			return "Wishbone TGA (shadow / user tag)";
+		case "o_wb_ack":
+			return "Wishbone ACK";
+		case "o_wb_dat":
+			return "Wishbone read data";
+		default:
+			return name;
+	}
+}
+
+function fieldSidebandComment(
+	f: { name: string; access: Access; desc: string },
+	role: string,
+): string {
+	return `${f.access} ${role}: ${f.name} — ${f.desc}`;
+}
+
 function collectPorts(laid: LaidRegfile): PortDecl[] {
 	const { def, cells, shadows, tga_width } = laid;
 	const ports: PortDecl[] = [
-		{ dir: "input", packed: "", name: "i_clk" },
-		{ dir: "input", packed: "", name: "i_rst_n" },
-		{ dir: "input", packed: "", name: "i_wb_cyc" },
-		{ dir: "input", packed: "", name: "i_wb_stb" },
-		{ dir: "input", packed: "", name: "i_wb_we" },
-		{ dir: "input", packed: packedRange(def.addr_width), name: "i_wb_adr" },
-		{ dir: "input", packed: "[31:0]", name: "i_wb_dat" },
-		{ dir: "input", packed: "[3:0]", name: "i_wb_sel" },
+		{
+			dir: "input",
+			packed: "",
+			name: "i_clk",
+			comment: wbPortComment("i_clk"),
+		},
+		{
+			dir: "input",
+			packed: "",
+			name: "i_rst_n",
+			comment: wbPortComment("i_rst_n"),
+		},
+		{
+			dir: "input",
+			packed: "",
+			name: "i_wb_cyc",
+			comment: `Wishbone classic slave\n${wbPortComment("i_wb_cyc")}`,
+		},
+		{
+			dir: "input",
+			packed: "",
+			name: "i_wb_stb",
+			comment: wbPortComment("i_wb_stb"),
+		},
+		{
+			dir: "input",
+			packed: "",
+			name: "i_wb_we",
+			comment: wbPortComment("i_wb_we"),
+		},
+		{
+			dir: "input",
+			packed: packedRange(def.addr_width),
+			name: "i_wb_adr",
+			comment: wbPortComment("i_wb_adr"),
+		},
+		{
+			dir: "input",
+			packed: "[31:0]",
+			name: "i_wb_dat",
+			comment: wbPortComment("i_wb_dat"),
+		},
+		{
+			dir: "input",
+			packed: "[3:0]",
+			name: "i_wb_sel",
+			comment: wbPortComment("i_wb_sel"),
+		},
 	];
 	if (tga_width > 0) {
 		ports.push({
 			dir: "input",
 			packed: packedRange(tga_width),
 			name: "i_wb_tga",
+			comment: wbPortComment("i_wb_tga"),
 		});
 	}
 	ports.push(
-		{ dir: "output", packed: "", name: "o_wb_ack" },
-		{ dir: "output", packed: "[31:0]", name: "o_wb_dat" },
+		{
+			dir: "output",
+			packed: "",
+			name: "o_wb_ack",
+			comment: wbPortComment("o_wb_ack"),
+		},
+		{
+			dir: "output",
+			packed: "[31:0]",
+			name: "o_wb_dat",
+			comment: wbPortComment("o_wb_dat"),
+		},
 	);
 
 	const seenShadowSel = new Set<string>();
+	let sidebandBanner = false;
 	for (const c of cells) {
 		for (const lf of c.fields) {
 			const f = lf.field;
@@ -108,11 +282,20 @@ function collectPorts(laid: LaidRegfile): PortDecl[] {
 			const sh = c.shadow ? shadowByName(shadows, c.shadow) : undefined;
 			const copies = sh?.inner_shadow_mux === false ? sh.copies : 1;
 			const pk = packedRange(f.width);
-			const arr = (name: string, dir: "input" | "output") => {
+			const banner = (role: string): string => {
+				const body = fieldSidebandComment(f, role);
+				if (!sidebandBanner) {
+					sidebandBanner = true;
+					return `Field / shadow sidebands\n${body}`;
+				}
+				return body;
+			};
+			const arr = (name: string, dir: "input" | "output", role: string) => {
 				ports.push({
 					dir,
 					packed: pk,
 					name,
+					comment: banner(role),
 					...(copies > 1 ? { unpacked: `[${copies}]` } : {}),
 				});
 			};
@@ -124,46 +307,75 @@ function collectPorts(laid: LaidRegfile): PortDecl[] {
 							packed: pk,
 							name: stem,
 							unpacked: `[${sh.copies}]`,
+							comment: banner("status in (per-copy)"),
 						});
 					} else {
-						arr(stem, "input");
+						arr(stem, "input", "status in");
 					}
 					break;
 				case Access.RW:
+					arr(stem, "output", "register out");
+					break;
 				case Access.W1P:
+					arr(stem, "output", "write-1 pulse out");
+					break;
 				case Access.W1C:
-					arr(stem, "output");
+					arr(stem, "output", "write-1 clear sticky out");
 					break;
 				case Access.RWW:
-					arr(stem, "output");
+					arr(stem, "output", "register out");
 					ports.push({
 						dir: "input",
 						packed: "",
 						name: `${stem}_strb`,
+						comment: banner("hardware write strobe"),
 						...(copies > 1 ? { unpacked: `[${copies}]` } : {}),
 					});
 					ports.push({
 						dir: "input",
 						packed: pk,
 						name: `${stem}_hwdata`,
+						comment: banner("hardware write data"),
 						...(copies > 1 ? { unpacked: `[${copies}]` } : {}),
 					});
 					break;
 				case Access.RWE:
-					ports.push({ dir: "input", packed: pk, name: stem });
+					ports.push({
+						dir: "input",
+						packed: pk,
+						name: stem,
+						comment: banner("external window read data in"),
+					});
 					ports.push({
 						dir: "output",
 						packed: pk,
 						name: `${stem}_wdata`,
+						comment: banner("external window write data"),
 					});
-					ports.push({ dir: "output", packed: "", name: `${stem}_wren` });
-					ports.push({ dir: "output", packed: "", name: `${stem}_rden` });
-					ports.push({ dir: "output", packed: "", name: `${stem}_rst` });
+					ports.push({
+						dir: "output",
+						packed: "",
+						name: `${stem}_wren`,
+						comment: banner("external window write enable"),
+					});
+					ports.push({
+						dir: "output",
+						packed: "",
+						name: `${stem}_rden`,
+						comment: banner("external window read enable"),
+					});
+					ports.push({
+						dir: "output",
+						packed: "",
+						name: `${stem}_rst`,
+						comment: banner("external window reset"),
+					});
 					if (def.read_write_block) {
 						ports.push({
 							dir: "input",
 							packed: "",
 							name: `${stem}_ready`,
+							comment: banner("external window ready (may stall ACK)"),
 						});
 					}
 					break;
@@ -174,10 +386,17 @@ function collectPorts(laid: LaidRegfile): PortDecl[] {
 				seenShadowSel.add(c.shadow);
 				const s = shadowByName(shadows, c.shadow);
 				const w = Math.max(1, Math.ceil(Math.log2(s.copies)));
+				const selComment = `Shadow bank select: ${c.shadow} (${s.copies} copies, TGA ${s.tag_bits})`;
+				let comment = selComment;
+				if (!sidebandBanner) {
+					sidebandBanner = true;
+					comment = `Field / shadow sidebands\n${selComment}`;
+				}
 				ports.push({
 					dir: "output",
 					packed: packedRange(w),
 					name: `o_${c.shadow}_sel`,
+					comment,
 				});
 			}
 		}
@@ -234,27 +453,73 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 
 	sigs.push({ packed: "[31:0]", name: "rd_data" });
 
+	type RweStall = { stem: string; byte_offset: number };
+	const rweStalls: RweStall[] = [];
+	if (def.read_write_block) {
+		for (const c of cells) {
+			for (const lf of c.fields) {
+				if (lf.field.access === Access.RWE) {
+					rweStalls.push({
+						stem: sidebandStem(lf.field),
+						byte_offset: c.byte_offset,
+					});
+				}
+			}
+		}
+	}
+	for (const s of rweStalls) {
+		sigs.push({ packed: "", name: `rwe_stall_${s.stem}` });
+	}
+	if (rweStalls.length > 1) {
+		sigs.push({ packed: "", name: "rwe_stall" });
+	}
+
+	const commentPads = fieldCommentPads(cells, aw);
+
 	const out: string[] = [];
 	out.push(
 		`// Generated by autowire plugin wishbone-regfile (table ${def.name}). Do not edit.`,
-		`// ${def.desc}`,
+		"//",
+		"//------------------------------------------------------------------------------",
+		`//  Module: ${mod}`,
+		`//  Desc:   ${def.desc}`,
+		`//  Addr width: ${aw}`,
+		`//  Cells: ${cells.length}`,
+		`//  read_write_block: ${def.read_write_block}`,
+		"//------------------------------------------------------------------------------",
+		"//  Address map:",
+	);
+	for (const c of cells) {
+		const sh = c.shadow ? `  shadow=${c.shadow}` : "";
+		out.push(
+			`//    0x${hex(c.byte_offset, aw)}  ${c.name.padEnd(commentPads.cellName)} — ${c.desc}${sh}`,
+		);
+	}
+	out.push(
+		"//------------------------------------------------------------------------------",
+		"",
 		`module ${mod} (`,
 	);
 	const portLines = formatPortLines(ports);
 	for (const [i, line] of portLines.entries()) {
-		out.push(`${line}${i < portLines.length - 1 ? "," : ""}`);
+		const isComment = line.trimStart().startsWith("//");
+		if (isComment) {
+			out.push(line);
+			continue;
+		}
+		const lastPort = portLines
+			.slice(i + 1)
+			.every((l) => l.trimStart().startsWith("//"));
+		out.push(`${line}${lastPort ? "" : ","}`);
 	}
 	out.push(");");
-	out.push("");
+	out.push(...section("1. Internal declarations"));
 	out.push(...formatSigLines(sigs));
-	out.push("");
 
-	// Per-cell address hit
+	out.push(...section("2. Address decode / hit / wr_sel / rd_sel"));
 	for (const c of cells) {
 		const word = c.byte_offset >>> 2;
-		out.push(
-			`\t// Addr: 0x${hex(c.byte_offset)} RegCell: ${c.name} — ${c.desc}`,
-		);
+		out.push(...fieldMapComment(c, commentPads));
 		out.push(
 			`\tassign addr_hit_${hex(c.byte_offset)} = (i_wb_adr[${aw - 1}:2] == ${aw - 2}'d${word});`,
 		);
@@ -276,9 +541,11 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 			`\tassign rd_sel_${hex(c.byte_offset)} = rd_fire && hit && addr_hit_${hex(c.byte_offset)};`,
 		);
 	}
-	out.push("");
 
-	// Shadow decode
+	if (shadows.length > 0) {
+		out.push(...section("3. Shadow tag decode (TGA → one-hot mask / bin sel)"));
+	}
+
 	for (const s of shadows) {
 		const { hi, lo } = parseTag(s.tag_bits);
 		const mw = s.copies;
@@ -306,23 +573,27 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 		);
 	}
 
-	// Storage + sidebands
+	out.push(...section("4. Field storage / sideband glue"));
 	for (const c of cells) {
+		out.push(...fieldMapComment(c, commentPads));
 		const sh = c.shadow ? shadowByName(shadows, c.shadow) : undefined;
 		for (const lf of c.fields) {
-			emitFieldStorage(out, c, lf, sh, def.read_write_block);
+			emitFieldStorage(out, c, lf, sh, def.read_write_block, commentPads);
 		}
+		out.push("");
 	}
 
-	// Read mux
+	out.push(...section("5. Read mux → o_wb_dat / ACK"));
 	out.push("\talways_comb begin");
 	out.push("\t\trd_data = 32'h0;");
 	out.push("\t\tunique case (1'b1)");
 	for (const c of cells) {
+		out.push(`\t\t\t// ${c.name} @ 0x${hex(c.byte_offset, aw)}`);
 		out.push(`\t\t\trd_sel_${hex(c.byte_offset)}: begin`);
 		out.push("\t\t\t\trd_data = 32'h0;");
 		const sh = c.shadow ? shadowByName(shadows, c.shadow) : undefined;
 		for (const lf of c.fields) {
+			out.push(`\t\t\t\t// ${fieldInlineComment(lf, commentPads)}`);
 			emitFieldRead(out, lf, sh);
 		}
 		out.push("\t\t\tend");
@@ -332,24 +603,20 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	out.push("\tend");
 	out.push("");
 
-	const rweReady: string[] = [];
-	if (def.read_write_block) {
-		for (const c of cells) {
-			for (const lf of c.fields) {
-				if (lf.field.access === Access.RWE) {
-					const stem = sidebandStem(lf.field);
-					rweReady.push(
-						`((wr_sel_${hex(c.byte_offset)} || rd_sel_${hex(c.byte_offset)}) && !${stem}_ready)`,
-					);
-				}
-			}
-		}
-	}
-	if (rweReady.length === 0) {
+	if (rweStalls.length === 0) {
 		out.push("\tassign o_wb_ack = i_wb_cyc && i_wb_stb && hit;");
+	} else if (rweStalls.length === 1) {
+		const only = rweStalls[0];
+		if (only) {
+			out.push(
+				`\tassign o_wb_ack = i_wb_cyc && i_wb_stb && hit && !rwe_stall_${only.stem};`,
+			);
+		}
 	} else {
 		out.push(
-			`\tassign o_wb_ack = i_wb_cyc && i_wb_stb && hit && !(${rweReady.join(" || ")});`,
+			"\t// Merge per-RWE stalls (each folded next to its field sideband)",
+			`\tassign rwe_stall = ${rweStalls.map((s) => `rwe_stall_${s.stem}`).join(" | ")};`,
+			"\tassign o_wb_ack = i_wb_cyc && i_wb_stb && hit && !rwe_stall;",
 		);
 	}
 	out.push("\tassign o_wb_dat = rd_data;");
@@ -402,6 +669,7 @@ function emitFieldStorage(
 	lf: LaidField,
 	sh: RegShadow | undefined,
 	read_write_block: boolean,
+	pads: FieldCommentPads,
 ): void {
 	const f = lf.field;
 	const hi = lf.bit_offset + f.width - 1;
@@ -413,12 +681,18 @@ function emitFieldStorage(
 		return;
 	}
 	const stem = sidebandStem(f);
+	out.push(`\t// ${fieldInlineComment(lf, pads)}`);
 	if (f.access === Access.RWE) {
 		out.push(`\tassign ${stem}_wdata = i_wb_dat[${hi}:${lo}];`);
 		out.push(`\tassign ${stem}_wren  = ${wr};`);
 		out.push(`\tassign ${stem}_rden  = ${rd};`);
 		out.push(`\tassign ${stem}_rst   = ~i_rst_n;`);
-		void read_write_block;
+		if (read_write_block) {
+			out.push(
+				`\t// Stall ACK when this RWE window is selected and not ready`,
+				`\tassign rwe_stall_${stem} = (${wr} || ${rd}) && !${stem}_ready;`,
+			);
+		}
 		return;
 	}
 	if (f.access === Access.W1P) {

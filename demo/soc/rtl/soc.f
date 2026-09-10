@@ -8,12 +8,14 @@ rtl/wb_spiflash.v
 rtl/wb_uart.v
 rtl/wb_testout.v
 rtl/sd_rd_dma.v
-rtl/sha256_wb_regfile.sv
 rtl/sha256_wb_regs.v
-rtl/smoke_regfile.sv
 rtl/smoke_wb.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v
+
+# Type-A wishbone-regfile leaves (autowire plugin generate wishbone-regfile)
+gen/plugins/wishbone-regfile/sha256_wb_regfile.sv
+gen/plugins/wishbone-regfile/smoke_regfile.sv
 
 # picorv32: CPU + Wishbone wrapper (picorv32_wb lives in picorv32.v)
 # plus the picosoc UART / QSPI flash controller

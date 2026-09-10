@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 //
-// smoke_wb.v — SoC Wishbone wrapper around generated smoke_regfile:
+// smoke_wb.v — SoC Wishbone wrapper around
+// gen/plugins/wishbone-regfile/smoke_regfile.sv:
 //   * RO: free-running status counter → ro_code / ro_busy
 //   * RWW: free-running counter periodically writes via _strb/_hwdata
 //   * RWE: 4-deep sync FIFO loopback (push on wren, pop on rden) with ready
