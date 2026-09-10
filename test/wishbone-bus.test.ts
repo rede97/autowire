@@ -63,8 +63,8 @@ describe("wishbone-bus", () => {
 		const sv = emitBusSv(def);
 		expect(sv).toContain("m_tga_i");
 		expect(sv).toContain("s0_i_wb_tga");
-		expect(sv).toContain("assign g_tga = m_tga_i");
-		expect(sv).toContain("s0_i_wb_tga = g_tga[1:0]");
+		expect(sv).toContain("g_tga   = m_tga_i");
+		expect(sv).toContain("= g_tga[1:0]");
 	});
 
 	test("TGA interconnect slices flat master tag vector", () => {
@@ -78,8 +78,8 @@ describe("wishbone-bus", () => {
 		expect(def.tag_width).toBe(2);
 		const sv = emitBusSv(def);
 		expect(sv).toContain("[3:0] m_tga_i");
-		expect(sv).toContain("m_tga_i[mi*2 +: 2]");
-		expect(sv).toContain("s1_i_wb_tga = g_tga[1:0]");
+		expect(sv).toContain("m_tga_i[0*2 +: 2]");
+		expect(sv).toContain("m_tga_i[1*2 +: 2]");
 		expect(sv).not.toContain("s0_i_wb_tga");
 	});
 
@@ -110,19 +110,18 @@ describe("wishbone-bus", () => {
 		// demo smoke slave declares tag 2 → fabric carries a 2-bit TGA
 		expect(soc_wb.tag_width).toBe(2);
 		expect(sv).toContain("[5:0] m_tga_i");
-		expect(sv).toContain("smoke_i_wb_tga = g_tga[1:0]");
+		expect(sv).toContain("= g_tga[1:0]");
 		expect(sv).not.toContain("sram_i_wb_tga");
 	});
 
-	test("arbiter priority encoder clears per hit (multi-hot grant regression)", () => {
-		// Removing the in-loop clear makes grant_nxt multi-hot under contention
+	test("arbiter priority: lowest master index wins (multi-hot regression)", () => {
+		// Unrolled if/else chain: the first matching (lowest-index) master takes
+		// the grant — a shared accumulate would go multi-hot under contention
 		// (caught by demo/soc --sd smoke: CPU+DMA concurrent CYC → cpu trap).
 		const sv = emitBusSv(soc_wb);
-		const loop = sv
-			.split("always_comb begin")
-			.find((b) => b.includes("grant_nxt[gi]"));
-		expect(loop).toBeDefined();
-		expect(loop).toContain("if (m_cyc_i[gi]) begin\n\t\t\t\tgrant_nxt = 3'b0;");
+		expect(sv).toContain("if      (m_cyc_i[0]) grant_nxt = 3'b001;");
+		expect(sv).toContain("else if (m_cyc_i[1]) grant_nxt = 3'b010;");
+		expect(sv).toContain("else if (m_cyc_i[2]) grant_nxt = 3'b100;");
 	});
 
 	test("generateAll writes plugins_dir", async () => {

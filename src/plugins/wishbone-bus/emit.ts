@@ -64,6 +64,21 @@ function formatAlignedPorts(blocks: string[][]): string[] {
 	return flat;
 }
 
+/** `assign <lhs> = t0 | t1 | …;` with aligned continuation lines. */
+function pushOrAssign(out: string[], lhs: string, terms: string[]): void {
+	const [first, ...rest] = terms;
+	if (first === undefined) return;
+	if (rest.length === 0) {
+		out.push(`\tassign ${lhs} = ${first};`);
+		return;
+	}
+	out.push(`\tassign ${lhs} = ${first}`);
+	const cont = "\t" + " ".repeat(`assign ${lhs} `.length);
+	for (const [i, t] of rest.entries()) {
+		out.push(`${cont}| ${t}${i === rest.length - 1 ? ";" : ""}`);
+	}
+}
+
 function emitDecoderBody(def: BusDef): string[] {
 	const aw = def.addr_width;
 	const tw = def.tag_width;
@@ -87,7 +102,7 @@ function emitDecoderBody(def: BusDef): string[] {
 		"\tassign g_sel   = m_sel_i;",
 	);
 	if (tw > 0) {
-		out.push("\tassign g_tga = m_tga_i;");
+		out.push("\tassign g_tga   = m_tga_i;");
 	}
 	out.push(
 		"\tassign g_cyc   = m_cyc_i;",
@@ -108,11 +123,10 @@ function emitInterconnectBody(def: BusDef): string[] {
 	const tw = def.tag_width;
 	const slaves = def.slaves;
 	const out: string[] = [];
+	const onehot = (i: number) =>
+		`${nm}'b${"0".repeat(nm - 1 - i)}1${"0".repeat(i)}`;
+
 	out.push(
-		"\tinteger gi;",
-		"\tinteger mi;",
-		"\tinteger ri;",
-		"",
 		"\t//------------------------------------------------------------------------------",
 		"\t//  Arbitration: lowest master index wins; locked while grant holds CYC",
 		"\t//------------------------------------------------------------------------------",
@@ -121,12 +135,13 @@ function emitInterconnectBody(def: BusDef): string[] {
 		`\tlogic [${nm - 1}:0] grant_nxt;`,
 		"",
 		"\talways_comb begin",
-		`\t\tgrant_nxt = ${nm}'b0;`,
-		`\t\tfor (gi = ${nm - 1}; gi >= 0; gi = gi - 1)`,
-		"\t\t\tif (m_cyc_i[gi]) begin",
-		`\t\t\t\tgrant_nxt = ${nm}'b0; // priority: lower index overwrites higher`,
-		"\t\t\t\tgrant_nxt[gi] = 1'b1;",
-		"\t\t\tend",
+	);
+	for (let i = 0; i < nm; i++) {
+		const kw = i === 0 ? "if      " : "else if ";
+		out.push(`\t\t${kw}(m_cyc_i[${i}]) grant_nxt = ${onehot(i)};`);
+	}
+	out.push(
+		`\t\t${"else".padEnd(`else if (m_cyc_i[${nm - 1}]) `.length)}grant_nxt = ${nm}'b${"0".repeat(nm)};`,
 		"\tend",
 		"",
 		"\talways_ff @(posedge clk or negedge rst_n) begin",
@@ -143,6 +158,13 @@ function emitInterconnectBody(def: BusDef): string[] {
 		"\t\tend",
 		"\tend",
 		"",
+	);
+
+	// Granted-request mux (master port arb): grant & replicate, OR-reduce.
+	out.push(
+		`\tlogic [${nm - 1}:0] gsel;`,
+		`\tassign gsel = grant & {${nm}{busy}};`,
+		"",
 		`\tlogic ${packedRange(aw).padEnd(7)}g_adr;`,
 		"\tlogic [31:0] g_wdata;",
 		"\tlogic [3:0]  g_sel;",
@@ -155,49 +177,50 @@ function emitInterconnectBody(def: BusDef): string[] {
 		"\tlogic        g_stb;",
 		"\tlogic        g_we;",
 		"",
-		"\talways_comb begin",
-		`\t\tg_adr   = ${aw}'h0;`,
-		"\t\tg_wdata = 32'h0;",
-		"\t\tg_sel   = 4'h0;",
 	);
+
+	const masters = [...Array(nm).keys()];
+	const muxVec = (lhs: string, sig: string, width: number, step: number) =>
+		pushOrAssign(
+			out,
+			lhs,
+			masters.map(
+				(i) => `({${width}{gsel[${i}]}} & ${sig}[${i}*${step} +: ${step}])`,
+			),
+		);
+	muxVec("g_adr  ", "m_adr_i", aw, aw);
+	muxVec("g_wdata", "m_dat_i", 32, 32);
+	muxVec("g_sel  ", "m_sel_i", 4, 4);
 	if (tw > 0) {
-		out.push(`\t\tg_tga   = ${tw}'h0;`);
+		muxVec("g_tga  ", "m_tga_i", tw, tw);
 	}
 	out.push(
-		"\t\tg_cyc   = 1'b0;",
-		"\t\tg_stb   = 1'b0;",
-		"\t\tg_we    = 1'b0;",
-		`\t\tfor (mi = 0; mi < ${nm}; mi = mi + 1)`,
-		"\t\t\tif (busy && grant[mi]) begin",
-		`\t\t\t\tg_adr   = m_adr_i[mi*${aw} +: ${aw}];`,
-		"\t\t\t\tg_wdata = m_dat_i[mi*32 +: 32];",
-		"\t\t\t\tg_sel   = m_sel_i[mi*4 +: 4];",
-	);
-	if (tw > 0) {
-		out.push(`\t\t\t\tg_tga   = m_tga_i[mi*${tw} +: ${tw}];`);
-	}
-	out.push(
-		"\t\t\t\tg_cyc   = m_cyc_i[mi];",
-		"\t\t\t\tg_stb   = m_stb_i[mi];",
-		"\t\t\t\tg_we    = m_we_i[mi];",
-		"\t\t\tend",
-		"\tend",
+		`\tassign g_cyc   = |(gsel & m_cyc_i);`,
+		`\tassign g_stb   = |(gsel & m_stb_i);`,
+		`\tassign g_we    = |(gsel & m_we_i);`,
 		"",
 	);
+
 	out.push(...emitDecodeAndSlaves(def, "g_"));
+
 	out.push("", "\tlogic [31:0] rsp_dat;", "\tlogic        rsp_ack;", "");
 	out.push(...emitResponseMux(slaves, "rsp_dat", "rsp_ack", "g_stb"));
+
 	out.push(
 		"",
-		`\talways_comb begin`,
-		`\t\tm_dat_o = {${nm}*32{1'b0}};`,
-		`\t\tm_ack_o = {${nm}{1'b0}};`,
-		`\t\tfor (ri = 0; ri < ${nm}; ri = ri + 1)`,
-		"\t\t\tif (busy && grant[ri]) begin",
-		"\t\t\t\tm_dat_o[ri*32 +: 32] = rsp_dat;",
-		"\t\t\t\tm_ack_o[ri]          = rsp_ack;",
-		"\t\t\tend",
-		"\tend",
+		"\t//------------------------------------------------------------------------------",
+		"\t//  Master response: only the granted slot sees DAT/ACK",
+		"\t//------------------------------------------------------------------------------",
+	);
+	const datPad = Math.max(
+		...masters.map((i) => `m_dat_o[${i}*32 +: 32]`.length),
+	);
+	for (const i of masters) {
+		const lhs = `m_dat_o[${i}*32 +: 32]`.padEnd(datPad);
+		out.push(`\tassign ${lhs} = {32{gsel[${i}]}} & rsp_dat;`);
+	}
+	out.push(
+		`\tassign ${"m_ack_o".padEnd(datPad)} = gsel & {${nm}{rsp_ack}};`,
 		"",
 	);
 	return out;
@@ -219,14 +242,14 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 		`\t\tslot_sel = ${ns}'b0;`,
 		"\t\tunmapped = 1'b1;",
 	);
-	// High→low so the last write is the lowest index (same as demo wb_interconnect).
+	// High→low so the last write is the lowest index (priority).
 	for (let i = ns - 1; i >= 0; i--) {
 		const s = slaves[i];
 		if (s === undefined) continue;
+		const onehotHex = (1n << BigInt(i)).toString(16);
 		out.push(
 			`\t\tif ((${gPrefix}adr & ${aw}'h${hex(s.mask, aw)}) == ${aw}'h${hex(s.base, aw)}) begin`,
-			`\t\t\tslot_sel = ${ns}'b0;`,
-			`\t\t\tslot_sel[${i}] = 1'b1;`,
+			`\t\t\tslot_sel = ${ns}'h${onehotHex};`,
 			"\t\t\tunmapped = 1'b0;",
 			"\t\tend",
 		);
@@ -238,52 +261,50 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 		"\t//  Named slave drive (window offset ADR)",
 		"\t//------------------------------------------------------------------------------",
 	);
+	const namePad = Math.max(...slaves.map((s) => wb(s.name, "i_wb_adr").length));
+	const slotPad = Math.max(...slaves.map((_, i) => `slot_sel[${i}]`.length));
 	for (let i = 0; i < ns; i++) {
 		const s = slaves[i];
 		if (s === undefined) continue;
 		const n = s.name;
-		const adrAssign = `${gPrefix}adr & ~${aw}'h${hex(s.mask, aw)}`;
+		const port = (stem: string) => wb(n, stem).padEnd(namePad);
+		const slot = `slot_sel[${i}]`.padEnd(slotPad);
 		out.push(
-			`\tassign ${wb(n, "i_wb_adr")} = slot_sel[${i}] ? ${adrAssign} : ${aw}'d0;`,
-			`\tassign ${wb(n, "i_wb_dat")} = ${gPrefix}wdata;`,
-			`\tassign ${wb(n, "i_wb_sel")} = ${gPrefix}sel;`,
+			`\tassign ${port("i_wb_adr")} = ${slot} ? ${gPrefix}adr & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0;`,
+			`\tassign ${port("i_wb_dat")} = ${gPrefix}wdata;`,
+			`\tassign ${port("i_wb_sel")} = ${gPrefix}sel;`,
 		);
 		const st = s.tag ?? 0;
 		if (st > 0) {
-			out.push(`\tassign ${wb(n, "i_wb_tga")} = ${gPrefix}tga[${st - 1}:0];`);
+			out.push(`\tassign ${port("i_wb_tga")} = ${gPrefix}tga[${st - 1}:0];`);
 		}
 		out.push(
-			`\tassign ${wb(n, "i_wb_cyc")} = slot_sel[${i}] & ${gPrefix}cyc;`,
-			`\tassign ${wb(n, "i_wb_stb")} = slot_sel[${i}] & ${gPrefix}stb;`,
-			`\tassign ${wb(n, "i_wb_we")}  = ${gPrefix}we;`,
+			`\tassign ${port("i_wb_cyc")} = ${slot} & ${gPrefix}cyc;`,
+			`\tassign ${port("i_wb_stb")} = ${slot} & ${gPrefix}stb;`,
+			`\tassign ${port("i_wb_we ")} = ${gPrefix}we;`,
 		);
+		if (i < ns - 1) out.push("");
 	}
 	return out;
 }
 
+/** Response OR-reduction (slot_sel is one-hot; unmapped ACKs immediately). */
 function emitResponseMux(
 	slaves: readonly WbSlave[],
 	dat: string,
 	ack: string,
 	stb: string,
 ): string[] {
-	const ns = slaves.length;
-	const out: string[] = [
-		"\talways_comb begin",
-		`\t\t${dat} = 32'h0;`,
-		`\t\t${ack} = unmapped ? ${stb} : 1'b0;`,
-	];
-	for (let i = 0; i < ns; i++) {
-		const s = slaves[i];
-		if (s === undefined) continue;
-		out.push(
-			`\t\tif (slot_sel[${i}]) begin`,
-			`\t\t\t${dat} = ${wb(s.name, "o_wb_dat")};`,
-			`\t\t\t${ack} = ${wb(s.name, "o_wb_ack")};`,
-			"\t\tend",
-		);
-	}
-	out.push("\tend");
+	const out: string[] = [];
+	pushOrAssign(
+		out,
+		dat,
+		slaves.map((s, i) => `({32{slot_sel[${i}]}} & ${wb(s.name, "o_wb_dat")})`),
+	);
+	pushOrAssign(out, ack, [
+		`(unmapped & ${stb})`,
+		...slaves.map((s, i) => `(slot_sel[${i}] & ${wb(s.name, "o_wb_ack")})`),
+	]);
 	return out;
 }
 
