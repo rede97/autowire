@@ -4,10 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256_wb } from "../demo/soc/regs/sha256_wb.ts";
 import {
-	sub_module_a,
-	sub_module_b,
-} from "../docs/examples/regfile/regfile.ts";
-import {
 	smoke_block_wide,
 	smoke_rc,
 	smoke_ro,
@@ -17,7 +13,11 @@ import {
 	smoke_shadow,
 	smoke_w1c,
 	smoke_w1p,
-} from "../docs/examples/regfile/smoke.ts";
+} from "../demo/soc/regs/smoke.ts";
+import {
+	sub_module_a,
+	sub_module_b,
+} from "../docs/examples/regfile/regfile.ts";
 import type { RegfileDef } from "../src/plugins/wishbone-regfile/dsl.ts";
 import { emitRegfileSv } from "../src/plugins/wishbone-regfile/emit.ts";
 import { generateAll } from "../src/plugins/wishbone-regfile/generate.ts";
@@ -167,9 +167,9 @@ describe("wishbone-regfile smoke features", () => {
 		const smoke = join(
 			import.meta.dir,
 			"..",
-			"docs",
-			"examples",
-			"regfile",
+			"demo",
+			"soc",
+			"regs",
 			"smoke.ts",
 		);
 		writeFileSync(
@@ -183,7 +183,9 @@ ts = "${smoke.replaceAll("\\", "/")}"
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
 		const paths = await generateAll(ws, ws.regfileSources);
-		expect(paths.length).toBe(cases.length);
+		// on-bus `smoke` + per-Access leaves
+		expect(paths.length).toBe(cases.length + 1);
+		expect(paths.some((p) => p.includes("smoke_regfile.sv"))).toBe(true);
 		for (const { def } of cases) {
 			expect(
 				paths.some((p) => p.includes(`${def.name.toLowerCase()}_regfile.sv`)),

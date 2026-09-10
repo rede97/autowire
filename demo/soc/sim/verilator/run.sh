@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Verilator SoC smoke (primary DV path). Usage (from demo/soc):
-#   ./sim/verilator/run.sh         # basic_smoke: SRAM zeros + flash KAT SHA
-#   ./sim/verilator/run.sh --sd    # sd_sha256 + card image
+#   ./sim/verilator/run.sh              # basic_smoke: SRAM zeros + flash KAT SHA
+#   ./sim/verilator/run.sh --regfile    # wishbone-regfile MMIO smoke (FIFO/counter)
+#   ./sim/verilator/run.sh --sd         # sd_sha256 + card image
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
@@ -19,6 +20,10 @@ while [[ $# -gt 0 ]]; do
 	--sd)
 		USE_SD=1
 		FW_CASE=sd_sha256
+		shift
+		;;
+	--regfile)
+		FW_CASE=regfile_smoke
 		shift
 		;;
 	*)

@@ -10,6 +10,7 @@
 #define TESTOUT_ADDR   0x02000010u
 #define DMA0_BASE      0x03002000u
 #define SHA0_BASE      0x03004000u
+#define REGFILE_SMOKE_BASE 0x03006000u
 
 #define DMA_CTRL       0x0u
 #define DMA_STATUS     0x4u
@@ -27,6 +28,24 @@
 #define SHA_DONE_CLEAR (1u << 1)
 #define SHA_BUSY       (1u << 8)
 #define SHA_DONE       (1u << 9)
+
+/* regfile smoke bank (regs/smoke.ts → smoke_regfile / smoke_wb) */
+#define SMOKE_ID       0x000u
+#define SMOKE_STATUS   0x004u
+#define SMOKE_CFG      0x008u
+#define SMOKE_FEED     0x00cu
+#define SMOKE_FIFO     0x010u
+#define SMOKE_CMD      0x014u
+#define SMOKE_IRQ      0x018u
+#define SMOKE_BANK     0x01cu
+#define SMOKE_KEY0     0x020u
+#define SMOKE_KEY1     0x024u
+#define SMOKE_KEY2     0x028u
+
+#define SMOKE_CFG_ENABLE (1u << 0)
+#define SMOKE_CFG_MODE_SHIFT 8
+#define SMOKE_IRQ_STICKY (1u << 0)
+#define SMOKE_CMD_GO     (1u << 0)
 
 #define MARK_ALIVE     0x00000001u
 #define MARK_FAIL      0xdead0001u

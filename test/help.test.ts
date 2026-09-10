@@ -74,7 +74,8 @@ test("each slice prints independently", () => {
 	expect(renderHelp("dont")).toContain("treat dump as the only validation");
 	expect(renderHelp("dont")).toContain("skip check before render");
 	expect(renderHelp("agent")).toContain("docs/mcp/");
-	expect(renderHelp("status")).toContain("Wishbone regfile/bus docs only");
+	expect(renderHelp("status")).toContain("Wishbone regfile — implementing now");
+	expect(renderHelp("status")).toContain("no awx-regfile");
 	expect(renderHelp("status")).toContain("not implementing now");
 	expect(renderHelp("status")).toContain("type A = generate");
 	expect(renderHelp("status")).toContain("no plugin-private port API");

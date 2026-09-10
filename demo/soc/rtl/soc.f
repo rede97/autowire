@@ -10,6 +10,8 @@ rtl/wb_testout.v
 rtl/sd_rd_dma.v
 rtl/sha256_wb_regfile.sv
 rtl/sha256_wb_regs.v
+rtl/smoke_regfile.sv
+rtl/smoke_wb.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v
 

@@ -32,8 +32,8 @@ module soc_top (
 	input  wire         sd1_miso,
 	input  wire         sd1_cd
 );
-	localparam SOC_TOP__U_IC__SLAVE_BASE = {32'h03005000, 32'h03004000, 32'h03003000, 32'h03002000, 32'h03001000, 32'h03000000, 32'h02000010, 32'h02000004, 32'h02000000, 32'h01000000, 32'h00000000};
-	localparam SOC_TOP__U_IC__SLAVE_MASK = {32'hffffffc0, 32'hffffffc0, 32'hfffffff0, 32'hfffffff0, 32'hfffffff0, 32'hfffffff0, 32'hfffffffc, 32'hfffffff8, 32'hfffffffc, 32'hff000000, 32'hffff0000};
+	localparam SOC_TOP__U_IC__SLAVE_BASE = {32'h03006000, 32'h03005000, 32'h03004000, 32'h03003000, 32'h03002000, 32'h03001000, 32'h03000000, 32'h02000010, 32'h02000004, 32'h02000000, 32'h01000000, 32'h00000000};
+	localparam SOC_TOP__U_IC__SLAVE_MASK = {32'hfffff000, 32'hffffffc0, 32'hffffffc0, 32'hfffffff0, 32'hfffffff0, 32'hfffffff0, 32'hfffffff0, 32'hfffffffc, 32'hfffffff8, 32'hfffffffc, 32'hff000000, 32'hffff0000};
 
 	wire          rst;
 	wire  [2:0]   ic_m_cyc;
@@ -45,14 +45,14 @@ module soc_top (
 	wire  [95:0]  ic_m_rdata;
 	wire  [11:0]  ic_m_sel;
 	wire  [31:0]  irq_bus;
-	wire  [351:0] ic_s_adr;
-	wire  [351:0] ic_s_wdata;
-	wire  [43:0]  ic_s_sel;
-	wire  [10:0]  ic_s_cyc;
-	wire  [10:0]  ic_s_stb;
-	wire  [10:0]  ic_s_we;
-	wire  [351:0] ic_s_rdata;
-	wire  [10:0]  ic_s_ack;
+	wire  [383:0] ic_s_adr;
+	wire  [383:0] ic_s_wdata;
+	wire  [47:0]  ic_s_sel;
+	wire  [11:0]  ic_s_cyc;
+	wire  [11:0]  ic_s_stb;
+	wire  [11:0]  ic_s_we;
+	wire  [383:0] ic_s_rdata;
+	wire  [11:0]  ic_s_ack;
 	wire  [5:0]   irq_srcs;
 	wire  [31:0]  axs0_tdata;
 	wire          axs0_tvalid;
@@ -107,7 +107,7 @@ module soc_top (
 	);
 	wb_interconnect #(
 		.NM        (3),
-		.NS        (11),
+		.NS        (12),
 		.SLAVE_BASE(SOC_TOP__U_IC__SLAVE_BASE),
 		.SLAVE_MASK(SOC_TOP__U_IC__SLAVE_MASK)
 	) u_ic (
@@ -332,6 +332,18 @@ module soc_top (
 		.o_wb_ack     (ic_s_ack[10]),
 		.o_wb_data    (ic_s_rdata[351:320]),
 		.s_axis_tready(axs1_tready)
+	);
+	smoke_wb u_regfile_smoke_11 (
+		.clk      (clk),
+		.rst_n    (rst_ni),
+		.i_wb_cyc (ic_s_cyc[11]),
+		.i_wb_stb (ic_s_stb[11]),
+		.i_wb_we  (ic_s_we[11]),
+		.i_wb_addr(ic_s_adr[383:352]),
+		.i_wb_data(ic_s_wdata[383:352]),
+		.i_wb_sel (ic_s_sel[47:44]),
+		.o_wb_ack (ic_s_ack[11]),
+		.o_wb_data(ic_s_rdata[383:352])
 	);
 	soc_irqmerge u_irq (
 		.i_ints(irq_srcs),

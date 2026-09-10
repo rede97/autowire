@@ -23,9 +23,13 @@ connect_dir = "gen/connect"
 sim_dir = "gen/sim"
 plugins_dir = "gen/plugins"
 
-# wishbone-regfile SoT (sha256 CSR leaf; generate → rtl/sha256_wb_regfile.sv)
+# wishbone-regfile SoT
 [regfile.sha256]
 ts = "regs/sha256_wb.ts"
+
+[regfile.smoke]
+ts = "regs/smoke.ts"
+exports = ["smoke"]
 
 [style]
 # traditional RTL look: aligned declaration/inst ports + params + signals,

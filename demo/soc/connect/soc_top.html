@@ -18,6 +18,7 @@
     0x0300_3000  DMA1        16 B            slot 8
     0x0300_4000  SHA256_0    64 B            slot 9
     0x0300_5000  SHA256_1    64 B            slot 10
+    0x0300_6000  REGFILE_SMOKE 4 KiB         slot 11
   Masters: m0 = CPU, m1 = DMA0, m2 = DMA1 (instance idx = master slot;
   peripheral instances use idx = slave slot; lane numbering is literal).
 -->
@@ -51,14 +52,14 @@
             <!-- Wishbone slave slice: idx = slave slot (0..10); identity clk inferred -->
             <aw-template name="wb_slv" inst_name="${id}_${idx}">
               <aw-rewrite match="^rst_n$" to="rst_ni"></aw-rewrite>
-              <aw-rewrite match="^i_wb_cyc$" to="ic_s_cyc" width="10:0" part="${idx}"></aw-rewrite>
-              <aw-rewrite match="^i_wb_stb$" to="ic_s_stb" width="10:0" part="${idx}"></aw-rewrite>
-              <aw-rewrite match="^i_wb_we$" to="ic_s_we" width="10:0" part="${idx}"></aw-rewrite>
-              <aw-rewrite match="^o_wb_ack$" to="ic_s_ack" width="10:0" part="${idx}"></aw-rewrite>
-              <aw-rewrite match="^i_wb_addr$" to="ic_s_adr" width="351:0" part="32*${idx}+31:32*${idx}"></aw-rewrite>
-              <aw-rewrite match="^i_wb_data$" to="ic_s_wdata" width="351:0" part="32*${idx}+31:32*${idx}"></aw-rewrite>
-              <aw-rewrite match="^o_wb_data$" to="ic_s_rdata" width="351:0" part="32*${idx}+31:32*${idx}"></aw-rewrite>
-              <aw-rewrite match="^i_wb_sel$" to="ic_s_sel" width="43:0" part="4*${idx}+3:4*${idx}"></aw-rewrite>
+              <aw-rewrite match="^i_wb_cyc$" to="ic_s_cyc" width="11:0" part="${idx}"></aw-rewrite>
+              <aw-rewrite match="^i_wb_stb$" to="ic_s_stb" width="11:0" part="${idx}"></aw-rewrite>
+              <aw-rewrite match="^i_wb_we$" to="ic_s_we" width="11:0" part="${idx}"></aw-rewrite>
+              <aw-rewrite match="^o_wb_ack$" to="ic_s_ack" width="11:0" part="${idx}"></aw-rewrite>
+              <aw-rewrite match="^i_wb_addr$" to="ic_s_adr" width="383:0" part="32*${idx}+31:32*${idx}"></aw-rewrite>
+              <aw-rewrite match="^i_wb_data$" to="ic_s_wdata" width="383:0" part="32*${idx}+31:32*${idx}"></aw-rewrite>
+              <aw-rewrite match="^o_wb_data$" to="ic_s_rdata" width="383:0" part="32*${idx}+31:32*${idx}"></aw-rewrite>
+              <aw-rewrite match="^i_wb_sel$" to="ic_s_sel" width="47:0" part="4*${idx}+3:4*${idx}"></aw-rewrite>
             </aw-template>
           </aw-templates>
           <aw-insts>
@@ -101,14 +102,14 @@
                 <aw-connect port="mem_instr" type="open"></aw-connect>
               </aw-template>
             </aw-inst>
-            <!-- flat-vector interconnect: 3 masters x 11 slaves -->
+            <!-- flat-vector interconnect: 3 masters x 12 slaves -->
             <aw-inst id="u_ic" mod="wb_interconnect">
               <aw-template>
                 <aw-param name="NM" expr="3"></aw-param>
-                <aw-param name="NS" expr="11"></aw-param>
+                <aw-param name="NS" expr="12"></aw-param>
                 <!-- slot0 = LSBs: sram, flash, cfg, uart, testout, sd0, sd1, dma0, dma1, sha0, sha1 -->
-                <aw-param name="SLAVE_BASE" expr="{32'h03005000, 32'h03004000, 32'h03003000, 32'h03002000, 32'h03001000, 32'h03000000, 32'h02000010, 32'h02000004, 32'h02000000, 32'h01000000, 32'h00000000}"></aw-param>
-                <aw-param name="SLAVE_MASK" expr="{32'hffffffc0, 32'hffffffc0, 32'hfffffff0, 32'hfffffff0, 32'hfffffff0, 32'hfffffff0, 32'hfffffffc, 32'hfffffff8, 32'hfffffffc, 32'hff000000, 32'hffff0000}"></aw-param>
+                <aw-param name="SLAVE_BASE" expr="{32'h03006000, 32'h03005000, 32'h03004000, 32'h03003000, 32'h03002000, 32'h03001000, 32'h03000000, 32'h02000010, 32'h02000004, 32'h02000000, 32'h01000000, 32'h00000000}"></aw-param>
+                <aw-param name="SLAVE_MASK" expr="{32'hfffff000, 32'hffffffc0, 32'hffffffc0, 32'hfffffff0, 32'hfffffff0, 32'hfffffff0, 32'hfffffff0, 32'hfffffffc, 32'hfffffff8, 32'hfffffffc, 32'hff000000, 32'hffff0000}"></aw-param>
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>
                 <aw-connect port="m_adr_i" to="ic_m_adr" width="95:0"></aw-connect>
                 <aw-connect port="m_dat_i" to="ic_m_wdata" width="95:0"></aw-connect>
@@ -118,14 +119,14 @@
                 <aw-connect port="m_we_i" to="ic_m_we" width="2:0"></aw-connect>
                 <aw-connect port="m_dat_o" to="ic_m_rdata" width="95:0"></aw-connect>
                 <aw-connect port="m_ack_o" to="ic_m_ack" width="2:0"></aw-connect>
-                <aw-connect port="s_adr_o" to="ic_s_adr" width="351:0"></aw-connect>
-                <aw-connect port="s_dat_o" to="ic_s_wdata" width="351:0"></aw-connect>
-                <aw-connect port="s_sel_o" to="ic_s_sel" width="43:0"></aw-connect>
-                <aw-connect port="s_cyc_o" to="ic_s_cyc" width="10:0"></aw-connect>
-                <aw-connect port="s_stb_o" to="ic_s_stb" width="10:0"></aw-connect>
-                <aw-connect port="s_we_o" to="ic_s_we" width="10:0"></aw-connect>
-                <aw-connect port="s_dat_i" to="ic_s_rdata" width="351:0"></aw-connect>
-                <aw-connect port="s_ack_i" to="ic_s_ack" width="10:0"></aw-connect>
+                <aw-connect port="s_adr_o" to="ic_s_adr" width="383:0"></aw-connect>
+                <aw-connect port="s_dat_o" to="ic_s_wdata" width="383:0"></aw-connect>
+                <aw-connect port="s_sel_o" to="ic_s_sel" width="47:0"></aw-connect>
+                <aw-connect port="s_cyc_o" to="ic_s_cyc" width="11:0"></aw-connect>
+                <aw-connect port="s_stb_o" to="ic_s_stb" width="11:0"></aw-connect>
+                <aw-connect port="s_we_o" to="ic_s_we" width="11:0"></aw-connect>
+                <aw-connect port="s_dat_i" to="ic_s_rdata" width="383:0"></aw-connect>
+                <aw-connect port="s_ack_i" to="ic_s_ack" width="11:0"></aw-connect>
               </aw-template>
             </aw-inst>
 
@@ -140,14 +141,14 @@
             <!-- slot 1: flash XIP window; slot 2: flash cfgreg (overwrite) -->
             <aw-inst id="u_flash" mod="wb_spiflash" idx="1">
               <aw-template base="wb_slv">
-                <aw-connect port="i_cfg_cyc" to="ic_s_cyc" width="10:0" part="2"></aw-connect>
-                <aw-connect port="i_cfg_stb" to="ic_s_stb" width="10:0" part="2"></aw-connect>
-                <aw-connect port="i_cfg_we" to="ic_s_we" width="10:0" part="2"></aw-connect>
-                <aw-connect port="o_cfg_ack" to="ic_s_ack" width="10:0" part="2"></aw-connect>
-                <aw-connect port="i_cfg_addr" to="ic_s_adr" width="351:0" part="95:64"></aw-connect>
-                <aw-connect port="i_cfg_data" to="ic_s_wdata" width="351:0" part="95:64"></aw-connect>
-                <aw-connect port="o_cfg_data" to="ic_s_rdata" width="351:0" part="95:64"></aw-connect>
-                <aw-connect port="i_cfg_sel" to="ic_s_sel" width="43:0" part="11:8"></aw-connect>
+                <aw-connect port="i_cfg_cyc" to="ic_s_cyc" width="11:0" part="2"></aw-connect>
+                <aw-connect port="i_cfg_stb" to="ic_s_stb" width="11:0" part="2"></aw-connect>
+                <aw-connect port="i_cfg_we" to="ic_s_we" width="11:0" part="2"></aw-connect>
+                <aw-connect port="o_cfg_ack" to="ic_s_ack" width="11:0" part="2"></aw-connect>
+                <aw-connect port="i_cfg_addr" to="ic_s_adr" width="383:0" part="95:64"></aw-connect>
+                <aw-connect port="i_cfg_data" to="ic_s_wdata" width="383:0" part="95:64"></aw-connect>
+                <aw-connect port="o_cfg_data" to="ic_s_rdata" width="383:0" part="95:64"></aw-connect>
+                <aw-connect port="i_cfg_sel" to="ic_s_sel" width="47:0" part="11:8"></aw-connect>
                 <!-- flash_io*_oe/do/di + flash_csb + flash_clk inferred by name -->
               </aw-template>
             </aw-inst>
@@ -170,7 +171,7 @@
             <!-- slots 5/6: SD card controllers (2-bit word address overwrite) -->
             <aw-inst id="u_sd" mod="sdspi" idx="5">
               <aw-template base="wb_slv">
-                <aw-rewrite match="^i_wb_addr$" to="ic_s_adr" width="351:0" part="32*${idx}+3:32*${idx}+2"></aw-rewrite>
+                <aw-rewrite match="^i_wb_addr$" to="ic_s_adr" width="383:0" part="32*${idx}+3:32*${idx}+2"></aw-rewrite>
                 <aw-connect port="i_clk" to="clk"></aw-connect>
                 <aw-connect port="i_sd_reset" to="rst"></aw-connect>
                 <aw-rewrite match="^o_wb_stall$" type="open"></aw-rewrite>
@@ -186,7 +187,7 @@
             </aw-inst>
             <aw-inst id="u_sd" mod="sdspi" idx="6">
               <aw-template base="wb_slv">
-                <aw-rewrite match="^i_wb_addr$" to="ic_s_adr" width="351:0" part="32*${idx}+3:32*${idx}+2"></aw-rewrite>
+                <aw-rewrite match="^i_wb_addr$" to="ic_s_adr" width="383:0" part="32*${idx}+3:32*${idx}+2"></aw-rewrite>
                 <aw-connect port="i_clk" to="clk"></aw-connect>
                 <aw-connect port="i_sd_reset" to="rst"></aw-connect>
                 <aw-rewrite match="^o_wb_stall$" type="open"></aw-rewrite>
@@ -207,14 +208,14 @@
               <aw-template>
                 <!-- clk inferred by name -->
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>
-                <aw-connect port="i_wb_cyc" to="ic_s_cyc" width="10:0" part="${idx}+6"></aw-connect>
-                <aw-connect port="i_wb_stb" to="ic_s_stb" width="10:0" part="${idx}+6"></aw-connect>
-                <aw-connect port="i_wb_we" to="ic_s_we" width="10:0" part="${idx}+6"></aw-connect>
-                <aw-connect port="o_wb_ack" to="ic_s_ack" width="10:0" part="${idx}+6"></aw-connect>
-                <aw-connect port="i_wb_addr" to="ic_s_adr" width="351:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
-                <aw-connect port="i_wb_data" to="ic_s_wdata" width="351:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
-                <aw-connect port="o_wb_data" to="ic_s_rdata" width="351:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
-                <aw-connect port="i_wb_sel" to="ic_s_sel" width="43:0" part="4*${idx}+27:4*${idx}+24"></aw-connect>
+                <aw-connect port="i_wb_cyc" to="ic_s_cyc" width="11:0" part="${idx}+6"></aw-connect>
+                <aw-connect port="i_wb_stb" to="ic_s_stb" width="11:0" part="${idx}+6"></aw-connect>
+                <aw-connect port="i_wb_we" to="ic_s_we" width="11:0" part="${idx}+6"></aw-connect>
+                <aw-connect port="o_wb_ack" to="ic_s_ack" width="11:0" part="${idx}+6"></aw-connect>
+                <aw-connect port="i_wb_addr" to="ic_s_adr" width="383:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
+                <aw-connect port="i_wb_data" to="ic_s_wdata" width="383:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
+                <aw-connect port="o_wb_data" to="ic_s_rdata" width="383:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
+                <aw-connect port="i_wb_sel" to="ic_s_sel" width="47:0" part="4*${idx}+27:4*${idx}+24"></aw-connect>
                 <aw-connect port="o_irq" to="irq_srcs" width="5:0" part="${idx}+1"></aw-connect>
                 <aw-connect port="m_axis_tdata" to="axs0_tdata" width="31:0"></aw-connect>
                 <aw-connect port="m_axis_tvalid" to="axs0_tvalid"></aw-connect>
@@ -227,14 +228,14 @@
               <aw-template>
                 <!-- clk inferred by name -->
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>
-                <aw-connect port="i_wb_cyc" to="ic_s_cyc" width="10:0" part="${idx}+6"></aw-connect>
-                <aw-connect port="i_wb_stb" to="ic_s_stb" width="10:0" part="${idx}+6"></aw-connect>
-                <aw-connect port="i_wb_we" to="ic_s_we" width="10:0" part="${idx}+6"></aw-connect>
-                <aw-connect port="o_wb_ack" to="ic_s_ack" width="10:0" part="${idx}+6"></aw-connect>
-                <aw-connect port="i_wb_addr" to="ic_s_adr" width="351:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
-                <aw-connect port="i_wb_data" to="ic_s_wdata" width="351:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
-                <aw-connect port="o_wb_data" to="ic_s_rdata" width="351:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
-                <aw-connect port="i_wb_sel" to="ic_s_sel" width="43:0" part="4*${idx}+27:4*${idx}+24"></aw-connect>
+                <aw-connect port="i_wb_cyc" to="ic_s_cyc" width="11:0" part="${idx}+6"></aw-connect>
+                <aw-connect port="i_wb_stb" to="ic_s_stb" width="11:0" part="${idx}+6"></aw-connect>
+                <aw-connect port="i_wb_we" to="ic_s_we" width="11:0" part="${idx}+6"></aw-connect>
+                <aw-connect port="o_wb_ack" to="ic_s_ack" width="11:0" part="${idx}+6"></aw-connect>
+                <aw-connect port="i_wb_addr" to="ic_s_adr" width="383:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
+                <aw-connect port="i_wb_data" to="ic_s_wdata" width="383:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
+                <aw-connect port="o_wb_data" to="ic_s_rdata" width="383:0" part="32*${idx}+223:32*${idx}+192"></aw-connect>
+                <aw-connect port="i_wb_sel" to="ic_s_sel" width="47:0" part="4*${idx}+27:4*${idx}+24"></aw-connect>
                 <aw-connect port="o_irq" to="irq_srcs" width="5:0" part="${idx}+1"></aw-connect>
                 <aw-connect port="m_axis_tdata" to="axs1_tdata" width="31:0"></aw-connect>
                 <aw-connect port="m_axis_tvalid" to="axs1_tvalid"></aw-connect>
@@ -262,6 +263,13 @@
                 <aw-connect port="s_axis_tready" to="axs1_tready"></aw-connect>
                 <aw-connect port="s_axis_tlast" to="axs1_tlast"></aw-connect>
                 <aw-connect port="irq_o" to="irq_srcs" width="5:0" part="${idx}-5"></aw-connect>
+              </aw-template>
+            </aw-inst>
+
+            <!-- slot 11: wishbone-regfile smoke (generated smoke_regfile + FIFO/counter glue) -->
+            <aw-inst id="u_regfile_smoke" mod="smoke_wb" idx="11">
+              <aw-template base="wb_slv">
+                <!-- clk / rst_n inferred; CSR sidebands live inside smoke_wb -->
               </aw-template>
             </aw-inst>
 

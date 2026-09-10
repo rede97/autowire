@@ -85,10 +85,10 @@ Parallel (does not block connect)
     type B = expand → core aw-* like submods (childRenders); then check → elaborate;
     orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
   Wishbone regfile — implementing now (docs/plugins/wishbone-regfile.md);
-    draft API + samples: docs/examples/regfile/{regfile,smoke}.ts;
-    demo/soc sha256 CSR: regs/sha256_wb.ts → rtl/sha256_wb_regfile.sv;
+    draft API + samples: docs/examples/regfile/regfile.ts;
+    demo/soc: regs/{sha256_wb,smoke}.ts → rtl/*_regfile.sv (+ smoke_wb glue);
     SoT = TypeScript Regfile(...) exports (RegfileDef); no HTML field tree;
-    optional <awx-regfile value> stub (value= export binding; no children);
+    connect aw-inst mod=*_regfile (or thin WB wrapper); no awx-regfile;
     toml [regfile.<source>] ts= (one file may export many RegfileDef; optional exports=);
     sheet empty = name; Excel book = plugins.regfile.export; toml ts= not html=;
     DAT=32 ADR=byte ACK=same-cycle (pipe on bus); addr_width required;

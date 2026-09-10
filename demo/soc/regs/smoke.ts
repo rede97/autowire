@@ -1,5 +1,7 @@
-// Feature-point SoT leaves for wishbone-regfile smoke (one Access / theme each).
-// Contract: docs/plugins/wishbone-regfile.md
+// SoC wishbone-regfile smoke SoT (MMIO-tested from fw/regfile_smoke).
+// Individual exports keep bun unit coverage; `smoke` is the on-bus leaf.
+// After generate + analysis: aw-inst mod="smoke_wb" (wrapper) / smoke_regfile.
+// No HTML register stub tags.
 
 export {
 	Access,
@@ -26,6 +28,65 @@ import {
 	RegfileDefault,
 	Shadow,
 } from "../../../src/plugins/wishbone-regfile/dsl.ts";
+
+/** On-bus map @ 0x0300_6000 (byte ADR). Sidebands tied in connect HTML. */
+export const smoke = Regfile(
+	"smoke",
+	"SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)",
+	RegfileDefault.align(4)
+		.addrWidth(12)
+		.readWriteBlock(true)
+		.shadows(Shadow("bank", 4, "1:0")),
+	[
+		Cell("ID", "RC identity", CellDefault.offset(0x000), [
+			Field("magic", Access.RC, 16, "Magic").reset(0xa55a),
+			Field("version", Access.RC, 16, "Version").reset(0x0001),
+		]),
+		Cell("STATUS", "RO status", CellDefault.offset(0x004), [
+			Field("busy", Access.RO, 1, "Busy (tied in HTML)"),
+			Field("code", Access.RO, 8, "Status code").offset(8),
+		]),
+		Cell(
+			"CFG",
+			"RW config",
+			CellDefault.offset(0x008).align(BitsAlign.Align8),
+			[
+				Field("enable", Access.RW, 1, "Enable").reset(0),
+				Field("mode", Access.RW, 3, "Mode").reset(1),
+			],
+		),
+		Cell("FEED", "RWW capture", CellDefault.offset(0x00c), [
+			Field("capture", Access.RWW, 16, "Capture").reset(0),
+		]),
+		Cell("FIFO", "RWE window", CellDefault.offset(0x010), [
+			Field("data", Access.RWE, 32, "External data"),
+		]),
+		Cell("CMD", "W1P pulse", CellDefault.offset(0x014), [
+			Field("go", Access.W1P, 1, "Go pulse"),
+		]),
+		Cell("IRQ", "W1C sticky", CellDefault.offset(0x018), [
+			Field("sticky", Access.W1C, 1, "Sticky IRQ").reset(0),
+		]),
+		Cell(
+			"BANK",
+			"Shadowed RW",
+			CellDefault.offset(0x01c).align(BitsAlign.Align8).shadow("bank"),
+			[
+				Field("cfg", Access.RW, 8, "Per-bank cfg").reset({
+					0: 0x10,
+					1: 0x20,
+					2: 0x30,
+					3: 0x40,
+				}),
+			],
+		),
+		Block("key", "Wide key", BlockDefault.offset(0x020).byteAlign(4), [
+			Field("key", Access.RW, 96, "96-bit key").reset(0),
+		]),
+	],
+);
+
+// --- Per-Access leaves (bun unit smoke; not mapped on the SoC bus) ---
 
 export const smoke_rc = Regfile(
 	"smoke_rc",

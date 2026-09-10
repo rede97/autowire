@@ -65,12 +65,12 @@ toml section       可选：[plugin.<id>] / [regfile.<source>] …
 
 | 做法 | 裁定 |
 |---|---|
-| 标签名 | **必须**登记且带插件前缀；regfile 可选桩仅 **`awx-regfile`**（`value=` = TS export）；**禁止** `awx-reg-*` 子标签（见 [`wishbone-regfile.md`](./wishbone-regfile.md) §3.1） |
+| 标签名 | **必须**登记且带插件前缀；regfile **禁止** `awx-reg-*` HTML 描述树（见 [`wishbone-regfile.md`](./wishbone-regfile.md) §3.1） |
 | 放在 `aw-content` / 文档根 | 类型 B：**可以**（展开为 `aw-inst` 等） |
-| 放在 `aw-submods` | **可以**：嵌套 `aw-mod`（类型 B 展开结果）或可选 **`awx-regfile` name 桩**（与 mod 同槽；非 SoT） |
-| 类型 A 声明 | toml `[regfile.<source_id>] ts=` 指向含一个或多个 `RegfileDef` 的 `.ts`；可选 `exports=`；桩 `value=` = export 名（≠ source id）；**禁止** `html=` 当 SoT |
-| 生成后再连线 | connect **只**用 `<aw-inst mod="已生成模块名">` |
-| 寄存器 SoT | **仅** TS `Regfile(...)` 命名导出；Excel 仅文档（`plugins.regfile.export`；`sheet` 空 = `name`）；HTML 桩无子女；**禁止** HTML/其它 DSL 当权威；**禁止**放进 `aw-content` |
+| 放在 `aw-submods` | **可以**：嵌套 `aw-mod`（类型 B 展开结果） |
+| 类型 A 声明 | toml `[regfile.<source_id>] ts=` 指向含一个或多个 `RegfileDef` 的 `.ts`；可选 `exports=`；**禁止** `html=` 当 SoT |
+| 生成后再连线 | connect **只**用 `<aw-inst mod="已生成模块名">`（或薄 WB 包装） |
+| 寄存器 SoT | **仅** TS `Regfile(...)` 命名导出；Excel 仅文档（`plugins.regfile.export`；`sheet` 空 = `name`）；**禁止** HTML/其它 DSL 当权威；**禁止**放进 `aw-content` |
 ## 6. 与 connect 生命周期的关系（目标编排）
 
 插件 **不推翻**「check ≠ elaborate、dump 只认 `aw-render`」。要扩的是**编排顺序**与注册面：

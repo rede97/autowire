@@ -11,6 +11,7 @@ the SPI flash model via `$readmemh` / `+firmware=…`.
 |------|------|
 | `common/` | `soc_map.h`, `sdspi_regs.h`, `link.ld`, `crt0.S`, `makehex.py` |
 | `basic_smoke/` | Basic smoke: SRAM zeros SHA + flash `@0x0100_1000` KAT SHA |
+| `regfile_smoke/` | Wishbone-regfile MMIO smoke (RC/RO/RW/RWW counter/RWE FIFO loopback/…) |
 | `sd_sha256/` | SD0 init + CMD17 → DMA0 (FIFO A, no `src_inc`) → SHA256_0 |
 
 Flash XIP reset PC = `0x0100_0000`. SRAM = `0x0000_0000`..`0x0000_FFFF`
@@ -21,8 +22,9 @@ Flash XIP reset PC = `0x0100_0000`. SRAM = `0x0000_0000`..`0x0000_FFFF`
 
 ```bash
 # from demo/soc
-./sim/verilator/run.sh         # basic_smoke (SRAM zeros + flash KAT)
-./sim/verilator/run.sh --sd    # sd_sha256 + sdspisim card image
+./sim/verilator/run.sh              # basic_smoke (SRAM zeros + flash KAT)
+./sim/verilator/run.sh --regfile    # wishbone-regfile MMIO (FIFO loopback + counters)
+./sim/verilator/run.sh --sd         # sd_sha256 + sdspisim card image
 ```
 
 Toolchain: set `CROSS=` if needed (defaults probe `riscv32-wch-elf-`,

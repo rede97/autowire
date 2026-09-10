@@ -48,7 +48,7 @@
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [plugins/](./plugins/) | 登记；A=RtlIndex 叶子 / B=像 submods；无私有口表 | 草稿（接口已裁定） |
-| [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md) | Wishbone regfile；SoT=TS `RegfileDef` 导出；可选 `<awx-regfile value>` 桩；Excel 仅文档 | 草稿 |
+| [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md) | Wishbone regfile；SoT=TS `RegfileDef`；connect 用 `aw-inst`；Excel 仅文档 | 草稿 |
 | [plugins/wishbone-bus.md](./plugins/wishbone-bus.md) | 块内 cfg 树（非 SoC fabric） | 草稿 |
 | [examples/regfile/](./examples/regfile/) | Wishbone regfile 作者面 TS + 生成 SV 展示 | 草稿 |
 
