@@ -24,27 +24,29 @@
 
 ## 2. Wishbone Classic 子集（冻结）
 
-端点命名可与 `demo/soc` 对齐（`i_wb_*` / `o_wb_*`）：
+端点命名：与 [`wishbone-regfile.md`](./wishbone-regfile.md) §5.4 **同裁**——WB 束 **`i_wb_*` / `o_wb_*`**（例：`i_wb_cyc`、`o_wb_ack`、`i_wb_tga`）。
 
 | 信号 | 方向（slave） | 要求 |
 |---|---|---|
 | `CYC` | in | 事务周期；单拍外设 **可以**与 `STB` 同断言 |
 | `STB` | in | 本拍有效 |
 | `WE` | in | 1=写，0=读 |
-| `ADR` | in | 字节或字；实现 **必须**与 regfile 同一裁定 |
-| `DAT_O` | in | 写数据；默认 32 |
-| `SEL` | in | 字节选通 |
-| `ACK` | out | 完成；可晚于 `STB`（stall） |
-| `DAT_I` | out | 读数据；与读 `ACK` 同拍有效 |
+| `ADR` | in | 位宽 = 叶子必填 `addr_width`；**字节地址**（与 [`wishbone-regfile.md`](./wishbone-regfile.md) §5.6 **同裁：byte**） |
+| `DAT_O` | in | 写数据（master→slave）；**固定 32**；端口**最终名**随 regfile §5.4 前缀方案 |
+| `SEL` | in | 字节选通；**固定 4**（随 DAT=32） |
+| `ACK` | out | 完成；regfile 叶子 **同拍** ACK（[`wishbone-regfile.md`](./wishbone-regfile.md) §5.5）；fabric **pipe** 可整体推迟；RWE+`read_write_block` 可拖 ACK |
+| `DAT_I` | out | 读数据；**固定 32**；与读 `ACK` 同拍有效 |
 | `ERR` | out | 可选；默认 0 |
 | `RTY` | — | **禁止**（本子集不实现） |
+| `TGA` / `TGC` / `TGD` | 随事务 | **可选** user tag。Regfile shadow **仅**用 **`wb_tga`（TGA）**（[`wishbone-regfile.md`](./wishbone-regfile.md) §5.7；**无** local/takeover）。启用 TGA 时 arb/decoder/pipe **必须**透传；未用可省略 |
 
 规则：
 
 1. Master 在 `ACK` 前 **禁止**发下一拍。  
 2. 写完成 = `ACK`（**禁止**用读 vld 冒充）；读完成 = `ACK` + `DAT_I`。  
 3. **禁止** v1 端点使用 Pipelined `STALL`。  
-4. **禁止**再引入第二套 cfg 内核信号名。
+4. **禁止**再引入第二套 cfg 内核信号名。  
+5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
 
 ## 3. 长路径 pipe（register slice）
 
@@ -57,12 +59,13 @@ Master ──req──▶ [slice × N] ──▶ Decoder / Regfile
 
 | 前向 | 返回 |
 |---|---|
-| `CYC`, `STB`, `WE`, `ADR`, `DAT_O`, `SEL` | `ACK`, `DAT_I`, 可选 `ERR` |
+| `CYC`, `STB`, `WE`, `ADR`, `DAT_O`, `SEL`，及若启用的 tag | `ACK`, `DAT_I`, 可选 `ERR` |
 
 1. 前向与返回级数 **必须**相同（`PIPE_NUM`，默认 0）。  
 2. `CYC` 贯穿整笔；slice **禁止**拆事务。  
 3. 单 outstanding ⇒ **不必**事务标签。  
-4. **可以**「先 slice 再译码」或「译码后每支路再 slice」。
+4. **可以**「先 slice 再译码」或「译码后每支路再 slice」。  
+5. Regfile 叶子 **同拍 ACK、自身不打拍**（regfile §5.5）；时序裕量 **只**靠本 pipe，**禁止**在叶子再叠 +1 ACK。
 
 ## 4. 拓扑：默认 tree，不是 matrix
 
@@ -132,8 +135,9 @@ pipe = 1
 
 1. Arbiter 默认策略。  
 2. 是否提供 `topology = crossbar` 以及 M/N 上限。  
-3. 地址字节 vs 字（与 regfile 同时钉死）。  
+3. ~~地址字节 vs 字~~ → **byte**（与 [`wishbone-regfile.md`](./wishbone-regfile.md) §5.6 同裁）。  
 4. Bridge 目录：仅 `apb2wb` 还是可插其它。  
-5. 固件窗 + DMA：块周期连续写是否进 v2；是否生成最小 WB DMA master。
+5. 固件窗 + DMA：块周期连续写是否进 v2；是否生成最小 WB DMA master。  
+6. ~~端口前缀~~ → 与 regfile §5.4 同裁：`i_wb_*` / `o_wb_*`。
 
 裁定后改本文 + [`wishbone-regfile.md`](./wishbone-regfile.md) + `help status` Parallel，再动代码。

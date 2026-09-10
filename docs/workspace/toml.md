@@ -119,7 +119,8 @@ deps = ["soc_top"]
 1. **禁止** DE 包装与 DV TB 顶写在同一 HTML，或把 TB html 挂在 `connect/` 作者树下充 DE。  
 2. **禁止**再用单一 `dir` 混写三类产物（迁移期：仅设置了旧 `dir` 时，实现可临时把 connect dump 落到该目录并 **警告**；新工作区用三分目录）。  
 3. 插件 **禁止**往 `connect_dir` / `sim_dir` 写生成物；只进 `plugins_dir/<id>/`。  
-4. `.autowire/` 仍只放索引/快照/调试临时物，**不是**上述三类产物目录。
+4. `.autowire/` 仍只放索引/快照/调试临时物，**不是**上述三类产物目录。  
+5. 类型 A regfile：toml `[regfile.<id>] ts=` 指向 TS SoT；Excel **文档**路径（非 SoT）=`[plugins.regfile] export = "ip_regfiles.xlsx"`（见 [`../plugins/wishbone-regfile.md`](../plugins/wishbone-regfile.md) §6）；工作表名 = `RegfileDef.sheet`（或缺省 = `name`），**禁止**从 HTML `@sheet` 取值。
 
 ### 4.1 `[connect.<id>]`（DE 连接单元 DAG）
 

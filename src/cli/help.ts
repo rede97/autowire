@@ -84,7 +84,13 @@ Parallel (does not block connect)
     (hash incremental; no plugin-private port API);
     type B = expand → core aw-* like submods (childRenders); then check → elaborate;
     orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
-  Wishbone regfile/bus docs only — not implementing now (docs/plugins/wishbone-*.md)
+  Wishbone regfile/bus docs only — not implementing now (docs/plugins/wishbone-*.md);
+    regfile SoT = TypeScript Regfile(...) exports (RegfileDef); no HTML field tree;
+    optional <awx-regfile value> stub loads matching export (value= binding; no children);
+    sheet empty = name; Excel book = plugins.regfile.export; toml ts= not html=;
+    DAT fixed 32, ADR=byte, ACK=same-cycle (pipe on bus); addr_width required;
+    ports i_wb_*/o_wb_*, sideband i_/o_*; RWE o_<shadow>_sel + optional i_<field>_ready;
+    Access RC = ReadConst (reset= baked readback; ChipVersion/ID)
 
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
