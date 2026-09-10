@@ -226,10 +226,10 @@ generate：TS RegfileDef export
 | **RC** | **ReadConst**：总线读回**编译期常数**；**无**功能 in；写忽略或 generate 可拒 | 读 mux 接 `.reset(n)`；**禁止**旁路 in |
 | RO | 功能只读 | `ro_<field>` in（shadow → per-copy 数组）；读 = 译码 bitmask **或**；**`inner_shadow_mux` 无意义** |
 | RW | 内部 regbit | `rg_<field>` out（`inner_shadow_mux=false` → 按 copy 数组） |
-| RWW | 软硬件可写 | `rg_<field>` out + `rg_<field>_strb` / `rg_<field>_hwdata` in |
-| RWE | 外部寄存器窗 | `ext_<field>` in + `ext_<field>_{wdata,wren,rden,rst}` out；shadow → **`o_<shadow>_sel`**；表级 `read_write_block` → **`ext_<field>_ready`** 可拖 ACK |
+| RWW | 软硬件可写 | `rg_<field>` out + `rg_<field>_strb` / `rg_<field>_hwdata` in；同周期 SW 写 **优先于** HW `_strb`（HW 写被吞） |
+| RWE | 外部寄存器窗 | `ext_<field>` in + `ext_<field>_{wdata,wstrb,wren,rden,rst}` out；shadow → **`o_<shadow>_sel`**；表级 `read_write_block` → **`ext_<field>_ready`** 可拖 ACK |
 | W1P | 写 1 → 单拍脉冲 | `p_rg_<field>` out |
-| W1C | 写 1 → 清 sticky | `c_rg_<field>` out |
+| W1C | 写 1 → 清 sticky | `c_rg_<field>` out + **`c_rg_<field>_set`** in（硬件置位；同周期 set **优先于** W1C 清） |
 | ~~W1S~~ | **不做**；置位用 **RW** | — |
 
 **RC 细则（草案）**
@@ -312,9 +312,9 @@ rd_fire = CYC & STB & ~WE & hit
 | **RO** | `ro_` | `ro_<field>` in；shadow → `ro_<field>[copies]` |
 | **RW** | `rg_` | `rg_<field>` out（`inner_shadow_mux=false` → 按 copy 数组） |
 | **RWW** | `rg_` | `rg_<field>` out + `rg_<field>_strb` / `rg_<field>_hwdata` in |
-| **RWE** | `ext_` | `ext_<field>` in + `ext_<field>_{wdata,wren,rden,rst}` out；**无**总线 vld |
+| **RWE** | `ext_` | `ext_<field>` in + `ext_<field>_{wdata,wstrb,wren,rden,rst}` out；**无**总线 vld |
 | **W1P** | `p_rg_` | `p_rg_<field>` out（单拍脉冲） |
-| **W1C** | `c_rg_` | `c_rg_<field>` out |
+| **W1C** | `c_rg_` | `c_rg_<field>` out + `c_rg_<field>_set` in（shadow 非内选 → `_set` 按 copy 数组） |
 | RWE + shadow 译码 sel | — | **`o_<shadow>_sel`**（该 shadow 一份；非 Access 前缀） |
 | `read_write_block` + RWE ready | — | **`ext_<field>_ready`**（仅表级 `read_write_block=true` 且该 field 为 RWE） |
 
@@ -339,10 +339,21 @@ rd_fire = CYC & STB & ~WE & hit
 | 项 | 裁定 |
 |---|---|
 | **`ADR`** | **字节地址**；相邻 cell 典型 `ADR` 差 **4**（`0x00` / `0x04` / `0x08`…） |
-| **`SEL`** | 仍选字节；部分写靠 `ADR`（可指字内字节）+ `SEL` |
+| **`SEL`** | 仍选字节；部分写靠 `ADR`（可指字内字节）+ `SEL`；写路径语义见下表 |
 | **译码** | 对齐到 word 边界再比 Cell 基址（例：用 `ADR[W-1:2]` 或 `ADR & ~2'b11`） |
 | **Cell/Block `offset` / `bytes_align` / 自动拼 cursor** | **一律按字节**（`bytes_align` 为 4 的倍数） |
 | ~~word~~ | **不做** |
+
+**部分写（`SEL`）语义（已裁定，generate 必须落地）**：总线写只更新 `SEL` 选中的字节 lane；未选中 lane 覆盖到的 field bit **必须**保持原值。
+
+| Access | 部分写行为 |
+|---|---|
+| RW / RWW（SW 写） | 按 lane 屏蔽的 read-modify-write（未选 lane 保持） |
+| W1C | 写数据先按 `SEL` 屏蔽再清（未选 lane 的 1 **不**清） |
+| W1P | 脉冲数据按 `SEL` 屏蔽（未选 lane 不出脉冲位） |
+| RWE | 叶子导出 **`ext_<field>_wstrb`**（`_wren` 限定；位宽 = 字段覆盖的字节 lane 数）；外部窗 **必须** 按 wstrb 做部分写 |
+| RO / RC | 无写路径，不受影响 |
+| shadow 各 copy | 同一屏蔽规则逐 copy 生效；HW `_strb`/`_hwdata` 写 **不** 受 `SEL` 约束（整字段写） |
 
 口名与 bus 已对齐（§5.4）；实现以 `help status` 为准（当前：**implementing now**）。
 
@@ -453,6 +464,7 @@ effective_sel = wb_tga[tag-bits]
 - **写**遇多 bit mask：打到所有置位 copy（广播写）。  
 - **读**遇多 bit mask：选中 copy 的读数据 **按位或**到一起。  
 - **未命中**：**禁止**拖 ACK / 报总线 error 来堵死；与 `read_write_block` 无关——这是译码空槽，不是 RWE 背压。
+- **scalar sel 裁定**：`o_<shadow>_sel` 与内选（`inner_shadow_mux=true`）旁路在多 bit mask 时取 **最低置位 copy**（first-set priority，generate 必须稳定实现）；读路径仍按上一条 **按位或**。广播写后各 copy 相等时二者一致；需要广播语义的消费者用 per-copy 数组旁路（`inner_shadow_mux=false`），**禁止**把 scalar sel 当广播掩码用。
 
 #### 与旧「A/B 互斥」的关系
 
@@ -519,7 +531,11 @@ ts = "docs/examples/regfile/regfile.ts"
 - ~~`ADR` 语义~~ → **byte**（字节地址；`offset`/`bytes_align`/cursor 均按字节；与 bus 同裁）。  
 - ~~ACK~~ → **同拍**；regfile **不**为时序打拍；长线交给 bus **pipe**；**禁止** +1 ACK / 叶子 `rddata_vld`。  
 - ~~§5.4 命名~~ → WB **`{name}_i_wb_*`/`{name}_o_wb_*`**；clk/rst **`i_clk`/`i_rst_n`**；旁路 **Access 前缀**（`ro_`/`rg_`/`ext_`/`p_rg_`/`c_rg_`）；默认 **`logic`**；模块 **`<table>_regfile`**。  
-- ~~RWE 口形~~ → `ext_<field>` + `ext_<field>_{wdata,wren,rden,rst}`；shadow **`o_<shadow>_sel`**；`read_write_block` → **`ext_<field>_ready`**（缺省表级 false=非阻塞）。
+- ~~RWE 口形~~ → `ext_<field>` + `ext_<field>_{wdata,wstrb,wren,rden,rst}`；shadow **`o_<shadow>_sel`**；`read_write_block` → **`ext_<field>_ready`**（缺省表级 false=非阻塞）。
+- ~~`SEL` 部分写语义~~ → 按 lane 屏蔽 RMW（RW/RWW）；W1C/W1P 屏蔽写数据；RWE 导出 **`ext_<field>_wstrb`**（§5.6 表）；HW `_strb` 写不吃 `SEL`。
+- ~~W1C 置位通路~~ → **`c_rg_<field>_set`** 硬件置位 in；同周期 **set 优先**于 W1C 清；仍 **无 W1S**。
+- ~~RWW 同周期优先级~~ → **SW 写优先**于 HW `_strb`（HW 写被吞）。
+- ~~scalar shadow sel~~ → 多 bit mask 时 `o_<shadow>_sel` / 内选旁路取 **最低置位 copy**；读仍按位或。
 
 **§8 功能裁定已齐。** `help status`：wishbone-regfile / wishbone-bus 均为 **implementing now**。作者面 API 以 [`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts) + `src/plugins/wishbone-regfile/dsl.ts` 为准。
 

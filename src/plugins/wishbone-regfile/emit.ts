@@ -37,6 +37,28 @@ function packedRange(width: number): string {
 	return width > 1 ? `[${width - 1}:0]` : "";
 }
 
+/**
+ * SEL byte-enable mask expanded over field bits [hi:lo] (cell-relative).
+ * Field bit i (cell bit lo+i) is writable iff i_wb_sel[(lo+i)/8].
+ */
+function selMask(hi: number, lo: number, i_wb_sel: string): string {
+	const chunks: string[] = [];
+	let pos = hi + 1;
+	while (pos > lo) {
+		const lane = Math.floor((pos - 1) / 8);
+		const laneLo = lane * 8;
+		const n = pos - Math.max(lo, laneLo);
+		chunks.push(
+			n === 1 ? `${i_wb_sel}[${lane}]` : `{${n}{${i_wb_sel}[${lane}]}}`,
+		);
+		pos = Math.max(lo, laneLo);
+	}
+	const first = chunks[0];
+	return chunks.length === 1 && first !== undefined
+		? first
+		: `{${chunks.join(", ")}}`;
+}
+
 /** Named Wishbone port: `{table}_i_wb_cyc` / `{table}_o_wb_ack` (leaf ↔ interconnect). */
 function wbPortName(table: string, stem: string): string {
 	return `${table}_${stem}`;
@@ -328,6 +350,15 @@ function collectPorts(laid: LaidRegfile): PortDecl[] {
 					break;
 				case Access.W1C:
 					arr(stem, "output", "write-1 clear sticky out");
+					ports.push({
+						dir: "input",
+						packed: pk,
+						name: `${stem}_set`,
+						comment: banner(
+							"sticky set in (hardware set; set wins over clear)",
+						),
+						...(copies > 1 ? { unpacked: `[${copies}]` } : {}),
+					});
 					break;
 				case Access.RWW:
 					arr(stem, "output", "register out");
@@ -364,6 +395,18 @@ function collectPorts(laid: LaidRegfile): PortDecl[] {
 						packed: "",
 						name: `${stem}_wren`,
 						comment: banner("external window write enable"),
+					});
+					ports.push({
+						dir: "output",
+						packed: packedRange(
+							Math.floor((lf.bit_offset + f.width - 1) / 8) -
+								Math.floor(lf.bit_offset / 8) +
+								1,
+						),
+						name: `${stem}_wstrb`,
+						comment: banner(
+							"external window write byte strobes (wren-qualified)",
+						),
 					});
 					ports.push({
 						dir: "output",
@@ -437,6 +480,7 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	const i_wb_we = wb("i_wb_we");
 	const i_wb_adr = wb("i_wb_adr");
 	const i_wb_dat = wb("i_wb_dat");
+	const i_wb_sel = wb("i_wb_sel");
 	const i_wb_tga = wb("i_wb_tga");
 	const o_wb_ack = wb("o_wb_ack");
 	const o_wb_dat = wb("o_wb_dat");
@@ -553,8 +597,8 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 
 	for (const c of cells) {
 		out.push(
-			`\tassign wr_sel_${hex(c.byte_offset)} = wr_fire && hit && addr_hit_${hex(c.byte_offset)};`,
-			`\tassign rd_sel_${hex(c.byte_offset)} = rd_fire && hit && addr_hit_${hex(c.byte_offset)};`,
+			`\tassign wr_sel_${hex(c.byte_offset)} = wr_fire && addr_hit_${hex(c.byte_offset)};`,
+			`\tassign rd_sel_${hex(c.byte_offset)} = rd_fire && addr_hit_${hex(c.byte_offset)};`,
 		);
 	}
 
@@ -565,12 +609,19 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	for (const s of shadows) {
 		const { hi, lo } = parseTag(s.tag_bits);
 		const mw = s.copies;
+		const hasRemaps =
+			Boolean(s.remaps) && Object.keys(s.remaps ?? {}).length > 0;
+		// Power-of-two copies + no remaps: every raw tag hits exactly one copy.
+		const missReachable = hasRemaps || (mw & (mw - 1)) !== 0;
 		out.push(`\tassign raw_${s.name} = ${i_wb_tga}[${hi}:${lo}];`);
 		out.push("\talways_comb begin");
 		out.push(`\t\tmask_${s.name} = ${mw}'h0;`);
-		if (!s.remaps || Object.keys(s.remaps).length === 0) {
+		if (!hasRemaps) {
+			const shift = `mask_${s.name} = ${mw}'d1 << raw_${s.name};`;
 			out.push(
-				`\t\tif (raw_${s.name} < ${mw}) mask_${s.name} = ${mw}'d1 << raw_${s.name};`,
+				missReachable
+					? `\t\tif (raw_${s.name} < ${mw}) ${shift}`
+					: `\t\t${shift}`,
 			);
 		} else {
 			out.push(remapLogic(s, `raw_${s.name}`));
@@ -578,10 +629,12 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 		out.push("\tend");
 		const sw = Math.max(1, Math.ceil(Math.log2(s.copies)));
 		out.push(
-			"\t// one-hot mask → bin index (first set bit); miss keeps 0",
+			missReachable
+				? "\t// one-hot mask → bin index (lowest set bit wins); miss keeps 0"
+				: "\t// one-hot mask → bin index (lowest set bit wins)",
 			"\talways_comb begin",
 			`\t\to_${s.name}_sel = ${sw}'d0;`,
-			`\t\tfor (int __i = 0; __i < ${mw}; __i++) begin`,
+			`\t\tfor (int __i = ${mw - 1}; __i >= 0; __i--) begin`,
 			`\t\t\tif (mask_${s.name}[__i]) o_${s.name}_sel = ${sw}'(__i);`,
 			"\t\tend",
 			"\tend",
@@ -602,6 +655,7 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 				def.read_write_block,
 				commentPads,
 				i_wb_dat,
+				i_wb_sel,
 			);
 		}
 		out.push("");
@@ -614,7 +668,6 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	for (const c of cells) {
 		out.push(`\t\t\t// ${c.name} @ 0x${hex(c.byte_offset, aw)}`);
 		out.push(`\t\t\trd_sel_${hex(c.byte_offset)}: begin`);
-		out.push("\t\t\t\trd_data = 32'h0;");
 		const sh = c.shadow ? shadowByName(shadows, c.shadow) : undefined;
 		for (const lf of c.fields) {
 			out.push(`\t\t\t\t// ${fieldInlineComment(lf, commentPads)}`);
@@ -695,6 +748,7 @@ function emitFieldStorage(
 	read_write_block: boolean,
 	pads: FieldCommentPads,
 	i_wb_dat: string,
+	i_wb_sel: string,
 ): void {
 	const f = lf.field;
 	const hi = lf.bit_offset + f.width - 1;
@@ -706,9 +760,18 @@ function emitFieldStorage(
 		return;
 	}
 	const stem = sidebandStem(f);
+	const dat = `${i_wb_dat}[${hi}:${lo}]`;
+	const smask = selMask(hi, lo, i_wb_sel);
+	const datMasked = `(${dat} & (${smask}))`;
 	out.push(`\t// ${fieldInlineComment(lf, pads)}`);
 	if (f.access === Access.RWE) {
-		out.push(`\tassign ${stem}_wdata = ${i_wb_dat}[${hi}:${lo}];`);
+		const sLo = Math.floor(lo / 8);
+		const sHi = Math.floor(hi / 8);
+		const nl = sHi - sLo + 1;
+		const selBits =
+			sHi === sLo ? `${i_wb_sel}[${sLo}]` : `${i_wb_sel}[${sHi}:${sLo}]`;
+		out.push(`\tassign ${stem}_wdata = ${dat};`);
+		out.push(`\tassign ${stem}_wstrb = {${nl}{${wr}}} & ${selBits};`);
 		out.push(`\tassign ${stem}_wren  = ${wr};`);
 		out.push(`\tassign ${stem}_rden  = ${rd};`);
 		out.push(`\tassign ${stem}_rst   = ~i_rst_n;`);
@@ -721,11 +784,10 @@ function emitFieldStorage(
 		return;
 	}
 	if (f.access === Access.W1P) {
+		const fire = sh ? `(${wr} && |mask_${sh.name})` : wr;
 		out.push("\talways_ff @(posedge i_clk or negedge i_rst_n) begin");
 		out.push(`\t\tif (!i_rst_n) ${stem} <= ${f.width}'h0;`);
-		out.push(
-			`\t\telse ${stem} <= ${wr} ? ${i_wb_dat}[${hi}:${lo}] : ${f.width}'h0;`,
-		);
+		out.push(`\t\telse ${stem} <= ${fire} ? ${datMasked} : ${f.width}'h0;`);
 		out.push("\tend");
 		return;
 	}
@@ -748,18 +810,24 @@ function emitFieldStorage(
 		}
 		out.push("\t\tend else begin");
 		if (f.access === Access.W1C) {
-			out.push(`\t\t\tif (${wr}) begin`);
-			out.push(`\t\t\t\tfor (int __c = 0; __c < ${ncopy}; __c++) begin`);
+			// Hardware set sideband: muxed → current o_sel copy; else per-copy array.
+			const sw = Math.max(1, Math.ceil(Math.log2(ncopy)));
+			const setC = muxed
+				? `((o_${sh.name}_sel == ${sw}'(__c)) ? ${stem}_set : ${f.width}'h0)`
+				: `${stem}_set[__c]`;
+			out.push(`\t\t\tfor (int __c = 0; __c < ${ncopy}; __c++) begin`);
+			out.push(`\t\t\t\tif (${wr} && mask_${sh.name}[__c])`);
 			out.push(
-				`\t\t\t\t\tif (mask_${sh.name}[__c]) ${stem}_q[__c] <= ${stem}_q[__c] & ~${i_wb_dat}[${hi}:${lo}];`,
+				`\t\t\t\t\t${stem}_q[__c] <= (${stem}_q[__c] & ~${datMasked}) | ${setC};`,
 			);
-			out.push("\t\t\t\tend");
+			out.push(`\t\t\t\telse if (|${setC})`);
+			out.push(`\t\t\t\t\t${stem}_q[__c] <= ${stem}_q[__c] | ${setC};`);
 			out.push("\t\t\tend");
 		} else {
 			out.push(`\t\t\tif (${wr}) begin`);
 			out.push(`\t\t\t\tfor (int __c = 0; __c < ${ncopy}; __c++) begin`);
 			out.push(
-				`\t\t\t\t\tif (mask_${sh.name}[__c]) ${stem}_q[__c] <= ${i_wb_dat}[${hi}:${lo}];`,
+				`\t\t\t\t\tif (mask_${sh.name}[__c]) ${stem}_q[__c] <= (${stem}_q[__c] & ~(${smask})) | ${datMasked};`,
 			);
 			out.push("\t\t\t\tend");
 			out.push("\t\t\tend");
@@ -794,10 +862,13 @@ function emitFieldStorage(
 	);
 	if (f.access === Access.W1C) {
 		out.push(
-			`\t\telse if (${wr}) ${stem}_q <= ${stem}_q & ~${i_wb_dat}[${hi}:${lo}];`,
+			`\t\telse if (${wr}) ${stem}_q <= (${stem}_q & ~${datMasked}) | ${stem}_set;`,
+			`\t\telse if (|${stem}_set) ${stem}_q <= ${stem}_q | ${stem}_set;`,
 		);
 	} else {
-		out.push(`\t\telse if (${wr}) ${stem}_q <= ${i_wb_dat}[${hi}:${lo}];`);
+		out.push(
+			`\t\telse if (${wr}) ${stem}_q <= (${stem}_q & ~(${smask})) | ${datMasked};`,
+		);
 		if (f.access === Access.RWW) {
 			out.push(`\t\telse if (${stem}_strb) ${stem}_q <= ${stem}_hwdata;`);
 		}

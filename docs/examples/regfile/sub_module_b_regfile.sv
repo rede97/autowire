@@ -62,8 +62,8 @@ module sub_module_b_regfile (
 	assign wr_fire = sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb &&  sub_module_b_i_wb_we;
 	assign rd_fire = sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb && ~sub_module_b_i_wb_we;
 
-	assign wr_sel_0 = wr_fire && hit && addr_hit_0;
-	assign rd_sel_0 = rd_fire && hit && addr_hit_0;
+	assign wr_sel_0 = wr_fire && addr_hit_0;
+	assign rd_sel_0 = rd_fire && addr_hit_0;
 
 	//------------------------------------------------------------------------------
 	//  4. Field storage / sideband glue
@@ -83,7 +83,6 @@ module sub_module_b_regfile (
 		unique case (1'b1)
 			// ID @ 0x0000
 			rd_sel_0: begin
-				rd_data = 32'h0;
 				// RC [15:0]  version — Chip / IP version (ReadConst)
 				rd_data[15:0] = 16'h1;
 				// RC [31:16] magic   — Magic ID (ReadConst)

@@ -56,6 +56,8 @@ module sub_module_a_regfile (
 	input  logic        ro_busy,
 	// W1C write-1 clear sticky out: irq_sticky — Sticky IRQ; write 1 to clear
 	output logic        c_rg_irq_sticky,
+	// W1C sticky set in (hardware set; set wins over clear): irq_sticky — Sticky IRQ; write 1 to clear
+	input  logic        c_rg_irq_sticky_set,
 	// W1P write-1 pulse out: pulse_cmd — Write 1 → one-cycle pulse out
 	output logic        p_rg_pulse_cmd,
 	// RW register out: key_0 — 96-bit key; auto-split + auto offset
@@ -78,6 +80,8 @@ module sub_module_a_regfile (
 	output logic [31:0] ext_data_wdata,
 	// RWE external window write enable: ext_data — External FIFO data
 	output logic        ext_data_wren,
+	// RWE external window write byte strobes (wren-qualified): ext_data — External FIFO data
+	output logic [3:0]  ext_data_wstrb,
 	// RWE external window read enable: ext_data — External FIFO data
 	output logic        ext_data_rden,
 	// RWE external window reset: ext_data — External FIFO data
@@ -188,24 +192,24 @@ module sub_module_a_regfile (
 	assign wr_fire = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb &&  sub_module_a_i_wb_we;
 	assign rd_fire = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb && ~sub_module_a_i_wb_we;
 
-	assign wr_sel_0 = wr_fire && hit && addr_hit_0;
-	assign rd_sel_0 = rd_fire && hit && addr_hit_0;
-	assign wr_sel_10 = wr_fire && hit && addr_hit_10;
-	assign rd_sel_10 = rd_fire && hit && addr_hit_10;
-	assign wr_sel_20 = wr_fire && hit && addr_hit_20;
-	assign rd_sel_20 = rd_fire && hit && addr_hit_20;
-	assign wr_sel_30 = wr_fire && hit && addr_hit_30;
-	assign rd_sel_30 = rd_fire && hit && addr_hit_30;
-	assign wr_sel_40 = wr_fire && hit && addr_hit_40;
-	assign rd_sel_40 = rd_fire && hit && addr_hit_40;
-	assign wr_sel_44 = wr_fire && hit && addr_hit_44;
-	assign rd_sel_44 = rd_fire && hit && addr_hit_44;
-	assign wr_sel_48 = wr_fire && hit && addr_hit_48;
-	assign rd_sel_48 = rd_fire && hit && addr_hit_48;
-	assign wr_sel_4c = wr_fire && hit && addr_hit_4c;
-	assign rd_sel_4c = rd_fire && hit && addr_hit_4c;
-	assign wr_sel_50 = wr_fire && hit && addr_hit_50;
-	assign rd_sel_50 = rd_fire && hit && addr_hit_50;
+	assign wr_sel_0 = wr_fire && addr_hit_0;
+	assign rd_sel_0 = rd_fire && addr_hit_0;
+	assign wr_sel_10 = wr_fire && addr_hit_10;
+	assign rd_sel_10 = rd_fire && addr_hit_10;
+	assign wr_sel_20 = wr_fire && addr_hit_20;
+	assign rd_sel_20 = rd_fire && addr_hit_20;
+	assign wr_sel_30 = wr_fire && addr_hit_30;
+	assign rd_sel_30 = rd_fire && addr_hit_30;
+	assign wr_sel_40 = wr_fire && addr_hit_40;
+	assign rd_sel_40 = rd_fire && addr_hit_40;
+	assign wr_sel_44 = wr_fire && addr_hit_44;
+	assign rd_sel_44 = rd_fire && addr_hit_44;
+	assign wr_sel_48 = wr_fire && addr_hit_48;
+	assign rd_sel_48 = rd_fire && addr_hit_48;
+	assign wr_sel_4c = wr_fire && addr_hit_4c;
+	assign rd_sel_4c = rd_fire && addr_hit_4c;
+	assign wr_sel_50 = wr_fire && addr_hit_50;
+	assign rd_sel_50 = rd_fire && addr_hit_50;
 
 	//------------------------------------------------------------------------------
 	//  3. Shadow tag decode (TGA → one-hot mask / bin sel)
@@ -219,10 +223,10 @@ module sub_module_a_regfile (
 		default: mask_lane = 4'h0; // miss → nop
 		endcase
 	end
-	// one-hot mask → bin index (first set bit); miss keeps 0
+	// one-hot mask → bin index (lowest set bit wins); miss keeps 0
 	always_comb begin
 		o_lane_sel = 2'd0;
-		for (int __i = 0; __i < 4; __i++) begin
+		for (int __i = 3; __i >= 0; __i--) begin
 			if (mask_lane[__i]) o_lane_sel = 2'(__i);
 		end
 	end
@@ -247,7 +251,7 @@ module sub_module_a_regfile (
 		end else begin
 			if (wr_sel_0) begin
 				for (int __c = 0; __c < 4; __c++) begin
-					if (mask_lane[__c]) rg_enable_q[__c] <= sub_module_a_i_wb_dat[0:0];
+					if (mask_lane[__c]) rg_enable_q[__c] <= (rg_enable_q[__c] & ~(sub_module_a_i_wb_sel[0])) | (sub_module_a_i_wb_dat[0:0] & (sub_module_a_i_wb_sel[0]));
 				end
 			end
 		end
@@ -263,7 +267,7 @@ module sub_module_a_regfile (
 		end else begin
 			if (wr_sel_0) begin
 				for (int __c = 0; __c < 4; __c++) begin
-					if (mask_lane[__c]) rg_mode_q[__c] <= sub_module_a_i_wb_dat[10:8];
+					if (mask_lane[__c]) rg_mode_q[__c] <= (rg_mode_q[__c] & ~({3{sub_module_a_i_wb_sel[1]}})) | (sub_module_a_i_wb_dat[10:8] & ({3{sub_module_a_i_wb_sel[1]}}));
 				end
 			end
 		end
@@ -279,7 +283,7 @@ module sub_module_a_regfile (
 		end else begin
 			if (wr_sel_0) begin
 				for (int __c = 0; __c < 4; __c++) begin
-					if (mask_lane[__c]) rg_lane_cfg_q[__c] <= sub_module_a_i_wb_dat[23:16];
+					if (mask_lane[__c]) rg_lane_cfg_q[__c] <= (rg_lane_cfg_q[__c] & ~({8{sub_module_a_i_wb_sel[2]}})) | (sub_module_a_i_wb_dat[23:16] & ({8{sub_module_a_i_wb_sel[2]}}));
 				end
 			end
 		end
@@ -293,13 +297,14 @@ module sub_module_a_regfile (
 	// W1C [8]     irq_sticky — Sticky IRQ; write 1 to clear
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) c_rg_irq_sticky_q <= 1'h0;
-		else if (wr_sel_10) c_rg_irq_sticky_q <= c_rg_irq_sticky_q & ~sub_module_a_i_wb_dat[8:8];
+		else if (wr_sel_10) c_rg_irq_sticky_q <= (c_rg_irq_sticky_q & ~(sub_module_a_i_wb_dat[8:8] & (sub_module_a_i_wb_sel[1]))) | c_rg_irq_sticky_set;
+		else if (|c_rg_irq_sticky_set) c_rg_irq_sticky_q <= c_rg_irq_sticky_q | c_rg_irq_sticky_set;
 	end
 	assign c_rg_irq_sticky = c_rg_irq_sticky_q;
 	// W1P [16]    pulse_cmd  — Write 1 → one-cycle pulse out
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) p_rg_pulse_cmd <= 1'h0;
-		else p_rg_pulse_cmd <= wr_sel_10 ? sub_module_a_i_wb_dat[16:16] : 1'h0;
+		else p_rg_pulse_cmd <= wr_sel_10 ? (sub_module_a_i_wb_dat[16:16] & (sub_module_a_i_wb_sel[2])) : 1'h0;
 	end
 
 	// Addr: 0x20  RegCell: ctrl_key_0 — 96-bit key; auto-split + auto offset
@@ -307,7 +312,7 @@ module sub_module_a_regfile (
 	// RW  [31:0]  key_0      — 96-bit key; auto-split + auto offset
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_key_0_q <= 32'h0;
-		else if (wr_sel_20) rg_key_0_q <= sub_module_a_i_wb_dat[31:0];
+		else if (wr_sel_20) rg_key_0_q <= (rg_key_0_q & ~({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[31:0] & ({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
 	end
 	assign rg_key_0 = rg_key_0_q;
 
@@ -316,7 +321,7 @@ module sub_module_a_regfile (
 	// RW  [31:0]  key_1      — 96-bit key; auto-split + auto offset
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_key_1_q <= 32'h0;
-		else if (wr_sel_30) rg_key_1_q <= sub_module_a_i_wb_dat[31:0];
+		else if (wr_sel_30) rg_key_1_q <= (rg_key_1_q & ~({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[31:0] & ({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
 	end
 	assign rg_key_1 = rg_key_1_q;
 
@@ -325,7 +330,7 @@ module sub_module_a_regfile (
 	// RW  [31:0]  key_2      — 96-bit key; auto-split + auto offset
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_key_2_q <= 32'h0;
-		else if (wr_sel_40) rg_key_2_q <= sub_module_a_i_wb_dat[31:0];
+		else if (wr_sel_40) rg_key_2_q <= (rg_key_2_q & ~({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[31:0] & ({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
 	end
 	assign rg_key_2 = rg_key_2_q;
 
@@ -334,7 +339,7 @@ module sub_module_a_regfile (
 	// RW  [31:0]  word       — Scratch word
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_word_q <= 32'h0;
-		else if (wr_sel_44) rg_word_q <= sub_module_a_i_wb_dat[31:0];
+		else if (wr_sel_44) rg_word_q <= (rg_word_q & ~({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[31:0] & ({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
 	end
 	assign rg_word = rg_word_q;
 
@@ -343,7 +348,7 @@ module sub_module_a_regfile (
 	// RWW [15:0]  capture    — HW may update via capture_strb/capture_hwdata
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_capture_q <= 16'h0;
-		else if (wr_sel_48) rg_capture_q <= sub_module_a_i_wb_dat[15:0];
+		else if (wr_sel_48) rg_capture_q <= (rg_capture_q & ~({{8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[15:0] & ({{8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
 		else if (rg_capture_strb) rg_capture_q <= rg_capture_hwdata;
 	end
 	assign rg_capture = rg_capture_q;
@@ -352,6 +357,7 @@ module sub_module_a_regfile (
 	//   [31:0]   RWE  ext_data   — External FIFO data
 	// RWE [31:0]  ext_data   — External FIFO data
 	assign ext_data_wdata = sub_module_a_i_wb_dat[31:0];
+	assign ext_data_wstrb = {4{wr_sel_4c}} & sub_module_a_i_wb_sel[3:0];
 	assign ext_data_wren  = wr_sel_4c;
 	assign ext_data_rden  = rd_sel_4c;
 	assign ext_data_rst   = ~i_rst_n;
@@ -363,7 +369,7 @@ module sub_module_a_regfile (
 	// RW  [0]     flag       — Solo flag
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_flag_q <= 1'h0;
-		else if (wr_sel_50) rg_flag_q <= sub_module_a_i_wb_dat[0:0];
+		else if (wr_sel_50) rg_flag_q <= (rg_flag_q & ~(sub_module_a_i_wb_sel[0])) | (sub_module_a_i_wb_dat[0:0] & (sub_module_a_i_wb_sel[0]));
 	end
 	assign rg_flag = rg_flag_q;
 
@@ -377,7 +383,6 @@ module sub_module_a_regfile (
 		unique case (1'b1)
 			// CFG0 @ 0x00
 			rd_sel_0: begin
-				rd_data = 32'h0;
 				// RW  [0]     enable     — Soft enable
 				begin
 					logic [0:0] __v;
@@ -408,7 +413,6 @@ module sub_module_a_regfile (
 			end
 			// STATUS @ 0x10
 			rd_sel_10: begin
-				rd_data = 32'h0;
 				// RO  [0]     busy       — Busy
 				rd_data[0:0] = ro_busy;
 				// W1C [8]     irq_sticky — Sticky IRQ; write 1 to clear
@@ -418,43 +422,36 @@ module sub_module_a_regfile (
 			end
 			// ctrl_key_0 @ 0x20
 			rd_sel_20: begin
-				rd_data = 32'h0;
 				// RW  [31:0]  key_0      — 96-bit key; auto-split + auto offset
 				rd_data[31:0] = rg_key_0_q;
 			end
 			// ctrl_key_1 @ 0x30
 			rd_sel_30: begin
-				rd_data = 32'h0;
 				// RW  [31:0]  key_1      — 96-bit key; auto-split + auto offset
 				rd_data[31:0] = rg_key_1_q;
 			end
 			// ctrl_key_2 @ 0x40
 			rd_sel_40: begin
-				rd_data = 32'h0;
 				// RW  [31:0]  key_2      — 96-bit key; auto-split + auto offset
 				rd_data[31:0] = rg_key_2_q;
 			end
 			// SCRATCH @ 0x44
 			rd_sel_44: begin
-				rd_data = 32'h0;
 				// RW  [31:0]  word       — Scratch word
 				rd_data[31:0] = rg_word_q;
 			end
 			// HW_FEED @ 0x48
 			rd_sel_48: begin
-				rd_data = 32'h0;
 				// RWW [15:0]  capture    — HW may update via capture_strb/capture_hwdata
 				rd_data[15:0] = rg_capture_q;
 			end
 			// EXT_FIFO @ 0x4c
 			rd_sel_4c: begin
-				rd_data = 32'h0;
 				// RWE [31:0]  ext_data   — External FIFO data
 				rd_data[31:0] = ext_data;
 			end
 			// SOLO @ 0x50
 			rd_sel_50: begin
-				rd_data = 32'h0;
 				// RW  [0]     flag       — Solo flag
 				rd_data[0:0] = rg_flag_q;
 			end

@@ -204,6 +204,14 @@ describe("wishbone-regfile smoke features", () => {
 		});
 	}
 
+	test("shadow sel encoder is lowest-set-bit priority (broadcast remap)", () => {
+		// Audit: ascending loop selected the HIGHEST set bit, contradicting the
+		// emitted comment; contract pins lowest set bit (read path stays bitwise-OR).
+		const sv = emitRegfileSv(layoutRegfile(smoke_shadow));
+		expect(sv).toContain("// one-hot mask → bin index (lowest set bit wins)");
+		expect(sv).toContain("for (int __i = 3; __i >= 0; __i--)");
+	});
+
 	test("smoke.ts generates all feature leaves via plugin generate", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_smoke_"));
 		const smoke = join(
