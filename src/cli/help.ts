@@ -84,13 +84,18 @@ Parallel (does not block connect)
     (hash incremental; no plugin-private port API);
     type B = expand → core aw-* like submods (childRenders); then check → elaborate;
     orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
-  Wishbone regfile/bus docs only — not implementing now (docs/plugins/wishbone-*.md);
-    regfile SoT = TypeScript Regfile(...) exports (RegfileDef); no HTML field tree;
-    optional <awx-regfile value> stub loads matching export (value= binding; no children);
+  Wishbone regfile — implementing now (docs/plugins/wishbone-regfile.md);
+    draft API + samples: docs/examples/regfile/regfile.ts;
+    SoT = TypeScript Regfile(...) exports (RegfileDef); no HTML field tree;
+    optional <awx-regfile value> stub (value= export binding; no children);
+    toml [regfile.<source>] ts= (one file may export many RegfileDef; optional exports=);
     sheet empty = name; Excel book = plugins.regfile.export; toml ts= not html=;
-    DAT fixed 32, ADR=byte, ACK=same-cycle (pipe on bus); addr_width required;
-    ports i_wb_*/o_wb_*, sideband i_/o_*; RWE o_<shadow>_sel + optional i_<field>_ready;
-    Access RC = ReadConst (reset= baked readback; ChipVersion/ID)
+    DAT=32 ADR=byte ACK=same-cycle (pipe on bus); addr_width required;
+    ports i_wb_*/o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
+    RWE o_<shadow>_sel + optional ext_<field>_ready;
+    Access RC = ReadConst (reset= baked readback)
+  Wishbone bus — docs only, not implementing now (docs/plugins/wishbone-bus.md);
+    tree arb/decoder/pipe; shares WB subset with regfile; ADR=byte ACK via pipe
 
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
@@ -109,6 +114,8 @@ Shared by deps / web / cli for the RTL universe:
   [connect.<id>]        DE unit: html= + optional deps= (DAG; aw-mod root; → connect_dir)
   [sim.<id>]            DV TB unit: html= under sim/; aw-tb-mod root; deps may list
                         connect ids; dump → sim_dir (no .autowire/connect XML)
+  [regfile.<source>]    wishbone-regfile SoT file: ts=; optional exports=[]; omit exports = all RegfileDef
+  [plugins.regfile]     optional export= Excel workbook path (docs product; emit TBD)
   [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
                         sim_dir="gen/sim"          DV TB tops
@@ -354,7 +361,7 @@ Do not
   treat dump as the only validation (use autowire check on aw-content + deps; dump reads aw-render)
   require render before check (wrong direction: Render depends on Check; Check does not depend on Render)
   skip check before render or dump (?render=1 / [Render] must auto-run Check first)
-  generate regfile/cfgbus from connect aw-submods custom tags (register a generator plugin; docs/plugins/)
+  generate regfile/cfgbus from connect aw-submods custom tags (use: autowire plugin generate; docs/plugins/)
   treat Workspace MCP html_write as elaborate (must still run web check/render/dump for netlist)
 `,
 };
@@ -370,6 +377,7 @@ function commandIndex(): string {
 		"  deps <path> [options]     RTL module dependency tree     → help deps",
 		"  web [unit]                local connect page → help web | check | dump",
 		"  check [unit]              validate HTML + deps (no write) → help check",
+		"  plugin generate [id]      type-A generate → plugins_dir   → help status",
 		"  cli …                     headless later (not landed)    → help cli",
 		"",
 		"Also: help status | connect | dont",

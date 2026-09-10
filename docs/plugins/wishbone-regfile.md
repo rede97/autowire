@@ -1,8 +1,9 @@
 # Wishbone 寄存器文件（叶子）
 
-> 状态：**草稿（SoT=TypeScript `RegfileDef` 导出已裁定；可选 HTML 仅 name 桩；模板/样式其余项待裁定）**。不堵连接轨道；`help status`：docs only — not implementing now。  
+> 状态：**实现中（功能裁定已齐；`help status`：wishbone-regfile implementing now；bus 仍 docs only）**。  
 > 块内配置互联：[`wishbone-bus.md`](./wishbone-bus.md)。插件登记：[`README.md`](./README.md)。  
-> 作者面草稿 / 示例：[`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts)。  
+> 作者面草稿 / 示例：[`docs/examples/regfile/`](../../examples/regfile/)（`regfile.ts` SoT + `*_regfile.sv` 展示）。  
+> 正式生成：`autowire plugin generate wishbone-regfile` → `[dump] plugins_dir/wishbone-regfile/`。  
 > 主干对照：`master` 分支 `autowire/regtable/gen_verilog.py`、`regfile.py`、`common/verilog_model.py`。  
 > 改本文时同步 bus 文开放项（地址/`SEL`）与 `help status` Parallel。
 
@@ -59,17 +60,17 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 
 **命名对齐**
 
-- stub 的 **`value`**、toml `[regfile.<id>]` 的 id（或等价键）**必须**与导出名一致。  
-  例：`export const sub_module_a = Regfile(...)` ↔ `<awx-regfile value="sub_module_a">` ↔ `[regfile.sub_module_a]`。  
-- **`value`** = 要加载的 **export 绑定名**。  
-- **`RegfileDef.name` 必须与 export 绑定名相同**（已定；模块名 / 报错 / 默认 `sheet` 都认这一名字）；不一致 → generate **报错**。  
+- HTML 桩 **`value`**、脚本 **export 绑定名**、`RegfileDef.name` **三者必须相同**（叶子模 / 默认 `sheet` / 报错都认这个名）。  
+  例：`export const sub_module_a = Regfile(...)` ↔ `<awx-regfile value="sub_module_a">`。  
+- toml **`[regfile.<source_id>]`** 的 id 只标识 **SoT 文件槽**（可含多个 export），**不必**等于某个叶子名。  
 - 重名 / 找不到导出 → generate 报错。
 
 **toml**
 
-- `[regfile.<id>] ts = "regs/foo.ts"`（或等价路径）指向含该导出的模块。  
+- `[regfile.<source_id>] ts = "regs/foo.ts"` 指向含 **一个或多个** `Regfile(...)` 导出的模块。  
+- 省略 `exports` → generate **该文件内全部** `RegfileDef` 导出；可选 `exports = ["a", "b"]` 只生成列出的绑定。  
 - **禁止** `html=` 充当 SoT。  
-- **禁止**把 regfile 表登记为 `[connect.<id>]` / `[sim.<id>]`（生成走 plugin generate，不走 connect elaborate）。
+- **禁止**把 regfile 源登记为 `[connect.<id>]` / `[sim.<id>]`（生成走 plugin generate，不走 connect elaborate）。
 
 **可选 HTML 放置桩（非 SoT）**
 
@@ -215,7 +216,7 @@ generate：TS RegfileDef export
 ```
 
 - 可选 HTML 桩 **可以**在 `aw-submods`（与 `aw-mod` 同槽）；**禁止**把 `awx-regfile` 当 connect 子模 elaborate，或经 connect 路径直接吐 SV——只走 generate → leaf → 再 `<aw-inst>`。  
-- 声明 **禁止**登记为 `[connect.<id>]` / `[sim.<id>]`；toml 用 `[regfile.<id>] ts=`（或等价）指向 TS 模块。  
+- 声明 **禁止**登记为 `[connect.<id>]` / `[sim.<id>]`；toml 用 `[regfile.<source_id>] ts=` 指向 SoT **文件**（可含多个 export）。  
 - 字段重叠 / 有效 `sheet` 撞名 / 桩带子女等自检在 **generate** 失败即不落盘。  
 - SV 只进 `plugins_dir/<plugin-id>/`；Excel 只写 `plugins.regfile.export` 所指工作簿，**禁止**当 SoT。
 
@@ -234,19 +235,19 @@ generate：TS RegfileDef export
 | RWW / RWE 旁路形状 | `_strb`/`_hwdata`；`_wren`/`_rden`/`_wdata`/`_rst` | **保留**（RWE 的 wren/rden 是**字段旁路**，不是总线内核） |
 | shadow 索引 | 主干旁路 `*_sel` | **仅** `wb_tga` 切片（§5.7；无 takeover/local） |
 | Cell 注释带 hex 地址 | `// Addr: 0x… RegCell: …` | **保留** |
-| 端口列对齐 | `Port.declare` 对齐 | **对齐**工作区 `[style] port_align` / `signal_align` |
+| 端口列对齐 | `Port.declare` 对齐 | **始终**按工作区 `[style] port_align` / `signal_align` 同规则排（dir / type / packed 分列；声明块集中在端口后） |
 
 **Access → 旁路口（语义 + §5.4 拼写）**
 
 | Access | 含义 | 旁路 / 读通路 |
 |---|---|---|
 | **RC** | **ReadConst**：总线读回**编译期常数**；**无**功能 in；写忽略或 generate 可拒 | 读 mux 接 `.reset(n)`；**禁止**旁路 in |
-| RO | 功能只读 | `i_<field>`（shadow → per-copy 数组）；读 = 译码 bitmask **或**；**`inner_shadow_mux` 无意义** |
-| RW | 内部 regbit | `o_<field>`（`inner_shadow_mux=false` → 按 copy 数组） |
-| RWW | 软硬件可写 | `o_<field>` + `i_<field>_strb` / `i_<field>_hwdata`（见 `inner_shadow_mux`） |
-| RWE | 外部寄存器窗 | `i_<field>` + `o_<field>_{wdata,wren,rden,rst}`；shadow → 另出 **`o_<shadow>_sel`**；表级 `read_write_block` → **`i_<field>_ready`** 可拖 ACK；**`inner_shadow_mux` 不改数据口形** |
-| W1P | 写 1 → 单拍脉冲 | `o_<field>` 脉冲 |
-| W1C | 写 1 → 清 sticky | `o_<field>` 清 |
+| RO | 功能只读 | `ro_<field>` in（shadow → per-copy 数组）；读 = 译码 bitmask **或**；**`inner_shadow_mux` 无意义** |
+| RW | 内部 regbit | `rg_<field>` out（`inner_shadow_mux=false` → 按 copy 数组） |
+| RWW | 软硬件可写 | `rg_<field>` out + `rg_<field>_strb` / `rg_<field>_hwdata` in |
+| RWE | 外部寄存器窗 | `ext_<field>` in + `ext_<field>_{wdata,wren,rden,rst}` out；shadow → **`o_<shadow>_sel`**；表级 `read_write_block` → **`ext_<field>_ready`** 可拖 ACK |
+| W1P | 写 1 → 单拍脉冲 | `p_rg_<field>` out |
+| W1C | 写 1 → 清 sticky | `c_rg_<field>` out |
 | ~~W1S~~ | **不做**；置位用 **RW** | — |
 
 **RC 细则（草案）**
@@ -263,8 +264,8 @@ generate：TS RegfileDef export
 
 | 值 | 行为 |
 |---|---|
-| **`false`（缺省）** | **非阻塞**：同拍 ACK；RWE 旁路照常；**不**生成 `i_<field>_ready`；**不**因 FIFO 拉长事务 |
-| **`true`** | **可阻塞**：仅 **RWE** 命中可看 **`i_<field>_ready`**；ready=0 时推迟同拍 ACK；**非 RWE** **禁止**拖 ACK |
+| **`false`（缺省）** | **非阻塞**：同拍 ACK；RWE 旁路照常；**不**生成 `ext_<field>_ready`；**不**因 FIFO 拉长事务 |
+| **`true`** | **可阻塞**：仅 **RWE** 命中可看 **`ext_<field>_ready`**；ready=0 时推迟同拍 ACK；**非 RWE** **禁止**拖 ACK |
 
 - TS：`RegfileDefault.… .readWriteBlock(true)`；IR `read_write_block`（缺省 `false`）。  
 - **禁止**用 `read_write_block` 去挡 RO/RW/RC/W1*。  
@@ -313,20 +314,23 @@ rd_fire = CYC & STB & ~WE & hit
 |---|---|
 | WB 端口 | **`i_wb_*` / `o_wb_*`**（对齐 demo/soc；与 bus 同裁） |
 | clk / rst | **`i_clk` / `i_rst_n`** |
-| 字段 / shadow 旁路 | **`i_` / `o_` + 名**；**禁止** `wb_` 前缀；**禁止**旧总线内核名（`reg_wren` 等） |
+| 字段 / shadow 旁路 | **Access 前缀名**（对齐主干 `RG_NAME_PREFIX`）；**禁止** `wb_` 前缀；**禁止**旧总线内核名（`reg_wren` 等）；**禁止**再套一层字段旁路 `i_`/`o_`（方向只靠 `input`/`output`） |
 | 净荷类型 | 默认 **`logic`**（列对齐仍跟工作区 `[style]`） |
 | 模块名 | **`<table_lower>_regfile`** |
 
-**旁路拼写（字段名 = Field.`name`；shadow 名 = Shadow.`name`）**
+**旁路拼写（Field.`name` → Access 前缀 stem；已带前缀则不重复）**
 
-| 用途 | 口名（方向） |
-|---|---|
-| RO 功能 in | `i_<field>`；shadow 时 **per-copy 数组** `i_<field>[copies]`（或等价展开 `i_<field>_0`…，generate 二选一须全表一致；**推荐 packed 数组**） |
-| RW / W1* 功能 out | `o_<field>`（`inner_shadow_mux=false` 时按 copy 数组） |
-| RWW | `o_<field>` + `i_<field>_strb` + `i_<field>_hwdata`（`inner_shadow_mux=false` → strb/hwdata **按 copy 数组**） |
-| **RWE** | `i_<field>`（外部读数据）+ `o_<field>_wdata` + `o_<field>_wren` + `o_<field>_rden` + `o_<field>_rst`；**无**总线 vld |
-| RWE + shadow 译码 sel | **`o_<shadow>_sel`**（该 shadow 一份；`wb_tga`→remaps 后原样；多 RWE 共用同 shadow 则同口） |
-| `read_write_block` + RWE ready | **`i_<field>_ready`**（仅表级 `read_write_block=true` 且该 field 为 RWE 时生成；未 ready **可**拖同拍 ACK；读写共用一个 ready） |
+| Access | 前缀（主干） | 口名（方向） |
+|---|---|---|
+| **RC** | — | **无**功能旁路口 |
+| **RO** | `ro_` | `ro_<field>` in；shadow → `ro_<field>[copies]` |
+| **RW** | `rg_` | `rg_<field>` out（`inner_shadow_mux=false` → 按 copy 数组） |
+| **RWW** | `rg_` | `rg_<field>` out + `rg_<field>_strb` / `rg_<field>_hwdata` in |
+| **RWE** | `ext_` | `ext_<field>` in + `ext_<field>_{wdata,wren,rden,rst}` out；**无**总线 vld |
+| **W1P** | `p_rg_` | `p_rg_<field>` out（单拍脉冲） |
+| **W1C** | `c_rg_` | `c_rg_<field>` out |
+| RWE + shadow 译码 sel | — | **`o_<shadow>_sel`**（该 shadow 一份；非 Access 前缀） |
+| `read_write_block` + RWE ready | — | **`ext_<field>_ready`**（仅表级 `read_write_block=true` 且该 field 为 RWE） |
 
 - WB 束示例：`i_wb_cyc` / `i_wb_stb` / `i_wb_we` / `i_wb_adr` / `i_wb_dat` / `i_wb_sel` / `i_wb_tga`（若有）→ `o_wb_ack` / `o_wb_dat`。  
 - **禁止**再引入第二套完成口。
@@ -340,7 +344,7 @@ rd_fire = CYC & STB & ~WE & hit
 | **打拍** | **regfile 叶子不负责**为时序打拍；长线 / Fmax 交给 [`wishbone-bus.md`](./wishbone-bus.md) **pipe** |
 | ~~+1 拍 ACK~~ | **不做**（勿把主干 `rddata_vld` 节奏搬进叶子） |
 
-`read_write_block=true` 且对应 RWE 的 **`i_<field>_ready` 为 0** 时：**可以**在本应同拍 ACK 的拍上**推迟** `ACK`（仍无 vld 口）。**非 RWE** **禁止**因此拖 ACK。
+`read_write_block=true` 且对应 RWE 的 **`ext_<field>_ready` 为 0** 时：**可以**在本应同拍 ACK 的拍上**推迟** `ACK`（仍无 vld 口）。**非 RWE** **禁止**因此拖 ACK。
 
 ### 5.6 地址与 `SEL`（已裁定：**byte**）
 
@@ -479,18 +483,17 @@ effective_sel = wb_tga[tag-bits]
 [plugins.regfile]
 export = "ip_regfiles.xlsx"
 
-[regfile.phy]
-ts = "regs/phy_regs.ts"   # 含 export const phy = Regfile(...)；唯一 SoT
-# out → [dump] plugins_dir/<plugin-id>/
+# source_id = SoT 文件槽（可含多个 Regfile 导出）；不是单个叶子名
+[regfile.examples]
+ts = "docs/examples/regfile/regfile.ts"
+# exports = ["sub_module_a"]   # 可选；省略 = 文件内全部 RegfileDef
 
-[regfile.phy.wishbone]
-# DAT_* / SEL 固定 32 / 4；ADR = 字节地址；ACK = 同拍（时序靠 bus pipe）
-# 口名：i_wb_*/o_wb_* ；旁路 i_/o_* ；RWE ready = i_<field>_ready（仅 read_write_block）
+# out → [dump] plugins_dir/wishbone-regfile/<name>_regfile.sv
 ```
 
 - **禁止**在 toml 写 pin 级连线。  
 - **禁止** `html=` 作为寄存器 SoT；**禁止** `tables = "regpy/"` 一类非 TS SoT。  
-- **禁止**按 `[regfile.<id>]` 各写一份 `excel=`；工作簿路径只认 **`plugins.regfile.export`**。  
+- **禁止**按叶子各写一份 `excel=`；工作簿路径只认 **`plugins.regfile.export`**。  
 - **禁止**配置 `data_width`（数据通路固定 32）。  
 - Excel 工作表名来自 **`RegfileDef.sheet`**（缺省 = `name`），不是 HTML 属性。
 
@@ -529,9 +532,9 @@ ts = "regs/phy_regs.ts"   # 含 export const phy = Regfile(...)；唯一 SoT
 - ~~导出名 vs `name`~~ → **必须相同**。  
 - ~~`ADR` 语义~~ → **byte**（字节地址；`offset`/`bytes_align`/cursor 均按字节；与 bus 同裁）。  
 - ~~ACK~~ → **同拍**；regfile **不**为时序打拍；长线交给 bus **pipe**；**禁止** +1 ACK / 叶子 `rddata_vld`。  
-- ~~§5.4 命名~~ → WB **`i_wb_*`/`o_wb_*`**；clk/rst **`i_clk`/`i_rst_n`**；旁路 **`i_`/`o_`**；默认 **`logic`**；模块 **`<table>_regfile`**。  
-- ~~RWE 口形~~ → `i_<field>` + `o_<field>_{wdata,wren,rden,rst}`；shadow **`o_<shadow>_sel`**；`read_write_block` → **`i_<field>_ready`**（缺省表级 false=非阻塞）。
+- ~~§5.4 命名~~ → WB **`i_wb_*`/`o_wb_*`**；clk/rst **`i_clk`/`i_rst_n`**；旁路 **Access 前缀**（`ro_`/`rg_`/`ext_`/`p_rg_`/`c_rg_`）；默认 **`logic`**；模块 **`<table>_regfile`**。  
+- ~~RWE 口形~~ → `ext_<field>` + `ext_<field>_{wdata,wren,rden,rst}`；shadow **`o_<shadow>_sel`**；`read_write_block` → **`ext_<field>_ready`**（缺省表级 false=非阻塞）。
 
-**§8 功能裁定已齐。** 实现仍看 `help status`（当前 docs only — not implementing now）。作者面 API 以 [`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts) 为准。
+**§8 功能裁定已齐。** `help status`：wishbone-regfile **implementing now**；bus **docs only**。作者面 API 以 [`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts) + `src/plugins/wishbone-regfile/dsl.ts` 为准。
 
-裁定后改动实现时：同步本文 + [`wishbone-bus.md`](./wishbone-bus.md) + `help`。
+CLI：`autowire plugin generate wishbone-regfile`（需 `[regfile.<source_id>] ts=`；一文件可多叶子）。

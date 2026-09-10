@@ -62,6 +62,10 @@ export interface WorkspaceConfig {
 	connectUnits: ConnectUnit[];
 	/** DV sim units ([sim.<id>] html + deps); may depend on connect ids */
 	simUnits: ConnectUnit[];
+	/** Type-A wishbone-regfile SoT sources ([regfile.<source_id>] ts=) */
+	regfileSources: RegfileSource[];
+	/** Optional Excel workbook path ([plugins.regfile] export); docs only for now */
+	regfileExcelExport: string | null;
 }
 
 /** One [connect.<id>] or [sim.<id>] entry */
@@ -72,6 +76,20 @@ export interface ConnectUnit {
 	/** Direct dependency ids */
 	deps: string[];
 	kind: "connect" | "sim";
+}
+
+/**
+ * One [regfile.<source_id>] entry — a SoT .ts module that may export many RegfileDef.
+ * toml id names the source file slot, not a single leaf module.
+ */
+export interface RegfileSource {
+	id: string;
+	/** Absolute path to the .ts module */
+	ts: string;
+	/**
+	 * Export names to generate; null/omit = every export that is a RegfileDef.
+	 */
+	exports: string[] | null;
 }
 
 /** All units (connect then sim), for topo / lookup. */
@@ -303,6 +321,19 @@ export async function loadWorkspace(
 		);
 	}
 	assertUnitDepsDag([...connectUnits, ...simUnits]);
+	const regfile = isObj(doc.regfile) ? doc.regfile : {};
+	const regfileSources = parseRegfileSources(regfile, rel);
+	const plugins = isObj(doc.plugins) ? doc.plugins : {};
+	const pluginsRegfile = isObj(plugins.regfile) ? plugins.regfile : {};
+	let regfileExcelExport: string | null = null;
+	if (pluginsRegfile.export !== undefined) {
+		if (typeof pluginsRegfile.export !== "string") {
+			throw new Error(
+				"autowire.toml: [plugins.regfile] export must be a string",
+			);
+		}
+		regfileExcelExport = rel(pluginsRegfile.export);
+	}
 	return {
 		hdxmlBin: typeof hdxml.bin === "string" ? rel(hdxml.bin) : null,
 		root,
@@ -336,7 +367,56 @@ export async function loadWorkspace(
 		styleLocalparamUpper: style.localparam_upper === true,
 		connectUnits,
 		simUnits,
+		regfileSources,
+		regfileExcelExport,
 	};
+}
+
+function parseRegfileSources(
+	table: Record<string, unknown>,
+	rel: (p: string) => string,
+): RegfileSource[] {
+	const out: RegfileSource[] = [];
+	for (const [id, raw] of Object.entries(table)) {
+		if (!isObj(raw)) {
+			throw new Error(`autowire.toml: [regfile.${id}] must be a table`);
+		}
+		if (typeof raw.ts !== "string" || raw.ts.length === 0) {
+			throw new Error(
+				`autowire.toml: [regfile.${id}] ts= is required (path to SoT .ts)`,
+			);
+		}
+		if (raw.html !== undefined) {
+			throw new Error(
+				`autowire.toml: [regfile.${id}] html= is forbidden (SoT is ts= only)`,
+			);
+		}
+		if (raw.export !== undefined) {
+			throw new Error(
+				`autowire.toml: [regfile.${id}] export= is removed — use exports = ["a","b"] or omit to take all RegfileDef exports`,
+			);
+		}
+		let exports: string[] | null = null;
+		if (raw.exports !== undefined) {
+			if (!Array.isArray(raw.exports) || raw.exports.length === 0) {
+				throw new Error(
+					`autowire.toml: [regfile.${id}] exports must be a non-empty string array`,
+				);
+			}
+			exports = [];
+			for (const e of raw.exports) {
+				if (typeof e !== "string" || e.length === 0) {
+					throw new Error(
+						`autowire.toml: [regfile.${id}] exports entries must be non-empty strings`,
+					);
+				}
+				exports.push(e);
+			}
+		}
+		out.push({ id, ts: rel(raw.ts), exports });
+	}
+	out.sort((a, b) => a.id.localeCompare(b.id));
+	return out;
 }
 
 /** WorkspaceConfig → hdxml argv (hdxml has no subcommand; order is stable for tests) */

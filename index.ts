@@ -10,6 +10,7 @@ import { Command } from "commander";
 import { registerAnalysis } from "./src/cli/analysis.ts";
 import { registerDeps } from "./src/cli/deps.ts";
 import { renderHelp } from "./src/cli/help.ts";
+import { registerPlugin } from "./src/cli/plugin.ts";
 import { registerCheck, registerWeb } from "./src/cli/web.ts";
 
 const program = new Command();
@@ -44,6 +45,7 @@ registerAnalysis(program);
 registerDeps(program);
 registerWeb(program);
 registerCheck(program);
+registerPlugin(program);
 
 if (process.argv.slice(2).length === 0) {
 	console.log(renderHelp());
