@@ -1,6 +1,6 @@
 # Wishbone 寄存器文件（叶子）
 
-> 状态：**实现中（功能裁定已齐；`help status`：wishbone-regfile implementing now；bus 仍 docs only）**。  
+> 状态：**实现中（功能裁定已齐；`help status`：wishbone-regfile / wishbone-bus 均为 implementing now）**。  
 > 块内配置互联：[`wishbone-bus.md`](./wishbone-bus.md)。插件登记：[`README.md`](./README.md)。  
 > 作者面草稿 / 示例：[`docs/examples/regfile/`](../../examples/regfile/)（`regfile.ts` SoT + `*_regfile.sv` 展示）。  
 > 正式生成：`autowire plugin generate wishbone-regfile` → `[dump] plugins_dir/wishbone-regfile/`。  
@@ -298,7 +298,7 @@ rd_fire = CYC & STB & ~WE & hit
 
 | 项 | 裁定 |
 |---|---|
-| WB 端口 | **`i_wb_*` / `o_wb_*`**（对齐 demo/soc；与 bus 同裁） |
+| WB 端口 | **`{name}_i_wb_*` / `{name}_o_wb_*`**（`name` = `RegfileDef.name` = bus slave id → **identity 直连**；旁路异名前缀用**一条** `aw-rewrite`，见 [`../connect/html.md`](../connect/html.md) §3.5.5） |
 | clk / rst | **`i_clk` / `i_rst_n`** |
 | 字段 / shadow 旁路 | **Access 前缀名**（对齐主干 `RG_NAME_PREFIX`）；**禁止** `wb_` 前缀；**禁止**旧总线内核名（`reg_wren` 等）；**禁止**再套一层字段旁路 `i_`/`o_`（方向只靠 `input`/`output`） |
 | 净荷类型 | 默认 **`logic`**（列对齐仍跟工作区 `[style]`） |
@@ -318,7 +318,7 @@ rd_fire = CYC & STB & ~WE & hit
 | RWE + shadow 译码 sel | — | **`o_<shadow>_sel`**（该 shadow 一份；非 Access 前缀） |
 | `read_write_block` + RWE ready | — | **`ext_<field>_ready`**（仅表级 `read_write_block=true` 且该 field 为 RWE） |
 
-- WB 束示例：`i_wb_cyc` / `i_wb_stb` / `i_wb_we` / `i_wb_adr` / `i_wb_dat` / `i_wb_sel` / `i_wb_tga`（若有）→ `o_wb_ack` / `o_wb_dat`。  
+- WB 束示例：`{name}_i_wb_cyc` / `{name}_i_wb_stb` / `{name}_i_wb_we` / `{name}_i_wb_adr` / `{name}_i_wb_dat` / `{name}_i_wb_sel` / `{name}_i_wb_tga`（若有）→ `{name}_o_wb_ack` / `{name}_o_wb_dat`。  
 - **禁止**再引入第二套完成口。
 
 ### 5.5 ACK 时序（已裁定：**同拍**）
@@ -344,7 +344,7 @@ rd_fire = CYC & STB & ~WE & hit
 | **Cell/Block `offset` / `bytes_align` / 自动拼 cursor** | **一律按字节**（`bytes_align` 为 4 的倍数） |
 | ~~word~~ | **不做** |
 
-未与 bus 口名同步实现前，生成器仍按 help：**docs only — not implementing now**；语义与命名以本文为准。
+口名与 bus 已对齐（§5.4）；实现以 `help status` 为准（当前：**implementing now**）。
 
 ### 5.7 Shadow 索引：仅 `wb_tga`（已裁定）
 
@@ -460,7 +460,7 @@ effective_sel = wb_tga[tag-bits]
 
 译码-sel-to-RWE / ready 口名见 §5.4（已裁定）。
 
-功能与口名裁定齐后，实现仍以 `help status` 为准（当前：**not implementing now**）。
+功能与口名裁定齐后，实现仍以 `help status` 为准（当前：**implementing now**）。
 
 ## 6. 工作区（草案）
 
@@ -518,9 +518,9 @@ ts = "docs/examples/regfile/regfile.ts"
 - ~~导出名 vs `name`~~ → **必须相同**。  
 - ~~`ADR` 语义~~ → **byte**（字节地址；`offset`/`bytes_align`/cursor 均按字节；与 bus 同裁）。  
 - ~~ACK~~ → **同拍**；regfile **不**为时序打拍；长线交给 bus **pipe**；**禁止** +1 ACK / 叶子 `rddata_vld`。  
-- ~~§5.4 命名~~ → WB **`i_wb_*`/`o_wb_*`**；clk/rst **`i_clk`/`i_rst_n`**；旁路 **Access 前缀**（`ro_`/`rg_`/`ext_`/`p_rg_`/`c_rg_`）；默认 **`logic`**；模块 **`<table>_regfile`**。  
+- ~~§5.4 命名~~ → WB **`{name}_i_wb_*`/`{name}_o_wb_*`**；clk/rst **`i_clk`/`i_rst_n`**；旁路 **Access 前缀**（`ro_`/`rg_`/`ext_`/`p_rg_`/`c_rg_`）；默认 **`logic`**；模块 **`<table>_regfile`**。  
 - ~~RWE 口形~~ → `ext_<field>` + `ext_<field>_{wdata,wren,rden,rst}`；shadow **`o_<shadow>_sel`**；`read_write_block` → **`ext_<field>_ready`**（缺省表级 false=非阻塞）。
 
-**§8 功能裁定已齐。** `help status`：wishbone-regfile **implementing now**；bus **docs only**。作者面 API 以 [`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts) + `src/plugins/wishbone-regfile/dsl.ts` 为准。
+**§8 功能裁定已齐。** `help status`：wishbone-regfile / wishbone-bus 均为 **implementing now**。作者面 API 以 [`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts) + `src/plugins/wishbone-regfile/dsl.ts` 为准。
 
 CLI：`autowire plugin generate wishbone-regfile`（需 `[regfile.<source_id>] ts=`；一文件可多叶子）。

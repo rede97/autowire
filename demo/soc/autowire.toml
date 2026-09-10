@@ -31,6 +31,10 @@ ts = "regs/sha256_wb.ts"
 ts = "regs/smoke.ts"
 exports = ["smoke"]
 
+[bus.soc]
+ts = "bus/soc_wb.ts"
+exports = ["soc_wb"]
+
 [style]
 # traditional RTL look: aligned declaration/inst ports + params + signals,
 # uppercased folding names (param_inline stays at its default true)

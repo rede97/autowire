@@ -1,7 +1,8 @@
 // SoC wishbone-regfile smoke SoT (MMIO-tested from fw/regfile_smoke).
 // Individual exports keep bun unit coverage; `smoke` is the on-bus leaf.
-// Generate → gen/plugins/wishbone-regfile/smoke_regfile.sv; wrap with rtl/smoke_wb.v.
-// After generate + analysis: aw-inst mod="smoke_wb" (wrapper) / smoke_regfile.
+// Generate → gen/plugins/wishbone-regfile/smoke_regfile.sv;
+// instantiate on soc_top; rtl/smoke_wb.v is sideband glue only.
+// After generate + analysis: aw-inst mod="smoke_regfile" (+ smoke_wb glue).
 // No HTML register stub tags.
 
 export {
@@ -35,7 +36,7 @@ export const smoke = Regfile(
 	"smoke",
 	"SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)",
 	RegfileDefault.align(4)
-		.addrWidth(12)
+		.addrWidth(32)
 		.readWriteBlock(true)
 		.shadows(Shadow("bank", 4, "1:0")),
 	[

@@ -71,6 +71,7 @@
 常量不建网、只能连 input 端口、禁 `part`/维度属性；rewrite 产常量 = 批量 tie-off（禁捕获）。
 显式悬空：`type="open"`（无 `to`；只 output/inout；dump 出 `.port()`）。
 未覆盖端口 → **同名推导（identity）**，非 warning；多全网 output 共网 → 短路 error。
+**同名省略；不同名批量改名用一条 `aw-rewrite` 正则**（禁止逐口抄同名 / 拆束）。
 完整细则：[`to-rules.md`](./to-rules.md) §2.4；示例 `../examples/connect/05-*.html`。
 
 ```html

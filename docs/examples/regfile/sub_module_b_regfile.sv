@@ -16,23 +16,23 @@ module sub_module_b_regfile (
 	input  logic        i_clk,
 	// Active-low asynchronous reset
 	input  logic        i_rst_n,
-	// Wishbone classic slave
+	// Wishbone classic slave (sub_module_b)
 	// Wishbone CYC
-	input  logic        i_wb_cyc,
+	input  logic        sub_module_b_i_wb_cyc,
 	// Wishbone STB
-	input  logic        i_wb_stb,
+	input  logic        sub_module_b_i_wb_stb,
 	// Wishbone WE (1=write, 0=read)
-	input  logic        i_wb_we,
+	input  logic        sub_module_b_i_wb_we,
 	// Wishbone ADR (byte address; word decode uses [addr_width-1:2])
-	input  logic [15:0] i_wb_adr,
+	input  logic [15:0] sub_module_b_i_wb_adr,
 	// Wishbone write data
-	input  logic [31:0] i_wb_dat,
+	input  logic [31:0] sub_module_b_i_wb_dat,
 	// Wishbone byte select
-	input  logic [3:0]  i_wb_sel,
+	input  logic [3:0]  sub_module_b_i_wb_sel,
 	// Wishbone ACK
-	output logic        o_wb_ack,
+	output logic        sub_module_b_o_wb_ack,
 	// Wishbone read data
-	output logic [31:0] o_wb_dat
+	output logic [31:0] sub_module_b_o_wb_dat
 );
 
 	//------------------------------------------------------------------------------
@@ -54,13 +54,13 @@ module sub_module_b_regfile (
 	// Addr: 0x0000  RegCell: ID — Identification
 	//   [15:0]   RC  version — Chip / IP version (ReadConst)
 	//   [31:16]  RC  magic   — Magic ID (ReadConst)
-	assign addr_hit_0 = (i_wb_adr[15:2] == 14'd0);
+	assign addr_hit_0 = (sub_module_b_i_wb_adr[15:2] == 14'd0);
 
 	assign hit = |{
 		addr_hit_0
 	};
-	assign wr_fire = i_wb_cyc && i_wb_stb &&  i_wb_we;
-	assign rd_fire = i_wb_cyc && i_wb_stb && ~i_wb_we;
+	assign wr_fire = sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb &&  sub_module_b_i_wb_we;
+	assign rd_fire = sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb && ~sub_module_b_i_wb_we;
 
 	assign wr_sel_0 = wr_fire && hit && addr_hit_0;
 	assign rd_sel_0 = rd_fire && hit && addr_hit_0;
@@ -75,7 +75,7 @@ module sub_module_b_regfile (
 
 
 	//------------------------------------------------------------------------------
-	//  5. Read mux → o_wb_dat / ACK
+	//  5. Read mux → sub_module_b_o_wb_dat / ACK
 	//------------------------------------------------------------------------------
 
 	always_comb begin
@@ -93,7 +93,7 @@ module sub_module_b_regfile (
 		endcase
 	end
 
-	assign o_wb_ack = i_wb_cyc && i_wb_stb && hit;
-	assign o_wb_dat = rd_data;
+	assign sub_module_b_o_wb_ack = sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb && hit;
+	assign sub_module_b_o_wb_dat = rd_data;
 
 endmodule

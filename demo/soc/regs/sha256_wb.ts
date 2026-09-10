@@ -1,7 +1,7 @@
 // SoT for demo/soc sha256 Wishbone CSR map (CTRL + HASH0..7).
-// Glue (AXIS front-end, sticky done, core reset) stays in rtl/sha256_wb_regs.v.
-// Generate: autowire plugin generate wishbone-regfile
-//   → gen/plugins/wishbone-regfile/sha256_wb_regfile.sv
+// Two leaves (sha256_0 / sha256_1) match wishbone-bus slave ids → identity WB
+// on soc_top. Glue (AXIS / sticky done) stays in rtl/sha256_wb_regs.v + sha256wb.
+// Generate → gen/plugins/wishbone-regfile/sha256_{0,1}_regfile.sv
 
 export {
 	Access,
@@ -21,19 +21,17 @@ import {
 	Field,
 	Regfile,
 	RegfileDefault,
+	type RegfileDef,
 } from "../../../src/plugins/wishbone-regfile/dsl.ts";
 
 /**
- * Register map (byte ADR; matches legacy sha256_wb_regs):
+ * Register map (byte ADR):
  *   0x00 CTRL  bit0 soft_reset(RW) bit1 done_clear(W1P)
- *              bit8 busy(RO) bit9 done(RO sticky, HW-set in wrapper)
+ *              bit8 busy(RO) bit9 done(RO sticky, HW-set in glue)
  *   0x04..0x20 HASH0..HASH7 (RO)
  */
-export const sha256_wb = Regfile(
-	"sha256_wb",
-	"SHA256 Wishbone CSR leaf (hash RO + soft reset)",
-	RegfileDefault.align(4).addrWidth(6).sheet("sha256_wb"),
-	[
+function sha256Lane(name: string, desc: string): RegfileDef {
+	return Regfile(name, desc, RegfileDefault.align(4).addrWidth(32).sheet(name), [
 		Cell(
 			"CTRL",
 			"Control / status",
@@ -46,10 +44,10 @@ export const sha256_wb = Regfile(
 					"done_clear",
 					Access.W1P,
 					1,
-					"Write 1 → pulse; wrapper clears sticky done",
+					"Write 1 → pulse; glue clears sticky done",
 				).offset(1),
 				Field("busy", Access.RO, 1, "Hash core busy").offset(8),
-				Field("done", Access.RO, 1, "Sticky done (from wrapper)").offset(9),
+				Field("done", Access.RO, 1, "Sticky done (from glue)").offset(9),
 			],
 		),
 		Cell("HASH0", "Digest word 0", CellDefault.offset(0x4), [
@@ -76,5 +74,14 @@ export const sha256_wb = Regfile(
 		Cell("HASH7", "Digest word 7", CellDefault.offset(0x20), [
 			Field("hash7", Access.RO, 32, "hash7"),
 		]),
-	],
+	]);
+}
+
+export const sha256_0 = sha256Lane(
+	"sha256_0",
+	"SHA256 lane 0 CSR (identity-match bus slave sha256_0)",
+);
+export const sha256_1 = sha256Lane(
+	"sha256_1",
+	"SHA256 lane 1 CSR (identity-match bus slave sha256_1)",
 );

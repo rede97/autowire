@@ -35,12 +35,20 @@ done
 
 test -f "$CONN/soc_top.sv" || { echo "missing $CONN/soc_top.sv — dump first"; exit 1; }
 test -f "$CONN/sha256wb.sv" || { echo "missing $CONN/sha256wb.sv — dump first"; exit 1; }
-test -f gen/plugins/wishbone-regfile/sha256_wb_regfile.sv || {
-	echo "missing gen/plugins/wishbone-regfile/sha256_wb_regfile.sv — run: bun ../../index.ts plugin generate wishbone-regfile" >&2
+test -f gen/plugins/wishbone-bus/soc_wb_interconnect.sv || {
+	echo "missing gen/plugins/wishbone-bus/soc_wb_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
+	exit 1
+}
+test -f gen/plugins/wishbone-regfile/sha256_0_regfile.sv || {
+	echo "missing gen/plugins/wishbone-regfile/sha256_0_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
+	exit 1
+}
+test -f gen/plugins/wishbone-regfile/sha256_1_regfile.sv || {
+	echo "missing gen/plugins/wishbone-regfile/sha256_1_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
 test -f gen/plugins/wishbone-regfile/smoke_regfile.sv || {
-	echo "missing gen/plugins/wishbone-regfile/smoke_regfile.sv — run: bun ../../index.ts plugin generate wishbone-regfile" >&2
+	echo "missing gen/plugins/wishbone-regfile/smoke_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
 

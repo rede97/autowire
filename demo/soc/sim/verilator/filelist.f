@@ -4,7 +4,6 @@
 gen/connect/soc_top.sv
 gen/connect/sha256wb.sv
 
-rtl/wb_interconnect.v
 rtl/wb_sram.v
 rtl/wb_uart.v
 rtl/wb_spiflash.v
@@ -15,8 +14,10 @@ rtl/sd_rd_dma.v
 rtl/sha256_wb_regs.v
 rtl/smoke_wb.v
 
-# Type-A wishbone-regfile (run: bun ../../index.ts plugin generate wishbone-regfile)
-gen/plugins/wishbone-regfile/sha256_wb_regfile.sv
+# Type-A plugins (bun ../../index.ts plugin generate all)
+gen/plugins/wishbone-bus/soc_wb_interconnect.sv
+gen/plugins/wishbone-regfile/sha256_0_regfile.sv
+gen/plugins/wishbone-regfile/sha256_1_regfile.sv
 gen/plugins/wishbone-regfile/smoke_regfile.sv
 
 ip/picorv32/picorv32.v

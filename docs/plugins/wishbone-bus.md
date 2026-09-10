@@ -1,6 +1,6 @@
 # Wishbone 块内配置总线（bridge / arbiter / decoder）
 
-> 状态：**草稿，先约束后实现**。不堵连接轨道。  
+> 状态：**implementing now**（最小 decoder/interconnect + named slaves；pipe/arb 策略后补）。不堵连接轨道。  
 > 寄存器叶子：[`wishbone-regfile.md`](./wishbone-regfile.md)。  
 > 插件登记：[`README.md`](./README.md)。改本文时同步 `help status` / [`../architecture.md`](../architecture.md) §5。
 
@@ -24,9 +24,17 @@
 
 ## 2. Wishbone Classic 子集（冻结）
 
-端点命名：与 [`wishbone-regfile.md`](./wishbone-regfile.md) §5.4 **同裁**——WB 束 **`i_wb_*` / `o_wb_*`**（例：`i_wb_cyc`、`o_wb_ack`、`i_wb_tga`）。
+端点命名（与 regfile 同裁，**带 name**）：
 
-| 信号 | 方向（slave） | 要求 |
+| 角色 | 口名 |
+|---|---|
+| Regfile / IC slave | **`{name}_i_wb_*` / `{name}_o_wb_*`**（叶视角；与 `RegfileDef.name` **同名 → identity**；异名束用一条 rewrite，见 connect §3.5.5） |
+| 多主 flat（v1 SoC） | `m_adr_i` / `m_dat_*` / `m_cyc_i` … 向量 |
+| clk/rst | `clk` / `rst_n`（fabric） |
+
+例：`smoke_i_wb_cyc`、`smoke_o_wb_ack`、`smoke_i_wb_adr`。
+
+| 信号 | 方向（slave / 叶） | 要求 |
 |---|---|---|
 | `CYC` | in | 事务周期；单拍外设 **可以**与 `STB` 同断言 |
 | `STB` | in | 本拍有效 |
@@ -122,22 +130,24 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 - 地址图数据在 Table/端口模型里；**禁止**把 pin 级连线写进 `autowire.toml`。  
 - 产物进 `plugins_dir/<plugin-id>/`；与 connect/sim dump 目录分家（[`README.md`](./README.md) §3）。
 
-## 7. 工作区（草案）
+## 7. 工作区
 
 ```toml
-[regfile.phy.bus]
-topology = "tree"     # 默认；crossbar 仅显式开启
-pipe = 1
-# arbiter = "fixed" | "round_robin"   — 开放项
+[bus.soc]
+ts = "bus/soc_wb.ts"
+# exports = ["soc_wb"]   # 可选；省略 = 全部 BusDef
+
+# out → plugins_dir/wishbone-bus/<name>_decoder.sv | <name>_interconnect.sv
+# NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）
 ```
 
 ## 8. 仍开放
 
-1. Arbiter 默认策略。  
+1. Arbiter 默认策略（v1 SoC：最低 master 优先，与 demo 手写一致）。  
 2. 是否提供 `topology = crossbar` 以及 M/N 上限。  
-3. ~~地址字节 vs 字~~ → **byte**（与 [`wishbone-regfile.md`](./wishbone-regfile.md) §5.6 同裁）。  
-4. Bridge 目录：仅 `apb2wb` 还是可插其它。  
-5. 固件窗 + DMA：块周期连续写是否进 v2；是否生成最小 WB DMA master。  
-6. ~~端口前缀~~ → 与 regfile §5.4 同裁：`i_wb_*` / `o_wb_*`。
+3. Bridge 目录：仅 `apb2wb` 还是可插其它。  
+4. 固件窗 + DMA：块周期连续写是否进 v2。  
+5. Pipe slice 级数。  
+6. Master 侧是否也改为按名（v1 可 flat）。
 
-裁定后改本文 + [`wishbone-regfile.md`](./wishbone-regfile.md) + `help status` Parallel，再动代码。
+**已裁定口名**：`{name}_i_wb_*` / `{name}_o_wb_*`；单 master → decoder。

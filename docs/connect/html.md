@@ -292,6 +292,13 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 > 细则：[`to-rules.md`](./to-rules.md) §2.4。
 
+**作者面铁律（SoC / regfile 挂总线同此）**
+
+| 情况 | 写法 |
+|---|---|
+| 端口名与目标网**同名** | **省略**——identity 自动连；**禁止**逐口写同名 `aw-connect` |
+| 端口名与目标网**不同名**（改名前缀 / 换后缀） | **一条** `aw-rewrite` 正则即可（`$1` / `$&` / `$<name>` + `` `${id}` ``）；**禁止**把同一束口拆成多条逐端口 rewrite |
+
 - **未被任何规则覆盖的端口**（非 interface）elaborate 时**自动连到同名网**——同名连接是推导出来的，作者面**原则省略不写**，只描述非同名信息（避免底层 IP 统一换名时逐行同步 HTML 的负担）。
 - 同名网天然**合流**（如各例化的 `clk` 汇成一网）；显式规则与 `type="open"` / `type="const"` **永远优先**于推导。
 - 安全网：同一网有 **>1 个全网（无 part-select）output 驱动** → **报错**（短路）；part-select 分片驱动允许共网（**不相交性不校验**，EDA/DV 兜底）。多例化的同名 output（如 sdspi `o_debug`）必须显式 open 或显式改名。
@@ -299,9 +306,21 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 | 意图 | 写法 |
 |---|---|
 | 同名贯通 | 省略 |
-| 改名 / 汇合 | 显式 `to=` |
+| 批量改名 | **一条** `aw-rewrite`（例：`match="^(rg_\|p_rg_\|ro_).*$" to="${id}_$&"`） |
+| 单口改名 / 汇合 | 显式 `aw-connect` / `to=` |
 | 不要这根网 / 消自动导出 | `type="open"` 或显式改名 |
 | 多实例同名 output | 必须 open 或改名（否则短路 error） |
+
+```html
+<!-- good: leaf name = bus slave id → WB identity; one rewrite for sideband prefix -->
+<aw-inst id="sha256_0" mod="sha256_0_regfile">
+  <aw-template>
+    <aw-connect port="i_clk" to="clk"></aw-connect>
+    <aw-connect port="i_rst_n" to="rst_ni"></aw-connect>
+    <aw-rewrite match="^(rg_|p_rg_|ro_).*$" to="${id}_$&"></aw-rewrite>
+  </aw-template>
+</aw-inst>
+```
 
 ### 3.6 其余标签
 

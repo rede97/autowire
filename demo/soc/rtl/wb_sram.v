@@ -19,17 +19,17 @@ module wb_sram #(
 	input  wire        i_wb_cyc,
 	input  wire        i_wb_stb,
 	input  wire        i_wb_we,
-	input  wire [31:0] i_wb_addr,
-	input  wire [31:0] i_wb_data,
+	input  wire [31:0] i_wb_adr,
+	input  wire [31:0] i_wb_dat,
 	input  wire [3:0]  i_wb_sel,
 	output reg         o_wb_ack,
-	output reg  [31:0] o_wb_data
+	output reg  [31:0] o_wb_dat
 );
 
 	reg [31:0] mem [0:WORDS-1];
 
 	wire valid = i_wb_cyc & i_wb_stb;
-	wire [AW-1:0] waddr = i_wb_addr[AW+1:2];
+	wire [AW-1:0] waddr = i_wb_adr[AW+1:2];
 
 	always @(posedge clk) begin
 		if (!rst_n)
@@ -38,13 +38,13 @@ module wb_sram #(
 			o_wb_ack <= valid & ~o_wb_ack;
 
 		if (valid & i_wb_we) begin
-			if (i_wb_sel[0]) mem[waddr][7:0]   <= i_wb_data[7:0];
-			if (i_wb_sel[1]) mem[waddr][15:8]  <= i_wb_data[15:8];
-			if (i_wb_sel[2]) mem[waddr][23:16] <= i_wb_data[23:16];
-			if (i_wb_sel[3]) mem[waddr][31:24] <= i_wb_data[31:24];
+			if (i_wb_sel[0]) mem[waddr][7:0]   <= i_wb_dat[7:0];
+			if (i_wb_sel[1]) mem[waddr][15:8]  <= i_wb_dat[15:8];
+			if (i_wb_sel[2]) mem[waddr][23:16] <= i_wb_dat[23:16];
+			if (i_wb_sel[3]) mem[waddr][31:24] <= i_wb_dat[31:24];
 		end
 
-		o_wb_data <= mem[waddr];
+		o_wb_dat <= mem[waddr];
 	end
 
 endmodule

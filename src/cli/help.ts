@@ -57,6 +57,8 @@ You can do now
 Rules of engagement
   Edit this help (src/cli/help.ts) when behavior changes; format constraints live in docs/.
   Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
+  Connect authoring (docs/connect/html.md §3.5.5): same-name → identity (omit);
+    rename batch → one aw-rewrite RegExp — never list identity ports one-by-one.
 `,
 
 	status: `\
@@ -86,17 +88,19 @@ Parallel (does not block connect)
     orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
   Wishbone regfile — implementing now (docs/plugins/wishbone-regfile.md);
     draft API + samples: docs/examples/regfile/regfile.ts;
-    demo/soc: regs/{sha256_wb,smoke}.ts → rtl/*_regfile.sv (+ smoke_wb glue);
+    demo/soc: regs/{sha256_wb,smoke}.ts → plugins_dir (named {table}_i_wb_*/o_wb_*);
     SoT = TypeScript Regfile(...) exports (RegfileDef); no HTML field tree;
     connect aw-inst mod=*_regfile (or thin WB wrapper); no awx-regfile;
     toml [regfile.<source>] ts= (one file may export many RegfileDef; optional exports=);
     sheet empty = name; Excel book = plugins.regfile.export; toml ts= not html=;
     DAT=32 ADR=byte ACK=same-cycle (pipe on bus); addr_width required;
-    ports i_wb_*/o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
+    WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
     RWE o_<shadow>_sel + optional ext_<field>_ready;
     Access RC = ReadConst (reset= baked readback)
-  Wishbone bus — docs only, not implementing now (docs/plugins/wishbone-bus.md);
-    tree arb/decoder/pipe; shares WB subset with regfile; ADR=byte ACK via pipe
+  Wishbone bus — implementing now (docs/plugins/wishbone-bus.md);
+    named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
+    NM>1 → interconnect (priority arb); demo/soc bus/soc_wb.ts → soc_wb_interconnect;
+    toml [bus.<source>] ts=; ADR=byte; pipe/arb policy still open
 
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
@@ -116,6 +120,7 @@ Shared by deps / web / cli for the RTL universe:
   [sim.<id>]            DV TB unit: html= under sim/; aw-tb-mod root; deps may list
                         connect ids; dump → sim_dir (no .autowire/connect XML)
   [regfile.<source>]    wishbone-regfile SoT file: ts=; optional exports=[]; omit exports = all RegfileDef
+  [bus.<source>]        wishbone-bus SoT file: ts=; optional exports=[]; BusDef → decoder|interconnect
   [plugins.regfile]     optional export= Excel workbook path (docs product; emit TBD)
   [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
@@ -202,9 +207,10 @@ Two layers; do not mix
   aw-submods   nested aw-mod; sibling refs only via aw-mod@deps (path-accumulated visible set)
 
 Dump / golden only accept aw-render (every related mod; nested + multi-HTML).
-aw-rewrite: RegExp match + String.replace ($1 / $<name>) + \${…}; match+to only.
+aw-rewrite: RegExp match + String.replace ($1 / $& / $<name>) + \${…}; match+to only.
 aw-connect@to: net (default) | const | open — const/open must declare type=; docs/connect/to-rules.md;
-  uncovered ports → identity same-name nets (not a warning); open/rename to avoid short circuits;
+  same-name → identity (omit; not a warning); rename → prefer one aw-rewrite RegExp ($1/$&);
+  do not list identity ports one-by-one; open/rename to avoid short circuits;
   aw-param@expr / aw-template@inst_name: variable expressions only (no $1).
 aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlIndex form),
   unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; default wire);
@@ -364,6 +370,7 @@ Do not
   skip check before render or dump (?render=1 / [Render] must auto-run Check first)
   generate regfile/cfgbus from connect aw-submods custom tags (use: autowire plugin generate; docs/plugins/)
   treat Workspace MCP html_write as elaborate (must still run web check/render/dump for netlist)
+  list same-name ports one-by-one in aw-connect (identity omits them; rename → one aw-rewrite RegExp)
 `,
 };
 

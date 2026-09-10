@@ -2,7 +2,6 @@
 # Paths are relative to the workspace root (demo/soc). .svh entries are not allowed here.
 
 # Integration leaves (hand-written, Wishbone/AXI-Stream glue)
-rtl/wb_interconnect.v
 rtl/wb_sram.v
 rtl/wb_spiflash.v
 rtl/wb_uart.v
@@ -13,8 +12,12 @@ rtl/smoke_wb.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v
 
-# Type-A wishbone-regfile leaves (autowire plugin generate wishbone-regfile)
-gen/plugins/wishbone-regfile/sha256_wb_regfile.sv
+# Type-A wishbone-bus (named-slave interconnect)
+gen/plugins/wishbone-bus/soc_wb_interconnect.sv
+
+# Type-A wishbone-regfile leaves
+gen/plugins/wishbone-regfile/sha256_0_regfile.sv
+gen/plugins/wishbone-regfile/sha256_1_regfile.sv
 gen/plugins/wishbone-regfile/smoke_regfile.sv
 
 # picorv32: CPU + Wishbone wrapper (picorv32_wb lives in picorv32.v)
@@ -31,7 +34,7 @@ ip/sdspi/rtl/spi/spirxdata.v
 ip/sdspi/rtl/spi/spitxdata.v
 
 # sha256 streaming core (source: github.com/rede97/zynq_sha256;
-# AXI wrappers dropped, re-wrapped over Wishbone via connect/sha256wb.html)
+# AXIS glue in sha256_wb_regs; CSR = sha256_{0,1}_regfile on soc_top)
 ip/sha256/sha256.v
 ip/sha256/sha256_chunk_process.v
 ip/sha256/sha256_chunk_compress.v

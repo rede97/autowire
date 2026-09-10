@@ -1,10 +1,10 @@
 <!doctype html>
 <!--
-  Connect unit "sha256wb": Wishbone re-wrap of the zynq_sha256 streaming
-  core (ip/sha256, AXI wrappers dropped). Replaces sha256_stream_v1_0:
-  register file + stream front-end live in the sha256_wb_regs leaf
-  (Wishbone slave, AXI4-Stream slave), the hashing core is the untouched
-  sha256 module. Contract: docs/connect/html.md.
+  Connect unit "sha256wb": streaming hash lane without CSR.
+  AXIS + sticky-done glue (sha256_wb_regs) + sha256 core.
+  Wishbone CSR (sha256_{0,1}_regfile) lives on soc_top next to the interconnect;
+  sidebands (rg_soft_reset / ro_hash* / …) auto-export upward.
+  Contract: docs/connect/html.md.
 -->
 <html lang="en">
   <head>
@@ -19,15 +19,13 @@
           <aw-params></aw-params>
           <aw-localparams></aw-localparams>
           <!-- no author ports: unconnected nets auto-export upward
-               (wb/axis slaves in; ack/rdata/tready/irq out) -->
+               (axis/irq/csr sidebands) -->
           <aw-ports></aw-ports>
           <aw-templates></aw-templates>
           <aw-insts>
-            <!-- register block + stream front-end (CSR = wishbone-regfile SoT) -->
+            <!-- stream front-end + sticky done (CSR on soc_top) -->
             <aw-inst id="u_regs" mod="sha256_wb_regs">
               <aw-template>
-                <!-- identity (clk / rst_ni / i_wb_* / s_axis_*) is inferred; only
-                     non-identity wiring is written -->
                 <aw-connect port="o_dat_valid" to="dat_valid"></aw-connect>
                 <aw-connect port="o_dat_lsb" to="dat_lsb" packed="auto"></aw-connect>
                 <aw-connect port="o_core_rst_n" to="core_rst_n"></aw-connect>
@@ -40,7 +38,6 @@
             <!-- streaming hash core (unmodified zynq_sha256) -->
             <aw-inst id="u_core" mod="sha256">
               <aw-template>
-                <!-- clk / irq_finish inferred by name -->
                 <aw-connect port="rst_n" to="core_rst_n"></aw-connect>
                 <aw-connect port="dat_vaild_i" to="dat_valid"></aw-connect>
                 <aw-connect port="dat_lsb_i" to="dat_lsb" packed="auto"></aw-connect>

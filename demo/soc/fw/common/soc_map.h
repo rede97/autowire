@@ -29,7 +29,7 @@
 #define SHA_BUSY       (1u << 8)
 #define SHA_DONE       (1u << 9)
 
-/* regfile smoke bank (regs/smoke.ts → smoke_regfile / smoke_wb) */
+/* regfile smoke bank (regs/smoke.ts → smoke_regfile on soc_top; smoke_wb = glue) */
 #define SMOKE_ID       0x000u
 #define SMOKE_STATUS   0x004u
 #define SMOKE_CFG      0x008u

@@ -24,25 +24,25 @@ module sub_module_a_regfile (
 	input  logic        i_clk,
 	// Active-low asynchronous reset
 	input  logic        i_rst_n,
-	// Wishbone classic slave
+	// Wishbone classic slave (sub_module_a)
 	// Wishbone CYC
-	input  logic        i_wb_cyc,
+	input  logic        sub_module_a_i_wb_cyc,
 	// Wishbone STB
-	input  logic        i_wb_stb,
+	input  logic        sub_module_a_i_wb_stb,
 	// Wishbone WE (1=write, 0=read)
-	input  logic        i_wb_we,
+	input  logic        sub_module_a_i_wb_we,
 	// Wishbone ADR (byte address; word decode uses [addr_width-1:2])
-	input  logic [7:0]  i_wb_adr,
+	input  logic [7:0]  sub_module_a_i_wb_adr,
 	// Wishbone write data
-	input  logic [31:0] i_wb_dat,
+	input  logic [31:0] sub_module_a_i_wb_dat,
 	// Wishbone byte select
-	input  logic [3:0]  i_wb_sel,
+	input  logic [3:0]  sub_module_a_i_wb_sel,
 	// Wishbone TGA (shadow / user tag)
-	input  logic [1:0]  i_wb_tga,
+	input  logic [1:0]  sub_module_a_i_wb_tga,
 	// Wishbone ACK
-	output logic        o_wb_ack,
+	output logic        sub_module_a_o_wb_ack,
 	// Wishbone read data
-	output logic [31:0] o_wb_dat,
+	output logic [31:0] sub_module_a_o_wb_dat,
 	// Field / shadow sidebands
 	// RW register out: enable — Soft enable
 	output logic        rg_enable,
@@ -146,33 +146,33 @@ module sub_module_a_regfile (
 	//   [0]      RW   enable     — Soft enable
 	//   [10:8]   RW   mode       — Operating mode
 	//   [23:16]  RW   lane_cfg   — Per-lane config (shadowed)
-	assign addr_hit_0 = (i_wb_adr[7:2] == 6'd0);
+	assign addr_hit_0 = (sub_module_a_i_wb_adr[7:2] == 6'd0);
 	// Addr: 0x10  RegCell: STATUS     — Status
 	//   [0]      RO   busy       — Busy
 	//   [8]      W1C  irq_sticky — Sticky IRQ; write 1 to clear
 	//   [16]     W1P  pulse_cmd  — Write 1 → one-cycle pulse out
-	assign addr_hit_10 = (i_wb_adr[7:2] == 6'd4);
+	assign addr_hit_10 = (sub_module_a_i_wb_adr[7:2] == 6'd4);
 	// Addr: 0x20  RegCell: ctrl_key_0 — 96-bit key; auto-split + auto offset
 	//   [31:0]   RW   key_0      — 96-bit key; auto-split + auto offset (slice0 of key)
-	assign addr_hit_20 = (i_wb_adr[7:2] == 6'd8);
+	assign addr_hit_20 = (sub_module_a_i_wb_adr[7:2] == 6'd8);
 	// Addr: 0x30  RegCell: ctrl_key_1 — 96-bit key; auto-split + auto offset
 	//   [31:0]   RW   key_1      — 96-bit key; auto-split + auto offset (slice1 of key)
-	assign addr_hit_30 = (i_wb_adr[7:2] == 6'd12);
+	assign addr_hit_30 = (sub_module_a_i_wb_adr[7:2] == 6'd12);
 	// Addr: 0x40  RegCell: ctrl_key_2 — 96-bit key; auto-split + auto offset
 	//   [31:0]   RW   key_2      — 96-bit key; auto-split + auto offset (slice2 of key)
-	assign addr_hit_40 = (i_wb_adr[7:2] == 6'd16);
+	assign addr_hit_40 = (sub_module_a_i_wb_adr[7:2] == 6'd16);
 	// Addr: 0x44  RegCell: SCRATCH    — Scratch pad
 	//   [31:0]   RW   word       — Scratch word
-	assign addr_hit_44 = (i_wb_adr[7:2] == 6'd17);
+	assign addr_hit_44 = (sub_module_a_i_wb_adr[7:2] == 6'd17);
 	// Addr: 0x48  RegCell: HW_FEED    — Hardware feed
 	//   [15:0]   RWW  capture    — HW may update via capture_strb/capture_hwdata
-	assign addr_hit_48 = (i_wb_adr[7:2] == 6'd18);
+	assign addr_hit_48 = (sub_module_a_i_wb_adr[7:2] == 6'd18);
 	// Addr: 0x4c  RegCell: EXT_FIFO   — External FIFO window
 	//   [31:0]   RWE  ext_data   — External FIFO data
-	assign addr_hit_4c = (i_wb_adr[7:2] == 6'd19);
+	assign addr_hit_4c = (sub_module_a_i_wb_adr[7:2] == 6'd19);
 	// Addr: 0x50  RegCell: SOLO       — Independent cell
 	//   [0]      RW   flag       — Solo flag
-	assign addr_hit_50 = (i_wb_adr[7:2] == 6'd20);
+	assign addr_hit_50 = (sub_module_a_i_wb_adr[7:2] == 6'd20);
 
 	assign hit = |{
 		addr_hit_0,
@@ -185,8 +185,8 @@ module sub_module_a_regfile (
 		addr_hit_4c,
 		addr_hit_50
 	};
-	assign wr_fire = i_wb_cyc && i_wb_stb &&  i_wb_we;
-	assign rd_fire = i_wb_cyc && i_wb_stb && ~i_wb_we;
+	assign wr_fire = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb &&  sub_module_a_i_wb_we;
+	assign rd_fire = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb && ~sub_module_a_i_wb_we;
 
 	assign wr_sel_0 = wr_fire && hit && addr_hit_0;
 	assign rd_sel_0 = rd_fire && hit && addr_hit_0;
@@ -211,7 +211,7 @@ module sub_module_a_regfile (
 	//  3. Shadow tag decode (TGA → one-hot mask / bin sel)
 	//------------------------------------------------------------------------------
 
-	assign raw_lane = i_wb_tga[1:0];
+	assign raw_lane = sub_module_a_i_wb_tga[1:0];
 	always_comb begin
 		mask_lane = 4'h0;
 		unique case (raw_lane)
@@ -247,7 +247,7 @@ module sub_module_a_regfile (
 		end else begin
 			if (wr_sel_0) begin
 				for (int __c = 0; __c < 4; __c++) begin
-					if (mask_lane[__c]) rg_enable_q[__c] <= i_wb_dat[0:0];
+					if (mask_lane[__c]) rg_enable_q[__c] <= sub_module_a_i_wb_dat[0:0];
 				end
 			end
 		end
@@ -263,7 +263,7 @@ module sub_module_a_regfile (
 		end else begin
 			if (wr_sel_0) begin
 				for (int __c = 0; __c < 4; __c++) begin
-					if (mask_lane[__c]) rg_mode_q[__c] <= i_wb_dat[10:8];
+					if (mask_lane[__c]) rg_mode_q[__c] <= sub_module_a_i_wb_dat[10:8];
 				end
 			end
 		end
@@ -279,7 +279,7 @@ module sub_module_a_regfile (
 		end else begin
 			if (wr_sel_0) begin
 				for (int __c = 0; __c < 4; __c++) begin
-					if (mask_lane[__c]) rg_lane_cfg_q[__c] <= i_wb_dat[23:16];
+					if (mask_lane[__c]) rg_lane_cfg_q[__c] <= sub_module_a_i_wb_dat[23:16];
 				end
 			end
 		end
@@ -293,13 +293,13 @@ module sub_module_a_regfile (
 	// W1C [8]     irq_sticky — Sticky IRQ; write 1 to clear
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) c_rg_irq_sticky_q <= 1'h0;
-		else if (wr_sel_10) c_rg_irq_sticky_q <= c_rg_irq_sticky_q & ~i_wb_dat[8:8];
+		else if (wr_sel_10) c_rg_irq_sticky_q <= c_rg_irq_sticky_q & ~sub_module_a_i_wb_dat[8:8];
 	end
 	assign c_rg_irq_sticky = c_rg_irq_sticky_q;
 	// W1P [16]    pulse_cmd  — Write 1 → one-cycle pulse out
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) p_rg_pulse_cmd <= 1'h0;
-		else p_rg_pulse_cmd <= wr_sel_10 ? i_wb_dat[16:16] : 1'h0;
+		else p_rg_pulse_cmd <= wr_sel_10 ? sub_module_a_i_wb_dat[16:16] : 1'h0;
 	end
 
 	// Addr: 0x20  RegCell: ctrl_key_0 — 96-bit key; auto-split + auto offset
@@ -307,7 +307,7 @@ module sub_module_a_regfile (
 	// RW  [31:0]  key_0      — 96-bit key; auto-split + auto offset
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_key_0_q <= 32'h0;
-		else if (wr_sel_20) rg_key_0_q <= i_wb_dat[31:0];
+		else if (wr_sel_20) rg_key_0_q <= sub_module_a_i_wb_dat[31:0];
 	end
 	assign rg_key_0 = rg_key_0_q;
 
@@ -316,7 +316,7 @@ module sub_module_a_regfile (
 	// RW  [31:0]  key_1      — 96-bit key; auto-split + auto offset
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_key_1_q <= 32'h0;
-		else if (wr_sel_30) rg_key_1_q <= i_wb_dat[31:0];
+		else if (wr_sel_30) rg_key_1_q <= sub_module_a_i_wb_dat[31:0];
 	end
 	assign rg_key_1 = rg_key_1_q;
 
@@ -325,7 +325,7 @@ module sub_module_a_regfile (
 	// RW  [31:0]  key_2      — 96-bit key; auto-split + auto offset
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_key_2_q <= 32'h0;
-		else if (wr_sel_40) rg_key_2_q <= i_wb_dat[31:0];
+		else if (wr_sel_40) rg_key_2_q <= sub_module_a_i_wb_dat[31:0];
 	end
 	assign rg_key_2 = rg_key_2_q;
 
@@ -334,7 +334,7 @@ module sub_module_a_regfile (
 	// RW  [31:0]  word       — Scratch word
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_word_q <= 32'h0;
-		else if (wr_sel_44) rg_word_q <= i_wb_dat[31:0];
+		else if (wr_sel_44) rg_word_q <= sub_module_a_i_wb_dat[31:0];
 	end
 	assign rg_word = rg_word_q;
 
@@ -343,7 +343,7 @@ module sub_module_a_regfile (
 	// RWW [15:0]  capture    — HW may update via capture_strb/capture_hwdata
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_capture_q <= 16'h0;
-		else if (wr_sel_48) rg_capture_q <= i_wb_dat[15:0];
+		else if (wr_sel_48) rg_capture_q <= sub_module_a_i_wb_dat[15:0];
 		else if (rg_capture_strb) rg_capture_q <= rg_capture_hwdata;
 	end
 	assign rg_capture = rg_capture_q;
@@ -351,7 +351,7 @@ module sub_module_a_regfile (
 	// Addr: 0x4c  RegCell: EXT_FIFO   — External FIFO window
 	//   [31:0]   RWE  ext_data   — External FIFO data
 	// RWE [31:0]  ext_data   — External FIFO data
-	assign ext_data_wdata = i_wb_dat[31:0];
+	assign ext_data_wdata = sub_module_a_i_wb_dat[31:0];
 	assign ext_data_wren  = wr_sel_4c;
 	assign ext_data_rden  = rd_sel_4c;
 	assign ext_data_rst   = ~i_rst_n;
@@ -363,13 +363,13 @@ module sub_module_a_regfile (
 	// RW  [0]     flag       — Solo flag
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) rg_flag_q <= 1'h0;
-		else if (wr_sel_50) rg_flag_q <= i_wb_dat[0:0];
+		else if (wr_sel_50) rg_flag_q <= sub_module_a_i_wb_dat[0:0];
 	end
 	assign rg_flag = rg_flag_q;
 
 
 	//------------------------------------------------------------------------------
-	//  5. Read mux → o_wb_dat / ACK
+	//  5. Read mux → sub_module_a_o_wb_dat / ACK
 	//------------------------------------------------------------------------------
 
 	always_comb begin
@@ -462,7 +462,7 @@ module sub_module_a_regfile (
 		endcase
 	end
 
-	assign o_wb_ack = i_wb_cyc && i_wb_stb && hit && !rwe_stall_ext_data;
-	assign o_wb_dat = rd_data;
+	assign sub_module_a_o_wb_ack = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb && hit && !rwe_stall_ext_data;
+	assign sub_module_a_o_wb_dat = rd_data;
 
 endmodule

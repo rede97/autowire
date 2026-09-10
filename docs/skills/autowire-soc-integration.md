@@ -12,6 +12,7 @@
 1. **`aw-ports` 一般不写**：无驱动网自动导出 input、被驱动但本层无负载网自动导出 output；只写需要显式控制的端口。
 2. **同名连接省略不写**：未被规则覆盖的端口自动连同名网（同名网合流）；显式规则/`type="open"` 永远优先。底层 IP 统一换名时 HTML 零同步成本。
 3. **同名 output 多驱动是错误**：全网 output 驱动 >1 → 短路报错；多例化同名 output（如 sdspi `o_debug`）必须显式 open 或改名。
+4. **不同名批量改名 → 一条 `aw-rewrite` 正则**（`$1`/`$&` + `` `${id}` ``）；禁止把同束口拆成多条逐端口 rewrite，也禁止抄同名 `aw-connect`。
 ```text
 IP 源码就位（submodule / vendored 目录）
   → 手写集成叶子（rtl/*.v，英文注释）
@@ -29,7 +30,7 @@ IP 源码就位（submodule / vendored 目录）
 
 ## 2. connect HTML 实战模式
 
-- **多例化**：`aw-template name="x" inst_name="${id}_${idx}"`，同 `id` 不同 `idx`；`idx` 直接当**总线槽位号**用（`u_dma idx=1/2` = master 槽 1/2）。
+- **口名对齐总线**：手写叶子 CSR 用 `i_wb_adr`/`i_wb_dat`/`o_wb_dat`（勿 `addr`/`data`），则 `wb_slv` 一条 `^([io]_wb_.+)$ → ${id}_$1` 即可；第三方 sdspi 仍 `addr`/`data` 时才额外 override。
 - **扁平向量总线**：interconnect 主从端口全部摊平成 `m_*[NM*32-1:0]` / `s_*[NS*32-1:0]` 大向量，连接侧用 `part` 算术切片：`part="32*${idx}+31:32*${idx}"`、单位 bit 用 `part="${idx}"`。net 各连接点的 `width` 写法必须**逐字一致**（文本级一致性检查）。
 - **BASE/MASK 译码表**走 `aw-param` 拼接字面量；含操作符/拼接的 override 自动折叠成 `Mod__Inst__Param` localparam，纯字面量 inline。
 - **常量绑死**必须显式 `type="const"`（`to="1'b0"` 裸写报错）；**显式悬空** `type="open"`（只 output/inout）。

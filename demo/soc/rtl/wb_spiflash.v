@@ -20,21 +20,21 @@ module wb_spiflash (
 	input  wire        i_wb_cyc,
 	input  wire        i_wb_stb,
 	input  wire        i_wb_we,
-	input  wire [31:0] i_wb_addr,
-	input  wire [31:0] i_wb_data,
+	input  wire [31:0] i_wb_adr,
+	input  wire [31:0] i_wb_dat,
 	input  wire [3:0]  i_wb_sel,
 	output reg         o_wb_ack,
-	output reg  [31:0] o_wb_data,
+	output reg  [31:0] o_wb_dat,
 
 	// cfgreg window
 	input  wire        i_cfg_cyc,
 	input  wire        i_cfg_stb,
 	input  wire        i_cfg_we,
-	input  wire [31:0] i_cfg_addr,
-	input  wire [31:0] i_cfg_data,
+	input  wire [31:0] i_cfg_adr,
+	input  wire [31:0] i_cfg_dat,
 	input  wire [3:0]  i_cfg_sel,
 	output reg         o_cfg_ack,
-	output wire [31:0] o_cfg_data,
+	output wire [31:0] o_cfg_dat,
 
 	// QSPI flash pins
 	output wire flash_csb,
@@ -62,13 +62,13 @@ module wb_spiflash (
 		if (!rst_n) begin
 			xip_valid <= 1'b0;
 			o_wb_ack  <= 1'b0;
-			o_wb_data <= 32'h0;
+			o_wb_dat <= 32'h0;
 		end else begin
 			o_wb_ack <= 1'b0;
 			if (xip_valid && xip_ready) begin
 				xip_valid <= 1'b0;
 				o_wb_ack  <= 1'b1;
-				o_wb_data <= xip_rdata;
+				o_wb_dat <= xip_rdata;
 			end else if (i_wb_cyc && i_wb_stb && !xip_valid && !o_wb_ack) begin
 				if (i_wb_we) begin
 					// Read-only window: drop the write, ack immediately
@@ -93,7 +93,7 @@ module wb_spiflash (
 		.resetn (rst_n),
 		.valid  (xip_valid),
 		.ready  (xip_ready),
-		.addr   (i_wb_addr[23:0]),
+		.addr   (i_wb_adr[23:0]),
 		.rdata  (xip_rdata),
 
 		.flash_csb    (flash_csb),
@@ -112,8 +112,8 @@ module wb_spiflash (
 		.flash_io3_di (flash_io3_di),
 
 		.cfgreg_we (o_cfg_ack & i_cfg_we ? i_cfg_sel : 4'b0000),
-		.cfgreg_di (i_cfg_data),
-		.cfgreg_do (o_cfg_data)
+		.cfgreg_di (i_cfg_dat),
+		.cfgreg_do (o_cfg_dat)
 	);
 
 endmodule

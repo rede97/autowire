@@ -54,7 +54,10 @@ test("each slice prints independently", () => {
 	expect(renderHelp("web")).toContain("?check=1");
 	expect(renderHelp("web")).toContain("?dump=1");
 	expect(renderHelp("connect")).toContain("docs/connect/check.md");
-	expect(renderHelp("connect")).toContain("identity same-name");
+	expect(renderHelp("connect")).toContain("same-name → identity");
+	expect(renderHelp("connect")).toContain("one aw-rewrite RegExp");
+	expect(renderHelp("dont")).toContain("list same-name ports one-by-one");
+	expect(renderHelp("agent")).toContain("same-name → identity");
 	expect(renderHelp("check")).toContain("docs/connect/check.md");
 	expect(renderHelp("check")).toContain("Check green is not dump-ready");
 	expect(renderHelp("check")).toContain("autowire check");
@@ -76,7 +79,7 @@ test("each slice prints independently", () => {
 	expect(renderHelp("agent")).toContain("docs/mcp/");
 	expect(renderHelp("status")).toContain("Wishbone regfile — implementing now");
 	expect(renderHelp("status")).toContain("no awx-regfile");
-	expect(renderHelp("status")).toContain("not implementing now");
+	expect(renderHelp("status")).toContain("Wishbone bus — implementing now");
 	expect(renderHelp("status")).toContain("type A = generate");
 	expect(renderHelp("status")).toContain("no plugin-private port API");
 	expect(renderHelp("status")).toContain("Workspace MCP");

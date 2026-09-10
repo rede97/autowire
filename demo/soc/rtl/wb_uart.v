@@ -19,25 +19,25 @@ module wb_uart (
 	input  wire        i_wb_cyc,
 	input  wire        i_wb_stb,
 	input  wire        i_wb_we,
-	input  wire [31:0] i_wb_addr,
-	input  wire [31:0] i_wb_data,
+	input  wire [31:0] i_wb_adr,
+	input  wire [31:0] i_wb_dat,
 	input  wire [3:0]  i_wb_sel,
 	output wire        o_wb_ack,
-	output wire [31:0] o_wb_data,
+	output wire [31:0] o_wb_dat,
 
 	output wire ser_tx,
 	input  wire ser_rx
 );
 
-	wire div_sel = i_wb_cyc & i_wb_stb & ~i_wb_addr[2];
-	wire dat_sel = i_wb_cyc & i_wb_stb &  i_wb_addr[2];
+	wire div_sel = i_wb_cyc & i_wb_stb & ~i_wb_adr[2];
+	wire dat_sel = i_wb_cyc & i_wb_stb &  i_wb_adr[2];
 
 	wire        reg_dat_wait;
 	wire [31:0] reg_div_do;
 	wire [31:0] reg_dat_do;
 
 	assign o_wb_ack  = div_sel | (dat_sel & ~reg_dat_wait);
-	assign o_wb_data = div_sel ? reg_div_do : reg_dat_do;
+	assign o_wb_dat = div_sel ? reg_div_do : reg_dat_do;
 
 	simpleuart simpleuart_i (
 		.clk    (clk),
@@ -47,12 +47,12 @@ module wb_uart (
 		.ser_rx (ser_rx),
 
 		.reg_div_we  (div_sel & o_wb_ack & i_wb_we ? i_wb_sel : 4'b0000),
-		.reg_div_di  (i_wb_data),
+		.reg_div_di  (i_wb_dat),
 		.reg_div_do  (reg_div_do),
 
 		.reg_dat_we  (dat_sel & o_wb_ack & i_wb_we),
 		.reg_dat_re  (dat_sel & o_wb_ack & ~i_wb_we),
-		.reg_dat_di  (i_wb_data),
+		.reg_dat_di  (i_wb_dat),
 		.reg_dat_do  (reg_dat_do),
 		.reg_dat_wait(reg_dat_wait)
 	);

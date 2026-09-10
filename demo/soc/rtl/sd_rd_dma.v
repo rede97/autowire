@@ -14,8 +14,8 @@
 //   0x4 STATUS bit0: busy (RO), bit1: done (RW, write 1 clears)
 //   0x8 SRC    Wishbone byte address to read (first/only beat address)
 //
-// o_irq mirrors the sticky done flag.
-// Master port names follow picorv32_wb so both share one connect template.
+// Slave CSR uses i_wb_adr/dat (bus-aligned); master follows picorv32_wb (wbm_*)
+// so both share one connect template (wb_slv / wb_mst).
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -28,11 +28,11 @@ module sd_rd_dma (
 	input  wire        i_wb_cyc,
 	input  wire        i_wb_stb,
 	input  wire        i_wb_we,
-	input  wire [31:0] i_wb_addr,
-	input  wire [31:0] i_wb_data,
+	input  wire [31:0] i_wb_adr,
+	input  wire [31:0] i_wb_dat,
 	input  wire [3:0]  i_wb_sel,
 	output reg         o_wb_ack,
-	output reg  [31:0] o_wb_data,
+	output reg  [31:0] o_wb_dat,
 
 	// Wishbone master: FIFO reads (classic cycle, one beat in flight)
 	output reg         wbm_cyc_o,
@@ -69,8 +69,8 @@ module sd_rd_dma (
 
 	wire slv_sel = i_wb_cyc & i_wb_stb;
 	wire wr_en = slv_sel & i_wb_we & ~o_wb_ack;
-	wire wr_start = wr_en & (i_wb_addr[3:2] == 2'd0) & i_wb_data[0];
-	wire wr_done_clr = wr_en & (i_wb_addr[3:2] == 2'd1) & i_wb_data[1];
+	wire wr_start = wr_en & (i_wb_adr[3:2] == 2'd0) & i_wb_dat[0];
+	wire wr_done_clr = wr_en & (i_wb_adr[3:2] == 2'd1) & i_wb_dat[1];
 
 	// ------------------------------------------------------------
 	// Slave register file
@@ -78,28 +78,28 @@ module sd_rd_dma (
 	always @(posedge clk) begin
 		if (!rst_n) begin
 			o_wb_ack  <= 1'b0;
-			o_wb_data <= 32'h0;
+			o_wb_dat <= 32'h0;
 			src_addr  <= 32'h0;
 			length    <= 32'h0;
 			src_inc   <= 1'b0;
 		end else begin
 			o_wb_ack <= slv_sel & ~o_wb_ack;
 			if (wr_en) begin
-				case (i_wb_addr[3:2])
-					2'd2: src_addr <= i_wb_data;
-					2'd3: length   <= i_wb_data;
+				case (i_wb_adr[3:2])
+					2'd2: src_addr <= i_wb_dat;
+					2'd3: length   <= i_wb_dat;
 					default: ;
 				endcase
 			end
-			case (i_wb_addr[3:2])
-				2'd1: o_wb_data <= {30'h0, done, busy};
-				2'd2: o_wb_data <= src_addr;
-				2'd3: o_wb_data <= length;
-				default: o_wb_data <= 32'h0;
+			case (i_wb_adr[3:2])
+				2'd1: o_wb_dat <= {30'h0, done, busy};
+				2'd2: o_wb_dat <= src_addr;
+				2'd3: o_wb_dat <= length;
+				default: o_wb_dat <= 32'h0;
 			endcase
 
-			if (wr_en && i_wb_addr[3:2] == 2'd0)
-				src_inc <= i_wb_data[1];
+			if (wr_en && i_wb_adr[3:2] == 2'd0)
+				src_inc <= i_wb_dat[1];
 		end
 	end
 

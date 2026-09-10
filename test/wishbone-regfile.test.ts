@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sha256_wb } from "../demo/soc/regs/sha256_wb.ts";
+import { sha256_0, sha256_1 } from "../demo/soc/regs/sha256_wb.ts";
 import {
 	smoke_block_wide,
 	smoke_rc,
@@ -55,8 +55,10 @@ describe("wishbone-regfile", () => {
 		expect(sv).toContain("ext_data_ready");
 		expect(sv).toContain("rwe_stall_ext_data");
 		expect(sv).toContain(
-			"o_wb_ack = i_wb_cyc && i_wb_stb && hit && !rwe_stall_ext_data",
+			"sub_module_a_o_wb_ack = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb && hit && !rwe_stall_ext_data",
 		);
+		expect(sv).toContain("sub_module_a_i_wb_cyc");
+		expect(sv).toContain("sub_module_a_o_wb_ack");
 		expect(sv).not.toContain("o_enable");
 		expect(sv).not.toContain("i_busy");
 	});
@@ -65,8 +67,8 @@ describe("wishbone-regfile", () => {
 		const sv = emitRegfileSv(layoutRegfile(sub_module_b));
 		// port_align: dir / logic / packed; names share one column
 		expect(sv).toContain("\tinput  logic        i_clk,");
-		expect(sv).toContain("\tinput  logic [15:0] i_wb_adr,");
-		expect(sv).toContain("\toutput logic [31:0] o_wb_dat");
+		expect(sv).toContain("\tinput  logic [15:0] sub_module_b_i_wb_adr,");
+		expect(sv).toContain("\toutput logic [31:0] sub_module_b_o_wb_dat");
 		// signal_align: packed column; names share one column
 		expect(sv).toContain("\tlogic        hit;");
 		expect(sv).toContain("\tlogic [31:0] rd_data;");
@@ -75,8 +77,10 @@ describe("wishbone-regfile", () => {
 	test("emit includes module and same-cycle ack", () => {
 		const sv = emitRegfileSv(layoutRegfile(sub_module_b));
 		expect(sv).toContain("module sub_module_b_regfile");
-		expect(sv).toContain("o_wb_ack");
-		expect(sv).toContain("i_wb_cyc && i_wb_stb && hit");
+		expect(sv).toContain("sub_module_b_o_wb_ack");
+		expect(sv).toContain(
+			"sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb && hit",
+		);
 		expect(sv).toContain("16'h1");
 	});
 
@@ -180,7 +184,10 @@ describe("wishbone-regfile smoke features", () => {
 		},
 		{ def: smoke_w1p, must: ["p_rg_go"] },
 		{ def: smoke_w1c, must: ["c_rg_sticky"] },
-		{ def: smoke_shadow, must: ["i_wb_tga", "o_bank_sel", "rg_cfg_q"] },
+		{
+			def: smoke_shadow,
+			must: ["smoke_shadow_i_wb_tga", "o_bank_sel", "rg_cfg_q"],
+		},
 		{ def: smoke_block_wide, must: ["rg_key_0", "rg_key_1", "rg_key_2"] },
 	];
 
@@ -190,7 +197,9 @@ describe("wishbone-regfile smoke features", () => {
 			expect(laid.cells.length).toBeGreaterThan(0);
 			const sv = emitRegfileSv(laid);
 			expect(sv).toContain(`module ${def.name.toLowerCase()}_regfile`);
-			expect(sv).toContain("o_wb_ack = i_wb_cyc && i_wb_stb && hit");
+			expect(sv).toContain(
+				`${def.name}_o_wb_ack = ${def.name}_i_wb_cyc && ${def.name}_i_wb_stb && hit`,
+			);
 			for (const s of must) expect(sv).toContain(s);
 		});
 	}
@@ -228,8 +237,8 @@ ts = "${smoke.replaceAll("\\", "/")}"
 });
 
 describe("wishbone-regfile demo/soc sha256", () => {
-	test("sha256_wb layout matches legacy CTRL + HASH0..7 map", () => {
-		const laid = layoutRegfile(sha256_wb);
+	test("sha256_0 layout matches legacy CTRL + HASH0..7 map", () => {
+		const laid = layoutRegfile(sha256_0);
 		expect(laid.cells.map((c) => c.byte_offset)).toEqual([
 			0, 4, 8, 12, 16, 20, 24, 28, 32,
 		]);
@@ -238,23 +247,27 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		expect(ctrl?.fields.map((f) => f.bit_offset)).toEqual([0, 1, 8, 9]);
 	});
 
-	test("sha256_wb emit has Access prefixes and same-cycle ACK", () => {
-		const sv = emitRegfileSv(layoutRegfile(sha256_wb));
-		expect(sv).toContain("module sha256_wb_regfile");
+	test("sha256_0 emit has Access prefixes and same-cycle ACK", () => {
+		const sv = emitRegfileSv(layoutRegfile(sha256_0));
+		expect(sv).toContain("module sha256_0_regfile");
 		expect(sv).toContain("rg_soft_reset");
 		expect(sv).toContain("p_rg_done_clear");
 		expect(sv).toContain("ro_busy");
 		expect(sv).toContain("ro_done");
 		expect(sv).toContain("ro_hash7");
-		expect(sv).toContain("o_wb_ack = i_wb_cyc && i_wb_stb && hit");
+		expect(sv).toContain(
+			"sha256_0_o_wb_ack = sha256_0_i_wb_cyc && sha256_0_i_wb_stb && hit",
+		);
 	});
 
-	test("demo/soc toml generates sha256_wb_regfile", async () => {
+	test("demo/soc toml generates sha256_0/1_regfile", async () => {
 		const ws = await loadWorkspace(
 			join(import.meta.dir, "..", "demo", "soc", "autowire.toml"),
 		);
 		expect(ws.regfileSources.some((s) => s.id === "sha256")).toBe(true);
 		const paths = await generateAll(ws, ws.regfileSources);
-		expect(paths.some((p) => p.endsWith("sha256_wb_regfile.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("sha256_0_regfile.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("sha256_1_regfile.sv"))).toBe(true);
+		expect(sha256_1.name).toBe("sha256_1");
 	});
 });

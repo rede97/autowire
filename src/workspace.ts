@@ -64,6 +64,8 @@ export interface WorkspaceConfig {
 	simUnits: ConnectUnit[];
 	/** Type-A wishbone-regfile SoT sources ([regfile.<source_id>] ts=) */
 	regfileSources: RegfileSource[];
+	/** Type-A wishbone-bus SoT sources ([bus.<source_id>] ts=) */
+	busSources: BusSource[];
 	/** Optional Excel workbook path ([plugins.regfile] export); docs only for now */
 	regfileExcelExport: string | null;
 }
@@ -89,6 +91,15 @@ export interface RegfileSource {
 	/**
 	 * Export names to generate; null/omit = every export that is a RegfileDef.
 	 */
+	exports: string[] | null;
+}
+
+/**
+ * One [bus.<source_id>] entry — SoT .ts exporting BusDef (wishbone-bus).
+ */
+export interface BusSource {
+	id: string;
+	ts: string;
 	exports: string[] | null;
 }
 
@@ -323,6 +334,8 @@ export async function loadWorkspace(
 	assertUnitDepsDag([...connectUnits, ...simUnits]);
 	const regfile = isObj(doc.regfile) ? doc.regfile : {};
 	const regfileSources = parseRegfileSources(regfile, rel);
+	const bus = isObj(doc.bus) ? doc.bus : {};
+	const busSources = parseBusSources(bus, rel);
 	const plugins = isObj(doc.plugins) ? doc.plugins : {};
 	const pluginsRegfile = isObj(plugins.regfile) ? plugins.regfile : {};
 	let regfileExcelExport: string | null = null;
@@ -368,6 +381,7 @@ export async function loadWorkspace(
 		connectUnits,
 		simUnits,
 		regfileSources,
+		busSources,
 		regfileExcelExport,
 	};
 }
@@ -408,6 +422,43 @@ function parseRegfileSources(
 				if (typeof e !== "string" || e.length === 0) {
 					throw new Error(
 						`autowire.toml: [regfile.${id}] exports entries must be non-empty strings`,
+					);
+				}
+				exports.push(e);
+			}
+		}
+		out.push({ id, ts: rel(raw.ts), exports });
+	}
+	out.sort((a, b) => a.id.localeCompare(b.id));
+	return out;
+}
+
+function parseBusSources(
+	table: Record<string, unknown>,
+	rel: (p: string) => string,
+): BusSource[] {
+	const out: BusSource[] = [];
+	for (const [id, raw] of Object.entries(table)) {
+		if (!isObj(raw)) {
+			throw new Error(`autowire.toml: [bus.${id}] must be a table`);
+		}
+		if (typeof raw.ts !== "string" || raw.ts.length === 0) {
+			throw new Error(
+				`autowire.toml: [bus.${id}] ts= is required (path to SoT .ts)`,
+			);
+		}
+		let exports: string[] | null = null;
+		if (raw.exports !== undefined) {
+			if (!Array.isArray(raw.exports) || raw.exports.length === 0) {
+				throw new Error(
+					`autowire.toml: [bus.${id}] exports must be a non-empty string array`,
+				);
+			}
+			exports = [];
+			for (const e of raw.exports) {
+				if (typeof e !== "string" || e.length === 0) {
+					throw new Error(
+						`autowire.toml: [bus.${id}] exports entries must be non-empty strings`,
 					);
 				}
 				exports.push(e);

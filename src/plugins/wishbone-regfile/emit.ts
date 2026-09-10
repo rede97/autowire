@@ -37,6 +37,11 @@ function packedRange(width: number): string {
 	return width > 1 ? `[${width - 1}:0]` : "";
 }
 
+/** Named Wishbone port: `{table}_i_wb_cyc` / `{table}_o_wb_ack` (leaf ↔ interconnect). */
+function wbPortName(table: string, stem: string): string {
+	return `${table}_${stem}`;
+}
+
 type PortDecl = {
 	dir: "input" | "output";
 	packed: string;
@@ -199,6 +204,8 @@ function fieldSidebandComment(
 
 function collectPorts(laid: LaidRegfile): PortDecl[] {
 	const { def, cells, shadows, tga_width } = laid;
+	const t = def.name;
+	const wb = (stem: string) => wbPortName(t, stem);
 	const ports: PortDecl[] = [
 		{
 			dir: "input",
@@ -215,37 +222,37 @@ function collectPorts(laid: LaidRegfile): PortDecl[] {
 		{
 			dir: "input",
 			packed: "",
-			name: "i_wb_cyc",
-			comment: `Wishbone classic slave\n${wbPortComment("i_wb_cyc")}`,
+			name: wb("i_wb_cyc"),
+			comment: `Wishbone classic slave (${t})\n${wbPortComment("i_wb_cyc")}`,
 		},
 		{
 			dir: "input",
 			packed: "",
-			name: "i_wb_stb",
+			name: wb("i_wb_stb"),
 			comment: wbPortComment("i_wb_stb"),
 		},
 		{
 			dir: "input",
 			packed: "",
-			name: "i_wb_we",
+			name: wb("i_wb_we"),
 			comment: wbPortComment("i_wb_we"),
 		},
 		{
 			dir: "input",
 			packed: packedRange(def.addr_width),
-			name: "i_wb_adr",
+			name: wb("i_wb_adr"),
 			comment: wbPortComment("i_wb_adr"),
 		},
 		{
 			dir: "input",
 			packed: "[31:0]",
-			name: "i_wb_dat",
+			name: wb("i_wb_dat"),
 			comment: wbPortComment("i_wb_dat"),
 		},
 		{
 			dir: "input",
 			packed: "[3:0]",
-			name: "i_wb_sel",
+			name: wb("i_wb_sel"),
 			comment: wbPortComment("i_wb_sel"),
 		},
 	];
@@ -253,7 +260,7 @@ function collectPorts(laid: LaidRegfile): PortDecl[] {
 		ports.push({
 			dir: "input",
 			packed: packedRange(tga_width),
-			name: "i_wb_tga",
+			name: wb("i_wb_tga"),
 			comment: wbPortComment("i_wb_tga"),
 		});
 	}
@@ -261,13 +268,13 @@ function collectPorts(laid: LaidRegfile): PortDecl[] {
 		{
 			dir: "output",
 			packed: "",
-			name: "o_wb_ack",
+			name: wb("o_wb_ack"),
 			comment: wbPortComment("o_wb_ack"),
 		},
 		{
 			dir: "output",
 			packed: "[31:0]",
-			name: "o_wb_dat",
+			name: wb("o_wb_dat"),
 			comment: wbPortComment("o_wb_dat"),
 		},
 	);
@@ -424,6 +431,15 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	const mod = `${def.name.toLowerCase()}_regfile`;
 	const ports = collectPorts(laid);
 	const aw = def.addr_width;
+	const wb = (stem: string) => wbPortName(def.name, stem);
+	const i_wb_cyc = wb("i_wb_cyc");
+	const i_wb_stb = wb("i_wb_stb");
+	const i_wb_we = wb("i_wb_we");
+	const i_wb_adr = wb("i_wb_adr");
+	const i_wb_dat = wb("i_wb_dat");
+	const i_wb_tga = wb("i_wb_tga");
+	const o_wb_ack = wb("o_wb_ack");
+	const o_wb_dat = wb("o_wb_dat");
 
 	const sigs: SigDecl[] = [
 		{ packed: "", name: "hit" },
@@ -521,7 +537,7 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 		const word = c.byte_offset >>> 2;
 		out.push(...fieldMapComment(c, commentPads));
 		out.push(
-			`\tassign addr_hit_${hex(c.byte_offset)} = (i_wb_adr[${aw - 1}:2] == ${aw - 2}'d${word});`,
+			`\tassign addr_hit_${hex(c.byte_offset)} = (${i_wb_adr}[${aw - 1}:2] == ${aw - 2}'d${word});`,
 		);
 	}
 
@@ -530,8 +546,8 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 		"\tassign hit = |{",
 		cells.map((c) => `\t\taddr_hit_${hex(c.byte_offset)}`).join(",\n"),
 		"\t};",
-		"\tassign wr_fire = i_wb_cyc && i_wb_stb &&  i_wb_we;",
-		"\tassign rd_fire = i_wb_cyc && i_wb_stb && ~i_wb_we;",
+		`\tassign wr_fire = ${i_wb_cyc} && ${i_wb_stb} &&  ${i_wb_we};`,
+		`\tassign rd_fire = ${i_wb_cyc} && ${i_wb_stb} && ~${i_wb_we};`,
 		"",
 	);
 
@@ -549,7 +565,7 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	for (const s of shadows) {
 		const { hi, lo } = parseTag(s.tag_bits);
 		const mw = s.copies;
-		out.push(`\tassign raw_${s.name} = i_wb_tga[${hi}:${lo}];`);
+		out.push(`\tassign raw_${s.name} = ${i_wb_tga}[${hi}:${lo}];`);
 		out.push("\talways_comb begin");
 		out.push(`\t\tmask_${s.name} = ${mw}'h0;`);
 		if (!s.remaps || Object.keys(s.remaps).length === 0) {
@@ -578,12 +594,20 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 		out.push(...fieldMapComment(c, commentPads));
 		const sh = c.shadow ? shadowByName(shadows, c.shadow) : undefined;
 		for (const lf of c.fields) {
-			emitFieldStorage(out, c, lf, sh, def.read_write_block, commentPads);
+			emitFieldStorage(
+				out,
+				c,
+				lf,
+				sh,
+				def.read_write_block,
+				commentPads,
+				i_wb_dat,
+			);
 		}
 		out.push("");
 	}
 
-	out.push(...section("5. Read mux → o_wb_dat / ACK"));
+	out.push(...section(`5. Read mux → ${o_wb_dat} / ACK`));
 	out.push("\talways_comb begin");
 	out.push("\t\trd_data = 32'h0;");
 	out.push("\t\tunique case (1'b1)");
@@ -604,22 +628,22 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	out.push("");
 
 	if (rweStalls.length === 0) {
-		out.push("\tassign o_wb_ack = i_wb_cyc && i_wb_stb && hit;");
+		out.push(`\tassign ${o_wb_ack} = ${i_wb_cyc} && ${i_wb_stb} && hit;`);
 	} else if (rweStalls.length === 1) {
 		const only = rweStalls[0];
 		if (only) {
 			out.push(
-				`\tassign o_wb_ack = i_wb_cyc && i_wb_stb && hit && !rwe_stall_${only.stem};`,
+				`\tassign ${o_wb_ack} = ${i_wb_cyc} && ${i_wb_stb} && hit && !rwe_stall_${only.stem};`,
 			);
 		}
 	} else {
 		out.push(
 			"\t// Merge per-RWE stalls (each folded next to its field sideband)",
 			`\tassign rwe_stall = ${rweStalls.map((s) => `rwe_stall_${s.stem}`).join(" | ")};`,
-			"\tassign o_wb_ack = i_wb_cyc && i_wb_stb && hit && !rwe_stall;",
+			`\tassign ${o_wb_ack} = ${i_wb_cyc} && ${i_wb_stb} && hit && !rwe_stall;`,
 		);
 	}
-	out.push("\tassign o_wb_dat = rd_data;");
+	out.push(`\tassign ${o_wb_dat} = rd_data;`);
 	out.push("");
 	out.push("endmodule");
 	out.push("");
@@ -670,6 +694,7 @@ function emitFieldStorage(
 	sh: RegShadow | undefined,
 	read_write_block: boolean,
 	pads: FieldCommentPads,
+	i_wb_dat: string,
 ): void {
 	const f = lf.field;
 	const hi = lf.bit_offset + f.width - 1;
@@ -683,7 +708,7 @@ function emitFieldStorage(
 	const stem = sidebandStem(f);
 	out.push(`\t// ${fieldInlineComment(lf, pads)}`);
 	if (f.access === Access.RWE) {
-		out.push(`\tassign ${stem}_wdata = i_wb_dat[${hi}:${lo}];`);
+		out.push(`\tassign ${stem}_wdata = ${i_wb_dat}[${hi}:${lo}];`);
 		out.push(`\tassign ${stem}_wren  = ${wr};`);
 		out.push(`\tassign ${stem}_rden  = ${rd};`);
 		out.push(`\tassign ${stem}_rst   = ~i_rst_n;`);
@@ -699,7 +724,7 @@ function emitFieldStorage(
 		out.push("\talways_ff @(posedge i_clk or negedge i_rst_n) begin");
 		out.push(`\t\tif (!i_rst_n) ${stem} <= ${f.width}'h0;`);
 		out.push(
-			`\t\telse ${stem} <= ${wr} ? i_wb_dat[${hi}:${lo}] : ${f.width}'h0;`,
+			`\t\telse ${stem} <= ${wr} ? ${i_wb_dat}[${hi}:${lo}] : ${f.width}'h0;`,
 		);
 		out.push("\tend");
 		return;
@@ -726,7 +751,7 @@ function emitFieldStorage(
 			out.push(`\t\t\tif (${wr}) begin`);
 			out.push(`\t\t\t\tfor (int __c = 0; __c < ${ncopy}; __c++) begin`);
 			out.push(
-				`\t\t\t\t\tif (mask_${sh.name}[__c]) ${stem}_q[__c] <= ${stem}_q[__c] & ~i_wb_dat[${hi}:${lo}];`,
+				`\t\t\t\t\tif (mask_${sh.name}[__c]) ${stem}_q[__c] <= ${stem}_q[__c] & ~${i_wb_dat}[${hi}:${lo}];`,
 			);
 			out.push("\t\t\t\tend");
 			out.push("\t\t\tend");
@@ -734,7 +759,7 @@ function emitFieldStorage(
 			out.push(`\t\t\tif (${wr}) begin`);
 			out.push(`\t\t\t\tfor (int __c = 0; __c < ${ncopy}; __c++) begin`);
 			out.push(
-				`\t\t\t\t\tif (mask_${sh.name}[__c]) ${stem}_q[__c] <= i_wb_dat[${hi}:${lo}];`,
+				`\t\t\t\t\tif (mask_${sh.name}[__c]) ${stem}_q[__c] <= ${i_wb_dat}[${hi}:${lo}];`,
 			);
 			out.push("\t\t\t\tend");
 			out.push("\t\t\tend");
@@ -769,10 +794,10 @@ function emitFieldStorage(
 	);
 	if (f.access === Access.W1C) {
 		out.push(
-			`\t\telse if (${wr}) ${stem}_q <= ${stem}_q & ~i_wb_dat[${hi}:${lo}];`,
+			`\t\telse if (${wr}) ${stem}_q <= ${stem}_q & ~${i_wb_dat}[${hi}:${lo}];`,
 		);
 	} else {
-		out.push(`\t\telse if (${wr}) ${stem}_q <= i_wb_dat[${hi}:${lo}];`);
+		out.push(`\t\telse if (${wr}) ${stem}_q <= ${i_wb_dat}[${hi}:${lo}];`);
 		if (f.access === Access.RWW) {
 			out.push(`\t\telse if (${stem}_strb) ${stem}_q <= ${stem}_hwdata;`);
 		}
