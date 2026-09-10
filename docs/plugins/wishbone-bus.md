@@ -55,6 +55,7 @@
 3. **禁止** v1 端点使用 Pipelined `STALL`。  
 4. **禁止**再引入第二套 cfg 内核信号名。  
 5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
+6. **TGA 建模（已裁定）**：`Bus(..., { tagWidth? })` = fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）；`Slave(name, desc, base, mask, tag?)` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。启用时：decoder 出 `m_tga_i[tw-1:0]`；interconnect 出扁平 `m_tga_i[NM*tw-1:0]`（master slot 切片同 ADR）；仲裁 **必须** 随 grant 透传到 `g_tga`，decoder 对声明 `tag` 的 slave 出 `{slave}_i_wb_tga[tag-1:0] = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。
 
 ## 3. 长路径 pipe（register slice）
 

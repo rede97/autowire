@@ -7,6 +7,8 @@ export type WbSlave = {
 	/** Address mask: match when (adr & mask) == base. */
 	readonly mask: number;
 	readonly desc: string;
+	/** TGA width (bits) forwarded to this slave; omitted/0 = no TGA port. */
+	readonly tag?: number;
 };
 
 export type WbMaster = {
@@ -23,6 +25,8 @@ export type BusDef = {
 	readonly slaves: readonly WbSlave[];
 	/** Fabric ADR width (default 32). */
 	readonly addr_width: number;
+	/** Fabric TGA width in bits (0 = no TGA anywhere). */
+	readonly tag_width: number;
 };
 
 export function isBusDef(v: unknown): v is BusDef {
@@ -39,6 +43,7 @@ export function Slave(
 	desc: string,
 	base: number,
 	mask: number,
+	tag?: number,
 ): WbSlave {
 	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
 		throw new Error(`wishbone-bus: bad slave name "${name}"`);
@@ -49,7 +54,10 @@ export function Slave(
 	if (!Number.isInteger(mask) || mask < 0) {
 		throw new Error(`wishbone-bus: slave ${name} mask must be >= 0`);
 	}
-	return { name, desc, base, mask };
+	if (tag !== undefined && (!Number.isInteger(tag) || tag < 0)) {
+		throw new Error(`wishbone-bus: slave ${name} tag must be >= 0`);
+	}
+	return { name, desc, base, mask, ...(tag ? { tag } : {}) };
 }
 
 export function Master(name: string, desc: string): WbMaster {
@@ -66,6 +74,7 @@ export function Bus(
 		masters?: readonly WbMaster[];
 		slaves: readonly WbSlave[];
 		addrWidth?: number;
+		tagWidth?: number;
 	},
 ): BusDef {
 	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
@@ -87,6 +96,18 @@ export function Bus(
 	if (addr_width < 2 || addr_width > 64) {
 		throw new Error(`wishbone-bus: addr_width out of range`);
 	}
+	const tag_width =
+		opts.tagWidth ?? Math.max(0, ...slaves.map((s) => s.tag ?? 0));
+	if (!Number.isInteger(tag_width) || tag_width < 0) {
+		throw new Error(`wishbone-bus: tag_width must be an integer >= 0`);
+	}
+	for (const s of slaves) {
+		if ((s.tag ?? 0) > tag_width) {
+			throw new Error(
+				`wishbone-bus: slave ${s.name} tag exceeds bus tag width`,
+			);
+		}
+	}
 	return {
 		kind: "wishbone-bus",
 		name,
@@ -94,5 +115,6 @@ export function Bus(
 		masters,
 		slaves,
 		addr_width,
+		tag_width,
 	};
 }
