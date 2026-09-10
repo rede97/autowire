@@ -43,12 +43,14 @@ IP 源码就位（submodule / vendored 目录）
   - 基础：`./sim/verilator/run.sh` → `fw/basic_smoke`：① SRAM 64×0 软填充→DMA0→SHA0；② Flash XIP `0x0100_1000` 划区 KAT（同旧 `gen_firmware.py` 向量）→DMA0（`src_inc`）→SHA0。
   - SD：`./sim/verilator/run.sh --sd` → `fw/sd_sha256` + GPL-3 `third_party/sdspisim` + `images/zeros_sha.img`。
   - GPL 边界：`sdspisim` 只进 Verilator C++ harness；固件侧用 MIT `fw/common/sdspi_regs.h`。
-- **遗留（非门禁）**：`sim/gen_firmware.py` + `sim/run_smoke.sh`（iverilog 迷你汇编器）；`sim/run_fw_zeros.sh` 已转发到 Verilator。
+- **遗留（非门禁，但须可跑）**：`sim/gen_firmware.py` + `sim/run_smoke.sh`（iverilog 迷你汇编器）——脚本会**先重跑 `plugin generate all`** 并把 `gen/plugins/**` 编入 filelist；tb 层级探针以 `gen/connect` 当前例化名（`u_sha256_0_core.u_regs` / `u_sram.mem`）为准；`sim/run_fw_zeros.sh` 已转发到 Verilator。
+- **Verilator 构建依赖**：`sim/verilator/Makefile` 把 `filelist.f` 里的 RTL 全部列进目标依赖——改叶子/生成物后 **不必** 手清 `obj_dir`（脏二进制曾静默跑旧 RTL）。
 - C 固件 SoT 是 **`.c` + Makefile**，不是手改 hex；hex 为构建产物（`fw/**/build/` gitignore）。
 - 仿真 SRAM 上电为 **X**：消息缓冲必须由固件显式清零/写入，不能假设上电为 0。
 - 已知答案测试（KAT）：`hashlib` / IP bench 向量；寄存器侧为 **每 32-bit 字字节反序**（与 `gen_firmware.py` 一致）。
 - **阴性控制必须做**：改 1 字节消息 → 必须 FAIL。
 - TB 观测：`test_valid/test_data`；pass=`0x600d600d` / fail=`0xdead0001` / alive=`0x1`。
+- 生成后验收路径：改插件生成器 → `plugin generate all` → `analysis` → web dump（`?dump=1`）→ `./sim/verilator/run.sh --regfile`（regfile 全 Access + SEL + shadow bank 覆盖）+ `./sim/run_smoke.sh`（iverilog 全 SoC 精编）。
 
 ## 4. MCP 调试回路（已落地的官方路径）
 

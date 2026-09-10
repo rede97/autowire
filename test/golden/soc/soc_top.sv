@@ -42,6 +42,7 @@ module soc_top (
 	wire  [95:0] ic_m_rdata;
 	wire  [11:0] ic_m_sel;
 	wire  [31:0] irq_bus;
+	wire  [5:0]  ic_m_tga;
 	logic [31:0] sram_o_wb_dat;
 	logic        sram_o_wb_ack;
 	logic [31:0] flash_xip_o_wb_dat;
@@ -135,6 +136,7 @@ module soc_top (
 	logic [31:0] smoke_i_wb_adr;
 	logic [31:0] smoke_i_wb_dat;
 	logic [3:0]  smoke_i_wb_sel;
+	logic [1:0]  smoke_i_wb_tga;
 	logic        smoke_i_wb_cyc;
 	logic        smoke_i_wb_stb;
 	logic        smoke_i_wb_we;
@@ -171,6 +173,7 @@ module soc_top (
 	logic [31:0] sha256_1_ro_hash7;
 	logic        sha256_1_rg_soft_reset;
 	logic        sha256_1_p_rg_done_clear;
+	logic        p_rg_go;
 	logic        ro_busy;
 	logic [7:0]  ro_code;
 	logic        rg_capture_strb;
@@ -179,8 +182,10 @@ module soc_top (
 	logic        ext_data_ready;
 	logic [31:0] ext_data_wdata;
 	logic        ext_data_wren;
+	logic [3:0]  ext_data_wstrb;
 	logic        ext_data_rden;
 	logic        ext_data_rst;
+	logic [1:0]  rg_bank_sel;
 
 	soc_reset u_rst (
 		.clk    (clk),
@@ -230,6 +235,7 @@ module soc_top (
 		.m_adr_i           (ic_m_adr),
 		.m_dat_i           (ic_m_wdata),
 		.m_sel_i           (ic_m_sel),
+		.m_tga_i           (ic_m_tga),
 		.m_cyc_i           (ic_m_cyc),
 		.m_stb_i           (ic_m_stb),
 		.m_we_i            (ic_m_we),
@@ -328,6 +334,7 @@ module soc_top (
 		.smoke_i_wb_adr    (smoke_i_wb_adr),
 		.smoke_i_wb_dat    (smoke_i_wb_dat),
 		.smoke_i_wb_sel    (smoke_i_wb_sel),
+		.smoke_i_wb_tga    (smoke_i_wb_tga),
 		.smoke_i_wb_cyc    (smoke_i_wb_cyc),
 		.smoke_i_wb_stb    (smoke_i_wb_stb),
 		.smoke_i_wb_we     (smoke_i_wb_we)
@@ -600,13 +607,14 @@ module soc_top (
 		.smoke_i_wb_adr   (smoke_i_wb_adr),
 		.smoke_i_wb_dat   (smoke_i_wb_dat),
 		.smoke_i_wb_sel   (smoke_i_wb_sel),
-		.smoke_i_wb_tga   (2'b00),
+		.smoke_i_wb_tga   (smoke_i_wb_tga),
 		.ro_busy          (ro_busy),
 		.ro_code          (ro_code),
 		.rg_capture_strb  (rg_capture_strb),
 		.rg_capture_hwdata(rg_capture_hwdata),
 		.ext_data         (ext_data),
 		.ext_data_ready   (ext_data_ready),
+		.c_rg_sticky_set  (p_rg_go),
 		.smoke_o_wb_ack   (smoke_o_wb_ack),
 		.smoke_o_wb_dat   (smoke_o_wb_dat),
 		.rg_enable        (),
@@ -614,12 +622,14 @@ module soc_top (
 		.rg_capture       (),
 		.ext_data_wdata   (ext_data_wdata),
 		.ext_data_wren    (ext_data_wren),
+		.ext_data_wstrb   (ext_data_wstrb),
 		.ext_data_rden    (ext_data_rden),
 		.ext_data_rst     (ext_data_rst),
-		.p_rg_go          (),
+		.p_rg_go          (p_rg_go),
 		.c_rg_sticky      (),
 		.rg_cfg           (),
 		.o_bank_sel       (),
+		.rg_bank_sel      (rg_bank_sel),
 		.rg_key_0         (),
 		.rg_key_1         (),
 		.rg_key_2         ()
@@ -628,15 +638,18 @@ module soc_top (
 		.clk              (clk),
 		.rst_n            (rst_ni),
 		.ext_data_wdata   (ext_data_wdata),
+		.ext_data_wstrb   (ext_data_wstrb),
 		.ext_data_wren    (ext_data_wren),
 		.ext_data_rden    (ext_data_rden),
 		.ext_data_rst     (ext_data_rst),
+		.rg_bank_sel      (rg_bank_sel),
 		.ro_busy          (ro_busy),
 		.ro_code          (ro_code),
 		.rg_capture_strb  (rg_capture_strb),
 		.rg_capture_hwdata(rg_capture_hwdata),
 		.ext_data         (ext_data),
-		.ext_data_ready   (ext_data_ready)
+		.ext_data_ready   (ext_data_ready),
+		.ic_m_tga         (ic_m_tga)
 	);
 	soc_irqmerge u_irq (
 		.i_ints(irq_srcs),

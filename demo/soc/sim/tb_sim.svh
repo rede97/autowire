@@ -21,15 +21,15 @@ always @(posedge clk) begin
 		if (test_data === 32'hdead0001) begin
 			$display("FAIL: sha256 digest mismatch");
 			$display("actual: %08x %08x %08x %08x %08x %08x %08x %08x",
-				u_dut.u_sha_9.u_regs.i_hash0, u_dut.u_sha_9.u_regs.i_hash1,
-				u_dut.u_sha_9.u_regs.i_hash2, u_dut.u_sha_9.u_regs.i_hash3,
-				u_dut.u_sha_9.u_regs.i_hash4, u_dut.u_sha_9.u_regs.i_hash5,
-				u_dut.u_sha_9.u_regs.i_hash6, u_dut.u_sha_9.u_regs.i_hash7);
+				u_dut.u_sha256_0_core.u_regs.i_hash0, u_dut.u_sha256_0_core.u_regs.i_hash1,
+				u_dut.u_sha256_0_core.u_regs.i_hash2, u_dut.u_sha256_0_core.u_regs.i_hash3,
+				u_dut.u_sha256_0_core.u_regs.i_hash4, u_dut.u_sha256_0_core.u_regs.i_hash5,
+				u_dut.u_sha256_0_core.u_regs.i_hash6, u_dut.u_sha256_0_core.u_regs.i_hash7);
 			$display("sram: %08x %08x %08x %08x %08x %08x %08x %08x",
-				u_dut.u_ram_0.mem[64], u_dut.u_ram_0.mem[65],
-				u_dut.u_ram_0.mem[66], u_dut.u_ram_0.mem[67],
-				u_dut.u_ram_0.mem[68], u_dut.u_ram_0.mem[69],
-				u_dut.u_ram_0.mem[70], u_dut.u_ram_0.mem[71]);
+				u_dut.u_sram.mem[64], u_dut.u_sram.mem[65],
+				u_dut.u_sram.mem[66], u_dut.u_sram.mem[67],
+				u_dut.u_sram.mem[68], u_dut.u_sram.mem[69],
+				u_dut.u_sram.mem[70], u_dut.u_sram.mem[71]);
 			$finish;
 		end
 		if (test_data === 32'h600d600d) begin

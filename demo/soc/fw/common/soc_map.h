@@ -41,6 +41,7 @@
 #define SMOKE_KEY0     0x020u
 #define SMOKE_KEY1     0x024u
 #define SMOKE_KEY2     0x028u
+#define SMOKE_BANKSEL  0x02cu
 
 #define SMOKE_CFG_ENABLE (1u << 0)
 #define SMOKE_CFG_MODE_SHIFT 8
@@ -59,4 +60,9 @@ static inline void mmio_write(uint32_t addr, uint32_t val)
 static inline uint32_t mmio_read(uint32_t addr)
 {
 	return *(volatile uint32_t *)(uintptr_t)addr;
+}
+
+static inline void mmio_write8(uint32_t addr, uint8_t val)
+{
+	*(volatile uint8_t *)(uintptr_t)addr = val;
 }

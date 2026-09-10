@@ -82,6 +82,9 @@ export const smoke = Regfile(
 				}),
 			],
 		),
+		Cell("BANKSEL", "Shadow bank select (drives fabric TGA)", CellDefault.offset(0x02c), [
+			Field("bank_sel", Access.RW, 2, "Shadow bank for WB accesses").reset(0),
+		]),
 		Block("key", "Wide key", BlockDefault.offset(0x020).byteAlign(4), [
 			Field("key", Access.RW, 96, "96-bit key").reset(0),
 		]),

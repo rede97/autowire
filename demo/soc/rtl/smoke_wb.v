@@ -2,7 +2,8 @@
 //
 // smoke_wb.v — sideband glue for smoke_regfile (no Wishbone).
 // CSR leaf lives on soc_top next to the interconnect; this module only
-// drives RO/RWW/RWE sidebands (counter + 4-deep FIFO loopback).
+// drives RO/RWW/RWE sidebands (counter + 4-deep FIFO loopback) and the
+// fabric TGA concat (m0 cpu slice = rg_bank_sel CSR; dma slices tied 0).
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -21,11 +22,16 @@ module smoke_wb (
 
 	// RWE FIFO loopback
 	input  wire [31:0] ext_data_wdata,
+	input  wire [3:0]  ext_data_wstrb,
 	input  wire        ext_data_wren,
 	input  wire        ext_data_rden,
 	input  wire        ext_data_rst,
 	output wire [31:0] ext_data,
-	output wire        ext_data_ready
+	output wire        ext_data_ready,
+
+	// Shadow bank select -> fabric TGA
+	input  wire [1:0]  rg_bank_sel,
+	output wire [5:0]  ic_m_tga
 );
 
 	// --- RO status counter ---
@@ -39,26 +45,26 @@ module smoke_wb (
 	assign ro_busy = ro_cnt[8];
 	assign ro_code = ro_cnt[7:0];
 
-	// --- RWW HW counter (pulse strb every 16 cycles) ---
+	// --- RWW HW counter (pulse strb every 64 cycles; fw syncs to the edge) ---
 	reg [15:0] rww_cnt;
-	reg [3:0]  rww_div;
+	reg [5:0]  rww_div;
 	reg        rww_strb;
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			rww_cnt  <= 16'h0;
-			rww_div  <= 4'h0;
+			rww_div  <= 6'h0;
 			rww_strb <= 1'b0;
 		end else begin
-			rww_div  <= rww_div + 4'h1;
-			rww_strb <= (rww_div == 4'hf);
-			if (rww_div == 4'hf)
+			rww_div  <= rww_div + 6'h1;
+			rww_strb <= (rww_div == 6'h3f);
+			if (rww_div == 6'h3f)
 				rww_cnt <= rww_cnt + 16'h1;
 		end
 	end
 	assign rg_capture_strb   = rww_strb;
 	assign rg_capture_hwdata = rww_cnt;
 
-	// --- RWE 4-deep loopback FIFO ---
+	// --- RWE 4-deep loopback FIFO (per-lane writes via wstrb) ---
 	reg [31:0] fifo_mem [0:3];
 	reg [1:0]  fifo_wptr;
 	reg [1:0]  fifo_rptr;
@@ -79,11 +85,13 @@ module smoke_wb (
 		if (!rst_n || ext_data_rst) begin
 			fifo_wptr  <= 2'd0;
 			fifo_rptr  <= 2'd0;
-			fifo_count <= 3'd0;
 		end else begin
 			case ({fifo_push, fifo_pop})
 				2'b10: begin
-					fifo_mem[fifo_wptr] <= ext_data_wdata;
+					if (ext_data_wstrb[0]) fifo_mem[fifo_wptr][7:0]   <= ext_data_wdata[7:0];
+					if (ext_data_wstrb[1]) fifo_mem[fifo_wptr][15:8]  <= ext_data_wdata[15:8];
+					if (ext_data_wstrb[2]) fifo_mem[fifo_wptr][23:16] <= ext_data_wdata[23:16];
+					if (ext_data_wstrb[3]) fifo_mem[fifo_wptr][31:24] <= ext_data_wdata[31:24];
 					fifo_wptr  <= fifo_wptr + 2'd1;
 					fifo_count <= fifo_count + 3'd1;
 				end
@@ -92,7 +100,10 @@ module smoke_wb (
 					fifo_count <= fifo_count - 3'd1;
 				end
 				2'b11: begin
-					fifo_mem[fifo_wptr] <= ext_data_wdata;
+					if (ext_data_wstrb[0]) fifo_mem[fifo_wptr][7:0]   <= ext_data_wdata[7:0];
+					if (ext_data_wstrb[1]) fifo_mem[fifo_wptr][15:8]  <= ext_data_wdata[15:8];
+					if (ext_data_wstrb[2]) fifo_mem[fifo_wptr][23:16] <= ext_data_wdata[23:16];
+					if (ext_data_wstrb[3]) fifo_mem[fifo_wptr][31:24] <= ext_data_wdata[31:24];
 					fifo_wptr  <= fifo_wptr + 2'd1;
 					fifo_rptr  <= fifo_rptr + 2'd1;
 				end
@@ -100,6 +111,8 @@ module smoke_wb (
 			endcase
 		end
 	end
+
+	assign ic_m_tga = {4'b0000, rg_bank_sel};
 
 endmodule
 

@@ -28,7 +28,7 @@ export const soc_wb = Bus(
 			Slave("dma1", "sd_rd_dma CSR 1", 0x0300_3000, 0xffff_fff0),
 			Slave("sha256_0", "sha256wb lane 0", 0x0300_4000, 0xffff_ffc0),
 			Slave("sha256_1", "sha256wb lane 1", 0x0300_5000, 0xffff_ffc0),
-			Slave("smoke", "wishbone-regfile smoke", 0x0300_6000, 0xffff_f000),
+			Slave("smoke", "wishbone-regfile smoke (TGA 2 → shadow bank)", 0x0300_6000, 0xffff_f000, 2),
 		],
 	},
 );

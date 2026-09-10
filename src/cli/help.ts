@@ -95,12 +95,16 @@ Parallel (does not block connect)
     sheet empty = name; Excel book = plugins.regfile.export; toml ts= not html=;
     DAT=32 ADR=byte ACK=same-cycle (pipe on bus); addr_width required;
     WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
-    RWE o_<shadow>_sel + optional ext_<field>_ready;
+    SEL byte-masked writes (RW/RWW RMW, W1C/W1P masked); RWE ext_<field>_wstrb;
+    W1C c_rg_<field>_set hw set (set wins); RWW same-cycle SW > HW;
+    RWE o_<shadow>_sel (lowest set bit) + optional ext_<field>_ready;
     Access RC = ReadConst (reset= baked readback)
   Wishbone bus — implementing now (docs/plugins/wishbone-bus.md);
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
     NM>1 → interconnect (priority arb); demo/soc bus/soc_wb.ts → soc_wb_interconnect;
-    toml [bus.<source>] ts=; ADR=byte; pipe/arb policy still open
+    toml [bus.<source>] ts=; ADR=byte; fabric addr_width parametrized;
+    TGA: Bus tagWidth? / Slave tag? → m_tga_i, {slave}_i_wb_tga forwarded;
+    pipe/arb policy still open
 
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)

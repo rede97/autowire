@@ -42,8 +42,10 @@ endif
 
 all: $(OBJ_DIR)/V$(TOP)
 
-$(OBJ_DIR)/V$(TOP): $(VL_DIR)/filelist.f $(VL_DIR)/tb_soc_vl.sv $(VL_DIR)/spiflash_vl.sv $(SRCS)
-	@# RTL listed in filelist.f — clean obj_dir after leaf RTL edits
+# RTL sources from filelist.f (comments/blanks stripped) — rebuild on leaf edits.
+RTL_SRCS := $(shell grep -vE '^\s*(#|$$)' $(VL_DIR)/filelist.f | sed 's|^|$(SOC_ROOT)/|')
+
+$(OBJ_DIR)/V$(TOP): $(VL_DIR)/filelist.f $(VL_DIR)/tb_soc_vl.sv $(VL_DIR)/spiflash_vl.sv $(SRCS) $(RTL_SRCS)
 	cd $(SOC_ROOT) && $(VERILATOR) $(VL_FLAGS) \
 		-f $(VL_DIR)/filelist.f \
 		$(SRCS) \

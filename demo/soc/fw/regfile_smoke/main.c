@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 //
 // Wishbone-regfile SoC smoke (C):
-//   RC / RO / RW / RWW (SW + HW counter) / RWE FIFO loopback /
-//   W1P / W1C / shadow bank0 / wide key.
+//   RC / RO / RW (+SEL byte write) / RWW (SW + HW counter) / RWE FIFO loopback /
+//   W1P / W1C (HW set via p_rg_go) / shadow banks 0-3 via bank_sel TGA / wide key.
 
 #include "../common/soc_map.h"
 
@@ -63,10 +63,18 @@ int main(void)
 	expect_eq(smoke_rd(SMOKE_CFG) & 0x70fu,
 		SMOKE_CFG_ENABLE | (3u << SMOKE_CFG_MODE_SHIFT));
 
-	/* RWW: SW write then observe HW counter overwrite */
+	/* RW byte select: sb to lane1 (mode) must preserve lane0 (enable) */
+	mmio_write8(REGFILE_SMOKE_BASE + SMOKE_CFG + 1, 0x05u);
+	expect_eq(smoke_rd(SMOKE_CFG) & 0x70fu,
+		SMOKE_CFG_ENABLE | (5u << SMOKE_CFG_MODE_SHIFT));
+
+	/* RWW: sync to the HW strb edge, then SW write reads back inside one period */
+	v = smoke_rd(SMOKE_FEED) & 0xffffu;
+	while ((smoke_rd(SMOKE_FEED) & 0xffffu) == v)
+		;
 	smoke_wr(SMOKE_FEED, 0xabcd);
 	expect_eq(smoke_rd(SMOKE_FEED) & 0xffffu, 0xabcdu);
-	delay(64);
+	delay(80);
 	v = smoke_rd(SMOKE_FEED) & 0xffffu;
 	mmio_write(TESTOUT_ADDR, v);
 	if (v == 0xabcdu)
@@ -80,17 +88,29 @@ int main(void)
 	expect_eq(smoke_rd(SMOKE_FIFO), 0x22222222u);
 	expect_eq(smoke_rd(SMOKE_FIFO), 0x33333333u);
 
-	/* W1P: pulse go (must ACK; value reads as 0) */
+	/* W1P: pulse go (must ACK; value reads as 0).
+	   Wiring: c_rg_sticky_set = p_rg_go, so this also sets the W1C sticky */
 	smoke_wr(SMOKE_CMD, SMOKE_CMD_GO);
 	expect_eq(smoke_rd(SMOKE_CMD) & 1u, 0u);
 
-	/* W1C: sticky stays 0 after clear write */
+	/* W1C: go pulse set the sticky; write 1 clears it */
+	expect_eq(smoke_rd(SMOKE_IRQ) & 1u, 1u);
 	smoke_wr(SMOKE_IRQ, SMOKE_IRQ_STICKY);
 	expect_eq(smoke_rd(SMOKE_IRQ) & 1u, 0u);
 
-	/* Shadow bank0 (TGA tied 0): rewrite cfg */
+	/* Shadow banks: bank_sel CSR drives fabric TGA; per-copy reset defaults */
 	smoke_wr(SMOKE_BANK, 0x55u);
 	expect_eq(smoke_rd(SMOKE_BANK) & 0xffu, 0x55u);
+	smoke_wr(SMOKE_BANKSEL, 1u);
+	expect_eq(smoke_rd(SMOKE_BANK) & 0xffu, 0x20u); /* copy1 reset default */
+	smoke_wr(SMOKE_BANK, 0xaau);
+	expect_eq(smoke_rd(SMOKE_BANK) & 0xffu, 0xaau); /* bank1 readback */
+	smoke_wr(SMOKE_BANKSEL, 3u);
+	expect_eq(smoke_rd(SMOKE_BANK) & 0xffu, 0x40u); /* copy3 reset default */
+	smoke_wr(SMOKE_BANKSEL, 2u);
+	expect_eq(smoke_rd(SMOKE_BANK) & 0xffu, 0x30u); /* copy2 untouched */
+	smoke_wr(SMOKE_BANKSEL, 0u);
+	expect_eq(smoke_rd(SMOKE_BANK) & 0xffu, 0x55u); /* bank0 intact */
 
 	/* Wide key auto-split */
 	smoke_wr(SMOKE_KEY0, 0x01010101u);
