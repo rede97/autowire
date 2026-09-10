@@ -2,10 +2,23 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sha256_wb } from "../demo/soc/regs/sha256_wb.ts";
 import {
 	sub_module_a,
 	sub_module_b,
 } from "../docs/examples/regfile/regfile.ts";
+import {
+	smoke_block_wide,
+	smoke_rc,
+	smoke_ro,
+	smoke_rw,
+	smoke_rwe,
+	smoke_rww,
+	smoke_shadow,
+	smoke_w1c,
+	smoke_w1p,
+} from "../docs/examples/regfile/smoke.ts";
+import type { RegfileDef } from "../src/plugins/wishbone-regfile/dsl.ts";
 import { emitRegfileSv } from "../src/plugins/wishbone-regfile/emit.ts";
 import { generateAll } from "../src/plugins/wishbone-regfile/generate.ts";
 import { layoutRegfile } from "../src/plugins/wishbone-regfile/layout.ts";
@@ -115,5 +128,98 @@ exports = ["sub_module_b"]
 		const paths = await generateAll(ws, ws.regfileSources);
 		expect(paths).toHaveLength(1);
 		expect(paths[0]).toContain("sub_module_b_regfile.sv");
+	});
+});
+
+/** Basic smoke: each Access / theme leaf must layout + emit stably. */
+describe("wishbone-regfile smoke features", () => {
+	const cases: { def: RegfileDef; must: string[] }[] = [
+		{ def: smoke_rc, must: ["module smoke_rc_regfile", "16'ha55a"] },
+		{ def: smoke_ro, must: ["ro_busy", "ro_code"] },
+		{ def: smoke_rw, must: ["rg_enable", "rg_mode_q"] },
+		{
+			def: smoke_rww,
+			must: ["rg_capture", "rg_capture_strb", "rg_capture_hwdata"],
+		},
+		{
+			def: smoke_rwe,
+			must: ["ext_data", "ext_data_wren", "ext_data_ready"],
+		},
+		{ def: smoke_w1p, must: ["p_rg_go"] },
+		{ def: smoke_w1c, must: ["c_rg_sticky"] },
+		{ def: smoke_shadow, must: ["i_wb_tga", "o_bank_sel", "rg_cfg_q"] },
+		{ def: smoke_block_wide, must: ["rg_key_0", "rg_key_1", "rg_key_2"] },
+	];
+
+	for (const { def, must } of cases) {
+		test(`${def.name}: layout + emit`, () => {
+			const laid = layoutRegfile(def);
+			expect(laid.cells.length).toBeGreaterThan(0);
+			const sv = emitRegfileSv(laid);
+			expect(sv).toContain(`module ${def.name.toLowerCase()}_regfile`);
+			expect(sv).toContain("o_wb_ack = i_wb_cyc && i_wb_stb && hit");
+			for (const s of must) expect(sv).toContain(s);
+		});
+	}
+
+	test("smoke.ts generates all feature leaves via plugin generate", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_smoke_"));
+		const smoke = join(
+			import.meta.dir,
+			"..",
+			"docs",
+			"examples",
+			"regfile",
+			"smoke.ts",
+		);
+		writeFileSync(
+			join(dir, "autowire.toml"),
+			`
+[dump]
+plugins_dir = "gen/plugins"
+[regfile.smoke]
+ts = "${smoke.replaceAll("\\", "/")}"
+`,
+		);
+		const ws = await loadWorkspace(join(dir, "autowire.toml"));
+		const paths = await generateAll(ws, ws.regfileSources);
+		expect(paths.length).toBe(cases.length);
+		for (const { def } of cases) {
+			expect(
+				paths.some((p) => p.includes(`${def.name.toLowerCase()}_regfile.sv`)),
+			).toBe(true);
+		}
+	});
+});
+
+describe("wishbone-regfile demo/soc sha256", () => {
+	test("sha256_wb layout matches legacy CTRL + HASH0..7 map", () => {
+		const laid = layoutRegfile(sha256_wb);
+		expect(laid.cells.map((c) => c.byte_offset)).toEqual([
+			0, 4, 8, 12, 16, 20, 24, 28, 32,
+		]);
+		const ctrl = laid.cells[0];
+		expect(ctrl?.name).toBe("CTRL");
+		expect(ctrl?.fields.map((f) => f.bit_offset)).toEqual([0, 1, 8, 9]);
+	});
+
+	test("sha256_wb emit has Access prefixes and same-cycle ACK", () => {
+		const sv = emitRegfileSv(layoutRegfile(sha256_wb));
+		expect(sv).toContain("module sha256_wb_regfile");
+		expect(sv).toContain("rg_soft_reset");
+		expect(sv).toContain("p_rg_done_clear");
+		expect(sv).toContain("ro_busy");
+		expect(sv).toContain("ro_done");
+		expect(sv).toContain("ro_hash7");
+		expect(sv).toContain("o_wb_ack = i_wb_cyc && i_wb_stb && hit");
+	});
+
+	test("demo/soc toml generates sha256_wb_regfile", async () => {
+		const ws = await loadWorkspace(
+			join(import.meta.dir, "..", "demo", "soc", "autowire.toml"),
+		);
+		expect(ws.regfileSources.some((s) => s.id === "sha256")).toBe(true);
+		const paths = await generateAll(ws, ws.regfileSources);
+		expect(paths.some((p) => p.endsWith("sha256_wb_regfile.sv"))).toBe(true);
 	});
 });

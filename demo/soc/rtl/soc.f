@@ -8,6 +8,7 @@ rtl/wb_spiflash.v
 rtl/wb_uart.v
 rtl/wb_testout.v
 rtl/sd_rd_dma.v
+rtl/sha256_wb_regfile.sv
 rtl/sha256_wb_regs.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v

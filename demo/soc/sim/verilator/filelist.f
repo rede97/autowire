@@ -12,6 +12,7 @@ rtl/wb_testout.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v
 rtl/sd_rd_dma.v
+rtl/sha256_wb_regfile.sv
 rtl/sha256_wb_regs.v
 
 ip/picorv32/picorv32.v
