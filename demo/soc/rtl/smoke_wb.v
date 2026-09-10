@@ -2,8 +2,8 @@
 //
 // smoke_wb.v — sideband glue for smoke_regfile (no Wishbone).
 // CSR leaf lives on soc_top next to the interconnect; this module only
-// drives RO/RWW/RWE sidebands (counter + 4-deep FIFO loopback) and the
-// fabric TGA concat (m0 cpu slice = rg_bank_sel CSR; dma slices tied 0).
+// drives RO/RWW/RWE sidebands (counter + 4-deep FIFO loopback).
+// Fabric TGA no longer routes here: cpu_o_wb_tga = rg_bank_sel at soc_top.
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -27,11 +27,7 @@ module smoke_wb (
 	input  wire        ext_data_rden,
 	input  wire        ext_data_rst,
 	output wire [31:0] ext_data,
-	output wire        ext_data_ready,
-
-	// Shadow bank select -> fabric TGA
-	input  wire [1:0]  rg_bank_sel,
-	output wire [5:0]  ic_m_tga
+	output wire        ext_data_ready
 );
 
 	// --- RO status counter ---
@@ -111,8 +107,6 @@ module smoke_wb (
 			endcase
 		end
 	end
-
-	assign ic_m_tga = {4'b0000, rg_bank_sel};
 
 endmodule
 

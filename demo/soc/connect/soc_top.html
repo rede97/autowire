@@ -6,9 +6,9 @@
     (Wishbone master -> AXI4-Stream) + 2x sha256_{0,1}_regfile on fabric +
     2x sha256wb (AXIS glue + core) + smoke_regfile on fabric + smoke_wb glue.
   Buses: Wishbone B4 classic (named-slave interconnect from wishbone-bus;
-  masters still flat m_*; slaves {name}_i_wb_* / {name}_o_wb_*) +
-  TGA: fabric 2-bit (smoke shadow bank); m0 cpu slice = smoke rg_bank_sel CSR,
-  dma slices tied 0 (glue concat ic_m_tga).
+  masters named {m}_o_wb_* / {m}_i_wb_* too; slaves {name}_i_wb_* / {name}_o_wb_*).
+  TGA: fabric 2-bit (smoke shadow bank); cpu port = smoke rg_bank_sel CSR,
+  dma ports tied 2'b00.
   AXI4-Stream (DMA -> sha256 lanes).
   Memory map (byte addresses) / slave id (aw-inst id):
     0x0000_0000  sram
@@ -41,16 +41,10 @@
                (inputs: undriven nets; outputs: driven-but-unloaded nets) -->
           <aw-ports></aw-ports>
           <aw-templates>
-            <!-- Wishbone master slice: idx = master slot (m0 cpu, m1/m2 dma) -->
+            <!-- Wishbone master: leaf wbm_* → named nets {id}_o_wb_* / {id}_i_wb_* -->
             <aw-template name="wb_mst" inst_name="${id}_${idx}">
-              <aw-rewrite match="^wbm_cyc_o$" to="ic_m_cyc" width="2:0" part="${idx}"></aw-rewrite>
-              <aw-rewrite match="^wbm_stb_o$" to="ic_m_stb" width="2:0" part="${idx}"></aw-rewrite>
-              <aw-rewrite match="^wbm_we_o$" to="ic_m_we" width="2:0" part="${idx}"></aw-rewrite>
-              <aw-rewrite match="^wbm_ack_i$" to="ic_m_ack" width="2:0" part="${idx}"></aw-rewrite>
-              <aw-rewrite match="^wbm_adr_o$" to="ic_m_adr" width="95:0" part="32*${idx}+31:32*${idx}"></aw-rewrite>
-              <aw-rewrite match="^wbm_dat_o$" to="ic_m_wdata" width="95:0" part="32*${idx}+31:32*${idx}"></aw-rewrite>
-              <aw-rewrite match="^wbm_dat_i$" to="ic_m_rdata" width="95:0" part="32*${idx}+31:32*${idx}"></aw-rewrite>
-              <aw-rewrite match="^wbm_sel_o$" to="ic_m_sel" width="11:0" part="4*${idx}+3:4*${idx}"></aw-rewrite>
+              <aw-rewrite match="^wbm_(.+)_o$" to="${id}_o_wb_$1"></aw-rewrite>
+              <aw-rewrite match="^wbm_(.+)_i$" to="${id}_i_wb_$1"></aw-rewrite>
             </aw-template>
             <!-- Wishbone named slave: leaf i_wb_*/o_wb_* → {id}_*; one RegExp -->
             <aw-template name="wb_slv" inst_name="u_${id}">
@@ -82,8 +76,8 @@
             </aw-inst>
 
             <!-- CPU: picorv32 with Wishbone master (master slot 0) -->
-            <aw-inst id="u_cpu" mod="picorv32_wb" idx="0">
-              <aw-template base="wb_mst">
+            <aw-inst id="cpu" mod="picorv32_wb" idx="0">
+              <aw-template base="wb_mst" inst_name="u_cpu">
                 <aw-param name="BARREL_SHIFTER" expr="1"></aw-param>
                 <aw-param name="COMPRESSED_ISA" expr="1"></aw-param>
                 <aw-param name="ENABLE_MUL" expr="1"></aw-param>
@@ -111,19 +105,15 @@
                 <aw-connect port="mem_instr" type="open"></aw-connect>
               </aw-template>
             </aw-inst>
-            <!-- named-slave interconnect (wishbone-bus generate); masters flat -->
+            <!-- named-slave interconnect (wishbone-bus generate); masters named too -->
             <aw-inst id="u_ic" mod="soc_wb_interconnect">
               <aw-template>
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>
-                <aw-connect port="m_adr_i" to="ic_m_adr" width="95:0"></aw-connect>
-                <aw-connect port="m_dat_i" to="ic_m_wdata" width="95:0"></aw-connect>
-                <aw-connect port="m_sel_i" to="ic_m_sel" width="11:0"></aw-connect>
-                <aw-connect port="m_cyc_i" to="ic_m_cyc" width="2:0"></aw-connect>
-                <aw-connect port="m_stb_i" to="ic_m_stb" width="2:0"></aw-connect>
-                <aw-connect port="m_we_i" to="ic_m_we" width="2:0"></aw-connect>
-                <aw-connect port="m_dat_o" to="ic_m_rdata" width="95:0"></aw-connect>
-                <aw-connect port="m_ack_o" to="ic_m_ack" width="2:0"></aw-connect>
-                <aw-connect port="m_tga_i" to="ic_m_tga" width="5:0"></aw-connect>
+                <!-- master/slave ports identity-match {name}_o_wb_* / {name}_i_wb_* -->
+                <!-- cpu TGA = smoke rg_bank_sel CSR; dma masters have no tag -->
+                <aw-connect port="cpu_o_wb_tga" to="rg_bank_sel"></aw-connect>
+                <aw-connect port="dma0m_o_wb_tga" to="2'b00" type="const"></aw-connect>
+                <aw-connect port="dma1m_o_wb_tga" to="2'b00" type="const"></aw-connect>
                 <!-- slave ports identity-match nets {id}_i_wb_* / {id}_o_wb_* -->
               </aw-template>
             </aw-inst>
@@ -196,9 +186,11 @@
             </aw-inst>
 
             <!-- DMA: wb_mst + wb_slv (adr/dat aligned); AXIS/irq only extras -->
-            <aw-inst id="dma0" mod="sd_rd_dma" idx="1">
+            <aw-inst id="dma0m" mod="sd_rd_dma" idx="1">
               <aw-template base="wb_mst" inst_name="u_dma0"></aw-template>
               <aw-template base="wb_slv">
+                <!-- slave iface keeps bus-slave name dma0 (master iface renamed dma0m) -->
+                <aw-rewrite match="^([io]_wb_.+)$" to="dma0_$1"></aw-rewrite>
                 <aw-connect port="o_irq" to="irq_srcs" width="5:0" part="2"></aw-connect>
                 <aw-connect port="m_axis_tdata" to="axs0_tdata" width="31:0"></aw-connect>
                 <aw-connect port="m_axis_tvalid" to="axs0_tvalid"></aw-connect>
@@ -206,10 +198,10 @@
                 <aw-connect port="m_axis_tlast" to="axs0_tlast"></aw-connect>
               </aw-template>
             </aw-inst>
-            <aw-inst id="dma1" mod="sd_rd_dma" idx="2">
+            <aw-inst id="dma1m" mod="sd_rd_dma" idx="2">
               <aw-template base="wb_mst" inst_name="u_dma1"></aw-template>
               <aw-template base="wb_slv">
-                <aw-connect port="o_irq" to="irq_srcs" width="5:0" part="3"></aw-connect>
+                <aw-rewrite match="^([io]_wb_.+)$" to="dma1_$1"></aw-rewrite>
                 <aw-connect port="m_axis_tdata" to="axs1_tdata" width="31:0"></aw-connect>
                 <aw-connect port="m_axis_tvalid" to="axs1_tvalid"></aw-connect>
                 <aw-connect port="m_axis_tready" to="axs1_tready"></aw-connect>

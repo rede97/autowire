@@ -23,6 +23,7 @@ module tb_soc;
 	logic        ser_tx;
 	logic        test_valid;
 	logic [31:0] test_data;
+	logic        o_irq;
 
 	soc_top u_dut (
 		.rst_ni      (rst_ni),
@@ -55,7 +56,8 @@ module tb_soc;
 		.sd1_sck     (),
 		.sd1_mosi    (),
 		.sd1_miso    (1'b1),
-		.sd1_cd      (1'b1)
+		.sd1_cd      (1'b1),
+		.o_irq       (o_irq)
 	);
 
 `include "tb_sim.svh"

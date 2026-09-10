@@ -101,9 +101,10 @@ Parallel (does not block connect)
     Access RC = ReadConst (reset= baked readback)
   Wishbone bus — implementing now (docs/plugins/wishbone-bus.md);
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
-    NM>1 → interconnect (priority arb); demo/soc bus/soc_wb.ts → soc_wb_interconnect;
+    NM>1 → interconnect (priority arb); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
+    demo/soc bus/soc_wb.ts → soc_wb_interconnect;
     toml [bus.<source>] ts=; ADR=byte; fabric addr_width parametrized;
-    TGA: Bus tagWidth? / Slave tag? → m_tga_i, {slave}_i_wb_tga forwarded;
+    TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga forwarded;
     pipe/arb policy still open
 
   Register Table + Block/Cell (data); Excel is documentation only

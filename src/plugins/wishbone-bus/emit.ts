@@ -27,12 +27,12 @@ export function busModuleName(def: BusDef): string {
 
 function slavePortBlock(s: WbSlave, aw: number): string[] {
 	const n = s.name;
-	const adr = packedRange(aw);
+	const adr = packedRange(aw).padEnd(7);
 	const st = s.tag ?? 0;
 	const lines = [
 		`\t// Slave ${n} — ${s.desc}`,
 		`\t//   base=0x${hex(s.base)}  mask=0x${hex(s.mask)}`,
-		`\toutput logic ${adr ? `${adr} ` : ""}${wb(n, "i_wb_adr")},`,
+		`\toutput logic ${adr}${wb(n, "i_wb_adr")},`,
 		`\toutput logic [31:0] ${wb(n, "i_wb_dat")},`,
 		`\toutput logic [3:0]  ${wb(n, "i_wb_sel")},`,
 	];
@@ -42,11 +42,40 @@ function slavePortBlock(s: WbSlave, aw: number): string[] {
 		);
 	}
 	lines.push(
-		`\toutput logic        ${wb(n, "i_wb_cyc")},`,
-		`\toutput logic        ${wb(n, "i_wb_stb")},`,
-		`\toutput logic        ${wb(n, "i_wb_we")},`,
+		`\toutput logic ${"".padEnd(7)}${wb(n, "i_wb_cyc")},`,
+		`\toutput logic ${"".padEnd(7)}${wb(n, "i_wb_stb")},`,
+		`\toutput logic ${"".padEnd(7)}${wb(n, "i_wb_we")},`,
 		`\tinput  logic [31:0] ${wb(n, "o_wb_dat")},`,
-		`\tinput  logic        ${wb(n, "o_wb_ack")}`,
+		`\tinput  logic ${"".padEnd(7)}${wb(n, "o_wb_ack")}`,
+	);
+	return lines;
+}
+
+/** Master port block (interconnect): leaf-centric `{m}_o_wb_*` in / `{m}_i_wb_*` out. */
+function masterPortBlock(
+	name: string,
+	desc: string,
+	aw: number,
+	tw: number,
+): string[] {
+	const adr = packedRange(aw).padEnd(7);
+	const lines = [
+		`\t// Master ${name} — ${desc}`,
+		`\tinput  logic ${adr}${wb(name, "o_wb_adr")},`,
+		`\tinput  logic [31:0] ${wb(name, "o_wb_dat")},`,
+		`\tinput  logic [3:0]  ${wb(name, "o_wb_sel")},`,
+	];
+	if (tw > 0) {
+		lines.push(
+			`\tinput  logic ${packedRange(tw).padEnd(7)}${wb(name, "o_wb_tga")},`,
+		);
+	}
+	lines.push(
+		`\tinput  logic ${"".padEnd(7)}${wb(name, "o_wb_cyc")},`,
+		`\tinput  logic ${"".padEnd(7)}${wb(name, "o_wb_stb")},`,
+		`\tinput  logic ${"".padEnd(7)}${wb(name, "o_wb_we")},`,
+		`\toutput logic [31:0] ${wb(name, "i_wb_dat")},`,
+		`\toutput logic ${"".padEnd(7)}${wb(name, "i_wb_ack")}`,
 	);
 	return lines;
 }
@@ -123,25 +152,43 @@ function emitInterconnectBody(def: BusDef): string[] {
 	const tw = def.tag_width;
 	const slaves = def.slaves;
 	const out: string[] = [];
+	const masters = def.masters.map((m, i) => ({ ...m, i }));
 	const onehot = (i: number) =>
 		`${nm}'b${"0".repeat(nm - 1 - i)}1${"0".repeat(i)}`;
 
+	const pk = `[${nm - 1}:0]`;
 	out.push(
 		"\t//------------------------------------------------------------------------------",
 		"\t//  Arbitration: lowest master index wins; locked while grant holds CYC",
 		"\t//------------------------------------------------------------------------------",
-		`\tlogic [${nm - 1}:0] grant;`,
-		"\tlogic        busy;",
-		`\tlogic [${nm - 1}:0] grant_nxt;`,
+		`\tlogic ${pk} grant;`,
+		`\tlogic ${"".padEnd(pk.length)} busy;`,
+		`\tlogic ${pk} grant_nxt;`,
+		`\tlogic ${pk} m_cyc;`,
+		`\tlogic ${pk} m_stb;`,
+		`\tlogic ${pk} m_we;`,
 		"",
-		"\talways_comb begin",
 	);
-	for (let i = 0; i < nm; i++) {
-		const kw = i === 0 ? "if      " : "else if ";
-		out.push(`\t\t${kw}(m_cyc_i[${i}]) grant_nxt = ${onehot(i)};`);
+	// Slot vectors (bit i = masters[i]); vector channels mux by name below.
+	for (const [sig, stem] of [
+		["m_cyc", "o_wb_cyc"],
+		["m_stb", "o_wb_stb"],
+		["m_we ", "o_wb_we"],
+	] as const) {
+		const msbFirst = [...masters].reverse().map((m) => wb(m.name, stem));
+		out.push(`\tassign ${sig} = {${msbFirst.join(", ")}};`);
+	}
+	const condPad = Math.max(
+		...masters.map((m) => `(${wb(m.name, "o_wb_cyc")})`.length),
+	);
+	out.push("", "\talways_comb begin");
+	for (const m of masters) {
+		const kw = m.i === 0 ? "if      " : "else if ";
+		const cond = `(${wb(m.name, "o_wb_cyc")})`.padEnd(condPad);
+		out.push(`\t\t${kw}${cond} grant_nxt = ${onehot(m.i)};`);
 	}
 	out.push(
-		`\t\t${"else".padEnd(`else if (m_cyc_i[${nm - 1}]) `.length)}grant_nxt = ${nm}'b${"0".repeat(nm)};`,
+		`\t\t${"else".padEnd(`else if `.length + condPad + 1)}grant_nxt = ${nm}'b${"0".repeat(nm)};`,
 		"\tend",
 		"",
 		"\talways_ff @(posedge clk or negedge rst_n) begin",
@@ -149,11 +196,11 @@ function emitInterconnectBody(def: BusDef): string[] {
 		"\t\t\tbusy  <= 1'b0;",
 		`\t\t\tgrant <= ${nm}'b0;`,
 		"\t\tend else if (!busy) begin",
-		"\t\t\tif (|m_cyc_i) begin",
+		"\t\t\tif (|m_cyc) begin",
 		"\t\t\t\tbusy  <= 1'b1;",
 		"\t\t\t\tgrant <= grant_nxt;",
 		"\t\t\tend",
-		"\t\tend else if (!(|(m_cyc_i & grant))) begin",
+		"\t\tend else if (!(|(m_cyc & grant))) begin",
 		"\t\t\tbusy <= 1'b0;",
 		"\t\tend",
 		"\tend",
@@ -179,25 +226,22 @@ function emitInterconnectBody(def: BusDef): string[] {
 		"",
 	);
 
-	const masters = [...Array(nm).keys()];
-	const muxVec = (lhs: string, sig: string, width: number, step: number) =>
+	const muxVec = (lhs: string, stem: string, width: number) =>
 		pushOrAssign(
 			out,
 			lhs,
-			masters.map(
-				(i) => `({${width}{gsel[${i}]}} & ${sig}[${i}*${step} +: ${step}])`,
-			),
+			masters.map((m) => `({${width}{gsel[${m.i}]}} & ${wb(m.name, stem)})`),
 		);
-	muxVec("g_adr  ", "m_adr_i", aw, aw);
-	muxVec("g_wdata", "m_dat_i", 32, 32);
-	muxVec("g_sel  ", "m_sel_i", 4, 4);
+	muxVec("g_adr  ", "o_wb_adr", aw);
+	muxVec("g_wdata", "o_wb_dat", 32);
+	muxVec("g_sel  ", "o_wb_sel", 4);
 	if (tw > 0) {
-		muxVec("g_tga  ", "m_tga_i", tw, tw);
+		muxVec("g_tga  ", "o_wb_tga", tw);
 	}
 	out.push(
-		`\tassign g_cyc   = |(gsel & m_cyc_i);`,
-		`\tassign g_stb   = |(gsel & m_stb_i);`,
-		`\tassign g_we    = |(gsel & m_we_i);`,
+		`\tassign g_cyc   = |(gsel & m_cyc);`,
+		`\tassign g_stb   = |(gsel & m_stb);`,
+		`\tassign g_we    = |(gsel & m_we);`,
 		"",
 	);
 
@@ -212,17 +256,16 @@ function emitInterconnectBody(def: BusDef): string[] {
 		"\t//  Master response: only the granted slot sees DAT/ACK",
 		"\t//------------------------------------------------------------------------------",
 	);
-	const datPad = Math.max(
-		...masters.map((i) => `m_dat_o[${i}*32 +: 32]`.length),
-	);
-	for (const i of masters) {
-		const lhs = `m_dat_o[${i}*32 +: 32]`.padEnd(datPad);
-		out.push(`\tassign ${lhs} = {32{gsel[${i}]}} & rsp_dat;`);
+	const datPad = Math.max(...masters.map((m) => wb(m.name, "i_wb_dat").length));
+	for (const m of masters) {
+		const dat = wb(m.name, "i_wb_dat").padEnd(datPad);
+		const ack = wb(m.name, "i_wb_ack").padEnd(datPad);
+		out.push(
+			`\tassign ${dat} = {32{gsel[${m.i}]}} & rsp_dat;`,
+			`\tassign ${ack} = gsel[${m.i}] & rsp_ack;`,
+		);
 	}
-	out.push(
-		`\tassign ${"m_ack_o".padEnd(datPad)} = gsel & {${nm}{rsp_ack}};`,
-		"",
-	);
+	out.push("");
 	return out;
 }
 
@@ -365,23 +408,9 @@ export function emitBusSv(def: BusDef): string {
 		);
 		portBlocks.push(block);
 	} else {
-		const block = [
-			`\t// Masters (flat vectors, NM=${nm})`,
-			`\tinput  logic [${nm * aw - 1}:0] m_adr_i`,
-			`\tinput  logic [${nm * 32 - 1}:0] m_dat_i`,
-			`\tinput  logic [${nm * 4 - 1}:0]  m_sel_i`,
-		];
-		if (tw > 0) {
-			block.push(`\tinput  logic [${nm * tw - 1}:0] m_tga_i`);
+		for (const m of def.masters) {
+			portBlocks.push(masterPortBlock(m.name, m.desc, aw, tw));
 		}
-		block.push(
-			`\tinput  logic [${nm - 1}:0]    m_cyc_i`,
-			`\tinput  logic [${nm - 1}:0]    m_stb_i`,
-			`\tinput  logic [${nm - 1}:0]    m_we_i`,
-			`\toutput logic [${nm * 32 - 1}:0] m_dat_o`,
-			`\toutput logic [${nm - 1}:0]    m_ack_o`,
-		);
-		portBlocks.push(block);
 	}
 	for (const s of def.slaves) {
 		portBlocks.push(slavePortBlock(s, aw));

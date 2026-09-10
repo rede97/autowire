@@ -27,14 +27,17 @@ describe("wishbone-bus", () => {
 		expect(sv).not.toContain("grant");
 	});
 
-	test("multi master emits interconnect with named slaves", () => {
+	test("multi master emits interconnect with named masters and slaves", () => {
 		expect(busModuleKind(soc_wb)).toBe("interconnect");
 		const sv = emitBusSv(soc_wb);
 		expect(sv).toContain("module soc_wb_interconnect");
+		expect(sv).toContain("cpu_o_wb_cyc");
+		expect(sv).toContain("dma1m_i_wb_ack");
 		expect(sv).toContain("smoke_i_wb_cyc");
 		expect(sv).toContain("smoke_o_wb_ack");
 		expect(sv).toContain("sha256_0_i_wb_adr");
 		expect(sv).toContain("grant");
+		expect(sv).not.toContain("m_adr_i");
 		expect(sv).not.toContain("s_cyc_o");
 	});
 
@@ -67,7 +70,7 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("= g_tga[1:0]");
 	});
 
-	test("TGA interconnect slices flat master tag vector", () => {
+	test("TGA interconnect uses named master ports", () => {
 		const def = Bus("tgai", "tag interconnect", {
 			masters: [Master("m0", "M0"), Master("m1", "M1")],
 			slaves: [
@@ -77,9 +80,9 @@ describe("wishbone-bus", () => {
 		});
 		expect(def.tag_width).toBe(2);
 		const sv = emitBusSv(def);
-		expect(sv).toContain("[3:0] m_tga_i");
-		expect(sv).toContain("m_tga_i[0*2 +: 2]");
-		expect(sv).toContain("m_tga_i[1*2 +: 2]");
+		expect(sv).toContain("m0_o_wb_tga");
+		expect(sv).toContain("m1_o_wb_tga");
+		expect(sv).toContain("({2{gsel[1]}} & m1_o_wb_tga)");
 		expect(sv).not.toContain("s0_i_wb_tga");
 	});
 
@@ -109,7 +112,7 @@ describe("wishbone-bus", () => {
 		expect(sv).not.toContain("integer oi");
 		// demo smoke slave declares tag 2 → fabric carries a 2-bit TGA
 		expect(soc_wb.tag_width).toBe(2);
-		expect(sv).toContain("[5:0] m_tga_i");
+		expect(sv).toContain("cpu_o_wb_tga");
 		expect(sv).toContain("= g_tga[1:0]");
 		expect(sv).not.toContain("sram_i_wb_tga");
 	});
@@ -119,9 +122,9 @@ describe("wishbone-bus", () => {
 		// the grant — a shared accumulate would go multi-hot under contention
 		// (caught by demo/soc --sd smoke: CPU+DMA concurrent CYC → cpu trap).
 		const sv = emitBusSv(soc_wb);
-		expect(sv).toContain("if      (m_cyc_i[0]) grant_nxt = 3'b001;");
-		expect(sv).toContain("else if (m_cyc_i[1]) grant_nxt = 3'b010;");
-		expect(sv).toContain("else if (m_cyc_i[2]) grant_nxt = 3'b100;");
+		expect(sv).toContain("if      (cpu_o_wb_cyc)");
+		expect(sv).toContain("else if (dma0m_o_wb_cyc) grant_nxt = 3'b010;");
+		expect(sv).toContain("else if (dma1m_o_wb_cyc) grant_nxt = 3'b100;");
 	});
 
 	test("generateAll writes plugins_dir", async () => {

@@ -30,19 +30,32 @@ module soc_top (
 	output wire         sd1_sck,
 	output wire         sd1_mosi,
 	input  wire         sd1_miso,
-	input  wire         sd1_cd
+	input  wire         sd1_cd,
+	output wire         o_irq
 );
 	wire         rst;
-	wire  [2:0]  ic_m_cyc;
-	wire  [2:0]  ic_m_stb;
-	wire  [2:0]  ic_m_we;
-	wire  [2:0]  ic_m_ack;
-	wire  [95:0] ic_m_adr;
-	wire  [95:0] ic_m_wdata;
-	wire  [95:0] ic_m_rdata;
-	wire  [11:0] ic_m_sel;
+	logic [31:0] cpu_o_wb_adr;
+	logic [31:0] cpu_o_wb_dat;
+	logic        cpu_o_wb_we;
+	logic [3:0]  cpu_o_wb_sel;
+	logic        cpu_o_wb_stb;
+	logic        cpu_o_wb_cyc;
+	logic [31:0] cpu_i_wb_dat;
+	logic        cpu_i_wb_ack;
 	wire  [31:0] irq_bus;
-	wire  [5:0]  ic_m_tga;
+	logic [1:0]  rg_bank_sel;
+	logic [31:0] dma0m_o_wb_adr;
+	logic [31:0] dma0m_o_wb_dat;
+	logic [3:0]  dma0m_o_wb_sel;
+	logic        dma0m_o_wb_cyc;
+	logic        dma0m_o_wb_stb;
+	logic        dma0m_o_wb_we;
+	logic [31:0] dma1m_o_wb_adr;
+	logic [31:0] dma1m_o_wb_dat;
+	logic [3:0]  dma1m_o_wb_sel;
+	logic        dma1m_o_wb_cyc;
+	logic        dma1m_o_wb_stb;
+	logic        dma1m_o_wb_we;
 	logic [31:0] sram_o_wb_dat;
 	logic        sram_o_wb_ack;
 	logic [31:0] flash_xip_o_wb_dat;
@@ -67,6 +80,10 @@ module soc_top (
 	logic        sha256_1_o_wb_ack;
 	logic [31:0] smoke_o_wb_dat;
 	logic        smoke_o_wb_ack;
+	logic [31:0] dma0m_i_wb_dat;
+	logic        dma0m_i_wb_ack;
+	logic [31:0] dma1m_i_wb_dat;
+	logic        dma1m_i_wb_ack;
 	logic [31:0] sram_i_wb_adr;
 	logic [31:0] sram_i_wb_dat;
 	logic [3:0]  sram_i_wb_sel;
@@ -185,7 +202,6 @@ module soc_top (
 	logic [3:0]  ext_data_wstrb;
 	logic        ext_data_rden;
 	logic        ext_data_rst;
-	logic [1:0]  rg_bank_sel;
 
 	soc_reset u_rst (
 		.clk    (clk),
@@ -203,23 +219,23 @@ module soc_top (
 		.PROGADDR_RESET  (32'h01000000),
 		.PROGADDR_IRQ    (32'h00000000),
 		.STACKADDR       (32'h00010000)
-	) u_cpu_0 (
+	) u_cpu (
 		.wb_rst_i   (rst),
 		.wb_clk_i   (clk),
-		.wbm_dat_i  (ic_m_rdata[31:0]),
-		.wbm_ack_i  (ic_m_ack[0]),
+		.wbm_dat_i  (cpu_i_wb_dat),
+		.wbm_ack_i  (cpu_i_wb_ack),
 		.pcpi_wr    (1'b0),
 		.pcpi_rd    (32'h00000000),
 		.pcpi_wait  (1'b0),
 		.pcpi_ready (1'b0),
 		.irq        (irq_bus),
 		.trap       (trap),
-		.wbm_adr_o  (ic_m_adr[31:0]),
-		.wbm_dat_o  (ic_m_wdata[31:0]),
-		.wbm_we_o   (ic_m_we[0]),
-		.wbm_sel_o  (ic_m_sel[3:0]),
-		.wbm_stb_o  (ic_m_stb[0]),
-		.wbm_cyc_o  (ic_m_cyc[0]),
+		.wbm_adr_o  (cpu_o_wb_adr),
+		.wbm_dat_o  (cpu_o_wb_dat),
+		.wbm_we_o   (cpu_o_wb_we),
+		.wbm_sel_o  (cpu_o_wb_sel),
+		.wbm_stb_o  (cpu_o_wb_stb),
+		.wbm_cyc_o  (cpu_o_wb_cyc),
 		.pcpi_valid (),
 		.pcpi_insn  (),
 		.pcpi_rs1   (),
@@ -232,13 +248,27 @@ module soc_top (
 	soc_wb_interconnect u_ic (
 		.clk               (clk),
 		.rst_n             (rst_ni),
-		.m_adr_i           (ic_m_adr),
-		.m_dat_i           (ic_m_wdata),
-		.m_sel_i           (ic_m_sel),
-		.m_tga_i           (ic_m_tga),
-		.m_cyc_i           (ic_m_cyc),
-		.m_stb_i           (ic_m_stb),
-		.m_we_i            (ic_m_we),
+		.cpu_o_wb_adr      (cpu_o_wb_adr),
+		.cpu_o_wb_dat      (cpu_o_wb_dat),
+		.cpu_o_wb_sel      (cpu_o_wb_sel),
+		.cpu_o_wb_tga      (rg_bank_sel),
+		.cpu_o_wb_cyc      (cpu_o_wb_cyc),
+		.cpu_o_wb_stb      (cpu_o_wb_stb),
+		.cpu_o_wb_we       (cpu_o_wb_we),
+		.dma0m_o_wb_adr    (dma0m_o_wb_adr),
+		.dma0m_o_wb_dat    (dma0m_o_wb_dat),
+		.dma0m_o_wb_sel    (dma0m_o_wb_sel),
+		.dma0m_o_wb_tga    (2'b00),
+		.dma0m_o_wb_cyc    (dma0m_o_wb_cyc),
+		.dma0m_o_wb_stb    (dma0m_o_wb_stb),
+		.dma0m_o_wb_we     (dma0m_o_wb_we),
+		.dma1m_o_wb_adr    (dma1m_o_wb_adr),
+		.dma1m_o_wb_dat    (dma1m_o_wb_dat),
+		.dma1m_o_wb_sel    (dma1m_o_wb_sel),
+		.dma1m_o_wb_tga    (2'b00),
+		.dma1m_o_wb_cyc    (dma1m_o_wb_cyc),
+		.dma1m_o_wb_stb    (dma1m_o_wb_stb),
+		.dma1m_o_wb_we     (dma1m_o_wb_we),
 		.sram_o_wb_dat     (sram_o_wb_dat),
 		.sram_o_wb_ack     (sram_o_wb_ack),
 		.flash_xip_o_wb_dat(flash_xip_o_wb_dat),
@@ -263,8 +293,12 @@ module soc_top (
 		.sha256_1_o_wb_ack (sha256_1_o_wb_ack),
 		.smoke_o_wb_dat    (smoke_o_wb_dat),
 		.smoke_o_wb_ack    (smoke_o_wb_ack),
-		.m_dat_o           (ic_m_rdata),
-		.m_ack_o           (ic_m_ack),
+		.cpu_i_wb_dat      (cpu_i_wb_dat),
+		.cpu_i_wb_ack      (cpu_i_wb_ack),
+		.dma0m_i_wb_dat    (dma0m_i_wb_dat),
+		.dma0m_i_wb_ack    (dma0m_i_wb_ack),
+		.dma1m_i_wb_dat    (dma1m_i_wb_dat),
+		.dma1m_i_wb_ack    (dma1m_i_wb_ack),
 		.sram_i_wb_adr     (sram_i_wb_adr),
 		.sram_i_wb_dat     (sram_i_wb_dat),
 		.sram_i_wb_sel     (sram_i_wb_sel),
@@ -458,7 +492,7 @@ module soc_top (
 		.o_int        (irq_srcs[1]),
 		.o_debug      ()
 	);
-	sd_rd_dma u_dma0 (
+	sd_rd_dma u_dma0m (
 		.clk          (clk),
 		.rst_n        (rst_ni),
 		.i_wb_cyc     (dma0_i_wb_cyc),
@@ -467,23 +501,23 @@ module soc_top (
 		.i_wb_adr     (dma0_i_wb_adr),
 		.i_wb_dat     (dma0_i_wb_dat),
 		.i_wb_sel     (dma0_i_wb_sel),
-		.wbm_ack_i    (ic_m_ack[1]),
-		.wbm_dat_i    (ic_m_rdata[63:32]),
+		.wbm_ack_i    (dma0m_i_wb_ack),
+		.wbm_dat_i    (dma0m_i_wb_dat),
 		.m_axis_tready(axs0_tready),
 		.o_wb_ack     (dma0_o_wb_ack),
 		.o_wb_dat     (dma0_o_wb_dat),
-		.wbm_cyc_o    (ic_m_cyc[1]),
-		.wbm_stb_o    (ic_m_stb[1]),
-		.wbm_we_o     (ic_m_we[1]),
-		.wbm_adr_o    (ic_m_adr[63:32]),
-		.wbm_dat_o    (ic_m_wdata[63:32]),
-		.wbm_sel_o    (ic_m_sel[7:4]),
+		.wbm_cyc_o    (dma0m_o_wb_cyc),
+		.wbm_stb_o    (dma0m_o_wb_stb),
+		.wbm_we_o     (dma0m_o_wb_we),
+		.wbm_adr_o    (dma0m_o_wb_adr),
+		.wbm_dat_o    (dma0m_o_wb_dat),
+		.wbm_sel_o    (dma0m_o_wb_sel),
 		.m_axis_tdata (axs0_tdata),
 		.m_axis_tvalid(axs0_tvalid),
 		.m_axis_tlast (axs0_tlast),
 		.o_irq        (irq_srcs[2])
 	);
-	sd_rd_dma u_dma1 (
+	sd_rd_dma u_dma1m (
 		.clk          (clk),
 		.rst_n        (rst_ni),
 		.i_wb_cyc     (dma1_i_wb_cyc),
@@ -492,21 +526,21 @@ module soc_top (
 		.i_wb_adr     (dma1_i_wb_adr),
 		.i_wb_dat     (dma1_i_wb_dat),
 		.i_wb_sel     (dma1_i_wb_sel),
-		.wbm_ack_i    (ic_m_ack[2]),
-		.wbm_dat_i    (ic_m_rdata[95:64]),
+		.wbm_ack_i    (dma1m_i_wb_ack),
+		.wbm_dat_i    (dma1m_i_wb_dat),
 		.m_axis_tready(axs1_tready),
 		.o_wb_ack     (dma1_o_wb_ack),
 		.o_wb_dat     (dma1_o_wb_dat),
-		.wbm_cyc_o    (ic_m_cyc[2]),
-		.wbm_stb_o    (ic_m_stb[2]),
-		.wbm_we_o     (ic_m_we[2]),
-		.wbm_adr_o    (ic_m_adr[95:64]),
-		.wbm_dat_o    (ic_m_wdata[95:64]),
-		.wbm_sel_o    (ic_m_sel[11:8]),
+		.wbm_cyc_o    (dma1m_o_wb_cyc),
+		.wbm_stb_o    (dma1m_o_wb_stb),
+		.wbm_we_o     (dma1m_o_wb_we),
+		.wbm_adr_o    (dma1m_o_wb_adr),
+		.wbm_dat_o    (dma1m_o_wb_dat),
+		.wbm_sel_o    (dma1m_o_wb_sel),
 		.m_axis_tdata (axs1_tdata),
 		.m_axis_tvalid(axs1_tvalid),
 		.m_axis_tlast (axs1_tlast),
-		.o_irq        (irq_srcs[3])
+		.o_irq        (o_irq)
 	);
 	sha256_0_regfile u_sha256_0_csr (
 		.i_clk            (clk),
@@ -642,14 +676,12 @@ module soc_top (
 		.ext_data_wren    (ext_data_wren),
 		.ext_data_rden    (ext_data_rden),
 		.ext_data_rst     (ext_data_rst),
-		.rg_bank_sel      (rg_bank_sel),
 		.ro_busy          (ro_busy),
 		.ro_code          (ro_code),
 		.rg_capture_strb  (rg_capture_strb),
 		.rg_capture_hwdata(rg_capture_hwdata),
 		.ext_data         (ext_data),
-		.ext_data_ready   (ext_data_ready),
-		.ic_m_tga         (ic_m_tga)
+		.ext_data_ready   (ext_data_ready)
 	);
 	soc_irqmerge u_irq (
 		.i_ints(irq_srcs),

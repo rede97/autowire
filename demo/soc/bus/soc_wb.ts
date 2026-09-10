@@ -13,8 +13,8 @@ export const soc_wb = Bus(
 	{
 		masters: [
 			Master("cpu", "picorv32_wb"),
-			Master("dma0", "sd_rd_dma lane 0"),
-			Master("dma1", "sd_rd_dma lane 1"),
+			Master("dma0m", "sd_rd_dma engine lane 0"),
+			Master("dma1m", "sd_rd_dma engine lane 1"),
 		],
 		slaves: [
 			Slave("sram", "64 KiB SRAM", 0x0000_0000, 0xffff_0000),

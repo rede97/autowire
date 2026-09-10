@@ -25,16 +25,36 @@
 module soc_wb_interconnect (
 	input  logic        clk,
 	input  logic        rst_n,
-	// Masters (flat vectors, NM=3),
-	input  logic [95:0] m_adr_i,
-	input  logic [95:0] m_dat_i,
-	input  logic [11:0]  m_sel_i,
-	input  logic [5:0] m_tga_i,
-	input  logic [2:0]    m_cyc_i,
-	input  logic [2:0]    m_stb_i,
-	input  logic [2:0]    m_we_i,
-	output logic [95:0] m_dat_o,
-	output logic [2:0]    m_ack_o,
+	// Master cpu — picorv32_wb,
+	input  logic [31:0] cpu_o_wb_adr,
+	input  logic [31:0] cpu_o_wb_dat,
+	input  logic [3:0]  cpu_o_wb_sel,
+	input  logic [1:0]  cpu_o_wb_tga,
+	input  logic        cpu_o_wb_cyc,
+	input  logic        cpu_o_wb_stb,
+	input  logic        cpu_o_wb_we,
+	output logic [31:0] cpu_i_wb_dat,
+	output logic        cpu_i_wb_ack,
+	// Master dma0m — sd_rd_dma engine lane 0,
+	input  logic [31:0] dma0m_o_wb_adr,
+	input  logic [31:0] dma0m_o_wb_dat,
+	input  logic [3:0]  dma0m_o_wb_sel,
+	input  logic [1:0]  dma0m_o_wb_tga,
+	input  logic        dma0m_o_wb_cyc,
+	input  logic        dma0m_o_wb_stb,
+	input  logic        dma0m_o_wb_we,
+	output logic [31:0] dma0m_i_wb_dat,
+	output logic        dma0m_i_wb_ack,
+	// Master dma1m — sd_rd_dma engine lane 1,
+	input  logic [31:0] dma1m_o_wb_adr,
+	input  logic [31:0] dma1m_o_wb_dat,
+	input  logic [3:0]  dma1m_o_wb_sel,
+	input  logic [1:0]  dma1m_o_wb_tga,
+	input  logic        dma1m_o_wb_cyc,
+	input  logic        dma1m_o_wb_stb,
+	input  logic        dma1m_o_wb_we,
+	output logic [31:0] dma1m_i_wb_dat,
+	output logic        dma1m_i_wb_ack,
 	// Slave sram — 64 KiB SRAM,
 	//   base=0x00000000  mask=0xffff0000,
 	output logic [31:0] sram_i_wb_adr,
@@ -162,14 +182,21 @@ module soc_wb_interconnect (
 	//  Arbitration: lowest master index wins; locked while grant holds CYC
 	//------------------------------------------------------------------------------
 	logic [2:0] grant;
-	logic        busy;
+	logic       busy;
 	logic [2:0] grant_nxt;
+	logic [2:0] m_cyc;
+	logic [2:0] m_stb;
+	logic [2:0] m_we;
+
+	assign m_cyc = {dma1m_o_wb_cyc, dma0m_o_wb_cyc, cpu_o_wb_cyc};
+	assign m_stb = {dma1m_o_wb_stb, dma0m_o_wb_stb, cpu_o_wb_stb};
+	assign m_we  = {dma1m_o_wb_we, dma0m_o_wb_we, cpu_o_wb_we};
 
 	always_comb begin
-		if      (m_cyc_i[0]) grant_nxt = 3'b001;
-		else if (m_cyc_i[1]) grant_nxt = 3'b010;
-		else if (m_cyc_i[2]) grant_nxt = 3'b100;
-		else                 grant_nxt = 3'b000;
+		if      (cpu_o_wb_cyc)   grant_nxt = 3'b001;
+		else if (dma0m_o_wb_cyc) grant_nxt = 3'b010;
+		else if (dma1m_o_wb_cyc) grant_nxt = 3'b100;
+		else                     grant_nxt = 3'b000;
 	end
 
 	always_ff @(posedge clk or negedge rst_n) begin
@@ -177,11 +204,11 @@ module soc_wb_interconnect (
 			busy  <= 1'b0;
 			grant <= 3'b0;
 		end else if (!busy) begin
-			if (|m_cyc_i) begin
+			if (|m_cyc) begin
 				busy  <= 1'b1;
 				grant <= grant_nxt;
 			end
-		end else if (!(|(m_cyc_i & grant))) begin
+		end else if (!(|(m_cyc & grant))) begin
 			busy <= 1'b0;
 		end
 	end
@@ -197,21 +224,21 @@ module soc_wb_interconnect (
 	logic        g_stb;
 	logic        g_we;
 
-	assign g_adr   = ({32{gsel[0]}} & m_adr_i[0*32 +: 32])
-	               | ({32{gsel[1]}} & m_adr_i[1*32 +: 32])
-	               | ({32{gsel[2]}} & m_adr_i[2*32 +: 32]);
-	assign g_wdata = ({32{gsel[0]}} & m_dat_i[0*32 +: 32])
-	               | ({32{gsel[1]}} & m_dat_i[1*32 +: 32])
-	               | ({32{gsel[2]}} & m_dat_i[2*32 +: 32]);
-	assign g_sel   = ({4{gsel[0]}} & m_sel_i[0*4 +: 4])
-	               | ({4{gsel[1]}} & m_sel_i[1*4 +: 4])
-	               | ({4{gsel[2]}} & m_sel_i[2*4 +: 4]);
-	assign g_tga   = ({2{gsel[0]}} & m_tga_i[0*2 +: 2])
-	               | ({2{gsel[1]}} & m_tga_i[1*2 +: 2])
-	               | ({2{gsel[2]}} & m_tga_i[2*2 +: 2]);
-	assign g_cyc   = |(gsel & m_cyc_i);
-	assign g_stb   = |(gsel & m_stb_i);
-	assign g_we    = |(gsel & m_we_i);
+	assign g_adr   = ({32{gsel[0]}} & cpu_o_wb_adr)
+	               | ({32{gsel[1]}} & dma0m_o_wb_adr)
+	               | ({32{gsel[2]}} & dma1m_o_wb_adr);
+	assign g_wdata = ({32{gsel[0]}} & cpu_o_wb_dat)
+	               | ({32{gsel[1]}} & dma0m_o_wb_dat)
+	               | ({32{gsel[2]}} & dma1m_o_wb_dat);
+	assign g_sel   = ({4{gsel[0]}} & cpu_o_wb_sel)
+	               | ({4{gsel[1]}} & dma0m_o_wb_sel)
+	               | ({4{gsel[2]}} & dma1m_o_wb_sel);
+	assign g_tga   = ({2{gsel[0]}} & cpu_o_wb_tga)
+	               | ({2{gsel[1]}} & dma0m_o_wb_tga)
+	               | ({2{gsel[2]}} & dma1m_o_wb_tga);
+	assign g_cyc   = |(gsel & m_cyc);
+	assign g_stb   = |(gsel & m_stb);
+	assign g_we    = |(gsel & m_we);
 
 	//------------------------------------------------------------------------------
 	//  Address decode: lowest matching slave wins (mutually exclusive)
@@ -392,9 +419,11 @@ module soc_wb_interconnect (
 	//------------------------------------------------------------------------------
 	//  Master response: only the granted slot sees DAT/ACK
 	//------------------------------------------------------------------------------
-	assign m_dat_o[0*32 +: 32] = {32{gsel[0]}} & rsp_dat;
-	assign m_dat_o[1*32 +: 32] = {32{gsel[1]}} & rsp_dat;
-	assign m_dat_o[2*32 +: 32] = {32{gsel[2]}} & rsp_dat;
-	assign m_ack_o             = gsel & {3{rsp_ack}};
+	assign cpu_i_wb_dat   = {32{gsel[0]}} & rsp_dat;
+	assign cpu_i_wb_ack   = gsel[0] & rsp_ack;
+	assign dma0m_i_wb_dat = {32{gsel[1]}} & rsp_dat;
+	assign dma0m_i_wb_ack = gsel[1] & rsp_ack;
+	assign dma1m_i_wb_dat = {32{gsel[2]}} & rsp_dat;
+	assign dma1m_i_wb_ack = gsel[2] & rsp_ack;
 
 endmodule

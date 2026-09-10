@@ -29,7 +29,9 @@
 | 角色 | 口名 |
 |---|---|
 | Regfile / IC slave | **`{name}_i_wb_*` / `{name}_o_wb_*`**（叶视角；与 `RegfileDef.name` **同名 → identity**；异名束用一条 rewrite，见 connect §3.5.5） |
-| 多主 flat（v1 SoC） | `m_adr_i` / `m_dat_*` / `m_cyc_i` … 向量 |
+| 多主（interconnect） | **`{master}_o_wb_*`**（master 驱动：ADR/DAT_O/SEL/CYC/STB/WE/+TGA）/ **`{master}_i_wb_{dat,ack}`**（master 接收）；单主 decoder 仍 flat `m_*` |
+
+  > **命名空间**：master 口与 slave 口共享 `{name}_*_wb_*` 空间；同一叶子**双角色**（既是 master 又是 slave，如 DMA 引擎 + 其 CSR 口）时两个角色**必须**取不同名（demo：`dma0` = CSR slave / `dma0m` = 引擎 master），否则 `o_wb_dat`/`i_wb_dat` 撞网。
 | clk/rst | `clk` / `rst_n`（fabric） |
 
 例：`smoke_i_wb_cyc`、`smoke_o_wb_ack`、`smoke_i_wb_adr`。
@@ -144,11 +146,10 @@ ts = "bus/soc_wb.ts"
 
 ## 8. 仍开放
 
-1. Arbiter 默认策略（v1 SoC：最低 master 优先，与 demo 手写一致）。  
+1. Arbiter 更多默认策略（v1 SoC：最低 master 优先，展开链已落地）。  
 2. 是否提供 `topology = crossbar` 以及 M/N 上限。  
 3. Bridge 目录：仅 `apb2wb` 还是可插其它。  
 4. 固件窗 + DMA：块周期连续写是否进 v2。  
-5. Pipe slice 级数。  
-6. Master 侧是否也改为按名（v1 可 flat）。
+5. Pipe slice 级数。
 
-**已裁定口名**：`{name}_i_wb_*` / `{name}_o_wb_*`；单 master → decoder。
+**已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。
