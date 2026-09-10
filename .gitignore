@@ -37,8 +37,10 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 .autowire
-# dump output (generated RTL)
+# dump output (generated RTL) — demo/soc/gen IS tracked as showcase
+# (regenerate + commit together with SoT/generator changes)
 gen/
+!demo/soc/gen/
 
 # simulation build artifacts
 *.vvp
