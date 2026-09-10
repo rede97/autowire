@@ -241,115 +241,198 @@ module sub_module_a_regfile (
 	//   [0]      RW   enable     — Soft enable
 	//   [10:8]   RW   mode       — Operating mode
 	//   [23:16]  RW   lane_cfg   — Per-lane config (shadowed)
-	// RW  [0]     enable     — Soft enable
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
-			rg_enable_q[0] <= 1'h0;
-			rg_enable_q[1] <= 1'h0;
-			rg_enable_q[2] <= 1'h0;
-			rg_enable_q[3] <= 1'h0;
-		end else begin
-			if (wr_sel_0) begin
-				for (int __c = 0; __c < 4; __c++) begin
-					if (mask_lane[__c]) rg_enable_q[__c] <= (rg_enable_q[__c] & ~(sub_module_a_i_wb_sel[0])) | (sub_module_a_i_wb_dat[0:0] & (sub_module_a_i_wb_sel[0]));
+			rg_enable_q[0]   <= 1'h0;
+			rg_enable_q[1]   <= 1'h0;
+			rg_enable_q[2]   <= 1'h0;
+			rg_enable_q[3]   <= 1'h0;
+			rg_mode_q[0]     <= 3'h0;
+			rg_mode_q[1]     <= 3'h0;
+			rg_mode_q[2]     <= 3'h0;
+			rg_mode_q[3]     <= 3'h0;
+			rg_lane_cfg_q[0] <= 8'h10;
+			rg_lane_cfg_q[1] <= 8'h20;
+			rg_lane_cfg_q[2] <= 8'h30;
+			rg_lane_cfg_q[3] <= 8'h40;
+		end else if (wr_sel_0) begin
+			if (sub_module_a_i_wb_sel[0]) begin
+				if (mask_lane[0]) begin
+					rg_enable_q[0] <= sub_module_a_i_wb_dat[0];
+				end
+				if (mask_lane[1]) begin
+					rg_enable_q[1] <= sub_module_a_i_wb_dat[0];
+				end
+				if (mask_lane[2]) begin
+					rg_enable_q[2] <= sub_module_a_i_wb_dat[0];
+				end
+				if (mask_lane[3]) begin
+					rg_enable_q[3] <= sub_module_a_i_wb_dat[0];
+				end
+			end
+			if (sub_module_a_i_wb_sel[1]) begin
+				if (mask_lane[0]) begin
+					rg_mode_q[0] <= sub_module_a_i_wb_dat[10:8];
+				end
+				if (mask_lane[1]) begin
+					rg_mode_q[1] <= sub_module_a_i_wb_dat[10:8];
+				end
+				if (mask_lane[2]) begin
+					rg_mode_q[2] <= sub_module_a_i_wb_dat[10:8];
+				end
+				if (mask_lane[3]) begin
+					rg_mode_q[3] <= sub_module_a_i_wb_dat[10:8];
+				end
+			end
+			if (sub_module_a_i_wb_sel[2]) begin
+				if (mask_lane[0]) begin
+					rg_lane_cfg_q[0] <= sub_module_a_i_wb_dat[23:16];
+				end
+				if (mask_lane[1]) begin
+					rg_lane_cfg_q[1] <= sub_module_a_i_wb_dat[23:16];
+				end
+				if (mask_lane[2]) begin
+					rg_lane_cfg_q[2] <= sub_module_a_i_wb_dat[23:16];
+				end
+				if (mask_lane[3]) begin
+					rg_lane_cfg_q[3] <= sub_module_a_i_wb_dat[23:16];
 				end
 			end
 		end
 	end
 	assign rg_enable = rg_enable_q[o_lane_sel];
-	// RW  [10:8]  mode       — Operating mode
-	always_ff @(posedge i_clk or negedge i_rst_n) begin
-		if (!i_rst_n) begin
-			rg_mode_q[0] <= 3'h0;
-			rg_mode_q[1] <= 3'h0;
-			rg_mode_q[2] <= 3'h0;
-			rg_mode_q[3] <= 3'h0;
-		end else begin
-			if (wr_sel_0) begin
-				for (int __c = 0; __c < 4; __c++) begin
-					if (mask_lane[__c]) rg_mode_q[__c] <= (rg_mode_q[__c] & ~({3{sub_module_a_i_wb_sel[1]}})) | (sub_module_a_i_wb_dat[10:8] & ({3{sub_module_a_i_wb_sel[1]}}));
-				end
-			end
-		end
-	end
 	assign rg_mode = rg_mode_q[o_lane_sel];
-	// RW  [23:16] lane_cfg   — Per-lane config (shadowed)
-	always_ff @(posedge i_clk or negedge i_rst_n) begin
-		if (!i_rst_n) begin
-			rg_lane_cfg_q[0] <= 8'h10;
-			rg_lane_cfg_q[1] <= 8'h20;
-			rg_lane_cfg_q[2] <= 8'h30;
-			rg_lane_cfg_q[3] <= 8'h40;
-		end else begin
-			if (wr_sel_0) begin
-				for (int __c = 0; __c < 4; __c++) begin
-					if (mask_lane[__c]) rg_lane_cfg_q[__c] <= (rg_lane_cfg_q[__c] & ~({8{sub_module_a_i_wb_sel[2]}})) | (sub_module_a_i_wb_dat[23:16] & ({8{sub_module_a_i_wb_sel[2]}}));
-				end
-			end
-		end
-	end
 	assign rg_lane_cfg = rg_lane_cfg_q[o_lane_sel];
 
 	// Addr: 0x10  RegCell: STATUS     — Status
 	//   [0]      RO   busy       — Busy
 	//   [8]      W1C  irq_sticky — Sticky IRQ; write 1 to clear
 	//   [16]     W1P  pulse_cmd  — Write 1 → one-cycle pulse out
-	// W1C [8]     irq_sticky — Sticky IRQ; write 1 to clear
-	always_ff @(posedge i_clk or negedge i_rst_n) begin
-		if (!i_rst_n) c_rg_irq_sticky_q <= 1'h0;
-		else if (wr_sel_10) c_rg_irq_sticky_q <= (c_rg_irq_sticky_q & ~(sub_module_a_i_wb_dat[8:8] & (sub_module_a_i_wb_sel[1]))) | c_rg_irq_sticky_set;
-		else if (|c_rg_irq_sticky_set) c_rg_irq_sticky_q <= c_rg_irq_sticky_q | c_rg_irq_sticky_set;
-	end
-	assign c_rg_irq_sticky = c_rg_irq_sticky_q;
 	// W1P [16]    pulse_cmd  — Write 1 → one-cycle pulse out
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) p_rg_pulse_cmd <= 1'h0;
-		else p_rg_pulse_cmd <= wr_sel_10 ? (sub_module_a_i_wb_dat[16:16] & (sub_module_a_i_wb_sel[2])) : 1'h0;
+		else p_rg_pulse_cmd <= wr_sel_10 ? (sub_module_a_i_wb_dat[16] & (sub_module_a_i_wb_sel[2])) : 1'h0;
 	end
+	always_ff @(posedge i_clk or negedge i_rst_n) begin
+		if (!i_rst_n) begin
+			c_rg_irq_sticky_q <= 1'h0;
+		end else if (~wr_sel_10) begin
+			if (|c_rg_irq_sticky_set) begin
+				c_rg_irq_sticky_q <= c_rg_irq_sticky_q | c_rg_irq_sticky_set;
+			end
+		end else if (wr_sel_10) begin
+			if (sub_module_a_i_wb_sel[1]) begin
+				c_rg_irq_sticky_q <= (c_rg_irq_sticky_q & ~sub_module_a_i_wb_dat[8]) | c_rg_irq_sticky_set;
+			end
+		end
+	end
+	assign c_rg_irq_sticky = c_rg_irq_sticky_q;
 
 	// Addr: 0x20  RegCell: ctrl_key_0 — 96-bit key; auto-split + auto offset
 	//   [31:0]   RW   key_0      — 96-bit key; auto-split + auto offset (slice0 of key)
-	// RW  [31:0]  key_0      — 96-bit key; auto-split + auto offset
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
-		if (!i_rst_n) rg_key_0_q <= 32'h0;
-		else if (wr_sel_20) rg_key_0_q <= (rg_key_0_q & ~({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[31:0] & ({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
+		if (!i_rst_n) begin
+			rg_key_0_q <= 32'h0;
+		end else if (wr_sel_20) begin
+			if (sub_module_a_i_wb_sel[0]) begin
+				rg_key_0_q[7:0] <= sub_module_a_i_wb_dat[7:0];
+			end
+			if (sub_module_a_i_wb_sel[1]) begin
+				rg_key_0_q[15:8] <= sub_module_a_i_wb_dat[15:8];
+			end
+			if (sub_module_a_i_wb_sel[2]) begin
+				rg_key_0_q[23:16] <= sub_module_a_i_wb_dat[23:16];
+			end
+			if (sub_module_a_i_wb_sel[3]) begin
+				rg_key_0_q[31:24] <= sub_module_a_i_wb_dat[31:24];
+			end
+		end
 	end
 	assign rg_key_0 = rg_key_0_q;
 
 	// Addr: 0x30  RegCell: ctrl_key_1 — 96-bit key; auto-split + auto offset
 	//   [31:0]   RW   key_1      — 96-bit key; auto-split + auto offset (slice1 of key)
-	// RW  [31:0]  key_1      — 96-bit key; auto-split + auto offset
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
-		if (!i_rst_n) rg_key_1_q <= 32'h0;
-		else if (wr_sel_30) rg_key_1_q <= (rg_key_1_q & ~({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[31:0] & ({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
+		if (!i_rst_n) begin
+			rg_key_1_q <= 32'h0;
+		end else if (wr_sel_30) begin
+			if (sub_module_a_i_wb_sel[0]) begin
+				rg_key_1_q[7:0] <= sub_module_a_i_wb_dat[7:0];
+			end
+			if (sub_module_a_i_wb_sel[1]) begin
+				rg_key_1_q[15:8] <= sub_module_a_i_wb_dat[15:8];
+			end
+			if (sub_module_a_i_wb_sel[2]) begin
+				rg_key_1_q[23:16] <= sub_module_a_i_wb_dat[23:16];
+			end
+			if (sub_module_a_i_wb_sel[3]) begin
+				rg_key_1_q[31:24] <= sub_module_a_i_wb_dat[31:24];
+			end
+		end
 	end
 	assign rg_key_1 = rg_key_1_q;
 
 	// Addr: 0x40  RegCell: ctrl_key_2 — 96-bit key; auto-split + auto offset
 	//   [31:0]   RW   key_2      — 96-bit key; auto-split + auto offset (slice2 of key)
-	// RW  [31:0]  key_2      — 96-bit key; auto-split + auto offset
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
-		if (!i_rst_n) rg_key_2_q <= 32'h0;
-		else if (wr_sel_40) rg_key_2_q <= (rg_key_2_q & ~({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[31:0] & ({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
+		if (!i_rst_n) begin
+			rg_key_2_q <= 32'h0;
+		end else if (wr_sel_40) begin
+			if (sub_module_a_i_wb_sel[0]) begin
+				rg_key_2_q[7:0] <= sub_module_a_i_wb_dat[7:0];
+			end
+			if (sub_module_a_i_wb_sel[1]) begin
+				rg_key_2_q[15:8] <= sub_module_a_i_wb_dat[15:8];
+			end
+			if (sub_module_a_i_wb_sel[2]) begin
+				rg_key_2_q[23:16] <= sub_module_a_i_wb_dat[23:16];
+			end
+			if (sub_module_a_i_wb_sel[3]) begin
+				rg_key_2_q[31:24] <= sub_module_a_i_wb_dat[31:24];
+			end
+		end
 	end
 	assign rg_key_2 = rg_key_2_q;
 
 	// Addr: 0x44  RegCell: SCRATCH    — Scratch pad
 	//   [31:0]   RW   word       — Scratch word
-	// RW  [31:0]  word       — Scratch word
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
-		if (!i_rst_n) rg_word_q <= 32'h0;
-		else if (wr_sel_44) rg_word_q <= (rg_word_q & ~({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[31:0] & ({{8{sub_module_a_i_wb_sel[3]}}, {8{sub_module_a_i_wb_sel[2]}}, {8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
+		if (!i_rst_n) begin
+			rg_word_q <= 32'h0;
+		end else if (wr_sel_44) begin
+			if (sub_module_a_i_wb_sel[0]) begin
+				rg_word_q[7:0] <= sub_module_a_i_wb_dat[7:0];
+			end
+			if (sub_module_a_i_wb_sel[1]) begin
+				rg_word_q[15:8] <= sub_module_a_i_wb_dat[15:8];
+			end
+			if (sub_module_a_i_wb_sel[2]) begin
+				rg_word_q[23:16] <= sub_module_a_i_wb_dat[23:16];
+			end
+			if (sub_module_a_i_wb_sel[3]) begin
+				rg_word_q[31:24] <= sub_module_a_i_wb_dat[31:24];
+			end
+		end
 	end
 	assign rg_word = rg_word_q;
 
 	// Addr: 0x48  RegCell: HW_FEED    — Hardware feed
 	//   [15:0]   RWW  capture    — HW may update via capture_strb/capture_hwdata
-	// RWW [15:0]  capture    — HW may update via capture_strb/capture_hwdata
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
-		if (!i_rst_n) rg_capture_q <= 16'h0;
-		else if (wr_sel_48) rg_capture_q <= (rg_capture_q & ~({{8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}})) | (sub_module_a_i_wb_dat[15:0] & ({{8{sub_module_a_i_wb_sel[1]}}, {8{sub_module_a_i_wb_sel[0]}}}));
-		else if (rg_capture_strb) rg_capture_q <= rg_capture_hwdata;
+		if (!i_rst_n) begin
+			rg_capture_q <= 16'h0;
+		end else if (~wr_sel_48) begin
+			if (rg_capture_strb) begin
+				rg_capture_q <= rg_capture_hwdata;
+			end
+		end else if (wr_sel_48) begin
+			if (sub_module_a_i_wb_sel[0]) begin
+				rg_capture_q[7:0] <= sub_module_a_i_wb_dat[7:0];
+			end
+			if (sub_module_a_i_wb_sel[1]) begin
+				rg_capture_q[15:8] <= sub_module_a_i_wb_dat[15:8];
+			end
+		end
 	end
 	assign rg_capture = rg_capture_q;
 
@@ -366,10 +449,14 @@ module sub_module_a_regfile (
 
 	// Addr: 0x50  RegCell: SOLO       — Independent cell
 	//   [0]      RW   flag       — Solo flag
-	// RW  [0]     flag       — Solo flag
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
-		if (!i_rst_n) rg_flag_q <= 1'h0;
-		else if (wr_sel_50) rg_flag_q <= (rg_flag_q & ~(sub_module_a_i_wb_sel[0])) | (sub_module_a_i_wb_dat[0:0] & (sub_module_a_i_wb_sel[0]));
+		if (!i_rst_n) begin
+			rg_flag_q <= 1'h0;
+		end else if (wr_sel_50) begin
+			if (sub_module_a_i_wb_sel[0]) begin
+				rg_flag_q <= sub_module_a_i_wb_dat[0];
+			end
+		end
 	end
 	assign rg_flag = rg_flag_q;
 
@@ -384,41 +471,20 @@ module sub_module_a_regfile (
 			// CFG0 @ 0x00
 			rd_sel_0: begin
 				// RW  [0]     enable     — Soft enable
-				begin
-					logic [0:0] __v;
-					__v = 1'h0;
-					for (int __c = 0; __c < 4; __c++) begin
-						if (mask_lane[__c]) __v |= rg_enable_q[__c];
-					end
-					rd_data[0:0] = __v;
-				end
+				rd_data[0] = (mask_lane[0] ? rg_enable_q[0] : 1'h0) | (mask_lane[1] ? rg_enable_q[1] : 1'h0) | (mask_lane[2] ? rg_enable_q[2] : 1'h0) | (mask_lane[3] ? rg_enable_q[3] : 1'h0);
 				// RW  [10:8]  mode       — Operating mode
-				begin
-					logic [2:0] __v;
-					__v = 3'h0;
-					for (int __c = 0; __c < 4; __c++) begin
-						if (mask_lane[__c]) __v |= rg_mode_q[__c];
-					end
-					rd_data[10:8] = __v;
-				end
+				rd_data[10:8] = (mask_lane[0] ? rg_mode_q[0] : 3'h0) | (mask_lane[1] ? rg_mode_q[1] : 3'h0) | (mask_lane[2] ? rg_mode_q[2] : 3'h0) | (mask_lane[3] ? rg_mode_q[3] : 3'h0);
 				// RW  [23:16] lane_cfg   — Per-lane config (shadowed)
-				begin
-					logic [7:0] __v;
-					__v = 8'h0;
-					for (int __c = 0; __c < 4; __c++) begin
-						if (mask_lane[__c]) __v |= rg_lane_cfg_q[__c];
-					end
-					rd_data[23:16] = __v;
-				end
+				rd_data[23:16] = (mask_lane[0] ? rg_lane_cfg_q[0] : 8'h0) | (mask_lane[1] ? rg_lane_cfg_q[1] : 8'h0) | (mask_lane[2] ? rg_lane_cfg_q[2] : 8'h0) | (mask_lane[3] ? rg_lane_cfg_q[3] : 8'h0);
 			end
 			// STATUS @ 0x10
 			rd_sel_10: begin
 				// RO  [0]     busy       — Busy
-				rd_data[0:0] = ro_busy;
+				rd_data[0] = ro_busy;
 				// W1C [8]     irq_sticky — Sticky IRQ; write 1 to clear
-				rd_data[8:8] = c_rg_irq_sticky_q;
+				rd_data[8] = c_rg_irq_sticky_q;
 				// W1P [16]    pulse_cmd  — Write 1 → one-cycle pulse out
-				rd_data[16:16] = 1'h0;
+				rd_data[16] = 1'h0;
 			end
 			// ctrl_key_0 @ 0x20
 			rd_sel_20: begin
@@ -453,7 +519,7 @@ module sub_module_a_regfile (
 			// SOLO @ 0x50
 			rd_sel_50: begin
 				// RW  [0]     flag       — Solo flag
-				rd_data[0:0] = rg_flag_q;
+				rd_data[0] = rg_flag_q;
 			end
 			default: rd_data = 32'h0;
 		endcase

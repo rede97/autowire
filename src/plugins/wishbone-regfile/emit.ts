@@ -117,6 +117,11 @@ function fieldBits(lf: LaidField): string {
 	return hi === lo ? `[${lo}]` : `[${hi}:${lo}]`;
 }
 
+/** `[hi:lo]`, collapsing to `[lo]` for single bits. */
+function bitRange(hi: number, lo: number): string {
+	return hi === lo ? `[${lo}]` : `[${hi}:${lo}]`;
+}
+
 /** Column pads for cell / field map comments (module-wide). */
 type FieldCommentPads = {
 	addrHexBits: number;
@@ -613,7 +618,7 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 			Boolean(s.remaps) && Object.keys(s.remaps ?? {}).length > 0;
 		// Power-of-two copies + no remaps: every raw tag hits exactly one copy.
 		const missReachable = hasRemaps || (mw & (mw - 1)) !== 0;
-		out.push(`\tassign raw_${s.name} = ${i_wb_tga}[${hi}:${lo}];`);
+		out.push(`\tassign raw_${s.name} = ${i_wb_tga}${bitRange(hi, lo)};`);
 		out.push("\talways_comb begin");
 		out.push(`\t\tmask_${s.name} = ${mw}'h0;`);
 		if (!hasRemaps) {
@@ -646,18 +651,15 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	for (const c of cells) {
 		out.push(...fieldMapComment(c, commentPads));
 		const sh = c.shadow ? shadowByName(shadows, c.shadow) : undefined;
-		for (const lf of c.fields) {
-			emitFieldStorage(
-				out,
-				c,
-				lf,
-				sh,
-				def.read_write_block,
-				commentPads,
-				i_wb_dat,
-				i_wb_sel,
-			);
-		}
+		emitCellStorage(
+			out,
+			c,
+			sh,
+			def.read_write_block,
+			commentPads,
+			i_wb_dat,
+			i_wb_sel,
+		);
 		out.push("");
 	}
 
@@ -740,141 +742,239 @@ function collectFieldStorageSigs(
 	}
 }
 
-function emitFieldStorage(
+type LaneChunk = {
+	lane: number;
+	fHi: number;
+	fLo: number;
+	gHi: number;
+	gLo: number;
+};
+
+/** Field chunks per byte lane: field-relative [fHi:fLo] ↔ cell bits [gHi:gLo]. */
+function fieldLaneChunks(hi: number, lo: number): LaneChunk[] {
+	const chunks: LaneChunk[] = [];
+	let pos = lo;
+	while (pos <= hi) {
+		const lane = Math.floor(pos / 8);
+		const top = Math.min(hi, lane * 8 + 7);
+		chunks.push({ lane, fHi: top - lo, fLo: pos - lo, gHi: top, gLo: pos });
+		pos = top + 1;
+	}
+	return chunks;
+}
+
+/** Field-relative bit select for a chunk; empty when it spans the field. */
+function chunkSel(ch: LaneChunk, width: number): string {
+	if (ch.fLo === 0 && ch.fHi === width - 1) return "";
+	return ch.fHi === ch.fLo ? `[${ch.fLo}]` : `[${ch.fHi}:${ch.fLo}]`;
+}
+
+/**
+ * One storage DFF block per cell (master regbit_block style):
+ * reset → ~wr (HW writes: RWW strb / W1C set) → wr (per-byte-lane SEL blocks).
+ * Assign columns are aligned per branch.
+ */
+function emitCellStorage(
 	out: string[],
 	c: LaidCell,
-	lf: LaidField,
 	sh: RegShadow | undefined,
 	read_write_block: boolean,
 	pads: FieldCommentPads,
 	i_wb_dat: string,
 	i_wb_sel: string,
 ): void {
-	const f = lf.field;
-	const hi = lf.bit_offset + f.width - 1;
-	const lo = lf.bit_offset;
 	const wr = `wr_sel_${hex(c.byte_offset)}`;
 	const rd = `rd_sel_${hex(c.byte_offset)}`;
-
-	if (f.access === Access.RC || f.access === Access.RO) {
-		return;
-	}
-	const stem = sidebandStem(f);
-	const dat = `${i_wb_dat}[${hi}:${lo}]`;
-	const smask = selMask(hi, lo, i_wb_sel);
-	const datMasked = `(${dat} & (${smask}))`;
-	out.push(`\t// ${fieldInlineComment(lf, pads)}`);
-	if (f.access === Access.RWE) {
-		const sLo = Math.floor(lo / 8);
-		const sHi = Math.floor(hi / 8);
-		const nl = sHi - sLo + 1;
-		const selBits =
-			sHi === sLo ? `${i_wb_sel}[${sLo}]` : `${i_wb_sel}[${sHi}:${sLo}]`;
-		out.push(`\tassign ${stem}_wdata = ${dat};`);
-		out.push(`\tassign ${stem}_wstrb = {${nl}{${wr}}} & ${selBits};`);
-		out.push(`\tassign ${stem}_wren  = ${wr};`);
-		out.push(`\tassign ${stem}_rden  = ${rd};`);
-		out.push(`\tassign ${stem}_rst   = ~i_rst_n;`);
-		if (read_write_block) {
-			out.push(
-				`\t// Stall ACK when this RWE window is selected and not ready`,
-				`\tassign rwe_stall_${stem} = (${wr} || ${rd}) && !${stem}_ready;`,
-			);
-		}
-		return;
-	}
-	if (f.access === Access.W1P) {
-		const fire = sh ? `(${wr} && |mask_${sh.name})` : wr;
-		out.push("\talways_ff @(posedge i_clk or negedge i_rst_n) begin");
-		out.push(`\t\tif (!i_rst_n) ${stem} <= ${f.width}'h0;`);
-		out.push(`\t\telse ${stem} <= ${fire} ? ${datMasked} : ${f.width}'h0;`);
-		out.push("\tend");
-		return;
-	}
-
 	const muxed = Boolean(sh?.inner_shadow_mux);
 	const ncopy = sh ? sh.copies : 1;
+	const sw = Math.max(1, Math.ceil(Math.log2(ncopy)));
 
-	if (
-		sh &&
-		(f.access === Access.RW ||
-			f.access === Access.RWW ||
-			f.access === Access.W1C)
-	) {
-		out.push("\talways_ff @(posedge i_clk or negedge i_rst_n) begin");
-		out.push("\t\tif (!i_rst_n) begin");
-		for (let i = 0; i < ncopy; i++) {
-			out.push(
-				`\t\t\t${stem}_q[${i}] <= ${f.width}'h${hex(resetVal(f.reset, i))};`,
-			);
+	// Non-DFF sideband glue first (RWE window assigns, W1P pulse registers).
+	for (const lf of c.fields) {
+		const f = lf.field;
+		const hi = lf.bit_offset + f.width - 1;
+		const lo = lf.bit_offset;
+		if (f.access !== Access.RWE && f.access !== Access.W1P) continue;
+		const stem = sidebandStem(f);
+		out.push(`\t// ${fieldInlineComment(lf, pads)}`);
+		if (f.access === Access.RWE) {
+			const sLo = Math.floor(lo / 8);
+			const sHi = Math.floor(hi / 8);
+			const nl = sHi - sLo + 1;
+			const selBits =
+				sHi === sLo ? `${i_wb_sel}[${sLo}]` : `${i_wb_sel}[${sHi}:${sLo}]`;
+			out.push(`\tassign ${stem}_wdata = ${i_wb_dat}${bitRange(hi, lo)};`);
+			out.push(`\tassign ${stem}_wstrb = {${nl}{${wr}}} & ${selBits};`);
+			out.push(`\tassign ${stem}_wren  = ${wr};`);
+			out.push(`\tassign ${stem}_rden  = ${rd};`);
+			out.push(`\tassign ${stem}_rst   = ~i_rst_n;`);
+			if (read_write_block) {
+				out.push(
+					`\t// Stall ACK when this RWE window is selected and not ready`,
+					`\tassign rwe_stall_${stem} = (${wr} || ${rd}) && !${stem}_ready;`,
+				);
+			}
+			continue;
 		}
-		out.push("\t\tend else begin");
+		const fire = sh ? `(${wr} && |mask_${sh.name})` : wr;
+		const smask = selMask(hi, lo, i_wb_sel);
+		out.push("\talways_ff @(posedge i_clk or negedge i_rst_n) begin");
+		out.push(`\t\tif (!i_rst_n) ${stem} <= ${f.width}'h0;`);
+		out.push(
+			`\t\telse ${stem} <= ${fire} ? (${i_wb_dat}${bitRange(hi, lo)} & (${smask})) : ${f.width}'h0;`,
+		);
+		out.push("\tend");
+	}
+
+	const dff = c.fields.filter((lf) =>
+		[Access.RW, Access.RWW, Access.W1C].includes(lf.field.access),
+	);
+	if (dff.length === 0) return;
+
+	const lhsBase = (lf: LaidField): string => `${sidebandStem(lf.field)}_q`;
+	const lhsAt = (lf: LaidField, copy: number | null): string =>
+		copy === null ? lhsBase(lf) : `${lhsBase(lf)}[${copy}]`;
+	const oSel = sh ? `o_${sh.name}_sel` : "";
+
+	// Guarded assign rows: [guard | null, lhs, rhs]; guards get their own line.
+	type Row = { guard: string | null; lhs: string; rhs: string };
+	const pushRows = (indent: string, rows: Row[]): void => {
+		const pad = Math.max(...rows.map((r) => r.lhs.length));
+		for (const r of rows) {
+			if (r.guard !== null) out.push(`${indent}if (${r.guard}) begin`);
+			out.push(
+				`${indent}${r.guard !== null ? "\t" : ""}${r.lhs.padEnd(pad)} <= ${r.rhs};`,
+			);
+			if (r.guard !== null) out.push(`${indent}end`);
+		}
+	};
+
+	// --- reset rows ---
+	const resets: Row[] = [];
+	for (const lf of dff) {
+		const f = lf.field;
+		for (let i = 0; i < (sh ? ncopy : 1); i++) {
+			resets.push({
+				guard: null,
+				lhs: lhsAt(lf, sh ? i : null),
+				rhs: `${f.width}'h${hex(resetVal(f.reset, i))}`,
+			});
+		}
+	}
+
+	// --- HW branch rows (~wr): RWW strb / W1C set ---
+	const hw: Row[] = [];
+	for (const lf of dff) {
+		const f = lf.field;
+		const stem = sidebandStem(f);
+		if (f.access === Access.RWW) {
+			if (sh && !muxed) {
+				for (let i = 0; i < ncopy; i++) {
+					hw.push({
+						guard: `${stem}_strb[${i}]`,
+						lhs: lhsAt(lf, i),
+						rhs: `${stem}_hwdata[${i}]`,
+					});
+				}
+			} else {
+				hw.push({
+					guard: `${stem}_strb`,
+					lhs: sh ? `${lhsBase(lf)}[${oSel}]` : lhsAt(lf, null),
+					rhs: `${stem}_hwdata`,
+				});
+			}
+		}
 		if (f.access === Access.W1C) {
-			// Hardware set sideband: muxed → current o_sel copy; else per-copy array.
-			const sw = Math.max(1, Math.ceil(Math.log2(ncopy)));
-			const setC = muxed
-				? `((o_${sh.name}_sel == ${sw}'(__c)) ? ${stem}_set : ${f.width}'h0)`
-				: `${stem}_set[__c]`;
-			out.push(`\t\t\tfor (int __c = 0; __c < ${ncopy}; __c++) begin`);
-			out.push(`\t\t\t\tif (${wr} && mask_${sh.name}[__c])`);
-			out.push(
-				`\t\t\t\t\t${stem}_q[__c] <= (${stem}_q[__c] & ~${datMasked}) | ${setC};`,
-			);
-			out.push(`\t\t\t\telse if (|${setC})`);
-			out.push(`\t\t\t\t\t${stem}_q[__c] <= ${stem}_q[__c] | ${setC};`);
-			out.push("\t\t\tend");
-		} else {
-			out.push(`\t\t\tif (${wr}) begin`);
-			out.push(`\t\t\t\tfor (int __c = 0; __c < ${ncopy}; __c++) begin`);
-			out.push(
-				`\t\t\t\t\tif (mask_${sh.name}[__c]) ${stem}_q[__c] <= (${stem}_q[__c] & ~(${smask})) | ${datMasked};`,
-			);
-			out.push("\t\t\t\tend");
-			out.push("\t\t\tend");
-			if (f.access === Access.RWW) {
-				if (muxed) {
-					out.push(
-						`\t\t\tif (${stem}_strb) ${stem}_q[o_${sh.name}_sel] <= ${stem}_hwdata;`,
-					);
+			if (sh && !muxed) {
+				for (let i = 0; i < ncopy; i++) {
+					hw.push({
+						guard: `|${stem}_set[${i}]`,
+						lhs: lhsAt(lf, i),
+						rhs: `${lhsAt(lf, i)} | ${stem}_set[${i}]`,
+					});
+				}
+			} else {
+				const lhs = sh ? `${lhsBase(lf)}[${oSel}]` : lhsAt(lf, null);
+				hw.push({
+					guard: `|${stem}_set`,
+					lhs,
+					rhs: `${lhs} | ${stem}_set`,
+				});
+			}
+		}
+	}
+
+	// --- SW branch: per-byte-lane blocks ---
+	const lanes: { lane: number; rows: Row[] }[] = [];
+	for (let k = 0; k < 4; k++) {
+		const rows: Row[] = [];
+		for (const lf of dff) {
+			const f = lf.field;
+			const stem = sidebandStem(f);
+			const hi = lf.bit_offset + f.width - 1;
+			for (const ch of fieldLaneChunks(hi, lf.bit_offset)) {
+				if (ch.lane !== k) continue;
+				const sel = chunkSel(ch, f.width);
+				const dat = `${i_wb_dat}${bitRange(ch.gHi, ch.gLo)}`;
+				const w = ch.fHi - ch.fLo + 1;
+				if (f.access === Access.W1C) {
+					const w1c = (copy: number | null): Row => {
+						const lhs = `${lhsAt(lf, copy)}${sel}`;
+						const setExpr =
+							copy === null
+								? `${stem}_set${sel}`
+								: muxed
+									? `((o_${sh?.name ?? ""}_sel == ${sw}'d${copy}) ? ${stem}_set${sel} : ${w}'h0)`
+									: `${stem}_set[${copy}]${sel}`;
+						return {
+							guard: sh ? `mask_${sh?.name ?? ""}[${copy ?? 0}]` : null,
+							lhs,
+							rhs: `(${lhs} & ~${dat}) | ${setExpr}`,
+						};
+					};
+					for (let i = 0; i < (sh ? ncopy : 1); i++) {
+						rows.push(w1c(sh ? i : null));
+					}
 				} else {
-					out.push(`\t\t\tfor (int __c = 0; __c < ${ncopy}; __c++) begin`);
-					out.push(
-						`\t\t\t\tif (${stem}_strb[__c]) ${stem}_q[__c] <= ${stem}_hwdata[__c];`,
-					);
-					out.push("\t\t\tend");
+					const rw = (copy: number | null): Row => ({
+						guard: sh ? `mask_${sh?.name ?? ""}[${copy ?? 0}]` : null,
+						lhs: `${lhsAt(lf, copy)}${sel}`,
+						rhs: dat,
+					});
+					for (let i = 0; i < (sh ? ncopy : 1); i++) {
+						rows.push(rw(sh ? i : null));
+					}
 				}
 			}
 		}
-		out.push("\t\tend");
-		out.push("\tend");
-		if (muxed) {
-			out.push(`\tassign ${stem} = ${stem}_q[o_${sh.name}_sel];`);
-		} else {
-			out.push(`\tassign ${stem} = ${stem}_q;`);
-		}
-		return;
+		if (rows.length > 0) lanes.push({ lane: k, rows });
 	}
 
-	// Non-shadow RW / RWW / W1C
 	out.push("\talways_ff @(posedge i_clk or negedge i_rst_n) begin");
-	out.push(
-		`\t\tif (!i_rst_n) ${stem}_q <= ${f.width}'h${hex(resetVal(f.reset, 0))};`,
-	);
-	if (f.access === Access.W1C) {
-		out.push(
-			`\t\telse if (${wr}) ${stem}_q <= (${stem}_q & ~${datMasked}) | ${stem}_set;`,
-			`\t\telse if (|${stem}_set) ${stem}_q <= ${stem}_q | ${stem}_set;`,
-		);
-	} else {
-		out.push(
-			`\t\telse if (${wr}) ${stem}_q <= (${stem}_q & ~(${smask})) | ${datMasked};`,
-		);
-		if (f.access === Access.RWW) {
-			out.push(`\t\telse if (${stem}_strb) ${stem}_q <= ${stem}_hwdata;`);
-		}
+	out.push("\t\tif (!i_rst_n) begin");
+	pushRows("\t\t\t", resets);
+	if (hw.length > 0) {
+		out.push(`\t\tend else if (~${wr}) begin`);
+		pushRows("\t\t\t", hw);
 	}
+	out.push(`\t\tend else if (${wr}) begin`);
+	for (const { lane, rows } of lanes) {
+		out.push(`\t\t\tif (${i_wb_sel}[${lane}]) begin`);
+		pushRows("\t\t\t\t", rows);
+		out.push("\t\t\tend");
+	}
+	out.push("\t\tend");
 	out.push("\tend");
-	out.push(`\tassign ${stem} = ${stem}_q;`);
+
+	// Sideband read-back assigns.
+	for (const lf of dff) {
+		const stem = sidebandStem(lf.field);
+		out.push(
+			muxed
+				? `\tassign ${stem} = ${stem}_q[${oSel}];`
+				: `\tassign ${stem} = ${stem}_q;`,
+		);
+	}
 }
 
 function emitFieldRead(
@@ -887,44 +987,46 @@ function emitFieldRead(
 	const lo = lf.bit_offset;
 	if (f.access === Access.RC) {
 		out.push(
-			`\t\t\t\trd_data[${hi}:${lo}] = ${f.width}'h${hex(resetVal(f.reset, 0))};`,
+			`\t\t\t\trd_data${bitRange(hi, lo)} = ${f.width}'h${hex(resetVal(f.reset, 0))};`,
 		);
 		return;
 	}
 	const stem = sidebandStem(f);
 	if (f.access === Access.RO) {
 		if (sh) {
-			out.push("\t\t\t\tbegin");
-			out.push(`\t\t\t\t\tlogic [${f.width - 1}:0] __ro;`);
-			out.push(`\t\t\t\t\t__ro = ${f.width}'h0;`);
-			out.push(`\t\t\t\t\tfor (int __c = 0; __c < ${sh.copies}; __c++) begin`);
-			out.push(`\t\t\t\t\t\tif (mask_${sh.name}[__c]) __ro |= ${stem}[__c];`);
-			out.push("\t\t\t\t\tend");
-			out.push(`\t\t\t\t\trd_data[${hi}:${lo}] = __ro;`);
-			out.push("\t\t\t\tend");
+			out.push(
+				`\t\t\t\trd_data${bitRange(hi, lo)} = ${shadowOr(f.width, sh, (i) => `${stem}[${i}]`)};`,
+			);
 		} else {
-			out.push(`\t\t\t\trd_data[${hi}:${lo}] = ${stem};`);
+			out.push(`\t\t\t\trd_data${bitRange(hi, lo)} = ${stem};`);
 		}
 		return;
 	}
 	if (f.access === Access.RWE) {
-		out.push(`\t\t\t\trd_data[${hi}:${lo}] = ${stem};`);
+		out.push(`\t\t\t\trd_data${bitRange(hi, lo)} = ${stem};`);
 		return;
 	}
 	if (f.access === Access.W1P) {
-		out.push(`\t\t\t\trd_data[${hi}:${lo}] = ${f.width}'h0;`);
+		out.push(`\t\t\t\trd_data${bitRange(hi, lo)} = ${f.width}'h0;`);
 		return;
 	}
 	if (sh) {
-		out.push("\t\t\t\tbegin");
-		out.push(`\t\t\t\t\tlogic [${f.width - 1}:0] __v;`);
-		out.push(`\t\t\t\t\t__v = ${f.width}'h0;`);
-		out.push(`\t\t\t\t\tfor (int __c = 0; __c < ${sh.copies}; __c++) begin`);
-		out.push(`\t\t\t\t\t\tif (mask_${sh.name}[__c]) __v |= ${stem}_q[__c];`);
-		out.push("\t\t\t\t\tend");
-		out.push(`\t\t\t\t\trd_data[${hi}:${lo}] = __v;`);
-		out.push("\t\t\t\tend");
+		out.push(
+			`\t\t\t\trd_data${bitRange(hi, lo)} = ${shadowOr(f.width, sh, (i) => `${stem}_q[${i}]`)};`,
+		);
 	} else {
-		out.push(`\t\t\t\trd_data[${hi}:${lo}] = ${stem}_q;`);
+		out.push(`\t\t\t\trd_data${bitRange(hi, lo)} = ${stem}_q;`);
 	}
+}
+
+/** Masked per-copy OR read (master onehot-shadow style): `(mask[k] ? src[k] : '0) | …`. */
+function shadowOr(
+	width: number,
+	sh: RegShadow,
+	src: (copy: number) => string,
+): string {
+	return Array.from(
+		{ length: sh.copies },
+		(_, i) => `(mask_${sh.name}[${i}] ? ${src(i)} : ${width}'h0)`,
+	).join(" | ");
 }
