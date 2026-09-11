@@ -14,7 +14,7 @@
 3. **同名 output 多驱动是错误**：全网 output 驱动 >1 → 短路报错；多例化同名 output（如 sdspi `o_debug`）必须显式 open 或改名。
 4. **不同名批量改名 → 一条 `aw-rewrite` 正则**（`$1`/`$&` + `` `${id}` ``）；禁止把同束口拆成多条逐端口 rewrite，也禁止抄同名 `aw-connect`。
 ```text
-IP 源码就位（submodule / vendored 目录）
+IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/patches/`**，checkout 后跑 `patches/apply.sh`，禁止在上游子模块落本地 commit）
   → 手写集成叶子（rtl/*.v，英文注释）
   → rtl/soc.f（filelist，路径相对工作区根；.svh 禁止入内）
   → autowire.toml（[analysis.rtl] filelists + [connect.<id>] DAG + [dump] dir）
