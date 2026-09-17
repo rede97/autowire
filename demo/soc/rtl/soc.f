@@ -12,7 +12,8 @@ rtl/smoke_wb.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v
 
-# Type-A wishbone-bus (named-slave interconnect)
+# Type-A wishbone-bus (named-slave interconnect + shared pipe)
+gen/plugins/wishbone-bus/wb_cfg_pipe.sv
 gen/plugins/wishbone-bus/soc_wb_interconnect.sv
 
 # Type-A wishbone-regfile leaves

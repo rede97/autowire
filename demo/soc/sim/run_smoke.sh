@@ -16,7 +16,8 @@ test -f "$SIM/tb_soc.sv" || { echo "missing $SIM/tb_soc.sv — dump soc_tb first
 # Regenerate plugin RTL (bus + regfiles) so the smoke matches the SoT.
 bun ../../index.ts plugin generate all >/dev/null
 
-PLUGINS="gen/plugins/wishbone-bus/soc_wb_interconnect.sv \
+PLUGINS="gen/plugins/wishbone-bus/wb_cfg_pipe.sv \
+	gen/plugins/wishbone-bus/soc_wb_interconnect.sv \
 	gen/plugins/wishbone-regfile/sha256_0_regfile.sv \
 	gen/plugins/wishbone-regfile/sha256_1_regfile.sv \
 	gen/plugins/wishbone-regfile/smoke_regfile.sv"

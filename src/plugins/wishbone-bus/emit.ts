@@ -31,7 +31,7 @@ function slavePortBlock(s: WbSlave, aw: number): string[] {
 	const st = s.tag ?? 0;
 	const lines = [
 		`\t// Slave ${n} — ${s.desc}`,
-		`\t//   base=0x${hex(s.base)}  mask=0x${hex(s.mask)}`,
+		`\t//   base=0x${hex(s.base)}  mask=0x${hex(s.mask)}${s.pipe > 0 ? `  pipe=${s.pipe}` : ""}`,
 		`\toutput logic ${adr}${wb(n, "i_wb_adr")},`,
 		`\toutput logic [31:0] ${wb(n, "i_wb_dat")},`,
 		`\toutput logic [3:0]  ${wb(n, "i_wb_sel")},`,
@@ -304,30 +304,104 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 		"\t//  Named slave drive (window offset ADR)",
 		"\t//------------------------------------------------------------------------------",
 	);
-	const namePad = Math.max(...slaves.map((s) => wb(s.name, "i_wb_adr").length));
+	const combo = slaves.filter((s) => (s.pipe ?? 0) === 0);
+	const namePad =
+		combo.length > 0
+			? Math.max(...combo.map((s) => wb(s.name, "i_wb_adr").length))
+			: 0;
 	const slotPad = Math.max(...slaves.map((_, i) => `slot_sel[${i}]`.length));
 	for (let i = 0; i < ns; i++) {
 		const s = slaves[i];
 		if (s === undefined) continue;
-		const n = s.name;
-		const port = (stem: string) => wb(n, stem).padEnd(namePad);
-		const slot = `slot_sel[${i}]`.padEnd(slotPad);
-		out.push(
-			`\tassign ${port("i_wb_adr")} = ${slot} ? ${gPrefix}adr & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0;`,
-			`\tassign ${port("i_wb_dat")} = ${gPrefix}wdata;`,
-			`\tassign ${port("i_wb_sel")} = ${gPrefix}sel;`,
-		);
-		const st = s.tag ?? 0;
-		if (st > 0) {
-			out.push(`\tassign ${port("i_wb_tga")} = ${gPrefix}tga[${st - 1}:0];`);
+		if ((s.pipe ?? 0) > 0) {
+			out.push(...emitSlavePipe(s, i, aw, gPrefix));
+		} else {
+			out.push(...emitSlaveCombo(s, i, aw, gPrefix, namePad, slotPad));
 		}
-		out.push(
-			`\tassign ${port("i_wb_cyc")} = ${slot} & ${gPrefix}cyc;`,
-			`\tassign ${port("i_wb_stb")} = ${slot} & ${gPrefix}stb;`,
-			`\tassign ${port("i_wb_we ")} = ${gPrefix}we;`,
-		);
 		if (i < ns - 1) out.push("");
 	}
+	return out;
+}
+
+function emitSlaveCombo(
+	s: WbSlave,
+	i: number,
+	aw: number,
+	gPrefix: string,
+	namePad: number,
+	slotPad: number,
+): string[] {
+	const n = s.name;
+	const port = (stem: string) => wb(n, stem).padEnd(namePad);
+	const slot = `slot_sel[${i}]`.padEnd(slotPad);
+	const out = [
+		`\tassign ${port("i_wb_adr")} = ${slot} ? ${gPrefix}adr & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0;`,
+		`\tassign ${port("i_wb_dat")} = ${gPrefix}wdata;`,
+		`\tassign ${port("i_wb_sel")} = ${gPrefix}sel;`,
+	];
+	const st = s.tag ?? 0;
+	if (st > 0) {
+		out.push(`\tassign ${port("i_wb_tga")} = ${gPrefix}tga[${st - 1}:0];`);
+	}
+	out.push(
+		`\tassign ${port("i_wb_cyc")} = ${slot} & ${gPrefix}cyc;`,
+		`\tassign ${port("i_wb_stb")} = ${slot} & ${gPrefix}stb;`,
+		`\tassign ${port("i_wb_we ")} = ${gPrefix}we;`,
+	);
+	return out;
+}
+
+/** Instantiate wb_cfg_pipe. TGA ports stay on the module; omit them when tag=0. */
+function emitSlavePipe(
+	s: WbSlave,
+	i: number,
+	aw: number,
+	gPrefix: string,
+): string[] {
+	const n = s.name;
+	const pipe = s.pipe;
+	const st = s.tag ?? 0;
+	const slot = `slot_sel[${i}]`;
+	const winAdr = `${slot} ? ${gPrefix}adr & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0`;
+	const ack = `${n}_pipe_ack`;
+	const rdat = `${n}_pipe_rdat`;
+	const out: string[] = [
+		"\t//------------------------------------------------------------------------------",
+		`\t//  Slave ${n} — wb_cfg_pipe PIPE=${pipe} (posted write / blocking read)`,
+		"\t//------------------------------------------------------------------------------",
+		`\tlogic        ${ack};`,
+		`\tlogic [31:0] ${rdat};`,
+		`\twb_cfg_pipe #(.PIPE(${pipe}), .AW(${aw}), .TW(${st})) u_${n}_pipe (`,
+		"\t\t.clk(clk),",
+		"\t\t.rst_n(rst_n),",
+		`\t\t.m_cyc(${slot} & ${gPrefix}cyc),`,
+		`\t\t.m_stb(${slot} & ${gPrefix}stb),`,
+		`\t\t.m_we(${gPrefix}we),`,
+		`\t\t.m_adr(${winAdr}),`,
+		`\t\t.m_dat(${gPrefix}wdata),`,
+		`\t\t.m_sel(${gPrefix}sel),`,
+	];
+	if (st > 0) {
+		out.push(`\t\t.m_tga(${gPrefix}tga[${st - 1}:0]),`);
+	}
+	out.push(
+		`\t\t.m_ack(${ack}),`,
+		`\t\t.m_rdat(${rdat}),`,
+		`\t\t.s_cyc(${wb(n, "i_wb_cyc")}),`,
+		`\t\t.s_stb(${wb(n, "i_wb_stb")}),`,
+		`\t\t.s_we(${wb(n, "i_wb_we")}),`,
+		`\t\t.s_adr(${wb(n, "i_wb_adr")}),`,
+		`\t\t.s_dat(${wb(n, "i_wb_dat")}),`,
+		`\t\t.s_sel(${wb(n, "i_wb_sel")}),`,
+	);
+	if (st > 0) {
+		out.push(`\t\t.s_tga(${wb(n, "i_wb_tga")}),`);
+	}
+	out.push(
+		`\t\t.s_ack(${wb(n, "o_wb_ack")}),`,
+		`\t\t.s_rdat(${wb(n, "o_wb_dat")})`,
+		"\t);",
+	);
 	return out;
 }
 
@@ -342,11 +416,19 @@ function emitResponseMux(
 	pushOrAssign(
 		out,
 		dat,
-		slaves.map((s, i) => `({32{slot_sel[${i}]}} & ${wb(s.name, "o_wb_dat")})`),
+		slaves.map((s, i) =>
+			(s.pipe ?? 0) > 0
+				? `({32{slot_sel[${i}]}} & ${s.name}_pipe_rdat)`
+				: `({32{slot_sel[${i}]}} & ${wb(s.name, "o_wb_dat")})`,
+		),
 	);
 	pushOrAssign(out, ack, [
 		`(unmapped & ${stb})`,
-		...slaves.map((s, i) => `(slot_sel[${i}] & ${wb(s.name, "o_wb_ack")})`),
+		...slaves.map((s, i) =>
+			(s.pipe ?? 0) > 0
+				? `(${s.name}_pipe_ack)`
+				: `(slot_sel[${i}] & ${wb(s.name, "o_wb_ack")})`,
+		),
 	]);
 	return out;
 }
@@ -370,13 +452,19 @@ export function emitBusSv(def: BusDef): string {
 	if (tw > 0) {
 		lines.push(`//  Tag:     TGA ${tw} bit (forwarded, not interpreted)`);
 	}
+	if (def.slaves.some((s) => (s.pipe ?? 0) > 0)) {
+		lines.push(
+			"//  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read; master PIPE is parent)",
+		);
+	}
 	lines.push(
 		"//------------------------------------------------------------------------------",
 		"//  Address map:",
 	);
 	for (const s of def.slaves) {
+		const pipeNote = (s.pipe ?? 0) > 0 ? `  pipe=${s.pipe}` : "";
 		lines.push(
-			`//    0x${hex(s.base)}  mask=0x${hex(s.mask)}  ${s.name} — ${s.desc}`,
+			`//    0x${hex(s.base)}  mask=0x${hex(s.mask)}  ${s.name} — ${s.desc}${pipeNote}`,
 		);
 	}
 	lines.push(

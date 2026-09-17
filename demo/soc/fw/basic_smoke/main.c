@@ -42,6 +42,7 @@ static void sha_soft_reset(void)
 	mmio_write(SHA0_BASE + SHA_CTRL, SHA_SOFT_RESET);
 	mmio_write(SHA0_BASE + SHA_CTRL, 0);
 	mmio_write(SHA0_BASE + SHA_CTRL, SHA_DONE_CLEAR);
+	(void)mmio_barrier(SHA0_BASE + SHA_CTRL);
 }
 
 static void dma_clear_done(void)
@@ -88,6 +89,7 @@ int main(void)
 	for (i = 17; i < 31; i++)
 		mmio_write(MSG_BASE + i * 4u, 0);
 	mmio_write(MSG_BASE + 31u * 4u, 0x00020000u);
+	(void)mmio_barrier(MSG_BASE);
 
 	run_dma_sha(MSG_BASE, DMA_CTRL_START | DMA_CTRL_SRC_INC);
 	check_digest(EXPECTED_ZEROS);

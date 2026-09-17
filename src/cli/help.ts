@@ -93,7 +93,8 @@ Parallel (does not block connect)
     connect aw-inst mod=*_regfile (or thin WB wrapper); no awx-regfile;
     toml [regfile.<source>] ts= (one file may export many RegfileDef; optional exports=);
     sheet empty = name; Excel book = plugins.regfile.export; toml ts= not html=;
-    DAT=32 ADR=byte ACK=same-cycle (pipe on bus); addr_width required;
+    DAT=32 ADR=byte; write posted at fabric slave PIPE / read blocks to leaf;
+    RWE read_write_block default false (posted fabric: true risks bus lock);
     WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
     SEL byte-masked writes (RW/RWW RMW, W1C/W1P masked); RWE ext_<field>_wstrb;
     W1C c_rg_<field>_set hw set (set wins); RWW same-cycle SW > HW;
@@ -102,10 +103,13 @@ Parallel (does not block connect)
   Wishbone bus — implementing now (docs/plugins/wishbone-bus.md);
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
     NM>1 → interconnect (priority arb); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
-    demo/soc bus/soc_wb.ts → soc_wb_interconnect;
+    demo/soc bus/soc_wb.ts → soc_wb_interconnect (mixed slave PIPE 0/1/2/3/4);
     toml [bus.<source>] ts=; ADR=byte; fabric addr_width parametrized;
-    TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga forwarded;
-    pipe/arb policy still open
+    TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out;
+    slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
+    blocking read; PIPE=0 combo; TGA ports always on the module, omitted at
+    instance when Slave has no tag);
+    master PIPE is parent-defined, not on this bus
 
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)

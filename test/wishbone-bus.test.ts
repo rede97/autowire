@@ -48,6 +48,7 @@ describe("wishbone-bus", () => {
 		expect(ws.busSources.some((s) => s.id === "soc")).toBe(true);
 		const paths = await generateAll(ws, ws.busSources);
 		expect(paths.some((p) => p.endsWith("soc_wb_interconnect.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("wb_cfg_pipe.sv"))).toBe(true);
 	});
 
 	test("zero masters also decoder", () => {
@@ -113,8 +114,35 @@ describe("wishbone-bus", () => {
 		// demo smoke slave declares tag 2 → fabric carries a 2-bit TGA
 		expect(soc_wb.tag_width).toBe(2);
 		expect(sv).toContain("cpu_o_wb_tga");
-		expect(sv).toContain("= g_tga[1:0]");
+		expect(sv).toContain("g_tga[1:0]");
 		expect(sv).not.toContain("sram_i_wb_tga");
+	});
+
+	test("demo SoC slaves use mixed PIPE depths", () => {
+		const depths = soc_wb.slaves.map((s) => s.pipe);
+		expect(new Set(depths).size).toBeGreaterThan(2);
+		expect(soc_wb.slaves.find((s) => s.name === "flash_cfg")?.pipe).toBe(0);
+		expect(soc_wb.slaves.find((s) => s.name === "sd0")?.pipe).toBe(2);
+		expect(soc_wb.slaves.find((s) => s.name === "sd1")?.pipe).toBe(4);
+		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.pipe).toBe(3);
+		const sv = emitBusSv(soc_wb);
+		expect(sv).toContain(
+			"wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sram_pipe",
+		);
+		expect(sv).toContain(
+			"wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(2)) u_smoke_pipe",
+		);
+		expect(sv).not.toContain("wb_pipe_beat_t");
+		expect(sv).not.toContain("flash_cfg_pipe");
+		const sramInst = sv.slice(
+			sv.indexOf("u_sram_pipe"),
+			sv.indexOf("u_flash_xip_pipe"),
+		);
+		expect(sramInst).not.toContain("m_tga");
+		expect(sramInst).not.toContain("s_tga");
+		const smokeInst = sv.slice(sv.indexOf("u_smoke_pipe"));
+		expect(smokeInst).toContain(".m_tga(g_tga[1:0])");
+		expect(smokeInst).toContain(".s_tga(smoke_i_wb_tga)");
 	});
 
 	test("arbiter priority: lowest master index wins (multi-hot regression)", () => {
@@ -125,6 +153,37 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("if      (cpu_o_wb_cyc)");
 		expect(sv).toContain("else if (dma0m_o_wb_cyc) grant_nxt = 3'b010;");
 		expect(sv).toContain("else if (dma1m_o_wb_cyc) grant_nxt = 3'b100;");
+	});
+
+	test("Slave fifth-arg number is tag, not pipe", () => {
+		const s = Slave("s0", "t", 0, 0xff, 2);
+		expect(s.tag).toBe(2);
+		expect(s.pipe).toBe(0);
+	});
+
+	test("slave pipe must be 0..16", () => {
+		expect(() => Slave("s0", "t", 0, 0xff, { pipe: 17 })).toThrow(/pipe/);
+		expect(() => Slave("s0", "t", 0, 0xff, { pipe: -1 })).toThrow(/pipe/);
+	});
+
+	test("slave PIPE instantiates wb_cfg_pipe; TGA ports connected only when tagged", () => {
+		const def = Bus("piped", "pipe", {
+			masters: [Master("cpu", "CPU")],
+			slaves: [
+				Slave("near", "combo", 0, 0xffff_ff00),
+				Slave("far", "piped", 0x1000, 0xffff_ff00, { pipe: 2, tag: 2 }),
+			],
+		});
+		const sv = emitBusSv(def);
+		expect(sv).toContain("wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(2)) u_far_pipe");
+		expect(sv).toContain(".m_tga(g_tga[1:0])");
+		expect(sv).toContain(".s_tga(far_i_wb_tga)");
+		expect(sv).toContain(".m_ack(far_pipe_ack)");
+		expect(sv).toContain(".m_rdat(far_pipe_rdat)");
+		expect(sv).not.toContain("near_pipe");
+		expect(sv).not.toContain("wb_pipe_beat_t");
+		expect(sv).toContain("(far_pipe_ack)");
+		expect(sv).toContain("near_o_wb_ack");
 	});
 
 	test("generateAll writes plugins_dir", async () => {
@@ -151,6 +210,8 @@ ts = "${ts.replaceAll("\\", "/")}"
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
 		const paths = await generateAll(ws, ws.busSources);
-		expect(paths).toHaveLength(1);
+		expect(paths.some((p) => p.endsWith("wb_cfg_pipe.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("tiny_decoder.sv"))).toBe(true);
+		expect(paths).toHaveLength(2);
 	});
 });

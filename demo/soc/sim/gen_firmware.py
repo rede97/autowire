@@ -88,6 +88,7 @@ def build():
     prog.append(addi(5, 5, 4))
     prog.append(addi(7, 7, -1))
     prog.append(bne(7, 0, (cpy - len(prog)) * 4))
+    prog.append(lw(9, 5, -4))               # drain posted SRAM writes
     fail_patches = []
     for lane in range(2):
         dma_base = 0x03002000 + lane * 0x1000

@@ -33,6 +33,9 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
+# ZipCPU sdspi FIFO pointer: once per WB beat (idempotent).
+bash patches/apply.sh
+
 test -f "$CONN/soc_top.sv" || { echo "missing $CONN/soc_top.sv — dump first"; exit 1; }
 test -f "$CONN/sha256wb.sv" || { echo "missing $CONN/sha256wb.sv — dump first"; exit 1; }
 test -f gen/plugins/wishbone-bus/soc_wb_interconnect.sv || {

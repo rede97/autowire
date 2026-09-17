@@ -42,3 +42,5 @@ remain for archaeology; not part of the required smoke path.
   (sector 0 = same 32 soft-pad words as the SRAM zeros KAT, big-endian on disk).
 - `sdspi_regs.h` is MIT (constants mirrored from ZipCPU bench/driver; no GPL
   sources copied into firmware).
+- After submodule checkout run `patches/apply.sh` (also invoked by
+  `sim/verilator/run.sh`) so the FIFO pointer advances once per Classic beat.

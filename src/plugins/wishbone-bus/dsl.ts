@@ -1,5 +1,16 @@
 // Wishbone-bus authoring DSL (SoT). Contract: docs/plugins/wishbone-bus.md.
 
+export type SlaveOpts = {
+	/** TGA width (bits) forwarded to this slave; omitted/0 = no TGA port. */
+	readonly tag?: number;
+	/**
+	 * Posted-write / blocking-read register stages inserted on this slave
+	 * port (0 = combinational). Master-side pipe is not configured here —
+	 * it comes from the parent fabric that drives this bus's master ports.
+	 */
+	readonly pipe?: number;
+};
+
 export type WbSlave = {
 	readonly name: string;
 	/** Byte base address (inclusive match with mask). */
@@ -9,6 +20,8 @@ export type WbSlave = {
 	readonly desc: string;
 	/** TGA width (bits) forwarded to this slave; omitted/0 = no TGA port. */
 	readonly tag?: number;
+	/** Inline pipe stages on this slave (0 = none). */
+	readonly pipe: number;
 };
 
 export type WbMaster = {
@@ -38,12 +51,33 @@ export function isBusDef(v: unknown): v is BusDef {
 	);
 }
 
+function parseSlaveOpts(
+	name: string,
+	tagOrOpts?: number | SlaveOpts,
+): { tag?: number; pipe: number } {
+	const opts: SlaveOpts =
+		tagOrOpts === undefined
+			? {}
+			: typeof tagOrOpts === "number"
+				? { tag: tagOrOpts }
+				: tagOrOpts;
+	const tag = opts.tag;
+	const pipe = opts.pipe ?? 0;
+	if (tag !== undefined && (!Number.isInteger(tag) || tag < 0)) {
+		throw new Error(`wishbone-bus: slave ${name} tag must be >= 0`);
+	}
+	if (!Number.isInteger(pipe) || pipe < 0 || pipe > 16) {
+		throw new Error(`wishbone-bus: slave ${name} pipe must be 0..16`);
+	}
+	return { ...(tag ? { tag } : {}), pipe };
+}
+
 export function Slave(
 	name: string,
 	desc: string,
 	base: number,
 	mask: number,
-	tag?: number,
+	tagOrOpts?: number | SlaveOpts,
 ): WbSlave {
 	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
 		throw new Error(`wishbone-bus: bad slave name "${name}"`);
@@ -54,10 +88,8 @@ export function Slave(
 	if (!Number.isInteger(mask) || mask < 0) {
 		throw new Error(`wishbone-bus: slave ${name} mask must be >= 0`);
 	}
-	if (tag !== undefined && (!Number.isInteger(tag) || tag < 0)) {
-		throw new Error(`wishbone-bus: slave ${name} tag must be >= 0`);
-	}
-	return { name, desc, base, mask, ...(tag ? { tag } : {}) };
+	const { tag, pipe } = parseSlaveOpts(name, tagOrOpts);
+	return { name, desc, base, mask, pipe, ...(tag ? { tag } : {}) };
 }
 
 export function Master(name: string, desc: string): WbMaster {

@@ -1,6 +1,6 @@
 # Wishbone 块内配置总线（bridge / arbiter / decoder）
 
-> 状态：**implementing now**（最小 decoder/interconnect + named slaves；pipe/arb 策略后补）。不堵连接轨道。  
+> 状态：**implementing now**（最小 decoder/interconnect + named slaves + 生成 `wb_cfg_pipe`；arb 策略后补）。不堵连接轨道。  
 > 寄存器叶子：[`wishbone-regfile.md`](./wishbone-regfile.md)。  
 > 插件登记：[`README.md`](./README.md)。改本文时同步 `help status` / [`../architecture.md`](../architecture.md) §5。
 
@@ -57,26 +57,51 @@
 3. **禁止** v1 端点使用 Pipelined `STALL`。  
 4. **禁止**再引入第二套 cfg 内核信号名。  
 5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
-6. **TGA 建模（已裁定）**：`Bus(..., { tagWidth? })` = fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）；`Slave(name, desc, base, mask, tag?)` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。启用时：decoder 出 `m_tga_i[tw-1:0]`；interconnect 出扁平 `m_tga_i[NM*tw-1:0]`（master slot 切片同 ADR）；仲裁 **必须** 随 grant 透传到 `g_tga`，decoder 对声明 `tag` 的 slave 出 `{slave}_i_wb_tga[tag-1:0] = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。
+6. **TGA 建模（已裁定）**：`Bus(..., { tagWidth? })` = fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）；`Slave(name, desc, base, mask, tag? | { tag?, pipe? })` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
 
-## 3. 长路径 pipe（register slice）
+## 3. 长路径 pipe（写 posted / 读阻塞）
 
-Pipe 是 **互联属性**，不是第二种总线。
+Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generate` 写出通用模 [`wb_cfg_pipe`](./rtl/wb_cfg_pipe_template.sv) → `plugins_dir/wishbone-bus/wb_cfg_pipe.sv`，每口 PIPE>0 例化一次。connect **不必**例化 `wb_cfg_pipe`。
+
+### 3.1 谁配置
+
+| 侧 | 配置 |
+|---|---|
+| **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
+| **Master** | **本模块不配**。上一级 fabric 已在其 slave 口（即本模块 master 的对端）插入 pipe |
+
+第五参仍可写数字：`Slave(..., 2)` = `tag=2`（兼容）；pipe 必须走 options 对象。
+
+### 3.2 协议（对齐 [`rtl/wb_cfg_pipe_template.sv`](./rtl/wb_cfg_pipe_template.sv)）
+
+| 操作 | 入口 ACK | 行为 |
+|---|---|---|
+| **写** | `m_cyc & m_stb & !pipe[1].stb`（下一级空） | posted；不要求已落到叶子 |
+| **读** | `m_cyc & m_stb & pipe[1].ack` | **全程阻塞**，等叶数据返回 |
 
 ```text
-Master ──req──▶ [slice × N] ──▶ Decoder / Regfile
-       ◀─rsp──  [slice × N] ◀── ACK / DAT_I
+[0] comb ← grant/decode
+[1 .. PIPE] FF stages
+[PIPE] → {slave}_i_wb_*
+[PIPE+1] comb tap（不是请求拷贝）
 ```
 
-| 前向 | 返回 |
-|---|---|
-| `CYC`, `STB`, `WE`, `ADR`, `DAT_O`, `SEL`，及若启用的 tag | `ACK`, `DAT_I`, 可选 `ERR` |
+- `[PIPE+1].ack = s_stb & s_ack & !s_we`（**仅读返回**）；`[PIPE+1].stb = s_stb & !s_ack`（叶尚未接受）。  
+- 写从末级卸载：`we & !next.stb`（叶 ACK 使 tap `.stb=0`）。**禁止**把写 ACK 放到返回路径。  
+- Classic 主机在 ACK 拍仍持 STB：空级不回灌完成中的读（`prev.stb && (we || !ack) && !self.ack`）。  
+- 因此注册级 `ack <= next.ack` 即可，不必再 `& !we`（叶口已拦截）。  
+- 叶口 `CYC` = **pipe 占用**，不是 master 当前 CYC（posted 后 master 可撤 CYC）。  
+- TGA：`wb_cfg_pipe` **始终**带 `m_tga`/`s_tga`；`TW>0` 时入口 `{tga, window_adr}`，出口再解。`TW=0` 时例化省略这两口（`TW=0` 打包路径不读 `m_tga`）。  
+- `PIPE=0`：跳过 pipe，组合直通（与今日行为相同）。  
+- 生成 RTL：一份 `wb_cfg_pipe`（参数 `PIPE`/`AW`/`TW`）；级间 `for (genvar …)` 交给综合器展开。Icarus 不能对结构体数组做 `q[i].field`：级寄存整拍 `q[i] <= nxtq`；入口旁路 `pipe_q1 = q[1]`；叶口 `pipe_h = q[PIPE]` 再拆字段。comb 口 `pipe_m`/`pipe_s` 与 FF 数组拆开。  
 
-1. 前向与返回级数 **必须**相同（`PIPE_NUM`，默认 0）。  
-2. `CYC` 贯穿整笔；slice **禁止**拆事务。  
-3. 单 outstanding ⇒ **不必**事务标签。  
-4. **可以**「先 slice 再译码」或「译码后每支路再 slice」。  
-5. Regfile 叶子 **同拍 ACK、自身不打拍**（regfile §5.5）；时序裕量 **只**靠本 pipe，**禁止**在叶子再叠 +1 ACK。
+范本审逻辑用 [`rtl/wb_cfg_pipe_template.sv`](./rtl/wb_cfg_pipe_template.sv)；generate 拷到 `plugins_dir`，decoder/IC **例化**该 module。
+
+**RWE + `read_write_block`**：见 regfile §；缺省 `false`；posted 下打开有锁死总线风险。
+
+### 3.3 透明 register slice（备选，仅换时序）
+
+仅打拍、不改完成语义（前向/返回级数相同，ACK 仍表示叶完成）时可用对称 FF slice；与上表 **写 posted** 不同，二者勿混称为同一种 pipe。
 
 ## 4. 拓扑：默认 tree，不是 matrix
 
@@ -140,8 +165,10 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 ts = "bus/soc_wb.ts"
 # exports = ["soc_wb"]   # 可选；省略 = 全部 BusDef
 
-# out → plugins_dir/wishbone-bus/<name>_decoder.sv | <name>_interconnect.sv
+# out → plugins_dir/wishbone-bus/wb_cfg_pipe.sv
+#                      + <name>_decoder.sv | <name>_interconnect.sv
 # NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）
+# demo/soc：各 slave PIPE 不等长（0/1/2/3/4）；跨 slave 的 posted 写后固件读屏障
 ```
 
 ## 8. 仍开放
@@ -150,6 +177,6 @@ ts = "bus/soc_wb.ts"
 2. 是否提供 `topology = crossbar` 以及 M/N 上限。  
 3. Bridge 目录：仅 `apb2wb` 还是可插其它。  
 4. 固件窗 + DMA：块周期连续写是否进 v2。  
-5. Pipe slice 级数。
+5. 默认 slave `pipe`（现缺省 0；作者按口配置）。
 
 **已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。

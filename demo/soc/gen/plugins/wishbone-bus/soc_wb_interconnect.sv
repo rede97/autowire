@@ -6,20 +6,21 @@
 //  Masters: 3 (priority arbiter)
 //  Slaves:  12 (named {slave}_i_wb_* / {slave}_o_wb_*)
 //  Tag:     TGA 2 bit (forwarded, not interpreted)
+//  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read; master PIPE is parent)
 //------------------------------------------------------------------------------
 //  Address map:
-//    0x00000000  mask=0xffff0000  sram — 64 KiB SRAM
-//    0x01000000  mask=0xff000000  flash_xip — SPI flash XIP
+//    0x00000000  mask=0xffff0000  sram — 64 KiB SRAM  pipe=2
+//    0x01000000  mask=0xff000000  flash_xip — SPI flash XIP  pipe=1
 //    0x02000000  mask=0xfffffffc  flash_cfg — SPI flash cfg
-//    0x02000004  mask=0xfffffff8  uart — simpleuart
-//    0x02000010  mask=0xfffffffc  testout — test output
-//    0x03000000  mask=0xfffffff0  sd0 — sdspi 0
-//    0x03001000  mask=0xfffffff0  sd1 — sdspi 1
-//    0x03002000  mask=0xfffffff0  dma0 — sd_rd_dma CSR 0
-//    0x03003000  mask=0xfffffff0  dma1 — sd_rd_dma CSR 1
-//    0x03004000  mask=0xffffffc0  sha256_0 — sha256wb lane 0
-//    0x03005000  mask=0xffffffc0  sha256_1 — sha256wb lane 1
-//    0x03006000  mask=0xfffff000  smoke — wishbone-regfile smoke (TGA 2 → shadow bank)
+//    0x02000004  mask=0xfffffff8  uart — simpleuart  pipe=3
+//    0x02000010  mask=0xfffffffc  testout — test output  pipe=1
+//    0x03000000  mask=0xfffffff0  sd0 — sdspi 0  pipe=2
+//    0x03001000  mask=0xfffffff0  sd1 — sdspi 1  pipe=4
+//    0x03002000  mask=0xfffffff0  dma0 — sd_rd_dma CSR 0  pipe=3
+//    0x03003000  mask=0xfffffff0  dma1 — sd_rd_dma CSR 1  pipe=1
+//    0x03004000  mask=0xffffffc0  sha256_0 — sha256wb lane 0  pipe=2
+//    0x03005000  mask=0xffffffc0  sha256_1 — sha256wb lane 1  pipe=4
+//    0x03006000  mask=0xfffff000  smoke — wishbone-regfile smoke (TGA 2 → shadow bank)  pipe=3
 //------------------------------------------------------------------------------
 
 module soc_wb_interconnect (
@@ -56,7 +57,7 @@ module soc_wb_interconnect (
 	output logic [31:0] dma1m_i_wb_dat,
 	output logic        dma1m_i_wb_ack,
 	// Slave sram — 64 KiB SRAM,
-	//   base=0x00000000  mask=0xffff0000,
+	//   base=0x00000000  mask=0xffff0000  pipe=2,
 	output logic [31:0] sram_i_wb_adr,
 	output logic [31:0] sram_i_wb_dat,
 	output logic [3:0]  sram_i_wb_sel,
@@ -66,7 +67,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sram_o_wb_dat,
 	input  logic        sram_o_wb_ack,
 	// Slave flash_xip — SPI flash XIP,
-	//   base=0x01000000  mask=0xff000000,
+	//   base=0x01000000  mask=0xff000000  pipe=1,
 	output logic [31:0] flash_xip_i_wb_adr,
 	output logic [31:0] flash_xip_i_wb_dat,
 	output logic [3:0]  flash_xip_i_wb_sel,
@@ -86,7 +87,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] flash_cfg_o_wb_dat,
 	input  logic        flash_cfg_o_wb_ack,
 	// Slave uart — simpleuart,
-	//   base=0x02000004  mask=0xfffffff8,
+	//   base=0x02000004  mask=0xfffffff8  pipe=3,
 	output logic [31:0] uart_i_wb_adr,
 	output logic [31:0] uart_i_wb_dat,
 	output logic [3:0]  uart_i_wb_sel,
@@ -96,7 +97,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] uart_o_wb_dat,
 	input  logic        uart_o_wb_ack,
 	// Slave testout — test output,
-	//   base=0x02000010  mask=0xfffffffc,
+	//   base=0x02000010  mask=0xfffffffc  pipe=1,
 	output logic [31:0] testout_i_wb_adr,
 	output logic [31:0] testout_i_wb_dat,
 	output logic [3:0]  testout_i_wb_sel,
@@ -106,7 +107,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] testout_o_wb_dat,
 	input  logic        testout_o_wb_ack,
 	// Slave sd0 — sdspi 0,
-	//   base=0x03000000  mask=0xfffffff0,
+	//   base=0x03000000  mask=0xfffffff0  pipe=2,
 	output logic [31:0] sd0_i_wb_adr,
 	output logic [31:0] sd0_i_wb_dat,
 	output logic [3:0]  sd0_i_wb_sel,
@@ -116,7 +117,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sd0_o_wb_dat,
 	input  logic        sd0_o_wb_ack,
 	// Slave sd1 — sdspi 1,
-	//   base=0x03001000  mask=0xfffffff0,
+	//   base=0x03001000  mask=0xfffffff0  pipe=4,
 	output logic [31:0] sd1_i_wb_adr,
 	output logic [31:0] sd1_i_wb_dat,
 	output logic [3:0]  sd1_i_wb_sel,
@@ -126,7 +127,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sd1_o_wb_dat,
 	input  logic        sd1_o_wb_ack,
 	// Slave dma0 — sd_rd_dma CSR 0,
-	//   base=0x03002000  mask=0xfffffff0,
+	//   base=0x03002000  mask=0xfffffff0  pipe=3,
 	output logic [31:0] dma0_i_wb_adr,
 	output logic [31:0] dma0_i_wb_dat,
 	output logic [3:0]  dma0_i_wb_sel,
@@ -136,7 +137,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] dma0_o_wb_dat,
 	input  logic        dma0_o_wb_ack,
 	// Slave dma1 — sd_rd_dma CSR 1,
-	//   base=0x03003000  mask=0xfffffff0,
+	//   base=0x03003000  mask=0xfffffff0  pipe=1,
 	output logic [31:0] dma1_i_wb_adr,
 	output logic [31:0] dma1_i_wb_dat,
 	output logic [3:0]  dma1_i_wb_sel,
@@ -146,7 +147,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] dma1_o_wb_dat,
 	input  logic        dma1_o_wb_ack,
 	// Slave sha256_0 — sha256wb lane 0,
-	//   base=0x03004000  mask=0xffffffc0,
+	//   base=0x03004000  mask=0xffffffc0  pipe=2,
 	output logic [31:0] sha256_0_i_wb_adr,
 	output logic [31:0] sha256_0_i_wb_dat,
 	output logic [3:0]  sha256_0_i_wb_sel,
@@ -156,7 +157,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sha256_0_o_wb_dat,
 	input  logic        sha256_0_o_wb_ack,
 	// Slave sha256_1 — sha256wb lane 1,
-	//   base=0x03005000  mask=0xffffffc0,
+	//   base=0x03005000  mask=0xffffffc0  pipe=4,
 	output logic [31:0] sha256_1_i_wb_adr,
 	output logic [31:0] sha256_1_i_wb_dat,
 	output logic [3:0]  sha256_1_i_wb_sel,
@@ -166,7 +167,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sha256_1_o_wb_dat,
 	input  logic        sha256_1_o_wb_ack,
 	// Slave smoke — wishbone-regfile smoke (TGA 2 → shadow bank),
-	//   base=0x03006000  mask=0xfffff000,
+	//   base=0x03006000  mask=0xfffff000  pipe=3,
 	output logic [31:0] smoke_i_wb_adr,
 	output logic [31:0] smoke_i_wb_dat,
 	output logic [3:0]  smoke_i_wb_sel,
@@ -302,19 +303,57 @@ module soc_wb_interconnect (
 	//------------------------------------------------------------------------------
 	//  Named slave drive (window offset ADR)
 	//------------------------------------------------------------------------------
-	assign sram_i_wb_adr      = slot_sel[0]  ? g_adr & ~32'hffff0000 : 32'd0;
-	assign sram_i_wb_dat      = g_wdata;
-	assign sram_i_wb_sel      = g_sel;
-	assign sram_i_wb_cyc      = slot_sel[0]  & g_cyc;
-	assign sram_i_wb_stb      = slot_sel[0]  & g_stb;
-	assign sram_i_wb_we       = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave sram — wb_cfg_pipe PIPE=2 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        sram_pipe_ack;
+	logic [31:0] sram_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sram_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[0] & g_cyc),
+		.m_stb(slot_sel[0] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[0] ? g_adr & ~32'hffff0000 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(sram_pipe_ack),
+		.m_rdat(sram_pipe_rdat),
+		.s_cyc(sram_i_wb_cyc),
+		.s_stb(sram_i_wb_stb),
+		.s_we(sram_i_wb_we),
+		.s_adr(sram_i_wb_adr),
+		.s_dat(sram_i_wb_dat),
+		.s_sel(sram_i_wb_sel),
+		.s_ack(sram_o_wb_ack),
+		.s_rdat(sram_o_wb_dat)
+	);
 
-	assign flash_xip_i_wb_adr = slot_sel[1]  ? g_adr & ~32'hff000000 : 32'd0;
-	assign flash_xip_i_wb_dat = g_wdata;
-	assign flash_xip_i_wb_sel = g_sel;
-	assign flash_xip_i_wb_cyc = slot_sel[1]  & g_cyc;
-	assign flash_xip_i_wb_stb = slot_sel[1]  & g_stb;
-	assign flash_xip_i_wb_we  = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave flash_xip — wb_cfg_pipe PIPE=1 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        flash_xip_pipe_ack;
+	logic [31:0] flash_xip_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_flash_xip_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[1] & g_cyc),
+		.m_stb(slot_sel[1] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[1] ? g_adr & ~32'hff000000 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(flash_xip_pipe_ack),
+		.m_rdat(flash_xip_pipe_rdat),
+		.s_cyc(flash_xip_i_wb_cyc),
+		.s_stb(flash_xip_i_wb_stb),
+		.s_we(flash_xip_i_wb_we),
+		.s_adr(flash_xip_i_wb_adr),
+		.s_dat(flash_xip_i_wb_dat),
+		.s_sel(flash_xip_i_wb_sel),
+		.s_ack(flash_xip_o_wb_ack),
+		.s_rdat(flash_xip_o_wb_dat)
+	);
 
 	assign flash_cfg_i_wb_adr = slot_sel[2]  ? g_adr & ~32'hfffffffc : 32'd0;
 	assign flash_cfg_i_wb_dat = g_wdata;
@@ -323,98 +362,270 @@ module soc_wb_interconnect (
 	assign flash_cfg_i_wb_stb = slot_sel[2]  & g_stb;
 	assign flash_cfg_i_wb_we  = g_we;
 
-	assign uart_i_wb_adr      = slot_sel[3]  ? g_adr & ~32'hfffffff8 : 32'd0;
-	assign uart_i_wb_dat      = g_wdata;
-	assign uart_i_wb_sel      = g_sel;
-	assign uart_i_wb_cyc      = slot_sel[3]  & g_cyc;
-	assign uart_i_wb_stb      = slot_sel[3]  & g_stb;
-	assign uart_i_wb_we       = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave uart — wb_cfg_pipe PIPE=3 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        uart_pipe_ack;
+	logic [31:0] uart_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(0)) u_uart_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[3] & g_cyc),
+		.m_stb(slot_sel[3] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[3] ? g_adr & ~32'hfffffff8 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(uart_pipe_ack),
+		.m_rdat(uart_pipe_rdat),
+		.s_cyc(uart_i_wb_cyc),
+		.s_stb(uart_i_wb_stb),
+		.s_we(uart_i_wb_we),
+		.s_adr(uart_i_wb_adr),
+		.s_dat(uart_i_wb_dat),
+		.s_sel(uart_i_wb_sel),
+		.s_ack(uart_o_wb_ack),
+		.s_rdat(uart_o_wb_dat)
+	);
 
-	assign testout_i_wb_adr   = slot_sel[4]  ? g_adr & ~32'hfffffffc : 32'd0;
-	assign testout_i_wb_dat   = g_wdata;
-	assign testout_i_wb_sel   = g_sel;
-	assign testout_i_wb_cyc   = slot_sel[4]  & g_cyc;
-	assign testout_i_wb_stb   = slot_sel[4]  & g_stb;
-	assign testout_i_wb_we    = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave testout — wb_cfg_pipe PIPE=1 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        testout_pipe_ack;
+	logic [31:0] testout_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_testout_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[4] & g_cyc),
+		.m_stb(slot_sel[4] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[4] ? g_adr & ~32'hfffffffc : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(testout_pipe_ack),
+		.m_rdat(testout_pipe_rdat),
+		.s_cyc(testout_i_wb_cyc),
+		.s_stb(testout_i_wb_stb),
+		.s_we(testout_i_wb_we),
+		.s_adr(testout_i_wb_adr),
+		.s_dat(testout_i_wb_dat),
+		.s_sel(testout_i_wb_sel),
+		.s_ack(testout_o_wb_ack),
+		.s_rdat(testout_o_wb_dat)
+	);
 
-	assign sd0_i_wb_adr       = slot_sel[5]  ? g_adr & ~32'hfffffff0 : 32'd0;
-	assign sd0_i_wb_dat       = g_wdata;
-	assign sd0_i_wb_sel       = g_sel;
-	assign sd0_i_wb_cyc       = slot_sel[5]  & g_cyc;
-	assign sd0_i_wb_stb       = slot_sel[5]  & g_stb;
-	assign sd0_i_wb_we        = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave sd0 — wb_cfg_pipe PIPE=2 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        sd0_pipe_ack;
+	logic [31:0] sd0_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sd0_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[5] & g_cyc),
+		.m_stb(slot_sel[5] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[5] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(sd0_pipe_ack),
+		.m_rdat(sd0_pipe_rdat),
+		.s_cyc(sd0_i_wb_cyc),
+		.s_stb(sd0_i_wb_stb),
+		.s_we(sd0_i_wb_we),
+		.s_adr(sd0_i_wb_adr),
+		.s_dat(sd0_i_wb_dat),
+		.s_sel(sd0_i_wb_sel),
+		.s_ack(sd0_o_wb_ack),
+		.s_rdat(sd0_o_wb_dat)
+	);
 
-	assign sd1_i_wb_adr       = slot_sel[6]  ? g_adr & ~32'hfffffff0 : 32'd0;
-	assign sd1_i_wb_dat       = g_wdata;
-	assign sd1_i_wb_sel       = g_sel;
-	assign sd1_i_wb_cyc       = slot_sel[6]  & g_cyc;
-	assign sd1_i_wb_stb       = slot_sel[6]  & g_stb;
-	assign sd1_i_wb_we        = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave sd1 — wb_cfg_pipe PIPE=4 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        sd1_pipe_ack;
+	logic [31:0] sd1_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(4), .AW(32), .TW(0)) u_sd1_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[6] & g_cyc),
+		.m_stb(slot_sel[6] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[6] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(sd1_pipe_ack),
+		.m_rdat(sd1_pipe_rdat),
+		.s_cyc(sd1_i_wb_cyc),
+		.s_stb(sd1_i_wb_stb),
+		.s_we(sd1_i_wb_we),
+		.s_adr(sd1_i_wb_adr),
+		.s_dat(sd1_i_wb_dat),
+		.s_sel(sd1_i_wb_sel),
+		.s_ack(sd1_o_wb_ack),
+		.s_rdat(sd1_o_wb_dat)
+	);
 
-	assign dma0_i_wb_adr      = slot_sel[7]  ? g_adr & ~32'hfffffff0 : 32'd0;
-	assign dma0_i_wb_dat      = g_wdata;
-	assign dma0_i_wb_sel      = g_sel;
-	assign dma0_i_wb_cyc      = slot_sel[7]  & g_cyc;
-	assign dma0_i_wb_stb      = slot_sel[7]  & g_stb;
-	assign dma0_i_wb_we       = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave dma0 — wb_cfg_pipe PIPE=3 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        dma0_pipe_ack;
+	logic [31:0] dma0_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(0)) u_dma0_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[7] & g_cyc),
+		.m_stb(slot_sel[7] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[7] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(dma0_pipe_ack),
+		.m_rdat(dma0_pipe_rdat),
+		.s_cyc(dma0_i_wb_cyc),
+		.s_stb(dma0_i_wb_stb),
+		.s_we(dma0_i_wb_we),
+		.s_adr(dma0_i_wb_adr),
+		.s_dat(dma0_i_wb_dat),
+		.s_sel(dma0_i_wb_sel),
+		.s_ack(dma0_o_wb_ack),
+		.s_rdat(dma0_o_wb_dat)
+	);
 
-	assign dma1_i_wb_adr      = slot_sel[8]  ? g_adr & ~32'hfffffff0 : 32'd0;
-	assign dma1_i_wb_dat      = g_wdata;
-	assign dma1_i_wb_sel      = g_sel;
-	assign dma1_i_wb_cyc      = slot_sel[8]  & g_cyc;
-	assign dma1_i_wb_stb      = slot_sel[8]  & g_stb;
-	assign dma1_i_wb_we       = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave dma1 — wb_cfg_pipe PIPE=1 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        dma1_pipe_ack;
+	logic [31:0] dma1_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_dma1_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[8] & g_cyc),
+		.m_stb(slot_sel[8] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[8] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(dma1_pipe_ack),
+		.m_rdat(dma1_pipe_rdat),
+		.s_cyc(dma1_i_wb_cyc),
+		.s_stb(dma1_i_wb_stb),
+		.s_we(dma1_i_wb_we),
+		.s_adr(dma1_i_wb_adr),
+		.s_dat(dma1_i_wb_dat),
+		.s_sel(dma1_i_wb_sel),
+		.s_ack(dma1_o_wb_ack),
+		.s_rdat(dma1_o_wb_dat)
+	);
 
-	assign sha256_0_i_wb_adr  = slot_sel[9]  ? g_adr & ~32'hffffffc0 : 32'd0;
-	assign sha256_0_i_wb_dat  = g_wdata;
-	assign sha256_0_i_wb_sel  = g_sel;
-	assign sha256_0_i_wb_cyc  = slot_sel[9]  & g_cyc;
-	assign sha256_0_i_wb_stb  = slot_sel[9]  & g_stb;
-	assign sha256_0_i_wb_we   = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave sha256_0 — wb_cfg_pipe PIPE=2 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        sha256_0_pipe_ack;
+	logic [31:0] sha256_0_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sha256_0_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[9] & g_cyc),
+		.m_stb(slot_sel[9] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[9] ? g_adr & ~32'hffffffc0 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(sha256_0_pipe_ack),
+		.m_rdat(sha256_0_pipe_rdat),
+		.s_cyc(sha256_0_i_wb_cyc),
+		.s_stb(sha256_0_i_wb_stb),
+		.s_we(sha256_0_i_wb_we),
+		.s_adr(sha256_0_i_wb_adr),
+		.s_dat(sha256_0_i_wb_dat),
+		.s_sel(sha256_0_i_wb_sel),
+		.s_ack(sha256_0_o_wb_ack),
+		.s_rdat(sha256_0_o_wb_dat)
+	);
 
-	assign sha256_1_i_wb_adr  = slot_sel[10] ? g_adr & ~32'hffffffc0 : 32'd0;
-	assign sha256_1_i_wb_dat  = g_wdata;
-	assign sha256_1_i_wb_sel  = g_sel;
-	assign sha256_1_i_wb_cyc  = slot_sel[10] & g_cyc;
-	assign sha256_1_i_wb_stb  = slot_sel[10] & g_stb;
-	assign sha256_1_i_wb_we   = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave sha256_1 — wb_cfg_pipe PIPE=4 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        sha256_1_pipe_ack;
+	logic [31:0] sha256_1_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(4), .AW(32), .TW(0)) u_sha256_1_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[10] & g_cyc),
+		.m_stb(slot_sel[10] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[10] ? g_adr & ~32'hffffffc0 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_ack(sha256_1_pipe_ack),
+		.m_rdat(sha256_1_pipe_rdat),
+		.s_cyc(sha256_1_i_wb_cyc),
+		.s_stb(sha256_1_i_wb_stb),
+		.s_we(sha256_1_i_wb_we),
+		.s_adr(sha256_1_i_wb_adr),
+		.s_dat(sha256_1_i_wb_dat),
+		.s_sel(sha256_1_i_wb_sel),
+		.s_ack(sha256_1_o_wb_ack),
+		.s_rdat(sha256_1_o_wb_dat)
+	);
 
-	assign smoke_i_wb_adr     = slot_sel[11] ? g_adr & ~32'hfffff000 : 32'd0;
-	assign smoke_i_wb_dat     = g_wdata;
-	assign smoke_i_wb_sel     = g_sel;
-	assign smoke_i_wb_tga     = g_tga[1:0];
-	assign smoke_i_wb_cyc     = slot_sel[11] & g_cyc;
-	assign smoke_i_wb_stb     = slot_sel[11] & g_stb;
-	assign smoke_i_wb_we      = g_we;
+	//------------------------------------------------------------------------------
+	//  Slave smoke — wb_cfg_pipe PIPE=3 (posted write / blocking read)
+	//------------------------------------------------------------------------------
+	logic        smoke_pipe_ack;
+	logic [31:0] smoke_pipe_rdat;
+	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(2)) u_smoke_pipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(slot_sel[11] & g_cyc),
+		.m_stb(slot_sel[11] & g_stb),
+		.m_we(g_we),
+		.m_adr(slot_sel[11] ? g_adr & ~32'hfffff000 : 32'd0),
+		.m_dat(g_wdata),
+		.m_sel(g_sel),
+		.m_tga(g_tga[1:0]),
+		.m_ack(smoke_pipe_ack),
+		.m_rdat(smoke_pipe_rdat),
+		.s_cyc(smoke_i_wb_cyc),
+		.s_stb(smoke_i_wb_stb),
+		.s_we(smoke_i_wb_we),
+		.s_adr(smoke_i_wb_adr),
+		.s_dat(smoke_i_wb_dat),
+		.s_sel(smoke_i_wb_sel),
+		.s_tga(smoke_i_wb_tga),
+		.s_ack(smoke_o_wb_ack),
+		.s_rdat(smoke_o_wb_dat)
+	);
 
 	logic [31:0] rsp_dat;
 	logic        rsp_ack;
 
-	assign rsp_dat = ({32{slot_sel[0]}} & sram_o_wb_dat)
-	               | ({32{slot_sel[1]}} & flash_xip_o_wb_dat)
+	assign rsp_dat = ({32{slot_sel[0]}} & sram_pipe_rdat)
+	               | ({32{slot_sel[1]}} & flash_xip_pipe_rdat)
 	               | ({32{slot_sel[2]}} & flash_cfg_o_wb_dat)
-	               | ({32{slot_sel[3]}} & uart_o_wb_dat)
-	               | ({32{slot_sel[4]}} & testout_o_wb_dat)
-	               | ({32{slot_sel[5]}} & sd0_o_wb_dat)
-	               | ({32{slot_sel[6]}} & sd1_o_wb_dat)
-	               | ({32{slot_sel[7]}} & dma0_o_wb_dat)
-	               | ({32{slot_sel[8]}} & dma1_o_wb_dat)
-	               | ({32{slot_sel[9]}} & sha256_0_o_wb_dat)
-	               | ({32{slot_sel[10]}} & sha256_1_o_wb_dat)
-	               | ({32{slot_sel[11]}} & smoke_o_wb_dat);
+	               | ({32{slot_sel[3]}} & uart_pipe_rdat)
+	               | ({32{slot_sel[4]}} & testout_pipe_rdat)
+	               | ({32{slot_sel[5]}} & sd0_pipe_rdat)
+	               | ({32{slot_sel[6]}} & sd1_pipe_rdat)
+	               | ({32{slot_sel[7]}} & dma0_pipe_rdat)
+	               | ({32{slot_sel[8]}} & dma1_pipe_rdat)
+	               | ({32{slot_sel[9]}} & sha256_0_pipe_rdat)
+	               | ({32{slot_sel[10]}} & sha256_1_pipe_rdat)
+	               | ({32{slot_sel[11]}} & smoke_pipe_rdat);
 	assign rsp_ack = (unmapped & g_stb)
-	               | (slot_sel[0] & sram_o_wb_ack)
-	               | (slot_sel[1] & flash_xip_o_wb_ack)
+	               | (sram_pipe_ack)
+	               | (flash_xip_pipe_ack)
 	               | (slot_sel[2] & flash_cfg_o_wb_ack)
-	               | (slot_sel[3] & uart_o_wb_ack)
-	               | (slot_sel[4] & testout_o_wb_ack)
-	               | (slot_sel[5] & sd0_o_wb_ack)
-	               | (slot_sel[6] & sd1_o_wb_ack)
-	               | (slot_sel[7] & dma0_o_wb_ack)
-	               | (slot_sel[8] & dma1_o_wb_ack)
-	               | (slot_sel[9] & sha256_0_o_wb_ack)
-	               | (slot_sel[10] & sha256_1_o_wb_ack)
-	               | (slot_sel[11] & smoke_o_wb_ack);
+	               | (uart_pipe_ack)
+	               | (testout_pipe_ack)
+	               | (sd0_pipe_ack)
+	               | (sd1_pipe_ack)
+	               | (dma0_pipe_ack)
+	               | (dma1_pipe_ack)
+	               | (sha256_0_pipe_ack)
+	               | (sha256_1_pipe_ack)
+	               | (smoke_pipe_ack);
 
 	//------------------------------------------------------------------------------
 	//  Master response: only the granted slot sees DAT/ACK

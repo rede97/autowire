@@ -62,6 +62,12 @@ static inline uint32_t mmio_read(uint32_t addr)
 	return *(volatile uint32_t *)(uintptr_t)addr;
 }
 
+/* Posted-write drain: a read on the same slave is a barrier. */
+static inline uint32_t mmio_barrier(uint32_t addr)
+{
+	return mmio_read(addr);
+}
+
 static inline void mmio_write8(uint32_t addr, uint8_t val)
 {
 	*(volatile uint8_t *)(uintptr_t)addr = val;

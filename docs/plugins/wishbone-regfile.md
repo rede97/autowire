@@ -253,6 +253,13 @@ generate：TS RegfileDef export
 - **禁止**用 `read_write_block` 去挡 RO/RW/RC/W1*。  
 - 典型：外挂 FIFO 且希望总线自然 stall → 开 `true`；普通窗保持缺省 `false`。
 
+**与 fabric「写 posted / 读阻塞」联用时（主干 cfg 加速模型）**
+
+- 写 ACK 常在 **arb/入口** 给出（表示进队/获 grant），**不是**窗外 FIFO 已接收。  
+- **`read_write_block` 必须默认保持 `false`，打开前要谨慎**：若写 ACK 已提前给出，再用 `ext_*_ready=0` 拖叶子 ACK，**无法**再挡住 master，易造成协议死锁或「以为 stall 住了其实写已 accepted」。  
+- 需要反压时：优先窗外自备缓冲 / 满标志 + 软件 fence；或该地址 **退出 posted 写通道**；**不要**指望 `read_write_block=true` 在 posted fabric 上锁总线。  
+- 写后依赖 RWE 副作用：先 **读做屏障** 或显式排空写 pipe。
+
 ### 5.2 必须替换的外壳（相对主干）
 
 | 主干 | 本设计 |
