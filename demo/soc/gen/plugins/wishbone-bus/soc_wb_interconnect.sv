@@ -3,7 +3,7 @@
 //------------------------------------------------------------------------------
 //  Module: soc_wb_interconnect
 //  Desc:   Demo SoC Wishbone interconnect (3 masters, named slaves)
-//  Masters: 3 (priority arbiter)
+//  Masters: 3 (arbiter: rb_grant_en=0 fixed / 1 round-robin)
 //  Slaves:  12 (named {slave}_i_wb_* / {slave}_o_wb_*)
 //  Tag:     TGA 2 bit (forwarded, not interpreted)
 //  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read; master PIPE is parent)
@@ -26,6 +26,7 @@
 module soc_wb_interconnect (
 	input  logic        clk,
 	input  logic        rst_n,
+	input  logic        rb_grant_en,
 	// Master cpu — picorv32_wb,
 	input  logic [31:0] cpu_o_wb_adr,
 	input  logic [31:0] cpu_o_wb_dat,
@@ -180,11 +181,18 @@ module soc_wb_interconnect (
 );
 
 	//------------------------------------------------------------------------------
-	//  Arbitration: lowest master index wins; locked while grant holds CYC
+	//  Arbitration: locked while grant holds CYC
+	//  rb_grant_en=0: lowest master index wins (fixed)
+	//  rb_grant_en=1: round-robin — next requester after last_gnt, wrap to lowest
 	//------------------------------------------------------------------------------
 	logic [2:0] grant;
 	logic       busy;
 	logic [2:0] grant_nxt;
+	logic [2:0] prio_gnt;
+	logic [2:0] rr_hi_gnt;
+	logic [2:0] last_gnt;
+	logic [2:0] rr_mask;
+	logic [2:0] rr_req_hi;
 	logic [2:0] m_cyc;
 	logic [2:0] m_stb;
 	logic [2:0] m_we;
@@ -194,20 +202,38 @@ module soc_wb_interconnect (
 	assign m_we  = {dma1m_o_wb_we, dma0m_o_wb_we, cpu_o_wb_we};
 
 	always_comb begin
-		if      (cpu_o_wb_cyc)   grant_nxt = 3'b001;
-		else if (dma0m_o_wb_cyc) grant_nxt = 3'b010;
-		else if (dma1m_o_wb_cyc) grant_nxt = 3'b100;
-		else                     grant_nxt = 3'b000;
+		if      (cpu_o_wb_cyc)   prio_gnt = 3'b001;
+		else if (dma0m_o_wb_cyc) prio_gnt = 3'b010;
+		else if (dma1m_o_wb_cyc) prio_gnt = 3'b100;
+		else                     prio_gnt = 3'b000;
 	end
+
+	always_comb begin
+		rr_mask = last_gnt;
+		rr_mask = rr_mask | (rr_mask >> 1);
+		rr_mask = rr_mask | (rr_mask >> 2);
+	end
+	assign rr_req_hi = m_cyc & ~rr_mask;
+
+	always_comb begin
+		if      (rr_req_hi[0]) rr_hi_gnt = 3'b001;
+		else if (rr_req_hi[1]) rr_hi_gnt = 3'b010;
+		else if (rr_req_hi[2]) rr_hi_gnt = 3'b100;
+		else              rr_hi_gnt = 3'b000;
+	end
+
+	assign grant_nxt = (rb_grant_en && |rr_req_hi) ? rr_hi_gnt : prio_gnt;
 
 	always_ff @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
-			busy  <= 1'b0;
-			grant <= 3'b0;
+			busy     <= 1'b0;
+			grant    <= 3'b0;
+			last_gnt <= 3'b0;
 		end else if (!busy) begin
 			if (|m_cyc) begin
-				busy  <= 1'b1;
-				grant <= grant_nxt;
+				busy     <= 1'b1;
+				grant    <= grant_nxt;
+				last_gnt <= grant_nxt;
 			end
 		end else if (!(|(m_cyc & grant))) begin
 			busy <= 1'b0;
@@ -244,6 +270,18 @@ module soc_wb_interconnect (
 	//------------------------------------------------------------------------------
 	//  Address decode: lowest matching slave wins (mutually exclusive)
 	//------------------------------------------------------------------------------
+	localparam int unsigned SLOT_SRAM      = 0;
+	localparam int unsigned SLOT_FLASH_XIP = 1;
+	localparam int unsigned SLOT_FLASH_CFG = 2;
+	localparam int unsigned SLOT_UART      = 3;
+	localparam int unsigned SLOT_TESTOUT   = 4;
+	localparam int unsigned SLOT_SD0       = 5;
+	localparam int unsigned SLOT_SD1       = 6;
+	localparam int unsigned SLOT_DMA0      = 7;
+	localparam int unsigned SLOT_DMA1      = 8;
+	localparam int unsigned SLOT_SHA256_0  = 9;
+	localparam int unsigned SLOT_SHA256_1  = 10;
+	localparam int unsigned SLOT_SMOKE     = 11;
 	logic [11:0] slot_sel;
 	logic        unmapped;
 
@@ -251,51 +289,51 @@ module soc_wb_interconnect (
 		slot_sel = 12'b0;
 		unmapped = 1'b1;
 		if ((g_adr & 32'hfffff000) == 32'h03006000) begin
-			slot_sel = 12'h800;
+			slot_sel = 12'd1 << SLOT_SMOKE;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hffffffc0) == 32'h03005000) begin
-			slot_sel = 12'h400;
+			slot_sel = 12'd1 << SLOT_SHA256_1;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hffffffc0) == 32'h03004000) begin
-			slot_sel = 12'h200;
+			slot_sel = 12'd1 << SLOT_SHA256_0;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hfffffff0) == 32'h03003000) begin
-			slot_sel = 12'h100;
+			slot_sel = 12'd1 << SLOT_DMA1;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hfffffff0) == 32'h03002000) begin
-			slot_sel = 12'h80;
+			slot_sel = 12'd1 << SLOT_DMA0;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hfffffff0) == 32'h03001000) begin
-			slot_sel = 12'h40;
+			slot_sel = 12'd1 << SLOT_SD1;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hfffffff0) == 32'h03000000) begin
-			slot_sel = 12'h20;
+			slot_sel = 12'd1 << SLOT_SD0;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hfffffffc) == 32'h02000010) begin
-			slot_sel = 12'h10;
+			slot_sel = 12'd1 << SLOT_TESTOUT;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hfffffff8) == 32'h02000004) begin
-			slot_sel = 12'h8;
+			slot_sel = 12'd1 << SLOT_UART;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hfffffffc) == 32'h02000000) begin
-			slot_sel = 12'h4;
+			slot_sel = 12'd1 << SLOT_FLASH_CFG;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hff000000) == 32'h01000000) begin
-			slot_sel = 12'h2;
+			slot_sel = 12'd1 << SLOT_FLASH_XIP;
 			unmapped = 1'b0;
 		end
 		if ((g_adr & 32'hffff0000) == 32'h00000000) begin
-			slot_sel = 12'h1;
+			slot_sel = 12'd1 << SLOT_SRAM;
 			unmapped = 1'b0;
 		end
 	end
@@ -311,10 +349,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sram_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[0] & g_cyc),
-		.m_stb(slot_sel[0] & g_stb),
+		.m_cyc(slot_sel[SLOT_SRAM] & g_cyc),
+		.m_stb(slot_sel[SLOT_SRAM] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[0] ? g_adr & ~32'hffff0000 : 32'd0),
+		.m_adr(slot_sel[SLOT_SRAM] ? g_adr & ~32'hffff0000 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(sram_pipe_ack),
@@ -337,10 +375,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_flash_xip_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[1] & g_cyc),
-		.m_stb(slot_sel[1] & g_stb),
+		.m_cyc(slot_sel[SLOT_FLASH_XIP] & g_cyc),
+		.m_stb(slot_sel[SLOT_FLASH_XIP] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[1] ? g_adr & ~32'hff000000 : 32'd0),
+		.m_adr(slot_sel[SLOT_FLASH_XIP] ? g_adr & ~32'hff000000 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(flash_xip_pipe_ack),
@@ -355,11 +393,11 @@ module soc_wb_interconnect (
 		.s_rdat(flash_xip_o_wb_dat)
 	);
 
-	assign flash_cfg_i_wb_adr = slot_sel[2]  ? g_adr & ~32'hfffffffc : 32'd0;
+	assign flash_cfg_i_wb_adr = slot_sel[SLOT_FLASH_CFG] ? g_adr & ~32'hfffffffc : 32'd0;
 	assign flash_cfg_i_wb_dat = g_wdata;
 	assign flash_cfg_i_wb_sel = g_sel;
-	assign flash_cfg_i_wb_cyc = slot_sel[2]  & g_cyc;
-	assign flash_cfg_i_wb_stb = slot_sel[2]  & g_stb;
+	assign flash_cfg_i_wb_cyc = slot_sel[SLOT_FLASH_CFG] & g_cyc;
+	assign flash_cfg_i_wb_stb = slot_sel[SLOT_FLASH_CFG] & g_stb;
 	assign flash_cfg_i_wb_we  = g_we;
 
 	//------------------------------------------------------------------------------
@@ -370,10 +408,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(0)) u_uart_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[3] & g_cyc),
-		.m_stb(slot_sel[3] & g_stb),
+		.m_cyc(slot_sel[SLOT_UART] & g_cyc),
+		.m_stb(slot_sel[SLOT_UART] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[3] ? g_adr & ~32'hfffffff8 : 32'd0),
+		.m_adr(slot_sel[SLOT_UART] ? g_adr & ~32'hfffffff8 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(uart_pipe_ack),
@@ -396,10 +434,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_testout_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[4] & g_cyc),
-		.m_stb(slot_sel[4] & g_stb),
+		.m_cyc(slot_sel[SLOT_TESTOUT] & g_cyc),
+		.m_stb(slot_sel[SLOT_TESTOUT] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[4] ? g_adr & ~32'hfffffffc : 32'd0),
+		.m_adr(slot_sel[SLOT_TESTOUT] ? g_adr & ~32'hfffffffc : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(testout_pipe_ack),
@@ -422,10 +460,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sd0_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[5] & g_cyc),
-		.m_stb(slot_sel[5] & g_stb),
+		.m_cyc(slot_sel[SLOT_SD0] & g_cyc),
+		.m_stb(slot_sel[SLOT_SD0] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[5] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_adr(slot_sel[SLOT_SD0] ? g_adr & ~32'hfffffff0 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(sd0_pipe_ack),
@@ -448,10 +486,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(4), .AW(32), .TW(0)) u_sd1_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[6] & g_cyc),
-		.m_stb(slot_sel[6] & g_stb),
+		.m_cyc(slot_sel[SLOT_SD1] & g_cyc),
+		.m_stb(slot_sel[SLOT_SD1] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[6] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_adr(slot_sel[SLOT_SD1] ? g_adr & ~32'hfffffff0 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(sd1_pipe_ack),
@@ -474,10 +512,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(0)) u_dma0_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[7] & g_cyc),
-		.m_stb(slot_sel[7] & g_stb),
+		.m_cyc(slot_sel[SLOT_DMA0] & g_cyc),
+		.m_stb(slot_sel[SLOT_DMA0] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[7] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_adr(slot_sel[SLOT_DMA0] ? g_adr & ~32'hfffffff0 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(dma0_pipe_ack),
@@ -500,10 +538,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_dma1_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[8] & g_cyc),
-		.m_stb(slot_sel[8] & g_stb),
+		.m_cyc(slot_sel[SLOT_DMA1] & g_cyc),
+		.m_stb(slot_sel[SLOT_DMA1] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[8] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_adr(slot_sel[SLOT_DMA1] ? g_adr & ~32'hfffffff0 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(dma1_pipe_ack),
@@ -526,10 +564,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sha256_0_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[9] & g_cyc),
-		.m_stb(slot_sel[9] & g_stb),
+		.m_cyc(slot_sel[SLOT_SHA256_0] & g_cyc),
+		.m_stb(slot_sel[SLOT_SHA256_0] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[9] ? g_adr & ~32'hffffffc0 : 32'd0),
+		.m_adr(slot_sel[SLOT_SHA256_0] ? g_adr & ~32'hffffffc0 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(sha256_0_pipe_ack),
@@ -552,10 +590,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(4), .AW(32), .TW(0)) u_sha256_1_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[10] & g_cyc),
-		.m_stb(slot_sel[10] & g_stb),
+		.m_cyc(slot_sel[SLOT_SHA256_1] & g_cyc),
+		.m_stb(slot_sel[SLOT_SHA256_1] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[10] ? g_adr & ~32'hffffffc0 : 32'd0),
+		.m_adr(slot_sel[SLOT_SHA256_1] ? g_adr & ~32'hffffffc0 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(sha256_1_pipe_ack),
@@ -578,10 +616,10 @@ module soc_wb_interconnect (
 	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(2)) u_smoke_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
-		.m_cyc(slot_sel[11] & g_cyc),
-		.m_stb(slot_sel[11] & g_stb),
+		.m_cyc(slot_sel[SLOT_SMOKE] & g_cyc),
+		.m_stb(slot_sel[SLOT_SMOKE] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[11] ? g_adr & ~32'hfffff000 : 32'd0),
+		.m_adr(slot_sel[SLOT_SMOKE] ? g_adr & ~32'hfffff000 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_tga(g_tga[1:0]),
@@ -601,22 +639,22 @@ module soc_wb_interconnect (
 	logic [31:0] rsp_dat;
 	logic        rsp_ack;
 
-	assign rsp_dat = ({32{slot_sel[0]}} & sram_pipe_rdat)
-	               | ({32{slot_sel[1]}} & flash_xip_pipe_rdat)
-	               | ({32{slot_sel[2]}} & flash_cfg_o_wb_dat)
-	               | ({32{slot_sel[3]}} & uart_pipe_rdat)
-	               | ({32{slot_sel[4]}} & testout_pipe_rdat)
-	               | ({32{slot_sel[5]}} & sd0_pipe_rdat)
-	               | ({32{slot_sel[6]}} & sd1_pipe_rdat)
-	               | ({32{slot_sel[7]}} & dma0_pipe_rdat)
-	               | ({32{slot_sel[8]}} & dma1_pipe_rdat)
-	               | ({32{slot_sel[9]}} & sha256_0_pipe_rdat)
-	               | ({32{slot_sel[10]}} & sha256_1_pipe_rdat)
-	               | ({32{slot_sel[11]}} & smoke_pipe_rdat);
+	assign rsp_dat = ({32{slot_sel[SLOT_SRAM]}} & sram_pipe_rdat)
+	               | ({32{slot_sel[SLOT_FLASH_XIP]}} & flash_xip_pipe_rdat)
+	               | ({32{slot_sel[SLOT_FLASH_CFG]}} & flash_cfg_o_wb_dat)
+	               | ({32{slot_sel[SLOT_UART]}} & uart_pipe_rdat)
+	               | ({32{slot_sel[SLOT_TESTOUT]}} & testout_pipe_rdat)
+	               | ({32{slot_sel[SLOT_SD0]}} & sd0_pipe_rdat)
+	               | ({32{slot_sel[SLOT_SD1]}} & sd1_pipe_rdat)
+	               | ({32{slot_sel[SLOT_DMA0]}} & dma0_pipe_rdat)
+	               | ({32{slot_sel[SLOT_DMA1]}} & dma1_pipe_rdat)
+	               | ({32{slot_sel[SLOT_SHA256_0]}} & sha256_0_pipe_rdat)
+	               | ({32{slot_sel[SLOT_SHA256_1]}} & sha256_1_pipe_rdat)
+	               | ({32{slot_sel[SLOT_SMOKE]}} & smoke_pipe_rdat);
 	assign rsp_ack = (unmapped & g_stb)
 	               | (sram_pipe_ack)
 	               | (flash_xip_pipe_ack)
-	               | (slot_sel[2] & flash_cfg_o_wb_ack)
+	               | (slot_sel[SLOT_FLASH_CFG] & flash_cfg_o_wb_ack)
 	               | (uart_pipe_ack)
 	               | (testout_pipe_ack)
 	               | (sd0_pipe_ack)

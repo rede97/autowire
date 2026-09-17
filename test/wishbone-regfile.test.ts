@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256_0, sha256_1 } from "../demo/soc/regs/sha256_wb.ts";
 import {
+	smoke,
 	smoke_block_wide,
 	smoke_rc,
 	smoke_ro,
@@ -271,6 +272,15 @@ endmodule
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+
+	test("smoke FABRIC.rb_grant_en is RW reset-0 at 0x030", () => {
+		const laid = layoutRegfile(smoke);
+		const fabric = laid.cells.find((c) => c.name === "FABRIC");
+		expect(fabric?.byte_offset).toBe(0x030);
+		const sv = emitRegfileSv(laid);
+		expect(sv).toContain("rg_rb_grant_en");
+		expect(sv).toMatch(/rg_rb_grant_en_q <= 1'h0/);
 	});
 
 	test("smoke.ts generates all feature leaves via plugin generate", async () => {

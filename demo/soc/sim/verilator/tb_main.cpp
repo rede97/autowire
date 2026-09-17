@@ -21,7 +21,7 @@ static constexpr uint64_t HALF_NS = 5;
 #if defined(SOC_USE_SDSPISIM)
 static constexpr uint64_t TIMEOUT_NS = 2'000'000'000ull;
 #else
-static constexpr uint64_t TIMEOUT_NS = 200'000'000ull; /* basic_smoke: SRAM + flash XIP */
+static constexpr uint64_t TIMEOUT_NS = 200'000'000ull; /* basic_smoke: SRAM + flash + dual DMA */
 #endif
 
 static void usage(const char *argv0)

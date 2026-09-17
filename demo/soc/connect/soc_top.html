@@ -8,7 +8,8 @@
   Buses: Wishbone B4 classic (named-slave interconnect from wishbone-bus;
   masters named {m}_o_wb_* / {m}_i_wb_* too; slaves {name}_i_wb_* / {name}_o_wb_*).
   TGA: fabric 2-bit (smoke shadow bank); cpu port = smoke rg_bank_sel CSR,
-  dma ports tied 2'b00.
+  dma ports tied 2'b00. Arbiter: u_ic.rb_grant_en = smoke rg_rb_grant_en
+  (FABRIC @ 0x030, reset 0 = fixed priority).
   AXI4-Stream (DMA -> sha256 lanes).
   Memory map (byte addresses) / slave id (aw-inst id):
     0x0000_0000  sram
@@ -109,6 +110,8 @@
             <aw-inst id="u_ic" mod="soc_wb_interconnect">
               <aw-template>
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>
+                <!-- smoke FABRIC.rb_grant_en (reset 0 = fixed prio; 1 = round-robin) -->
+                <aw-connect port="rb_grant_en" to="rg_rb_grant_en"></aw-connect>
                 <!-- master/slave ports identity-match {name}_o_wb_* / {name}_i_wb_* -->
                 <!-- cpu TGA = smoke rg_bank_sel CSR; dma masters have no tag -->
                 <aw-connect port="cpu_o_wb_tga" to="rg_bank_sel"></aw-connect>

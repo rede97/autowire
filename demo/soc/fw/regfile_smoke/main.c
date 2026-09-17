@@ -68,12 +68,19 @@ int main(void)
 	expect_eq(smoke_rd(SMOKE_CFG) & 0x70fu,
 		SMOKE_CFG_ENABLE | (5u << SMOKE_CFG_MODE_SHIFT));
 
-	/* RWW: sync to the HW strb edge, then SW write reads back inside one period */
-	v = smoke_rd(SMOKE_FEED) & 0xffffu;
-	while ((smoke_rd(SMOKE_FEED) & 0xffffu) == v)
-		;
-	smoke_wr(SMOKE_FEED, 0xabcd);
-	expect_eq(smoke_rd(SMOKE_FEED) & 0xffffu, 0xabcdu);
+	/* RWW: sync to a HW strb edge, SW-write 0xabcd, confirm readback, then
+	   wait for HW to move the field again. Retry the edge if the posted
+	   write loses the 64-cycle window (compiler scheduling / PIPE depth). */
+	for (;;) {
+		v = smoke_rd(SMOKE_FEED) & 0xffffu;
+		while ((smoke_rd(SMOKE_FEED) & 0xffffu) == v)
+			;
+		smoke_wr(SMOKE_FEED, 0xabcd);
+		(void)smoke_rd(SMOKE_FEED);
+		if ((smoke_rd(SMOKE_FEED) & 0xffffu) == 0xabcdu)
+			break;
+	}
+	mmio_write(TESTOUT_ADDR, 0xabcdu);
 	delay(80);
 	v = smoke_rd(SMOKE_FEED) & 0xffffu;
 	mmio_write(TESTOUT_ADDR, v);
@@ -119,6 +126,14 @@ int main(void)
 	expect_eq(smoke_rd(SMOKE_KEY0), 0x01010101u);
 	expect_eq(smoke_rd(SMOKE_KEY1), 0x02020202u);
 	expect_eq(smoke_rd(SMOKE_KEY2), 0x03030303u);
+
+	/* FABRIC.rb_grant_en: reset 0; CPU can enable round-robin arbiter */
+	expect_eq(smoke_rd(SMOKE_FABRIC) & SMOKE_FABRIC_RB_GRANT_EN, 0u);
+	smoke_wr(SMOKE_FABRIC, SMOKE_FABRIC_RB_GRANT_EN);
+	expect_eq(smoke_rd(SMOKE_FABRIC) & SMOKE_FABRIC_RB_GRANT_EN,
+		SMOKE_FABRIC_RB_GRANT_EN);
+	smoke_wr(SMOKE_FABRIC, 0u);
+	expect_eq(smoke_rd(SMOKE_FABRIC) & SMOKE_FABRIC_RB_GRANT_EN, 0u);
 
 	/* Fill FIFO to exercise ready stall, then drain */
 	for (i = 0; i < 4; i++)

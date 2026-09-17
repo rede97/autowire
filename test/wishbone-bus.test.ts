@@ -25,6 +25,7 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("csr_i_wb_cyc");
 		expect(sv).toContain("csr_o_wb_ack");
 		expect(sv).not.toContain("grant");
+		expect(sv).not.toContain("rb_grant_en");
 	});
 
 	test("multi master emits interconnect with named masters and slaves", () => {
@@ -37,6 +38,7 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("smoke_o_wb_ack");
 		expect(sv).toContain("sha256_0_i_wb_adr");
 		expect(sv).toContain("grant");
+		expect(sv).toContain("rb_grant_en");
 		expect(sv).not.toContain("m_adr_i");
 		expect(sv).not.toContain("s_cyc_o");
 	});
@@ -116,6 +118,11 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("cpu_o_wb_tga");
 		expect(sv).toContain("g_tga[1:0]");
 		expect(sv).not.toContain("sram_i_wb_tga");
+		expect(sv).toContain("localparam int unsigned SLOT_SRAM");
+		expect(sv).toContain("localparam int unsigned SLOT_SD1");
+		expect(sv).toContain("slot_sel = 12'd1 << SLOT_SD1;");
+		expect(sv).toContain("slot_sel[SLOT_SD1]");
+		expect(sv).not.toMatch(/slot_sel\[\d+\]/);
 	});
 
 	test("demo SoC slaves use mixed PIPE depths", () => {
@@ -151,8 +158,11 @@ describe("wishbone-bus", () => {
 		// (caught by demo/soc --sd smoke: CPU+DMA concurrent CYC → cpu trap).
 		const sv = emitBusSv(soc_wb);
 		expect(sv).toContain("if      (cpu_o_wb_cyc)");
-		expect(sv).toContain("else if (dma0m_o_wb_cyc) grant_nxt = 3'b010;");
-		expect(sv).toContain("else if (dma1m_o_wb_cyc) grant_nxt = 3'b100;");
+		expect(sv).toContain("else if (dma0m_o_wb_cyc) prio_gnt = 3'b010;");
+		expect(sv).toContain("else if (dma1m_o_wb_cyc) prio_gnt = 3'b100;");
+		expect(sv).toContain(
+			"grant_nxt = (rb_grant_en && |rr_req_hi) ? rr_hi_gnt : prio_gnt;",
+		);
 	});
 
 	test("Slave fifth-arg number is tag, not pipe", () => {

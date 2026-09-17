@@ -43,6 +43,7 @@ module soc_top (
 	logic [31:0] cpu_i_wb_dat;
 	logic        cpu_i_wb_ack;
 	wire  [31:0] irq_bus;
+	logic        rg_rb_grant_en;
 	logic [1:0]  rg_bank_sel;
 	logic [31:0] dma0m_o_wb_adr;
 	logic [31:0] dma0m_o_wb_dat;
@@ -248,6 +249,7 @@ module soc_top (
 	soc_wb_interconnect u_ic (
 		.clk               (clk),
 		.rst_n             (rst_ni),
+		.rb_grant_en       (rg_rb_grant_en),
 		.cpu_o_wb_adr      (cpu_o_wb_adr),
 		.cpu_o_wb_dat      (cpu_o_wb_dat),
 		.cpu_o_wb_sel      (cpu_o_wb_sel),
@@ -664,6 +666,7 @@ module soc_top (
 		.rg_cfg           (),
 		.o_bank_sel       (),
 		.rg_bank_sel      (rg_bank_sel),
+		.rg_rb_grant_en   (rg_rb_grant_en),
 		.rg_key_0         (),
 		.rg_key_1         (),
 		.rg_key_2         ()

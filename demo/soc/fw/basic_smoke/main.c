@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 //
-// Basic Verilator smoke (two KATs on SHA256_0 via DMA0):
-//   1) SRAM: 64 zero bytes + soft pad
+// Basic Verilator smoke:
+//   1) SRAM: 64 zero bytes + soft pad → DMA0 → SHA0
 //   2) Flash XIP region 0x0100_1000: legacy gen_firmware.py message words
+//   3) Enable FABRIC.rb_grant_en (round-robin), then DMA0+DMA1 concurrent
+//      SRAM reads of the same buffer → SHA0 / SHA1
 // Soft-reset SHA and clear DMA done between stages.
 
 #include "../common/soc_map.h"
@@ -37,39 +39,47 @@ static void pass(void)
 		;
 }
 
-static void sha_soft_reset(void)
+static void sha_soft_reset_at(uint32_t sha_base)
 {
-	mmio_write(SHA0_BASE + SHA_CTRL, SHA_SOFT_RESET);
-	mmio_write(SHA0_BASE + SHA_CTRL, 0);
-	mmio_write(SHA0_BASE + SHA_CTRL, SHA_DONE_CLEAR);
-	(void)mmio_barrier(SHA0_BASE + SHA_CTRL);
+	mmio_write(sha_base + SHA_CTRL, SHA_SOFT_RESET);
+	mmio_write(sha_base + SHA_CTRL, 0);
+	mmio_write(sha_base + SHA_CTRL, SHA_DONE_CLEAR);
+	(void)mmio_barrier(sha_base + SHA_CTRL);
 }
 
-static void dma_clear_done(void)
+static void dma_kick(uint32_t dma_base, uint32_t src, uint32_t ctrl)
 {
-	mmio_write(DMA0_BASE + DMA_STATUS, DMA_STATUS_DONE);
+	mmio_write(dma_base + DMA_STATUS, DMA_STATUS_DONE);
+	mmio_write(dma_base + DMA_SRC, src);
+	mmio_write(dma_base + DMA_LEN, MSG_WORDS);
+	mmio_write(dma_base + DMA_CTRL, ctrl);
+}
+
+static void wait_dma_done(uint32_t dma_base)
+{
+	while ((mmio_read(dma_base + DMA_STATUS) & DMA_STATUS_DONE) == 0)
+		;
+}
+
+static void wait_sha_idle(uint32_t sha_base)
+{
+	while ((mmio_read(sha_base + SHA_CTRL) & SHA_BUSY) != 0)
+		;
 }
 
 static void run_dma_sha(uint32_t src, uint32_t ctrl)
 {
-	dma_clear_done();
-	mmio_write(DMA0_BASE + DMA_SRC, src);
-	mmio_write(DMA0_BASE + DMA_LEN, MSG_WORDS);
-	mmio_write(DMA0_BASE + DMA_CTRL, ctrl);
-
-	while ((mmio_read(DMA0_BASE + DMA_STATUS) & DMA_STATUS_DONE) == 0)
-		;
-
-	while ((mmio_read(SHA0_BASE + SHA_CTRL) & SHA_BUSY) != 0)
-		;
+	dma_kick(DMA0_BASE, src, ctrl);
+	wait_dma_done(DMA0_BASE);
+	wait_sha_idle(SHA0_BASE);
 }
 
-static void check_digest(const uint32_t *expected)
+static void check_digest_at(uint32_t sha_base, const uint32_t *expected)
 {
 	unsigned i;
 
 	for (i = 0; i < 8; i++) {
-		uint32_t got = mmio_read(SHA0_BASE + SHA_HASH0 + 4u * i);
+		uint32_t got = mmio_read(sha_base + SHA_HASH0 + 4u * i);
 		mmio_write(TESTOUT_ADDR, got);
 		if (got != expected[i])
 			fail();
@@ -79,6 +89,7 @@ static void check_digest(const uint32_t *expected)
 int main(void)
 {
 	unsigned i;
+	uint32_t fabric;
 
 	mmio_write(TESTOUT_ADDR, MARK_ALIVE);
 
@@ -92,12 +103,35 @@ int main(void)
 	(void)mmio_barrier(MSG_BASE);
 
 	run_dma_sha(MSG_BASE, DMA_CTRL_START | DMA_CTRL_SRC_INC);
-	check_digest(EXPECTED_ZEROS);
+	check_digest_at(SHA0_BASE, EXPECTED_ZEROS);
 
 	/* --- 2) Flash KAT region (XIP) --- */
-	sha_soft_reset();
+	sha_soft_reset_at(SHA0_BASE);
 	run_dma_sha(FLASH_KAT, DMA_CTRL_START | DMA_CTRL_SRC_INC);
-	check_digest(EXPECTED_FLASH);
+	check_digest_at(SHA0_BASE, EXPECTED_FLASH);
+
+	/* --- 3) Dual DMA concurrent SRAM KAT under round-robin grant --- */
+	fabric = mmio_read(REGFILE_SMOKE_BASE + SMOKE_FABRIC);
+	if ((fabric & SMOKE_FABRIC_RB_GRANT_EN) != 0)
+		fail();
+	mmio_write(REGFILE_SMOKE_BASE + SMOKE_FABRIC, SMOKE_FABRIC_RB_GRANT_EN);
+	/* Posted pipe: readback is the barrier before DMA contention. */
+	if ((mmio_read(REGFILE_SMOKE_BASE + SMOKE_FABRIC) & SMOKE_FABRIC_RB_GRANT_EN) == 0)
+		fail();
+
+	sha_soft_reset_at(SHA0_BASE);
+	sha_soft_reset_at(SHA1_BASE);
+
+	dma_kick(DMA0_BASE, MSG_BASE, DMA_CTRL_START | DMA_CTRL_SRC_INC);
+	dma_kick(DMA1_BASE, MSG_BASE, DMA_CTRL_START | DMA_CTRL_SRC_INC);
+
+	wait_dma_done(DMA0_BASE);
+	wait_dma_done(DMA1_BASE);
+	wait_sha_idle(SHA0_BASE);
+	wait_sha_idle(SHA1_BASE);
+
+	check_digest_at(SHA0_BASE, EXPECTED_ZEROS);
+	check_digest_at(SHA1_BASE, EXPECTED_ZEROS);
 
 	pass();
 	return 0;

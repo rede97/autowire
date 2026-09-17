@@ -58,6 +58,7 @@
 4. **禁止**再引入第二套 cfg 内核信号名。  
 5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
 6. **TGA 建模（已裁定）**：`Bus(..., { tagWidth? })` = fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）；`Slave(name, desc, base, mask, tag? | { tag?, pipe? })` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
+7. **Decode 槽位名**：生成 `localparam SLOT_<SLAVE>`（slave 名大写，从 0 起）；`slot_sel` 下标与 one-hot 赋值 **必须**用该名（`slot_sel[SLOT_SD1]`、`slot_sel = NS'd1 << SLOT_SD1`），**禁止**裸十进制下标。
 
 ## 3. 长路径 pipe（写 posted / 读阻塞）
 
@@ -112,7 +113,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generat
 | 与旧 Python | 同构 | 新路径，慎用 |
 
 - Decoder：地址窗 + 可选 broadcast；下行仍是 WB（`STB` 扇出，`ACK`/`DAT` 回并）。  
-- Arbiter：多 WB master；默认策略实现前钉死（开放项）。  
+- Arbiter：多 WB master；口 `rb_grant_en`：**0** = 固定优先级（最低 master 下标胜）；**1** = round-robin（上次 grant 之后的下一个请求者，绕回最低下标）。事务中 `CYC` 锁定 grant。demo/soc：`smoke` `FABRIC.rb_grant_en`（复位 0）驱动 `u_ic.rb_grant_en`；`basic_smoke` 打开后双 DMA 并发 SRAM KAT。  
 - Bridge：仅边界协议转换（如 `apb2wb`）；**禁止**让 APB 成为 decoder/regfile 原生口。  
 - 即便将来提供 `topology = crossbar`，slave 侧 **仍必须**有地址窗/选通；matrix **不能**取消译码职责。
 
@@ -169,11 +170,12 @@ ts = "bus/soc_wb.ts"
 #                      + <name>_decoder.sv | <name>_interconnect.sv
 # NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）
 # demo/soc：各 slave PIPE 不等长（0/1/2/3/4）；跨 slave 的 posted 写后固件读屏障
+#           smoke FABRIC.rb_grant_en（复位 0）驱动 interconnect rb_grant_en
 ```
 
 ## 8. 仍开放
 
-1. Arbiter 更多默认策略（v1 SoC：最低 master 优先，展开链已落地）。  
+1. Arbiter 更多默认策略（v1：`rb_grant_en` 固定 / 轮转已落地；其它策略后补）。  
 2. 是否提供 `topology = crossbar` 以及 M/N 上限。  
 3. Bridge 目录：仅 `apb2wb` 还是可插其它。  
 4. 固件窗 + DMA：块周期连续写是否进 v2。  

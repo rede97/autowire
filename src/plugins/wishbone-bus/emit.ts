@@ -16,6 +16,15 @@ function packedRange(width: number): string {
 	return width > 1 ? `[${width - 1}:0]` : "";
 }
 
+/** Decode-slot localparam: `SLOT_SD1` → `slot_sel[SLOT_SD1]`. */
+function slotLp(name: string): string {
+	return `SLOT_${name.toUpperCase()}`;
+}
+
+function slotSel(name: string): string {
+	return `slot_sel[${slotLp(name)}]`;
+}
+
 /** Module basename: decoder if NM<=1, else interconnect. */
 export function busModuleKind(def: BusDef): "decoder" | "interconnect" {
 	return def.masters.length <= 1 ? "decoder" : "interconnect";
@@ -157,13 +166,24 @@ function emitInterconnectBody(def: BusDef): string[] {
 		`${nm}'b${"0".repeat(nm - 1 - i)}1${"0".repeat(i)}`;
 
 	const pk = `[${nm - 1}:0]`;
+	const shiftFills: string[] = [];
+	for (let s = 1; s < nm; s <<= 1) {
+		shiftFills.push(`\t\trr_mask = rr_mask | (rr_mask >> ${s});`);
+	}
 	out.push(
 		"\t//------------------------------------------------------------------------------",
-		"\t//  Arbitration: lowest master index wins; locked while grant holds CYC",
+		"\t//  Arbitration: locked while grant holds CYC",
+		"\t//  rb_grant_en=0: lowest master index wins (fixed)",
+		"\t//  rb_grant_en=1: round-robin — next requester after last_gnt, wrap to lowest",
 		"\t//------------------------------------------------------------------------------",
 		`\tlogic ${pk} grant;`,
 		`\tlogic ${"".padEnd(pk.length)} busy;`,
 		`\tlogic ${pk} grant_nxt;`,
+		`\tlogic ${pk} prio_gnt;`,
+		`\tlogic ${pk} rr_hi_gnt;`,
+		`\tlogic ${pk} last_gnt;`,
+		`\tlogic ${pk} rr_mask;`,
+		`\tlogic ${pk} rr_req_hi;`,
 		`\tlogic ${pk} m_cyc;`,
 		`\tlogic ${pk} m_stb;`,
 		`\tlogic ${pk} m_we;`,
@@ -185,20 +205,40 @@ function emitInterconnectBody(def: BusDef): string[] {
 	for (const m of masters) {
 		const kw = m.i === 0 ? "if      " : "else if ";
 		const cond = `(${wb(m.name, "o_wb_cyc")})`.padEnd(condPad);
-		out.push(`\t\t${kw}${cond} grant_nxt = ${onehot(m.i)};`);
+		out.push(`\t\t${kw}${cond} prio_gnt = ${onehot(m.i)};`);
 	}
 	out.push(
-		`\t\t${"else".padEnd(`else if `.length + condPad + 1)}grant_nxt = ${nm}'b${"0".repeat(nm)};`,
+		`\t\t${"else".padEnd(`else if `.length + condPad + 1)}prio_gnt = ${nm}'b${"0".repeat(nm)};`,
 		"\tend",
+		"",
+		"\talways_comb begin",
+		"\t\trr_mask = last_gnt;",
+		...shiftFills,
+		"\tend",
+		`\tassign rr_req_hi = m_cyc & ~rr_mask;`,
+		"",
+		"\talways_comb begin",
+	);
+	for (const m of masters) {
+		const kw = m.i === 0 ? "if      " : "else if ";
+		out.push(`\t\t${kw}(rr_req_hi[${m.i}]) rr_hi_gnt = ${onehot(m.i)};`);
+	}
+	out.push(
+		`\t\telse              rr_hi_gnt = ${nm}'b${"0".repeat(nm)};`,
+		"\tend",
+		"",
+		"\tassign grant_nxt = (rb_grant_en && |rr_req_hi) ? rr_hi_gnt : prio_gnt;",
 		"",
 		"\talways_ff @(posedge clk or negedge rst_n) begin",
 		"\t\tif (!rst_n) begin",
-		"\t\t\tbusy  <= 1'b0;",
-		`\t\t\tgrant <= ${nm}'b0;`,
+		"\t\t\tbusy     <= 1'b0;",
+		`\t\t\tgrant    <= ${nm}'b0;`,
+		`\t\t\tlast_gnt <= ${nm}'b0;`,
 		"\t\tend else if (!busy) begin",
 		"\t\t\tif (|m_cyc) begin",
-		"\t\t\t\tbusy  <= 1'b1;",
-		"\t\t\t\tgrant <= grant_nxt;",
+		"\t\t\t\tbusy     <= 1'b1;",
+		"\t\t\t\tgrant    <= grant_nxt;",
+		"\t\t\t\tlast_gnt <= grant_nxt;",
 		"\t\t\tend",
 		"\t\tend else if (!(|(m_cyc & grant))) begin",
 		"\t\t\tbusy <= 1'b0;",
@@ -274,10 +314,20 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 	const ns = slaves.length;
 	const aw = def.addr_width;
 	const out: string[] = [];
+	const lpPad = Math.max(...slaves.map((s) => slotLp(s.name).length));
 	out.push(
 		"\t//------------------------------------------------------------------------------",
 		"\t//  Address decode: lowest matching slave wins (mutually exclusive)",
 		"\t//------------------------------------------------------------------------------",
+	);
+	for (let i = 0; i < ns; i++) {
+		const s = slaves[i];
+		if (s === undefined) continue;
+		out.push(
+			`\tlocalparam int unsigned ${slotLp(s.name).padEnd(lpPad)} = ${i};`,
+		);
+	}
+	out.push(
 		`\tlogic [${ns - 1}:0] slot_sel;`,
 		"\tlogic        unmapped;",
 		"",
@@ -289,10 +339,9 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 	for (let i = ns - 1; i >= 0; i--) {
 		const s = slaves[i];
 		if (s === undefined) continue;
-		const onehotHex = (1n << BigInt(i)).toString(16);
 		out.push(
 			`\t\tif ((${gPrefix}adr & ${aw}'h${hex(s.mask, aw)}) == ${aw}'h${hex(s.base, aw)}) begin`,
-			`\t\t\tslot_sel = ${ns}'h${onehotHex};`,
+			`\t\t\tslot_sel = ${ns}'d1 << ${slotLp(s.name)};`,
 			"\t\t\tunmapped = 1'b0;",
 			"\t\tend",
 		);
@@ -309,14 +358,14 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 		combo.length > 0
 			? Math.max(...combo.map((s) => wb(s.name, "i_wb_adr").length))
 			: 0;
-	const slotPad = Math.max(...slaves.map((_, i) => `slot_sel[${i}]`.length));
+	const slotPad = Math.max(...slaves.map((s) => slotSel(s.name).length));
 	for (let i = 0; i < ns; i++) {
 		const s = slaves[i];
 		if (s === undefined) continue;
 		if ((s.pipe ?? 0) > 0) {
-			out.push(...emitSlavePipe(s, i, aw, gPrefix));
+			out.push(...emitSlavePipe(s, aw, gPrefix));
 		} else {
-			out.push(...emitSlaveCombo(s, i, aw, gPrefix, namePad, slotPad));
+			out.push(...emitSlaveCombo(s, aw, gPrefix, namePad, slotPad));
 		}
 		if (i < ns - 1) out.push("");
 	}
@@ -325,7 +374,6 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 
 function emitSlaveCombo(
 	s: WbSlave,
-	i: number,
 	aw: number,
 	gPrefix: string,
 	namePad: number,
@@ -333,7 +381,7 @@ function emitSlaveCombo(
 ): string[] {
 	const n = s.name;
 	const port = (stem: string) => wb(n, stem).padEnd(namePad);
-	const slot = `slot_sel[${i}]`.padEnd(slotPad);
+	const slot = slotSel(n).padEnd(slotPad);
 	const out = [
 		`\tassign ${port("i_wb_adr")} = ${slot} ? ${gPrefix}adr & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0;`,
 		`\tassign ${port("i_wb_dat")} = ${gPrefix}wdata;`,
@@ -352,16 +400,11 @@ function emitSlaveCombo(
 }
 
 /** Instantiate wb_cfg_pipe. TGA ports stay on the module; omit them when tag=0. */
-function emitSlavePipe(
-	s: WbSlave,
-	i: number,
-	aw: number,
-	gPrefix: string,
-): string[] {
+function emitSlavePipe(s: WbSlave, aw: number, gPrefix: string): string[] {
 	const n = s.name;
 	const pipe = s.pipe;
 	const st = s.tag ?? 0;
-	const slot = `slot_sel[${i}]`;
+	const slot = slotSel(n);
 	const winAdr = `${slot} ? ${gPrefix}adr & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0`;
 	const ack = `${n}_pipe_ack`;
 	const rdat = `${n}_pipe_rdat`;
@@ -416,18 +459,18 @@ function emitResponseMux(
 	pushOrAssign(
 		out,
 		dat,
-		slaves.map((s, i) =>
+		slaves.map((s) =>
 			(s.pipe ?? 0) > 0
-				? `({32{slot_sel[${i}]}} & ${s.name}_pipe_rdat)`
-				: `({32{slot_sel[${i}]}} & ${wb(s.name, "o_wb_dat")})`,
+				? `({32{${slotSel(s.name)}}} & ${s.name}_pipe_rdat)`
+				: `({32{${slotSel(s.name)}}} & ${wb(s.name, "o_wb_dat")})`,
 		),
 	);
 	pushOrAssign(out, ack, [
 		`(unmapped & ${stb})`,
-		...slaves.map((s, i) =>
+		...slaves.map((s) =>
 			(s.pipe ?? 0) > 0
 				? `(${s.name}_pipe_ack)`
-				: `(slot_sel[${i}] & ${wb(s.name, "o_wb_ack")})`,
+				: `(${slotSel(s.name)} & ${wb(s.name, "o_wb_ack")})`,
 		),
 	]);
 	return out;
@@ -446,7 +489,7 @@ export function emitBusSv(def: BusDef): string {
 		"//------------------------------------------------------------------------------",
 		`//  Module: ${mod}`,
 		`//  Desc:   ${def.desc}`,
-		`//  Masters: ${nm} (${kind === "decoder" ? "decoder-only; no arbiter" : "priority arbiter"})`,
+		`//  Masters: ${nm} (${kind === "decoder" ? "decoder-only; no arbiter" : "arbiter: rb_grant_en=0 fixed / 1 round-robin"})`,
 		`//  Slaves:  ${def.slaves.length} (named {slave}_i_wb_* / {slave}_o_wb_*)`,
 	);
 	if (tw > 0) {
@@ -474,6 +517,9 @@ export function emitBusSv(def: BusDef): string {
 	lines.push(`module ${mod} (`);
 	lines.push("\tinput  logic        clk,");
 	lines.push("\tinput  logic        rst_n,");
+	if (kind === "interconnect") {
+		lines.push("\tinput  logic        rb_grant_en,");
+	}
 
 	const portBlocks: string[][] = [];
 	if (kind === "decoder") {

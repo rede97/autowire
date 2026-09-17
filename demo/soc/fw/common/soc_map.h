@@ -9,7 +9,9 @@
 #define FLASH_BASE     0x01000000u
 #define TESTOUT_ADDR   0x02000010u
 #define DMA0_BASE      0x03002000u
+#define DMA1_BASE      0x03003000u
 #define SHA0_BASE      0x03004000u
+#define SHA1_BASE      0x03005000u
 #define REGFILE_SMOKE_BASE 0x03006000u
 
 #define DMA_CTRL       0x0u
@@ -42,11 +44,13 @@
 #define SMOKE_KEY1     0x024u
 #define SMOKE_KEY2     0x028u
 #define SMOKE_BANKSEL  0x02cu
+#define SMOKE_FABRIC   0x030u
 
 #define SMOKE_CFG_ENABLE (1u << 0)
 #define SMOKE_CFG_MODE_SHIFT 8
 #define SMOKE_IRQ_STICKY (1u << 0)
 #define SMOKE_CMD_GO     (1u << 0)
+#define SMOKE_FABRIC_RB_GRANT_EN (1u << 0)
 
 #define MARK_ALIVE     0x00000001u
 #define MARK_FAIL      0xdead0001u

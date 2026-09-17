@@ -102,14 +102,18 @@ Parallel (does not block connect)
     Access RC = ReadConst (reset= baked readback)
   Wishbone bus — implementing now (docs/plugins/wishbone-bus.md);
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
-    NM>1 → interconnect (priority arb); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
+    NM>1 → interconnect (arbiter: rb_grant_en 0=fixed lowest-index /
+    1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
+    demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives u_ic.rb_grant_en;
+    basic_smoke enables RR then dual DMA SRAM KAT on SHA0+SHA1;
     demo/soc bus/soc_wb.ts → soc_wb_interconnect (mixed slave PIPE 0/1/2/3/4);
     toml [bus.<source>] ts=; ADR=byte; fabric addr_width parametrized;
     TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out;
     slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
     blocking read; PIPE=0 combo; TGA ports always on the module, omitted at
     instance when Slave has no tag);
-    master PIPE is parent-defined, not on this bus
+    master PIPE is parent-defined, not on this bus;
+    decode: localparam SLOT_<SLAVE> indexes slot_sel (no bare slot_sel[6])
 
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
