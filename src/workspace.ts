@@ -66,8 +66,12 @@ export interface WorkspaceConfig {
 	regfileSources: RegfileSource[];
 	/** Type-A wishbone-bus SoT sources ([bus.<source_id>] ts=) */
 	busSources: BusSource[];
-	/** Optional Excel workbook path ([plugins.regfile] export); docs only for now */
+	/** Optional Excel workbook path ([plugins.regfile] export); docs product */
 	regfileExcelExport: string | null;
+	/** Optional C header directory ([plugins.regfile] c); field-layout emit */
+	regfileCExport: string | null;
+	/** Optional uvm_reg SV directory ([plugins.regfile] uvm); field-layout emit */
+	regfileUvmExport: string | null;
 }
 
 /** One [connect.<id>] or [sim.<id>] entry */
@@ -338,15 +342,13 @@ export async function loadWorkspace(
 	const busSources = parseBusSources(bus, rel);
 	const plugins = isObj(doc.plugins) ? doc.plugins : {};
 	const pluginsRegfile = isObj(plugins.regfile) ? plugins.regfile : {};
-	let regfileExcelExport: string | null = null;
-	if (pluginsRegfile.export !== undefined) {
-		if (typeof pluginsRegfile.export !== "string") {
-			throw new Error(
-				"autowire.toml: [plugins.regfile] export must be a string",
-			);
-		}
-		regfileExcelExport = rel(pluginsRegfile.export);
-	}
+	const regfileExcelExport = optPluginRegfilePath(
+		pluginsRegfile,
+		"export",
+		rel,
+	);
+	const regfileCExport = optPluginRegfilePath(pluginsRegfile, "c", rel);
+	const regfileUvmExport = optPluginRegfilePath(pluginsRegfile, "uvm", rel);
 	return {
 		hdxmlBin: typeof hdxml.bin === "string" ? rel(hdxml.bin) : null,
 		root,
@@ -383,7 +385,25 @@ export async function loadWorkspace(
 		regfileSources,
 		busSources,
 		regfileExcelExport,
+		regfileCExport,
+		regfileUvmExport,
 	};
+}
+
+/** Optional [plugins.regfile] path (export= file; c=/uvm= directories). */
+function optPluginRegfilePath(
+	table: Record<string, unknown>,
+	key: string,
+	rel: (p: string) => string,
+): string | null {
+	const v = table[key];
+	if (v === undefined) return null;
+	if (typeof v !== "string" || v.length === 0) {
+		throw new Error(
+			`autowire.toml: [plugins.regfile] ${key} must be a non-empty string`,
+		);
+	}
+	return rel(v);
 }
 
 function parseRegfileSources(

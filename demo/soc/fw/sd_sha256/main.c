@@ -114,26 +114,20 @@ static int sd_read_sector0(void)
 	return 0;
 }
 
-static void sha_soft_reset(void)
-{
-	mmio_write(SHA0_BASE + SHA_CTRL, SHA_SOFT_RESET);
-	mmio_write(SHA0_BASE + SHA_CTRL, 0);
-	mmio_write(SHA0_BASE + SHA_CTRL, SHA_DONE_CLEAR);
-	(void)mmio_barrier(SHA0_BASE + SHA_CTRL);
-}
-
 int main(void)
 {
 	unsigned i;
 
 	mmio_write(TESTOUT_ADDR, MARK_ALIVE);
+	if (!regfile_layout_ok())
+		fail();
 
 	if (sd_init() != 0)
 		fail();
 	if (sd_read_sector0() != 0)
 		fail();
 
-	sha_soft_reset();
+	sha_soft_reset_at(SHA0_BASE);
 	mmio_write(DMA0_BASE + DMA_STATUS, DMA_STATUS_DONE);
 	mmio_write(DMA0_BASE + DMA_SRC, SD0_BASE + SDSPI_FIFO_A);
 	mmio_write(DMA0_BASE + DMA_LEN, MSG_WORDS);
@@ -143,7 +137,7 @@ int main(void)
 	while ((mmio_read(DMA0_BASE + DMA_STATUS) & DMA_STATUS_DONE) == 0)
 		;
 
-	while ((mmio_read(SHA0_BASE + SHA_CTRL) & SHA_BUSY) != 0)
+	while (sha_busy(SHA0_BASE))
 		;
 
 	for (i = 0; i < 8; i++) {

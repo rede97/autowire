@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: MIT
 // SoC memory map for C firmware (mirrors connect/soc_top.html).
+// Field layouts come from wishbone-regfile C export (fw/gen/regfile).
+// Bases and cell offsets stay here until wishbone-bus software map.
 
 #pragma once
 
 #include <stdint.h>
+
+#include "sha256.h"
+#include "smoke.h"
 
 #define SRAM_BASE      0x00000000u
 #define FLASH_BASE     0x01000000u
@@ -24,37 +29,31 @@
 #define DMA_STATUS_BUSY  (1u << 0)
 #define DMA_STATUS_DONE  (1u << 1)
 
+/* Cell offsets (byte ADR) until bus software map lands.
+   SMOKE_OFF_* so names do not collide with generated union SMOKE_*. */
 #define SHA_CTRL       0x0u
 #define SHA_HASH0      0x4u
-#define SHA_SOFT_RESET (1u << 0)
-#define SHA_DONE_CLEAR (1u << 1)
-#define SHA_BUSY       (1u << 8)
-#define SHA_DONE       (1u << 9)
 
-/* regfile smoke bank (regs/smoke.ts → smoke_regfile on soc_top; smoke_wb = glue) */
-#define SMOKE_ID       0x000u
-#define SMOKE_STATUS   0x004u
-#define SMOKE_CFG      0x008u
-#define SMOKE_FEED     0x00cu
-#define SMOKE_FIFO     0x010u
-#define SMOKE_CMD      0x014u
-#define SMOKE_IRQ      0x018u
-#define SMOKE_BANK     0x01cu
-#define SMOKE_KEY0     0x020u
-#define SMOKE_KEY1     0x024u
-#define SMOKE_KEY2     0x028u
-#define SMOKE_BANKSEL  0x02cu
-#define SMOKE_FABRIC   0x030u
-
-#define SMOKE_CFG_ENABLE (1u << 0)
-#define SMOKE_CFG_MODE_SHIFT 8
-#define SMOKE_IRQ_STICKY (1u << 0)
-#define SMOKE_CMD_GO     (1u << 0)
-#define SMOKE_FABRIC_RB_GRANT_EN (1u << 0)
+#define SMOKE_OFF_ID       0x000u
+#define SMOKE_OFF_STATUS   0x004u
+#define SMOKE_OFF_CFG      0x008u
+#define SMOKE_OFF_FEED     0x00cu
+#define SMOKE_OFF_FIFO     0x010u
+#define SMOKE_OFF_CMD      0x014u
+#define SMOKE_OFF_IRQ      0x018u
+#define SMOKE_OFF_BANK     0x01cu
+#define SMOKE_OFF_KEY0     0x020u
+#define SMOKE_OFF_KEY1     0x024u
+#define SMOKE_OFF_KEY2     0x028u
+#define SMOKE_OFF_BANKSEL  0x02cu
+#define SMOKE_OFF_FABRIC   0x030u
 
 #define MARK_ALIVE     0x00000001u
 #define MARK_FAIL      0xdead0001u
 #define MARK_PASS      0x600d600du
+
+_Static_assert(sizeof(union SMOKE_CFG) == 4, "SMOKE_CFG");
+_Static_assert(sizeof(union SHA256_CTRL) == 4, "SHA256_CTRL");
 
 static inline void mmio_write(uint32_t addr, uint32_t val)
 {
@@ -75,4 +74,60 @@ static inline uint32_t mmio_barrier(uint32_t addr)
 static inline void mmio_write8(uint32_t addr, uint8_t val)
 {
 	*(volatile uint8_t *)(uintptr_t)addr = val;
+}
+
+/* Toolchain bitfield packing must match Field LSB=0 (little-endian GCC). */
+static inline int regfile_layout_ok(void)
+{
+	union SMOKE_CFG cfg;
+	union SHA256_CTRL ctrl;
+
+	cfg.all = 0;
+	cfg.bit.ENABLE = 1;
+	cfg.bit.MODE = 3;
+	if (cfg.all != (1u | (3u << 8)))
+		return 0;
+	ctrl.all = 0;
+	ctrl.bit.SOFT_RESET = 1;
+	ctrl.bit.DONE_CLEAR = 1;
+	if (ctrl.all != 3u)
+		return 0;
+	ctrl.all = 0;
+	ctrl.bit.BUSY = 1;
+	ctrl.bit.DONE = 1;
+	if (ctrl.all != ((1u << 8) | (1u << 9)))
+		return 0;
+	return 1;
+}
+
+static inline union SHA256_CTRL sha_ctrl_rd(uint32_t sha_base)
+{
+	union SHA256_CTRL u;
+
+	u.all = mmio_read(sha_base + SHA_CTRL);
+	return u;
+}
+
+static inline void sha_ctrl_wr(uint32_t sha_base, union SHA256_CTRL u)
+{
+	mmio_write(sha_base + SHA_CTRL, u.all);
+}
+
+static inline void sha_soft_reset_at(uint32_t sha_base)
+{
+	union SHA256_CTRL u;
+
+	u.all = 0;
+	u.bit.SOFT_RESET = 1;
+	sha_ctrl_wr(sha_base, u);
+	u.all = 0;
+	sha_ctrl_wr(sha_base, u);
+	u.bit.DONE_CLEAR = 1;
+	sha_ctrl_wr(sha_base, u);
+	(void)mmio_barrier(sha_base + SHA_CTRL);
+}
+
+static inline int sha_busy(uint32_t sha_base)
+{
+	return sha_ctrl_rd(sha_base).bit.BUSY != 0;
 }

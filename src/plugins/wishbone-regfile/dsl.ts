@@ -49,6 +49,27 @@ export function accessPortPrefix(access: Access): string | null {
 	}
 }
 
+/** Master AccessType.ral_name. RC has no Python twin → RO. */
+export function accessRalName(access: Access): string {
+	switch (access) {
+		case Access.RW:
+		case Access.RWW:
+		case Access.RWE:
+			return "RW";
+		case Access.W1P:
+		case Access.W1C:
+			return "W1C";
+		case Access.RO:
+		case Access.RC:
+			return "RO";
+	}
+}
+
+/** Master AccessType.ral_rand. */
+export function accessRalRand(access: Access): boolean {
+	return access === Access.RW || access === Access.RWW || access === Access.RWE;
+}
+
 /**
  * Sideband port stem (no i_/o_): `{prefix}_{field.name}`, or field.name if
  * it already starts with the Access prefix (same as master proc_name).
@@ -252,6 +273,22 @@ export function isRegfileDef(v: unknown): v is RegfileDef {
 		Array.isArray(o.shadows) &&
 		Array.isArray(o.body)
 	);
+}
+
+const SHEET_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Software/docs table id: `sheet` if set, else `name`. Shared by instances. */
+export function effectiveSheet(
+	def: Pick<RegfileDef, "name" | "sheet">,
+): string {
+	const raw = def.sheet?.trim() ?? "";
+	const sheet = raw.length > 0 ? raw : def.name;
+	if (!SHEET_IDENT.test(sheet)) {
+		throw new Error(
+			`wishbone-regfile: sheet "${sheet}" must match [A-Za-z_][A-Za-z0-9_]*`,
+		);
+	}
+	return sheet;
 }
 
 export type RegBlockChild = RegCell | FieldElem;

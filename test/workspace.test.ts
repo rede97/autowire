@@ -28,6 +28,9 @@ describe("workspace", () => {
 		expect(cfg.simDir).toBe(join(dir, "gen/sim"));
 		expect(cfg.pluginsDir).toBe(join(dir, "gen/plugins"));
 		expect(cfg.simUnits).toEqual([]);
+		expect(cfg.regfileExcelExport).toBeNull();
+		expect(cfg.regfileCExport).toBeNull();
+		expect(cfg.regfileUvmExport).toBeNull();
 		expect(hdxmlArgs(cfg)).toEqual([
 			"--output-dir",
 			join(dir, ".autowire/hdxml"),
@@ -191,6 +194,29 @@ DEPTH = 16
 		mkdirSync(join(dir, "a/b"), { recursive: true });
 		expect(findWorkspace(join(dir, "a/b"))).toBe(join(dir, "autowire.toml"));
 		expect(findWorkspace(tmpdir())).toBe(findWorkspace(tmpdir())); // must not throw
+	});
+
+	test("[plugins.regfile] export/c/uvm resolve as optional paths", async () => {
+		const dir = tempWorkspace(`
+[plugins.regfile]
+export = "docs/regs.xlsx"
+c = "fw/gen/regfile"
+uvm = "dv/ral"
+`);
+		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
+		expect(cfg.regfileExcelExport).toBe(join(dir, "docs/regs.xlsx"));
+		expect(cfg.regfileCExport).toBe(join(dir, "fw/gen/regfile"));
+		expect(cfg.regfileUvmExport).toBe(join(dir, "dv/ral"));
+	});
+
+	test("[plugins.regfile] empty c= is rejected", async () => {
+		const dir = tempWorkspace(`
+[plugins.regfile]
+c = ""
+`);
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"[plugins.regfile] c",
+		);
 	});
 
 	test("type errors name the offending key", async () => {

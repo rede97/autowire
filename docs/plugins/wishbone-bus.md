@@ -179,6 +179,7 @@ ts = "bus/soc_wb.ts"
 2. 是否提供 `topology = crossbar` 以及 M/N 上限。  
 3. Bridge 目录：仅 `apb2wb` 还是可插其它。  
 4. 固件窗 + DMA：块周期连续写是否进 v2。  
-5. 默认 slave `pipe`（现缺省 0；作者按口配置）。
+5. 默认 slave `pipe`（现缺省 0；作者按口配置）。  
+6. **软件地址图**（C overlay / `uvm_reg_block` map）：由本插件组装 `Slave(base)` 窗 + 身份匹配 regfile 的 cell 相对 offset + TGA/shadow tag。regfile 插件的 C/`uvm_reg` **只**出字段 layout（见 [`wishbone-regfile.md`](./wishbone-regfile.md) §6.1）。
 
 **已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。

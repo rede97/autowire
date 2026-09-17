@@ -23,9 +23,14 @@ connect_dir = "gen/connect"
 sim_dir = "gen/sim"
 plugins_dir = "gen/plugins"
 
+# Field-layout C headers (not SoT; bases / cell offsets stay in fw/common/soc_map.h)
+[plugins.regfile]
+c = "fw/gen/regfile"
+
 # wishbone-regfile SoT
 [regfile.sha256]
 ts = "regs/sha256_wb.ts"
+exports = ["sha256"]
 
 [regfile.smoke]
 ts = "regs/smoke.ts"

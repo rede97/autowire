@@ -3,8 +3,8 @@
 寄存器 **SoT** 为 TypeScript：`Regfile(...)` 命名导出（`RegfileDef`）。
 
 - 综合示例：[`regfile.ts`](./regfile.ts) + 展示 SV [`sub_module_a_regfile.sv`](./sub_module_a_regfile.sv) / [`sub_module_b_regfile.sv`](./sub_module_b_regfile.sv)
-- SoC 冒烟：[`demo/soc/regs/smoke.ts`](../../../demo/soc/regs/smoke.ts) → `gen/plugins/wishbone-regfile/smoke_regfile.sv`（顶层直挂总线）+ [`smoke_wb.v`](../../../demo/soc/rtl/smoke_wb.v)（仅 sideband glue）；C：`fw/regfile_smoke`，`./sim/verilator/run.sh --regfile`
-- SoC sha256：[`demo/soc/regs/sha256_wb.ts`](../../../demo/soc/regs/sha256_wb.ts) → `sha256_{0,1}_regfile` 顶层同名直挂总线；[`sha256_wb_regs.v`](../../../demo/soc/rtl/sha256_wb_regs.v) + `sha256wb` 仅 AXIS/core glue
+- SoC 冒烟：[`demo/soc/regs/smoke.ts`](../../../demo/soc/regs/smoke.ts) → `gen/plugins/wishbone-regfile/smoke_regfile.sv`（顶层直挂总线）+ [`smoke_wb.v`](../../../demo/soc/rtl/smoke_wb.v)（仅 sideband glue）；C 字段 layout：`fw/gen/regfile/smoke.h`（入库展示）；固件：`fw/regfile_smoke`，`./sim/verilator/run.sh --regfile`
+- SoC sha256：[`demo/soc/regs/sha256_wb.ts`](../../../demo/soc/regs/sha256_wb.ts) → 一份 `sha256_regfile`，顶层例化两次（rewrite 到 slave `sha256_0`/`sha256_1`）；C：`fw/gen/regfile/sha256.h`（入库展示）；[`sha256_wb_regs.v`](../../../demo/soc/rtl/sha256_wb_regs.v) + `sha256wb` 仅 AXIS/core glue
 - DSL：[`src/plugins/wishbone-regfile/dsl.ts`](../../../src/plugins/wishbone-regfile/dsl.ts)
 - 契约：[`../../plugins/wishbone-regfile.md`](../../plugins/wishbone-regfile.md)
 

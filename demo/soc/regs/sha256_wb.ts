@@ -1,7 +1,8 @@
-// SoT for demo/soc sha256 Wishbone CSR map (CTRL + HASH0..7).
-// Two leaves (sha256_0 / sha256_1) match wishbone-bus slave ids → identity WB
-// on soc_top. Glue (AXIS / sticky done) stays in rtl/sha256_wb_regs.v + sha256wb.
-// Generate → gen/plugins/wishbone-regfile/sha256_{0,1}_regfile.sv
+// SoT for demo/soc sha256 Wishbone CSR (CTRL + HASH0..7).
+// One RTL leaf (sha256_regfile); soc_top instantiates it twice and rewrites
+// WB/sidebands to bus slave ids sha256_0 / sha256_1.
+// Glue (AXIS / sticky done) stays in rtl/sha256_wb_regs.v + sha256wb.
+// Generate → gen/plugins/wishbone-regfile/sha256_regfile.sv + fw/gen/regfile/sha256.h
 
 export {
 	Access,
@@ -21,7 +22,6 @@ import {
 	Field,
 	Regfile,
 	RegfileDefault,
-	type RegfileDef,
 } from "../../../src/plugins/wishbone-regfile/dsl.ts";
 
 /**
@@ -30,8 +30,11 @@ import {
  *              bit8 busy(RO) bit9 done(RO sticky, HW-set in glue)
  *   0x04..0x20 HASH0..HASH7 (RO)
  */
-function sha256Lane(name: string, desc: string): RegfileDef {
-	return Regfile(name, desc, RegfileDefault.align(4).addrWidth(32).sheet(name), [
+export const sha256 = Regfile(
+	"sha256",
+	"SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane",
+	RegfileDefault.align(4).addrWidth(32),
+	[
 		Cell(
 			"CTRL",
 			"Control / status",
@@ -74,14 +77,5 @@ function sha256Lane(name: string, desc: string): RegfileDef {
 		Cell("HASH7", "Digest word 7", CellDefault.offset(0x20), [
 			Field("hash7", Access.RO, 32, "hash7"),
 		]),
-	]);
-}
-
-export const sha256_0 = sha256Lane(
-	"sha256_0",
-	"SHA256 lane 0 CSR (identity-match bus slave sha256_0)",
-);
-export const sha256_1 = sha256Lane(
-	"sha256_1",
-	"SHA256 lane 1 CSR (identity-match bus slave sha256_1)",
+	],
 );

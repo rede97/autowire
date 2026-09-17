@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sha256_0, sha256_1 } from "../demo/soc/regs/sha256_wb.ts";
+import { sha256 } from "../demo/soc/regs/sha256_wb.ts";
 import {
 	smoke,
 	smoke_block_wide,
@@ -19,9 +19,24 @@ import {
 	sub_module_a,
 	sub_module_b,
 } from "../docs/examples/regfile/regfile.ts";
-import type { RegfileDef } from "../src/plugins/wishbone-regfile/dsl.ts";
+import {
+	Access,
+	Cell,
+	CellDefault,
+	Field,
+	Regfile,
+	type RegfileDef,
+	RegfileDefault,
+} from "../src/plugins/wishbone-regfile/dsl.ts";
 import { emitRegfileSv } from "../src/plugins/wishbone-regfile/emit.ts";
-import { generateAll } from "../src/plugins/wishbone-regfile/generate.ts";
+import {
+	emitRegfileC,
+	emitRegfileUvm,
+} from "../src/plugins/wishbone-regfile/emit-sw.ts";
+import {
+	generateAll,
+	generateDef,
+} from "../src/plugins/wishbone-regfile/generate.ts";
 import { layoutRegfile } from "../src/plugins/wishbone-regfile/layout.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
@@ -274,6 +289,127 @@ endmodule
 		}
 	});
 
+	test("C and uvm_reg exports are field layout only", () => {
+		const c = emitRegfileC(layoutRegfile(smoke_rw));
+		expect(c).toContain("struct SMOKE_RW_CFG_BITS");
+		expect(c).toContain("union SMOKE_RW_CFG");
+		expect(c).toContain("volatile uint32_t ENABLE");
+		expect(c).toContain("volatile uint32_t MODE");
+		expect(c).toContain("volatile uint32_t all");
+		expect(c).not.toContain("OFFSET_");
+		expect(c).not.toContain("_Regdef");
+		expect(c).not.toContain("tagBits");
+
+		const uvm = emitRegfileUvm(layoutRegfile(smoke_rw));
+		expect(uvm).toContain("class ral_reg_smoke_rw_CFG extends uvm_reg");
+		expect(uvm).toContain('.configure(this, 1, 0, "RW", 0, 1\'h0, 1, 1, 0)');
+		expect(uvm).toContain('.configure(this, 3, 8, "RW", 0, 3\'h1, 1, 1, 0)');
+		expect(uvm).not.toContain("ral_block_");
+		expect(uvm).not.toContain("add_reg");
+		expect(uvm).not.toContain("default_map");
+	});
+
+	test("C/UVM shadow is a comment; reset dict uses copy 0", () => {
+		const laid = layoutRegfile(smoke_shadow);
+		const c = emitRegfileC(laid);
+		expect(c).toContain("shadow: bank, 4 copies");
+		expect(c).not.toContain("1:0");
+		expect(c).not.toContain("remaps");
+		const uvm = emitRegfileUvm(laid);
+		expect(uvm).toContain("shadow: bank, 4 copies");
+		expect(uvm).toContain('.configure(this, 8, 0, "RW", 0, 8\'h1, 1, 1, 0)');
+		expect(uvm).not.toContain("tagBits");
+	});
+
+	test("generateAll writes C and uvm_reg when toml paths are set", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_sw_"));
+		const smoke = join(
+			import.meta.dir,
+			"..",
+			"demo",
+			"soc",
+			"regs",
+			"smoke.ts",
+		);
+		writeFileSync(
+			join(dir, "autowire.toml"),
+			`
+[dump]
+plugins_dir = "gen/plugins"
+[plugins.regfile]
+c = "fw/gen"
+uvm = "dv/ral"
+[regfile.smoke]
+ts = "${smoke.replaceAll("\\", "/")}"
+exports = ["smoke_rw"]
+`,
+		);
+		const ws = await loadWorkspace(join(dir, "autowire.toml"));
+		const paths = await generateAll(ws, ws.regfileSources);
+		expect(paths.some((p) => p.endsWith("smoke_rw_regfile.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("smoke_rw.h"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("ral_SMOKE_RW.sv"))).toBe(true);
+		const hdr = readFileSync(join(dir, "fw/gen/smoke_rw.h"), "utf8");
+		expect(hdr).toContain("union SMOKE_RW_CFG");
+		const ral = readFileSync(join(dir, "dv/ral/ral_SMOKE_RW.sv"), "utf8");
+		expect(ral).toContain("class ral_reg_smoke_rw_CFG");
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test("shared sheet emits one C header; layout mismatch is an error", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_sheet_"));
+		writeFileSync(
+			join(dir, "autowire.toml"),
+			`
+[dump]
+plugins_dir = "gen/plugins"
+[plugins.regfile]
+c = "fw/gen"
+`,
+		);
+		const ws = await loadWorkspace(join(dir, "autowire.toml"));
+		const body = [
+			Cell("CFG", "cfg", CellDefault, [
+				Field("mode", Access.RW, 3, "Mode").reset(0),
+			]),
+		];
+		const a = Regfile(
+			"core_0",
+			"lane 0",
+			RegfileDefault.align(4).addrWidth(8).sheet("core"),
+			body,
+		);
+		const b = Regfile(
+			"core_1",
+			"lane 1",
+			RegfileDefault.align(4).addrWidth(8).sheet("core"),
+			body,
+		);
+		const other = Regfile(
+			"core_x",
+			"mismatch",
+			RegfileDefault.align(4).addrWidth(8).sheet("core"),
+			[
+				Cell("CFG", "cfg", CellDefault, [
+					Field("mode", Access.RW, 4, "Mode").reset(0),
+				]),
+			],
+		);
+		const sheets = new Map<string, string>();
+		const p0 = await generateDef(ws, a, sheets);
+		const p1 = await generateDef(ws, b, sheets);
+		expect(p0.some((p) => p.endsWith("core.h"))).toBe(true);
+		expect(p1.some((p) => p.endsWith("core.h"))).toBe(false);
+		expect(p1.some((p) => p.endsWith("core_1_regfile.sv"))).toBe(true);
+		const hdr = readFileSync(join(dir, "fw/gen/core.h"), "utf8");
+		expect(hdr).toContain("union CORE_CFG");
+		expect(hdr).not.toContain("CORE_0");
+		await expect(generateDef(ws, other, sheets)).rejects.toThrow(
+			/sheet "core" reused by "core_x"/,
+		);
+		rmSync(dir, { recursive: true, force: true });
+	});
+
 	test("smoke FABRIC.rb_grant_en is RW reset-0 at 0x030", () => {
 		const laid = layoutRegfile(smoke);
 		const fabric = laid.cells.find((c) => c.name === "FABRIC");
@@ -316,8 +452,8 @@ ts = "${smoke.replaceAll("\\", "/")}"
 });
 
 describe("wishbone-regfile demo/soc sha256", () => {
-	test("sha256_0 layout matches legacy CTRL + HASH0..7 map", () => {
-		const laid = layoutRegfile(sha256_0);
+	test("sha256 layout matches legacy CTRL + HASH0..7 map", () => {
+		const laid = layoutRegfile(sha256);
 		expect(laid.cells.map((c) => c.byte_offset)).toEqual([
 			0, 4, 8, 12, 16, 20, 24, 28, 32,
 		]);
@@ -326,27 +462,55 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		expect(ctrl?.fields.map((f) => f.bit_offset)).toEqual([0, 1, 8, 9]);
 	});
 
-	test("sha256_0 emit has Access prefixes and same-cycle ACK", () => {
-		const sv = emitRegfileSv(layoutRegfile(sha256_0));
-		expect(sv).toContain("module sha256_0_regfile");
+	test("sha256 C/UVM types follow the single table name", () => {
+		const c = emitRegfileC(layoutRegfile(sha256));
+		expect(c).toContain("union SHA256_CTRL");
+		expect(c).not.toContain("SHA256_0");
+		const uvm = emitRegfileUvm(layoutRegfile(sha256));
+		expect(uvm).toContain("class ral_reg_sha256_CTRL");
+	});
+
+	test("sha256 emit has Access prefixes and same-cycle ACK", () => {
+		const sv = emitRegfileSv(layoutRegfile(sha256));
+		expect(sv).toContain("module sha256_regfile");
 		expect(sv).toContain("rg_soft_reset");
 		expect(sv).toContain("p_rg_done_clear");
 		expect(sv).toContain("ro_busy");
 		expect(sv).toContain("ro_done");
 		expect(sv).toContain("ro_hash7");
 		expect(sv).toContain(
-			"sha256_0_o_wb_ack = sha256_0_i_wb_cyc && sha256_0_i_wb_stb && hit",
+			"sha256_o_wb_ack = sha256_i_wb_cyc && sha256_i_wb_stb && hit",
 		);
 	});
 
-	test("demo/soc toml generates sha256_0/1_regfile", async () => {
+	test("demo/soc toml generates one sha256_regfile and sha256.h", async () => {
 		const ws = await loadWorkspace(
 			join(import.meta.dir, "..", "demo", "soc", "autowire.toml"),
 		);
 		expect(ws.regfileSources.some((s) => s.id === "sha256")).toBe(true);
+		expect(ws.regfileCExport?.endsWith("fw/gen/regfile")).toBe(true);
 		const paths = await generateAll(ws, ws.regfileSources);
-		expect(paths.some((p) => p.endsWith("sha256_0_regfile.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("sha256_1_regfile.sv"))).toBe(true);
-		expect(sha256_1.name).toBe("sha256_1");
+		expect(paths.filter((p) => p.endsWith("sha256_regfile.sv"))).toHaveLength(
+			1,
+		);
+		expect(paths.some((p) => p.endsWith("sha256_0_regfile.sv"))).toBe(false);
+		expect(paths.some((p) => p.endsWith("sha256_1_regfile.sv"))).toBe(false);
+		expect(paths.filter((p) => p.endsWith("sha256.h"))).toHaveLength(1);
+		const hdr = readFileSync(
+			join(
+				import.meta.dir,
+				"..",
+				"demo",
+				"soc",
+				"fw",
+				"gen",
+				"regfile",
+				"sha256.h",
+			),
+			"utf8",
+		);
+		expect(hdr).toContain("union SHA256_CTRL");
+		expect(paths.some((p) => p.endsWith("smoke.h"))).toBe(true);
+		expect(sha256.name).toBe("sha256");
 	});
 });

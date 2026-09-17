@@ -17,7 +17,7 @@
 - 读写完成 **必须**用 `ACK`；**禁止**用读有效冒充写完成。  
 - 数据模型：`Table` ≈ 一份导出的 `RegfileDef`；内含 Block / Cell / Field（Access 语义继承主干，见 §5）。  
 - **SoT 只有** 配置的 `.ts` 模块中导出的 `RegfileDef`（见 §3.1）；**禁止** HTML 字段树、Python、Excel、regpy、其它 DSL 当寄存器权威。  
-- Excel **只出文档**：工作簿 = `plugins.regfile.export`；工作表名 = `RegfileDef.sheet`（空/缺省 = `name`）。**禁止**当 SoT、**禁止**从 Excel 回写 TS。  
+- Excel / C / UVM **只出导出**：路径见 §6；**禁止**当 SoT、**禁止**从这些产物回写 TS。  
 - 落盘后经 `analysis` 进 RtlIndex，connect HTML 用 **`<aw-inst mod="<name>_regfile">`** 例化（与普通叶子相同）。**禁止**再引入 HTML 寄存器桩标签。  
 - 生成后经 `analysis` 进 RtlIndex；connect **只例化**，见 §4。
 
@@ -30,7 +30,7 @@
 | 叶子口 | `reg_wren/rden/bsel/addr/wdata` + `reg_rddata/rddata_vld` | Wishbone Classic slave（与 bus 文同子集） |
 | 写/读完成 | 易蹭 `rddata_vld` | **仅** `ACK`（读时 `ACK`+`DAT_*` 同拍） |
 | 数据模型 | `RegTable` / `RegCell` / `RegField`（Python 类） | **TS** `Regfile` / `Block` / `Cell` / `Field`（见 [`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts)） |
-| 文档 | 可导 Excel | Excel **只出文档**；簿 = `plugins.regfile.export`；表名 = `sheet`（空 = `name`） |
+| 文档 / 固件 / UVM | 可导 Excel、C 头、RAL | Excel / C / `uvm_reg` **只出导出**；路径 = `[plugins.regfile]` |
 | SoT | Python + 可选 Excel | **仅** TS `RegfileDef` 导出；**禁止** HTML/其它 DSL 当权威 |
 | 生成头 | username / 墙钟 / Python Info | 稳定头：plugin id + 表名（可复现） |
 
@@ -40,7 +40,8 @@
 
 ```text
 TS RegfileDef export (SoT)
-    →  generate → *_regfile.sv  (+ Excel 文档 sheet)
+    →  generate → *_regfile.sv
+    →  （若配置了 [plugins.regfile]）Excel / C 头 / uvm_reg（§6；非 SoT）
     →  analysis → RtlIndex
 WB slave  ←──  (协议见 wishbone-bus.md §2)
    │
@@ -97,7 +98,7 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 | `desc` | Field / Cell / Block / Regfile **必须**提供（可维护性） |
 | 数据通路 | Wishbone **`DAT_*` 固定 32 bit**；**`SEL` 固定 4**；**`ADR` = 字节地址**；一 cell = 一字 = 4 字节；**禁止** `data_width` |
 | `addr_width` | Regfile opts **必须** `addrWidth(...)`（无缺省） |
-| Excel 表名 | `RegfileDef.sheet`；缺省 / 空 = `name` |
+| Excel / C / uvm_reg 表名 | `RegfileDef.sheet`；缺省 / 空 = `name`；多硬件例化可共享 |
 
 示意（完整可调示例见 [`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts) 末尾 `sub_module_a` / `sub_module_b`）：
 
@@ -169,9 +170,9 @@ Block("wide", "Wide fields", BlockDefault.byteAlign(4), [
 
 其它规则：
 
-1. **一份** `RegfileDef` 导出 ↔ **一个**生成叶子模 + **一个** Excel 工作表（有效名 = `sheet`，空则 = `name`）。  
-2. 同一 `.ts` 模块 / 工作区登记内可多个导出；导出名与**有效** `sheet` **必须**唯一，重名 → generate 报错。  
-3. 有效 `sheet` **应当**用稳定标识符（推荐 `[A-Za-z_][A-Za-z0-9_]*`）；实现可拒绝空格/路径分隔符。  
+1. **一份** `RegfileDef.name` 导出 ↔ **一个**生成叶子模（硬件例化 / WB identity）。软件与文档身份 = 有效 **`sheet`**（空/缺省 = `name`）。  
+2. 同一 `.ts` 模块 / 工作区登记内可多个导出；**`name` 必须唯一**（一份 `name` ↔ 一份 SV 叶子）。同一 IP 多挂总线：**一份** SoT + **多次** `<aw-inst mod="<name>_regfile">`，用 rewrite 接到各 slave id（demo：`sha256_regfile` ×2 → `sha256_0`/`sha256_1`）。有效 `sheet` **可以**被不同 `name` 共享（C/UVM/Excel 只写一份）；共享时 **字段 layout 必须相同**，不同 → generate 报错。  
+3. 有效 `sheet` **必须**是稳定标识符（`[A-Za-z_][A-Za-z0-9_]*`）。  
 4. 工作簿路径：`autowire.toml` 的 **`plugins.regfile.export`**（例 `"ip_regfiles.xlsx"`）；**永远**文档产物；改寄存器 **只改** TS。未配置 export → 可不写 Excel。  
 5. HTML 桩 **结构**上可与 `aw-mod` 同槽；**语义**上由 wishbone-regfile **generate**，不进 connect elaborate，不写 `.autowire/connect/`。  
 6. Shadow：**必须**经 `RegfileDefault…shadows(...)`（或等价 opts）挂在表级；无 shadow 则省略。  
@@ -189,8 +190,7 @@ Block("wide", "Wide fields", BlockDefault.byteAlign(4), [
 ```text
 generate：TS RegfileDef export
     →  plugins_dir/<plugin-id>/*_regfile.sv
-    →  （若配置了 plugins.regfile.export）Excel 工作簿：
-         每表一 sheet；名 = sheet（空则 = name）
+    →  （若配置了 [plugins.regfile]）Excel / C 头 / uvm_reg（§6）
     →  analysis（hdxml hash 增量）→ RtlIndex
     →  connect：<aw-inst mod="…_regfile"> + aw-connect 接 WB 口
        （口表只认 ctx.leaf；禁止插件 providePorts 旁路）
@@ -198,8 +198,8 @@ generate：TS RegfileDef export
 
 - **禁止**经 connect 路径直接吐 regfile SV——只走 generate → leaf → `<aw-inst>`。  
 - 声明 **禁止**登记为 `[connect.<id>]` / `[sim.<id>]`；toml 用 `[regfile.<source_id>] ts=` 指向 SoT **文件**（可含多个 export）。  
-- 字段重叠 / 有效 `sheet` 撞名 / 桩带子女等自检在 **generate** 失败即不落盘。  
-- SV 只进 `plugins_dir/<plugin-id>/`；Excel 只写 `plugins.regfile.export` 所指工作簿，**禁止**当 SoT。
+- 字段重叠 / 共享 `sheet` 但 layout 不同 / 桩带子女等自检在 **generate** 失败即不落盘。  
+- SV 只进 `plugins_dir/<plugin-id>/`；Excel / C / uvm_reg 只写 `[plugins.regfile]` 所指路径，**禁止**当 SoT。
 
 ## 5. 生成 RTL 模板与样式（对照主干；口名/时序已裁定）
 
@@ -376,6 +376,7 @@ effective_<s>_sel = wb_tga[tag-bits]   // tagBits 强制；无 local_sel / 无 t
 - **`tagBits` 强制**：每个 Shadow **必须**占一段 `wb_tga`；**禁止**省略。  
 - 叶子 `wb_tga` 口宽 = 本表所有切片的 **最高位 + 1**。  
 - 总线侧：[`wishbone-bus.md`](./wishbone-bus.md) 对启用了 tag 的路径 **必须**透传 TGA；互联 **不解释**位语义。  
+- **C 头 / `uvm_reg`（软件导出）**：只体现 **字段 layout**；shadow **仅注释**（名 / copies）。**禁止**写 `tagBits`、`remaps`、物理 copy 展开、cell 地址或整表 overlay。窗基址、cell 编排、TGA 选 bank **由 bus 组装**（见 [`wishbone-bus.md`](./wishbone-bus.md)）。RTL 叶子仍按本节切 `wb_tga`。  
 - v1 **只开 `wb_tga`**，不开 `tgc`/`tgd` 作 shadow 索引。  
 - 硬件若要「跨当前 pstate 改下一 bank」：走 **`inner_shadow_mux=false`** 的旁路数组 / RWE 自理，**不**另开本地 sel 接管。
 
@@ -484,23 +485,52 @@ effective_sel = wb_tga[tag-bits]
 ## 6. 工作区（草案）
 
 ```toml
-# 全局：regfile 插件把各 RegfileDef 写进同一工作簿（文档产物；非 SoT）
+# 全局：同一 SoT 的非 RTL 导出（文档 / 固件 / UVM）；均非 SoT
 [plugins.regfile]
-export = "ip_regfiles.xlsx"
+export = "ip_regfiles.xlsx"   # Excel 工作簿（文件）
+c      = "fw/gen/regfile"     # C 头目录 → <sheet>.h（空 sheet = name；同 sheet 多例化共用）
+uvm    = "dv/ral"             # uvm_reg 目录 → ral_<NAME>.sv
 
 # source_id = SoT 文件槽（可含多个 Regfile 导出）；不是单个叶子名
 [regfile.examples]
 ts = "docs/examples/regfile/regfile.ts"
 # exports = ["sub_module_a"]   # 可选；省略 = 文件内全部 RegfileDef
 
-# out → [dump] plugins_dir/wishbone-regfile/<name>_regfile.sv
+# RTL out → [dump] plugins_dir/wishbone-regfile/<name>_regfile.sv
 ```
 
 - **禁止**在 toml 写 pin 级连线。  
 - **禁止** `html=` 作为寄存器 SoT；**禁止** `tables = "regpy/"` 一类非 TS SoT。  
-- **禁止**按叶子各写一份 `excel=`；工作簿路径只认 **`plugins.regfile.export`**。  
+- **禁止**按叶子各写一份 `excel=` / `c=` / `uvm=`；路径只认 **`[plugins.regfile]`**。  
 - **禁止**配置 `data_width`（数据通路固定 32）。  
-- Excel 工作表名来自 **`RegfileDef.sheet`**（缺省 = `name`），不是 HTML 属性。
+- 省略某键 → 跳过该导出。键必须是非空字符串。  
+- Excel 工作表名来自 **有效 `sheet`**（缺省 = `name`），不是 HTML 属性。同 sheet 的多例化共用一份软件/文档产物。  
+- C / uvm_reg / Excel **禁止**进 `plugins_dir`（那是 SV 叶子）；也 **禁止**当 connect/sim dump。
+- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h`；顶层例化两次，rewrite 到 bus slave `sha256_0`/`sha256_1`。窗基址与 cell offset 仍在 `fw/common/soc_map.h`（bus software map 后做）。C 头 **入库展示**（`fw/gen/regfile/*.h`，与 `demo/soc/gen/` 同类；**禁止**当临时产物删掉）。
+
+### 6.1 C 头与 uvm_reg（已裁定；C / uvm_reg emit 已落地；Excel emit TBD）
+
+与 Excel 同类：**只是 SoT 的导出**。**禁止**从 `.h` / `uvm_reg` / Excel 回写 TS。
+
+软件操作分两层（叶子 layout ≠ 系统地址图）：
+
+```text
+regfile generate（本插件）
+    每 cell：字段位域 layout
+    shadow：只当注释（名 / copies）
+        ↓
+wishbone-bus generate（后做）
+    Slave(base, mask) 窗 + 叶子 cell 相对 offset → 绝对 MMIO
+    Bus.tagWidth / Slave.tag / 谁驱动 TGA → 选 shadow bank
+```
+
+| 产物 | toml | 落盘 | 本插件写出 | **不**在本插件 |
+|---|---|---|---|---|
+| Excel | `export=` **文件** | 每表一 sheet | 文档（可含叶子 offset，非软件运行图） | — |
+| C | `c=` **目录** | `<sheet>.h`（空 = `name`；同 sheet 只写一份） | 对照主干 `gen_chead.py` 的 **cell 形**：每 cell `struct …_BITS` 位域 + `union { volatile uint32_t all; … bit; }`。LSB=0 与 Field bit `offset` 一致。shadow 只写注释。头稳定（plugin id + 表名），**禁止**墙钟/用户名 | `OFFSET_*` / 带 padding 的整表 overlay / 窗基址 / TGA |
+| UVM | `uvm=` **目录** | `ral_<SHEET>.sv` | 对照主干 `gen_ralf.py` 的 **cell 级结果**：`class ral_reg_<table>_<cell> extends uvm_reg` + `uvm_reg_field`（width / lsb / access / reset）。**禁止** `.ralf` 文本。shadow 只写注释 | `ral_block_*` 的 `default_map.add_reg(offset)`、窗基址、TGA；block 组装归 bus |
+
+复位值：标量 `.reset`；dict 只取 **copy 0**（与「可见的一份」一致）。Access → `uvm_reg_field` 的 `access` 字符串沿主干 `field.access.ral_name`（实现时对照 Python Access）；C 位域不编码 Access。
 
 ## 7. 不做（v1）
 
@@ -508,8 +538,9 @@ ts = "docs/examples/regfile/regfile.ts"
 - 叶子内 APB、FIFO bridge。  
 - Pipelined Wishbone `STALL`。  
 - 插件私有口表绕过 RtlIndex。  
-- 以 HTML 字段树 / Excel / Python / JSON / regpy 为寄存器 SoT，或从 Excel 生成 TS。  
-- 嵌套 `awx-reg-*` 子标签（block/cell/field/shadow）；HTML 桩有子女 → 错误。
+- 以 HTML 字段树 / Excel / C 头 / `uvm_reg` / Python / JSON / regpy 为寄存器 SoT，或从这些产物生成 TS。  
+- 嵌套 `awx-reg-*` 子标签（block/cell/field/shadow）；HTML 桩有子女 → 错误。  
+- 从 regfile 的 C/`uvm_reg` 导出里写地址图或 fabric shadow tag（`OFFSET_*`、整表 overlay、`add_reg(offset)`、`tagBits` / TGA / copy 展开）——软件地址与选 bank **由 bus 组装**。
 
 ## 8. 待你裁定（清单）
 
@@ -543,6 +574,7 @@ ts = "docs/examples/regfile/regfile.ts"
 - ~~W1C 置位通路~~ → **`c_rg_<field>_set`** 硬件置位 in；同周期 **set 优先**于 W1C 清；仍 **无 W1S**。
 - ~~RWW 同周期优先级~~ → **SW 写优先**于 HW `_strb`（HW 写被吞）。
 - ~~scalar shadow sel~~ → 多 bit mask 时 `o_<shadow>_sel` / 内选旁路取 **最低置位 copy**；读仍按位或。
+- ~~C / uvm_reg 软件分层~~ → 叶子只出 **字段 layout**（struct 位域 / `uvm_reg`）；软件文件名 = 有效 **`sheet`**（空 = `name`）。多硬件例化（不同 `name`）**必须**共用同一份 C/`uvm_reg`，只要 `sheet` 相同且 layout 一致；`name` 只服务 SV 叶子 / WB identity。shadow **仅注释**；窗基址、cell 编排、TGA 选 bank **由 bus 后组装**。Excel 仍可文档化叶子 offset。与 Excel 一样禁止回写 TS。
 
 **§8 功能裁定已齐。** `help status`：wishbone-regfile / wishbone-bus 均为 **implementing now**。作者面 API 以 [`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts) + `src/plugins/wishbone-regfile/dsl.ts` 为准。
 

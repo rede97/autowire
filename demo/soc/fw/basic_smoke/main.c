@@ -39,14 +39,6 @@ static void pass(void)
 		;
 }
 
-static void sha_soft_reset_at(uint32_t sha_base)
-{
-	mmio_write(sha_base + SHA_CTRL, SHA_SOFT_RESET);
-	mmio_write(sha_base + SHA_CTRL, 0);
-	mmio_write(sha_base + SHA_CTRL, SHA_DONE_CLEAR);
-	(void)mmio_barrier(sha_base + SHA_CTRL);
-}
-
 static void dma_kick(uint32_t dma_base, uint32_t src, uint32_t ctrl)
 {
 	mmio_write(dma_base + DMA_STATUS, DMA_STATUS_DONE);
@@ -63,7 +55,7 @@ static void wait_dma_done(uint32_t dma_base)
 
 static void wait_sha_idle(uint32_t sha_base)
 {
-	while ((mmio_read(sha_base + SHA_CTRL) & SHA_BUSY) != 0)
+	while (sha_busy(sha_base))
 		;
 }
 
@@ -89,9 +81,11 @@ static void check_digest_at(uint32_t sha_base, const uint32_t *expected)
 int main(void)
 {
 	unsigned i;
-	uint32_t fabric;
+	union SMOKE_FABRIC fabric;
 
 	mmio_write(TESTOUT_ADDR, MARK_ALIVE);
+	if (!regfile_layout_ok())
+		fail();
 
 	/* --- 1) SRAM zeros + soft pad --- */
 	for (i = 0; i < 16; i++)
@@ -111,12 +105,14 @@ int main(void)
 	check_digest_at(SHA0_BASE, EXPECTED_FLASH);
 
 	/* --- 3) Dual DMA concurrent SRAM KAT under round-robin grant --- */
-	fabric = mmio_read(REGFILE_SMOKE_BASE + SMOKE_FABRIC);
-	if ((fabric & SMOKE_FABRIC_RB_GRANT_EN) != 0)
+	fabric.all = mmio_read(REGFILE_SMOKE_BASE + SMOKE_OFF_FABRIC);
+	if (fabric.bit.RB_GRANT_EN)
 		fail();
-	mmio_write(REGFILE_SMOKE_BASE + SMOKE_FABRIC, SMOKE_FABRIC_RB_GRANT_EN);
+	fabric.bit.RB_GRANT_EN = 1;
+	mmio_write(REGFILE_SMOKE_BASE + SMOKE_OFF_FABRIC, fabric.all);
 	/* Posted pipe: readback is the barrier before DMA contention. */
-	if ((mmio_read(REGFILE_SMOKE_BASE + SMOKE_FABRIC) & SMOKE_FABRIC_RB_GRANT_EN) == 0)
+	fabric.all = mmio_read(REGFILE_SMOKE_BASE + SMOKE_OFF_FABRIC);
+	if (!fabric.bit.RB_GRANT_EN)
 		fail();
 
 	sha_soft_reset_at(SHA0_BASE);

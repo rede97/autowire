@@ -42,16 +42,20 @@ test -f gen/plugins/wishbone-bus/soc_wb_interconnect.sv || {
 	echo "missing gen/plugins/wishbone-bus/soc_wb_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
-test -f gen/plugins/wishbone-regfile/sha256_0_regfile.sv || {
-	echo "missing gen/plugins/wishbone-regfile/sha256_0_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
-	exit 1
-}
-test -f gen/plugins/wishbone-regfile/sha256_1_regfile.sv || {
-	echo "missing gen/plugins/wishbone-regfile/sha256_1_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f gen/plugins/wishbone-regfile/sha256_regfile.sv || {
+	echo "missing gen/plugins/wishbone-regfile/sha256_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
 test -f gen/plugins/wishbone-regfile/smoke_regfile.sv || {
 	echo "missing gen/plugins/wishbone-regfile/smoke_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
+	exit 1
+}
+test -f fw/gen/regfile/smoke.h || {
+	echo "missing fw/gen/regfile/smoke.h — run: bun ../../index.ts plugin generate wishbone-regfile" >&2
+	exit 1
+}
+test -f fw/gen/regfile/sha256.h || {
+	echo "missing fw/gen/regfile/sha256.h — run: bun ../../index.ts plugin generate wishbone-regfile" >&2
 	exit 1
 }
 

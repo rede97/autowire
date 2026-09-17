@@ -4,8 +4,13 @@ import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { RegfileSource, WorkspaceConfig } from "../../workspace.ts";
-import { isRegfileDef, type RegfileDef } from "./dsl.ts";
+import { effectiveSheet, isRegfileDef, type RegfileDef } from "./dsl.ts";
 import { emitRegfileSv } from "./emit.ts";
+import {
+	emitRegfileC,
+	emitRegfileUvm,
+	swLayoutFingerprint,
+} from "./emit-sw.ts";
 import { layoutRegfile } from "./layout.ts";
 
 export const PLUGIN_ID = "wishbone-regfile";
@@ -72,14 +77,40 @@ export async function loadRegfileDefsFromSource(
 export async function generateDef(
 	ws: WorkspaceConfig,
 	def: RegfileDef,
-): Promise<string> {
+	swSheets: Map<string, string> = new Map(),
+): Promise<string[]> {
 	const laid = layoutRegfile(def);
-	const sv = emitRegfileSv(laid);
-	const outDir = join(ws.pluginsDir, PLUGIN_ID);
-	await mkdir(outDir, { recursive: true });
-	const outPath = join(outDir, `${def.name.toLowerCase()}_regfile.sv`);
-	await Bun.write(outPath, sv);
-	return outPath;
+	const paths: string[] = [];
+	const svDir = join(ws.pluginsDir, PLUGIN_ID);
+	await mkdir(svDir, { recursive: true });
+	const svPath = join(svDir, `${def.name.toLowerCase()}_regfile.sv`);
+	await Bun.write(svPath, emitRegfileSv(laid));
+	paths.push(svPath);
+	const table = effectiveSheet(def);
+	const fp = swLayoutFingerprint(laid);
+	const prev = swSheets.get(table);
+	if (prev !== undefined) {
+		if (prev !== fp) {
+			throw new Error(
+				`wishbone-regfile: sheet "${table}" reused by "${def.name}" with a different field layout`,
+			);
+		}
+		return paths;
+	}
+	swSheets.set(table, fp);
+	if (ws.regfileCExport) {
+		await mkdir(ws.regfileCExport, { recursive: true });
+		const cPath = join(ws.regfileCExport, `${table}.h`);
+		await Bun.write(cPath, emitRegfileC(laid));
+		paths.push(cPath);
+	}
+	if (ws.regfileUvmExport) {
+		await mkdir(ws.regfileUvmExport, { recursive: true });
+		const uPath = join(ws.regfileUvmExport, `ral_${table.toUpperCase()}.sv`);
+		await Bun.write(uPath, emitRegfileUvm(laid));
+		paths.push(uPath);
+	}
+	return paths;
 }
 
 export async function generateAll(
@@ -88,6 +119,7 @@ export async function generateAll(
 ): Promise<string[]> {
 	const paths: string[] = [];
 	const leafNames = new Set<string>();
+	const swSheets = new Map<string, string>();
 	for (const src of sources) {
 		const defs = await loadRegfileDefsFromSource(src);
 		for (const def of defs) {
@@ -97,7 +129,7 @@ export async function generateAll(
 				);
 			}
 			leafNames.add(def.name);
-			paths.push(await generateDef(ws, def));
+			paths.push(...(await generateDef(ws, def, swSheets)));
 		}
 	}
 	return paths;

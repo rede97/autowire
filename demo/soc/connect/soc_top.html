@@ -3,7 +3,7 @@
   Connect unit "soc_top": small demo SoC after picosoc.
     picorv32 (picorv32_wb, Wishbone master) + SRAM + spimemio XIP flash +
     simpleuart + test output + 2x sdspi (SPI SD card) + 2x sd_rd_dma
-    (Wishbone master -> AXI4-Stream) + 2x sha256_{0,1}_regfile on fabric +
+    (Wishbone master -> AXI4-Stream) + 2x sha256_regfile on fabric (slaves sha256_0/1) +
     2x sha256wb (AXIS glue + core) + smoke_regfile on fabric + smoke_wb glue.
   Buses: Wishbone B4 classic (named-slave interconnect from wishbone-bus;
   masters named {m}_o_wb_* / {m}_i_wb_* too; slaves {name}_i_wb_* / {name}_o_wb_*).
@@ -52,10 +52,11 @@
               <aw-rewrite match="^rst_n$" to="rst_ni"></aw-rewrite>
               <aw-rewrite match="^([io]_wb_.+)$" to="${id}_$1"></aw-rewrite>
             </aw-template>
-            <!-- sha256 CSR: RegfileDef.name = bus slave id → identity WB; one rewrite for sidebands -->
+            <!-- sha256 CSR: one RTL (sha256_regfile); rewrite WB + sidebands to bus slave id -->
             <aw-template name="sha_csr" inst_name="u_${id}_csr">
               <aw-connect port="i_clk" to="clk"></aw-connect>
               <aw-connect port="i_rst_n" to="rst_ni"></aw-connect>
+              <aw-rewrite match="^sha256_([io]_wb_.+)$" to="${id}_$1"></aw-rewrite>
               <aw-rewrite match="^(rg_|p_rg_|ro_).*$" to="${id}_$&"></aw-rewrite>
             </aw-template>
             <!-- sha256 glue+core: AXIS via idx; sideband prefix set per inst to bus slave id -->
@@ -212,11 +213,11 @@
               </aw-template>
             </aw-inst>
 
-            <!-- sha256 CSR on fabric (id = bus slave → identity WB) + glue lanes -->
-            <aw-inst id="sha256_0" mod="sha256_0_regfile">
+            <!-- sha256 CSR: one RTL, two fabric slaves (rewrite in sha_csr) + glue lanes -->
+            <aw-inst id="sha256_0" mod="sha256_regfile">
               <aw-template base="sha_csr"></aw-template>
             </aw-inst>
-            <aw-inst id="sha256_1" mod="sha256_1_regfile">
+            <aw-inst id="sha256_1" mod="sha256_regfile">
               <aw-template base="sha_csr"></aw-template>
             </aw-inst>
             <aw-inst id="sha256_0_core" mod="sha256wb" idx="0">

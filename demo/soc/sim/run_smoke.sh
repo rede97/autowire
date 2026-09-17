@@ -18,8 +18,7 @@ bun ../../index.ts plugin generate all >/dev/null
 
 PLUGINS="gen/plugins/wishbone-bus/wb_cfg_pipe.sv \
 	gen/plugins/wishbone-bus/soc_wb_interconnect.sv \
-	gen/plugins/wishbone-regfile/sha256_0_regfile.sv \
-	gen/plugins/wishbone-regfile/sha256_1_regfile.sv \
+	gen/plugins/wishbone-regfile/sha256_regfile.sv \
 	gen/plugins/wishbone-regfile/smoke_regfile.sv"
 for f in $PLUGINS; do
 	test -f "$f" || { echo "missing $f — plugin generate failed"; exit 1; }

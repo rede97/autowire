@@ -17,8 +17,7 @@ gen/plugins/wishbone-bus/wb_cfg_pipe.sv
 gen/plugins/wishbone-bus/soc_wb_interconnect.sv
 
 # Type-A wishbone-regfile leaves
-gen/plugins/wishbone-regfile/sha256_0_regfile.sv
-gen/plugins/wishbone-regfile/sha256_1_regfile.sv
+gen/plugins/wishbone-regfile/sha256_regfile.sv
 gen/plugins/wishbone-regfile/smoke_regfile.sv
 
 # picorv32: CPU + Wishbone wrapper (picorv32_wb lives in picorv32.v)
@@ -35,7 +34,7 @@ ip/sdspi/rtl/spi/spirxdata.v
 ip/sdspi/rtl/spi/spitxdata.v
 
 # sha256 streaming core (source: github.com/rede97/zynq_sha256;
-# AXIS glue in sha256_wb_regs; CSR = sha256_{0,1}_regfile on soc_top)
+# AXIS glue in sha256_wb_regs; CSR = sha256_regfile (two inst on soc_top)
 ip/sha256/sha256.v
 ip/sha256/sha256_chunk_process.v
 ip/sha256/sha256_chunk_compress.v

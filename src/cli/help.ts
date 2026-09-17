@@ -88,11 +88,21 @@ Parallel (does not block connect)
     orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
   Wishbone regfile — implementing now (docs/plugins/wishbone-regfile.md);
     draft API + samples: docs/examples/regfile/regfile.ts;
-    demo/soc: regs/{sha256_wb,smoke}.ts → plugins_dir (named {table}_i_wb_*/o_wb_*);
+    demo/soc: one sha256_regfile instantiated twice (rewrite WB to slave id);
+    C sha256.h; smoke identity-match;
+    [plugins.regfile] c=fw/gen/regfile (git-tracked showcase, do not delete);
+    firmware uses generated cell unions
+    (soc_map.h keeps window bases + cell offsets until bus software map);
     SoT = TypeScript Regfile(...) exports (RegfileDef); no HTML field tree;
     connect aw-inst mod=*_regfile (or thin WB wrapper); no awx-regfile;
     toml [regfile.<source>] ts= (one file may export many RegfileDef; optional exports=);
-    sheet empty = name; Excel book = plugins.regfile.export; toml ts= not html=;
+    sheet empty = name (C/UVM/Excel stem); shared sheet = one header if two names
+    share layout; same sheet + different layout → generate error;
+    toml ts= not html=;
+    [plugins.regfile] export= Excel file (emit TBD), c= C-header dir, uvm= uvm_reg dir
+    (SoT exports only; no reverse to TS);
+    C/UVM field-layout emit: per-cell struct+bitfield / uvm_reg; shadow as comments;
+    address map + TGA/shadow tag assembled by wishbone-bus;
     DAT=32 ADR=byte; write posted at fabric slave PIPE / read blocks to leaf;
     RWE read_write_block default false (posted fabric: true risks bus lock);
     WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
@@ -113,7 +123,8 @@ Parallel (does not block connect)
     blocking read; PIPE=0 combo; TGA ports always on the module, omitted at
     instance when Slave has no tag);
     master PIPE is parent-defined, not on this bus;
-    decode: localparam SLOT_<SLAVE> indexes slot_sel (no bare slot_sel[6])
+    decode: localparam SLOT_<SLAVE> indexes slot_sel (no bare slot_sel[6]);
+    software map (later): Slave window + TGA/shadow tag; not in regfile C/UVM
 
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
@@ -134,7 +145,8 @@ Shared by deps / web / cli for the RTL universe:
                         connect ids; dump → sim_dir (no .autowire/connect XML)
   [regfile.<source>]    wishbone-regfile SoT file: ts=; optional exports=[]; omit exports = all RegfileDef
   [bus.<source>]        wishbone-bus SoT file: ts=; optional exports=[]; BusDef → decoder|interconnect
-  [plugins.regfile]     optional export= Excel workbook path (docs product; emit TBD)
+  [plugins.regfile]     SoT exports: export= Excel file (emit TBD);
+                        c= C header directory; uvm= uvm_reg SV directory
   [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
                         sim_dir="gen/sim"          DV TB tops
@@ -382,6 +394,7 @@ Do not
   require render before check (wrong direction: Render depends on Check; Check does not depend on Render)
   skip check before render or dump (?render=1 / [Render] must auto-run Check first)
   generate regfile/cfgbus from connect aw-submods custom tags (use: autowire plugin generate; docs/plugins/)
+  treat Excel / C headers / uvm_reg as register SoT, or reverse-generate TS from them
   treat Workspace MCP html_write as elaborate (must still run web check/render/dump for netlist)
   list same-name ports one-by-one in aw-connect (identity omits them; rename → one aw-rewrite RegExp)
 `,

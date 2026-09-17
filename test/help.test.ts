@@ -75,7 +75,15 @@ test("each slice prints independently", () => {
 	expect(renderHelp("dont")).toContain("blur tools vs MCP");
 	expect(renderHelp("dont")).toContain("Workspace MCP");
 	expect(renderHelp("dont")).toContain("treat dump as the only validation");
-	expect(renderHelp("dont")).toContain("skip check before render");
+	expect(renderHelp("status")).toContain("uvm_reg");
+	expect(renderHelp("status")).toContain("field-layout emit");
+	expect(renderHelp("status")).toContain("fw/gen/regfile");
+	expect(renderHelp("status")).toContain("git-tracked showcase");
+	expect(renderHelp("status")).toContain("sha256.h");
+	expect(renderHelp("status")).toContain("sha256_regfile");
+	expect(renderHelp("status")).toContain("assembled by wishbone-bus");
+	expect(renderHelp("workspace")).toContain("c= C header directory");
+	expect(renderHelp("dont")).toContain("C headers / uvm_reg");
 	expect(renderHelp("agent")).toContain("docs/mcp/");
 	expect(renderHelp("status")).toContain("Wishbone regfile — implementing now");
 	expect(renderHelp("status")).toContain("no awx-regfile");
