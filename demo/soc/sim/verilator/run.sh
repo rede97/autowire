@@ -58,6 +58,14 @@ test -f fw/gen/regfile/sha256.h || {
 	echo "missing fw/gen/regfile/sha256.h — run: bun ../../index.ts plugin generate wishbone-regfile" >&2
 	exit 1
 }
+test -f fw/gen/bus/soc_wb_map.h || {
+	echo "missing fw/gen/bus/soc_wb_map.h — run: bun ../../index.ts plugin generate wishbone-bus" >&2
+	exit 1
+}
+test -f gen/plugins/wishbone-bus/soc_wb_system.sv || {
+	echo "missing gen/plugins/wishbone-bus/soc_wb_system.sv — run: bun ../../index.ts plugin generate wishbone-bus" >&2
+	exit 1
+}
 
 make -C "fw/${FW_CASE}"
 HEX="fw/${FW_CASE}/build/firmware.hex"

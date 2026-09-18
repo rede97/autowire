@@ -3,8 +3,9 @@
   Connect unit "soc_top": small demo SoC after picosoc.
     picorv32 (picorv32_wb, Wishbone master) + SRAM + spimemio XIP flash +
     simpleuart + test output + 2x sdspi (SPI SD card) + 2x sd_rd_dma
-    (Wishbone master -> AXI4-Stream) + 2x sha256_regfile on fabric (slaves sha256_0/1) +
-    2x sha256wb (AXIS glue + core) + smoke_regfile on fabric + smoke_wb glue.
+    (Wishbone master -> AXI4-Stream) + 2x sha256wb (AXIS glue + core) +
+    smoke_wb glue. Attached sha256_regfile ×2 and smoke_regfile live inside
+    soc_wb_system (wishbone-bus Type-A wrapper); HTML does not re-declare them.
   Buses: Wishbone B4 classic (named-slave interconnect from wishbone-bus;
   masters named {m}_o_wb_* / {m}_i_wb_* too; slaves {name}_i_wb_* / {name}_o_wb_*).
   TGA: fabric 2-bit (smoke shadow bank); cpu port = smoke rg_bank_sel CSR,
@@ -51,13 +52,6 @@
             <aw-template name="wb_slv" inst_name="u_${id}">
               <aw-rewrite match="^rst_n$" to="rst_ni"></aw-rewrite>
               <aw-rewrite match="^([io]_wb_.+)$" to="${id}_$1"></aw-rewrite>
-            </aw-template>
-            <!-- sha256 CSR: one RTL (sha256_regfile); rewrite WB + sidebands to bus slave id -->
-            <aw-template name="sha_csr" inst_name="u_${id}_csr">
-              <aw-connect port="i_clk" to="clk"></aw-connect>
-              <aw-connect port="i_rst_n" to="rst_ni"></aw-connect>
-              <aw-rewrite match="^sha256_([io]_wb_.+)$" to="${id}_$1"></aw-rewrite>
-              <aw-rewrite match="^(rg_|p_rg_|ro_).*$" to="${id}_$&"></aw-rewrite>
             </aw-template>
             <!-- sha256 glue+core: AXIS via idx; sideband prefix set per inst to bus slave id -->
             <aw-template name="sha_lane" inst_name="u_${id}">
@@ -107,8 +101,9 @@
                 <aw-connect port="mem_instr" type="open"></aw-connect>
               </aw-template>
             </aw-inst>
-            <!-- named-slave interconnect (wishbone-bus generate); masters named too -->
-            <aw-inst id="u_ic" mod="soc_wb_interconnect">
+            <!-- named-slave interconnect (wishbone-bus generate); masters named too.
+                 soc_wb_system wraps the fabric + attached sha256/smoke regfiles. -->
+            <aw-inst id="u_ic" mod="soc_wb_system">
               <aw-template>
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>
                 <!-- smoke FABRIC.rb_grant_en (reset 0 = fixed prio; 1 = round-robin) -->
@@ -118,7 +113,12 @@
                 <aw-connect port="cpu_o_wb_tga" to="rg_bank_sel"></aw-connect>
                 <aw-connect port="dma0m_o_wb_tga" to="2'b00" type="const"></aw-connect>
                 <aw-connect port="dma1m_o_wb_tga" to="2'b00" type="const"></aw-connect>
-                <!-- slave ports identity-match nets {id}_i_wb_* / {id}_o_wb_* -->
+                <!-- attached smoke: glue sidebands; only non-identity written -->
+                <aw-connect port="c_rg_sticky_set" to="p_rg_go"></aw-connect>
+                <aw-rewrite
+                  match="^(rg_enable|rg_mode|rg_capture|c_rg_sticky|rg_cfg|o_bank_sel|rg_key_\d)$"
+                  type="open"
+                ></aw-rewrite>
               </aw-template>
             </aw-inst>
 
@@ -213,16 +213,10 @@
               </aw-template>
             </aw-inst>
 
-            <!-- sha256 CSR: one RTL, two fabric slaves (rewrite in sha_csr) + glue lanes -->
-            <aw-inst id="sha256_0" mod="sha256_regfile">
-              <aw-template base="sha_csr"></aw-template>
-            </aw-inst>
-            <aw-inst id="sha256_1" mod="sha256_regfile">
-              <aw-template base="sha_csr"></aw-template>
-            </aw-inst>
+            <!-- sha256 glue lanes: AXIS via idx; sideband prefix = bus slave id
+                 (CSR leaves live inside soc_wb_system) -->
             <aw-inst id="sha256_0_core" mod="sha256wb" idx="0">
               <aw-template base="sha_lane">
-                <!-- sideband nets share bus-slave prefix with CSR (not core inst id) -->
                 <aw-rewrite match="^(rg_|p_rg_|ro_).*$" to="sha256_0_$&"></aw-rewrite>
                 <aw-connect port="irq_o" to="irq_srcs" width="5:0" part="4"></aw-connect>
               </aw-template>
@@ -234,19 +228,6 @@
               </aw-template>
             </aw-inst>
 
-            <!-- smoke: identity WB + glue sidebands; only non-identity written -->
-            <aw-inst id="smoke" mod="smoke_regfile">
-              <aw-template inst_name="u_smoke_csr">
-                <aw-connect port="i_clk" to="clk"></aw-connect>
-                <aw-connect port="i_rst_n" to="rst_ni"></aw-connect>
-                <!-- smoke_i_wb_tga identity-connects to the fabric; TGA src = rg_bank_sel via glue -->
-                <aw-connect port="c_rg_sticky_set" to="p_rg_go"></aw-connect>
-                <aw-rewrite
-                  match="^(rg_enable|rg_mode|rg_capture|c_rg_sticky|rg_cfg|o_bank_sel|rg_key_\d)$"
-                  type="open"
-                ></aw-rewrite>
-              </aw-template>
-            </aw-inst>
             <aw-inst id="smoke_glue" mod="smoke_wb">
               <aw-template inst_name="u_smoke_glue">
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>

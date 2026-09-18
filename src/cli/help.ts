@@ -88,13 +88,14 @@ Parallel (does not block connect)
     orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
   Wishbone regfile — implementing now (docs/plugins/wishbone-regfile.md);
     draft API + samples: docs/examples/regfile/regfile.ts;
-    demo/soc: one sha256_regfile instantiated twice (rewrite WB to slave id);
-    C sha256.h; smoke identity-match;
+    demo/soc: one sha256_regfile RTL, two fabric hangs via SlaveRegfile(..., { id });
+    C sha256.h; smoke identity-match (id = RegfileDef.name);
     [plugins.regfile] c=fw/gen/regfile (git-tracked showcase, do not delete);
-    uvm=dv/ral (uvm_reg, not .ralf); firmware uses generated cell unions
-    (soc_map.h keeps window bases + cell offsets until bus software map);
+    uvm=dv/ral (uvm_reg, not .ralf); firmware uses generated cell unions;
+    soc_map.h aliases wishbone-bus software map macros;
     SoT = TypeScript Regfile(...) exports (RegfileDef); no HTML field tree;
-    connect aw-inst mod=*_regfile (or thin WB wrapper); no awx-regfile;
+    attached leaves are inside the bus Type-A wrapper (no HTML *_regfile inst);
+    string slaves (SRAM/UART/sdspi/DMA) stay aw-inst; no awx-regfile;
     toml [regfile.<source>] ts= (one file may export many RegfileDef; optional exports=);
     sheet empty = name (C/UVM/Excel stem); shared sheet = one header if two names
     share layout; same sheet + different layout → generate error;
@@ -119,7 +120,7 @@ Parallel (does not block connect)
     1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
     demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives u_ic.rb_grant_en;
     basic_smoke enables RR then dual DMA SRAM KAT on SHA0+SHA1;
-    demo/soc bus/soc_wb.ts → soc_wb_interconnect (mixed slave PIPE 0/1/2/3/4);
+    demo/soc bus/soc_wb.ts → soc_wb_interconnect + soc_wb_system (mixed slave PIPE 0/1/2/3/4);
     toml [bus.<source>] ts=; ADR=byte; fabric addr_width parametrized;
     TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out;
     slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
@@ -127,7 +128,13 @@ Parallel (does not block connect)
     instance when Slave has no tag);
     master PIPE is parent-defined, not on this bus;
     decode: localparam SLOT_<SLAVE> indexes slot_sel (no bare slot_sel[6]);
-    software map (later): Slave window + TGA/shadow tag; not in regfile C/UVM
+    SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, mask?, desc? }): id defaults to
+    RegfileDef.name (multi-hang = distinct id); tag defaults to leaf tga_width;
+    mask defaults to pow2 layout span; (base & mask) === base; TGA must match;
+    software map [plugins.bus] c= (BASE + cell OFFSET + overlay struct) /
+    uvm= ral_block_* add_reg(base+offset); leaf C/UVM stay field-layout only;
+    Type-A wrapper <bus>_system instantiates interconnect + attached *_regfile
+    (sidebands promoted; WB internalized; HTML aw-inst soc_wb_system)
 
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
@@ -150,6 +157,7 @@ Shared by deps / web / cli for the RTL universe:
   [bus.<source>]        wishbone-bus SoT file: ts=; optional exports=[]; BusDef → decoder|interconnect
   [plugins.regfile]     SoT exports: export= Excel workbook (trunk-style);
                         c= C header directory; uvm= uvm_reg SV directory
+  [plugins.bus]         software map: c= C overlay dir; uvm= uvm_reg_block dir
   [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
                         sim_dir="gen/sim"          DV TB tops

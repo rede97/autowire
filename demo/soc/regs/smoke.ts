@@ -2,7 +2,7 @@
 // Individual exports keep bun unit coverage; `smoke` is the on-bus leaf.
 // Generate → gen/plugins/wishbone-regfile/smoke_regfile.sv;
 // instantiate on soc_top; rtl/smoke_wb.v is sideband glue only.
-// After generate + analysis: aw-inst mod="smoke_regfile" (+ smoke_wb glue).
+// After generate + analysis: bus wrapper instantiates smoke_regfile; HTML keeps smoke_wb glue.
 // No HTML register stub tags.
 
 export {

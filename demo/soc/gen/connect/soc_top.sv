@@ -45,6 +45,7 @@ module soc_top (
 	wire  [31:0] irq_bus;
 	logic        rg_rb_grant_en;
 	logic [1:0]  rg_bank_sel;
+	logic        p_rg_go;
 	logic [31:0] dma0m_o_wb_adr;
 	logic [31:0] dma0m_o_wb_dat;
 	logic [3:0]  dma0m_o_wb_sel;
@@ -75,12 +76,32 @@ module soc_top (
 	logic        dma0_o_wb_ack;
 	logic [31:0] dma1_o_wb_dat;
 	logic        dma1_o_wb_ack;
-	logic [31:0] sha256_0_o_wb_dat;
-	logic        sha256_0_o_wb_ack;
-	logic [31:0] sha256_1_o_wb_dat;
-	logic        sha256_1_o_wb_ack;
-	logic [31:0] smoke_o_wb_dat;
-	logic        smoke_o_wb_ack;
+	logic        sha256_0_ro_busy;
+	logic        sha256_0_ro_done;
+	logic [31:0] sha256_0_ro_hash0;
+	logic [31:0] sha256_0_ro_hash1;
+	logic [31:0] sha256_0_ro_hash2;
+	logic [31:0] sha256_0_ro_hash3;
+	logic [31:0] sha256_0_ro_hash4;
+	logic [31:0] sha256_0_ro_hash5;
+	logic [31:0] sha256_0_ro_hash6;
+	logic [31:0] sha256_0_ro_hash7;
+	logic        sha256_1_ro_busy;
+	logic        sha256_1_ro_done;
+	logic [31:0] sha256_1_ro_hash0;
+	logic [31:0] sha256_1_ro_hash1;
+	logic [31:0] sha256_1_ro_hash2;
+	logic [31:0] sha256_1_ro_hash3;
+	logic [31:0] sha256_1_ro_hash4;
+	logic [31:0] sha256_1_ro_hash5;
+	logic [31:0] sha256_1_ro_hash6;
+	logic [31:0] sha256_1_ro_hash7;
+	logic        ro_busy;
+	logic [7:0]  ro_code;
+	logic        rg_capture_strb;
+	logic [15:0] rg_capture_hwdata;
+	logic [31:0] ext_data;
+	logic        ext_data_ready;
 	logic [31:0] dma0m_i_wb_dat;
 	logic        dma0m_i_wb_ack;
 	logic [31:0] dma1m_i_wb_dat;
@@ -139,25 +160,15 @@ module soc_top (
 	logic        dma1_i_wb_cyc;
 	logic        dma1_i_wb_stb;
 	logic        dma1_i_wb_we;
-	logic [31:0] sha256_0_i_wb_adr;
-	logic [31:0] sha256_0_i_wb_dat;
-	logic [3:0]  sha256_0_i_wb_sel;
-	logic        sha256_0_i_wb_cyc;
-	logic        sha256_0_i_wb_stb;
-	logic        sha256_0_i_wb_we;
-	logic [31:0] sha256_1_i_wb_adr;
-	logic [31:0] sha256_1_i_wb_dat;
-	logic [3:0]  sha256_1_i_wb_sel;
-	logic        sha256_1_i_wb_cyc;
-	logic        sha256_1_i_wb_stb;
-	logic        sha256_1_i_wb_we;
-	logic [31:0] smoke_i_wb_adr;
-	logic [31:0] smoke_i_wb_dat;
-	logic [3:0]  smoke_i_wb_sel;
-	logic [1:0]  smoke_i_wb_tga;
-	logic        smoke_i_wb_cyc;
-	logic        smoke_i_wb_stb;
-	logic        smoke_i_wb_we;
+	logic        sha256_0_rg_soft_reset;
+	logic        sha256_0_p_rg_done_clear;
+	logic        sha256_1_rg_soft_reset;
+	logic        sha256_1_p_rg_done_clear;
+	logic [31:0] ext_data_wdata;
+	logic        ext_data_wren;
+	logic [3:0]  ext_data_wstrb;
+	logic        ext_data_rden;
+	logic        ext_data_rst;
 	wire  [5:0]  irq_srcs;
 	wire  [31:0] axs0_tdata;
 	wire         axs0_tvalid;
@@ -167,42 +178,6 @@ module soc_top (
 	wire         axs1_tvalid;
 	wire         axs1_tready;
 	wire         axs1_tlast;
-	logic        sha256_0_ro_busy;
-	logic        sha256_0_ro_done;
-	logic [31:0] sha256_0_ro_hash0;
-	logic [31:0] sha256_0_ro_hash1;
-	logic [31:0] sha256_0_ro_hash2;
-	logic [31:0] sha256_0_ro_hash3;
-	logic [31:0] sha256_0_ro_hash4;
-	logic [31:0] sha256_0_ro_hash5;
-	logic [31:0] sha256_0_ro_hash6;
-	logic [31:0] sha256_0_ro_hash7;
-	logic        sha256_0_rg_soft_reset;
-	logic        sha256_0_p_rg_done_clear;
-	logic        sha256_1_ro_busy;
-	logic        sha256_1_ro_done;
-	logic [31:0] sha256_1_ro_hash0;
-	logic [31:0] sha256_1_ro_hash1;
-	logic [31:0] sha256_1_ro_hash2;
-	logic [31:0] sha256_1_ro_hash3;
-	logic [31:0] sha256_1_ro_hash4;
-	logic [31:0] sha256_1_ro_hash5;
-	logic [31:0] sha256_1_ro_hash6;
-	logic [31:0] sha256_1_ro_hash7;
-	logic        sha256_1_rg_soft_reset;
-	logic        sha256_1_p_rg_done_clear;
-	logic        p_rg_go;
-	logic        ro_busy;
-	logic [7:0]  ro_code;
-	logic        rg_capture_strb;
-	logic [15:0] rg_capture_hwdata;
-	logic [31:0] ext_data;
-	logic        ext_data_ready;
-	logic [31:0] ext_data_wdata;
-	logic        ext_data_wren;
-	logic [3:0]  ext_data_wstrb;
-	logic        ext_data_rden;
-	logic        ext_data_rst;
 
 	soc_reset u_rst (
 		.clk    (clk),
@@ -246,134 +221,157 @@ module soc_top (
 		.trace_data (),
 		.mem_instr  ()
 	);
-	soc_wb_interconnect u_ic (
-		.clk               (clk),
-		.rst_n             (rst_ni),
-		.rb_grant_en       (rg_rb_grant_en),
-		.cpu_o_wb_adr      (cpu_o_wb_adr),
-		.cpu_o_wb_dat      (cpu_o_wb_dat),
-		.cpu_o_wb_sel      (cpu_o_wb_sel),
-		.cpu_o_wb_tga      (rg_bank_sel),
-		.cpu_o_wb_cyc      (cpu_o_wb_cyc),
-		.cpu_o_wb_stb      (cpu_o_wb_stb),
-		.cpu_o_wb_we       (cpu_o_wb_we),
-		.dma0m_o_wb_adr    (dma0m_o_wb_adr),
-		.dma0m_o_wb_dat    (dma0m_o_wb_dat),
-		.dma0m_o_wb_sel    (dma0m_o_wb_sel),
-		.dma0m_o_wb_tga    (2'b00),
-		.dma0m_o_wb_cyc    (dma0m_o_wb_cyc),
-		.dma0m_o_wb_stb    (dma0m_o_wb_stb),
-		.dma0m_o_wb_we     (dma0m_o_wb_we),
-		.dma1m_o_wb_adr    (dma1m_o_wb_adr),
-		.dma1m_o_wb_dat    (dma1m_o_wb_dat),
-		.dma1m_o_wb_sel    (dma1m_o_wb_sel),
-		.dma1m_o_wb_tga    (2'b00),
-		.dma1m_o_wb_cyc    (dma1m_o_wb_cyc),
-		.dma1m_o_wb_stb    (dma1m_o_wb_stb),
-		.dma1m_o_wb_we     (dma1m_o_wb_we),
-		.sram_o_wb_dat     (sram_o_wb_dat),
-		.sram_o_wb_ack     (sram_o_wb_ack),
-		.flash_xip_o_wb_dat(flash_xip_o_wb_dat),
-		.flash_xip_o_wb_ack(flash_xip_o_wb_ack),
-		.flash_cfg_o_wb_dat(flash_cfg_o_wb_dat),
-		.flash_cfg_o_wb_ack(flash_cfg_o_wb_ack),
-		.uart_o_wb_dat     (uart_o_wb_dat),
-		.uart_o_wb_ack     (uart_o_wb_ack),
-		.testout_o_wb_dat  (testout_o_wb_dat),
-		.testout_o_wb_ack  (testout_o_wb_ack),
-		.sd0_o_wb_dat      (sd0_o_wb_dat),
-		.sd0_o_wb_ack      (sd0_o_wb_ack),
-		.sd1_o_wb_dat      (sd1_o_wb_dat),
-		.sd1_o_wb_ack      (sd1_o_wb_ack),
-		.dma0_o_wb_dat     (dma0_o_wb_dat),
-		.dma0_o_wb_ack     (dma0_o_wb_ack),
-		.dma1_o_wb_dat     (dma1_o_wb_dat),
-		.dma1_o_wb_ack     (dma1_o_wb_ack),
-		.sha256_0_o_wb_dat (sha256_0_o_wb_dat),
-		.sha256_0_o_wb_ack (sha256_0_o_wb_ack),
-		.sha256_1_o_wb_dat (sha256_1_o_wb_dat),
-		.sha256_1_o_wb_ack (sha256_1_o_wb_ack),
-		.smoke_o_wb_dat    (smoke_o_wb_dat),
-		.smoke_o_wb_ack    (smoke_o_wb_ack),
-		.cpu_i_wb_dat      (cpu_i_wb_dat),
-		.cpu_i_wb_ack      (cpu_i_wb_ack),
-		.dma0m_i_wb_dat    (dma0m_i_wb_dat),
-		.dma0m_i_wb_ack    (dma0m_i_wb_ack),
-		.dma1m_i_wb_dat    (dma1m_i_wb_dat),
-		.dma1m_i_wb_ack    (dma1m_i_wb_ack),
-		.sram_i_wb_adr     (sram_i_wb_adr),
-		.sram_i_wb_dat     (sram_i_wb_dat),
-		.sram_i_wb_sel     (sram_i_wb_sel),
-		.sram_i_wb_cyc     (sram_i_wb_cyc),
-		.sram_i_wb_stb     (sram_i_wb_stb),
-		.sram_i_wb_we      (sram_i_wb_we),
-		.flash_xip_i_wb_adr(flash_xip_i_wb_adr),
-		.flash_xip_i_wb_dat(flash_xip_i_wb_dat),
-		.flash_xip_i_wb_sel(flash_xip_i_wb_sel),
-		.flash_xip_i_wb_cyc(flash_xip_i_wb_cyc),
-		.flash_xip_i_wb_stb(flash_xip_i_wb_stb),
-		.flash_xip_i_wb_we (flash_xip_i_wb_we),
-		.flash_cfg_i_wb_adr(flash_cfg_i_wb_adr),
-		.flash_cfg_i_wb_dat(flash_cfg_i_wb_dat),
-		.flash_cfg_i_wb_sel(flash_cfg_i_wb_sel),
-		.flash_cfg_i_wb_cyc(flash_cfg_i_wb_cyc),
-		.flash_cfg_i_wb_stb(flash_cfg_i_wb_stb),
-		.flash_cfg_i_wb_we (flash_cfg_i_wb_we),
-		.uart_i_wb_adr     (uart_i_wb_adr),
-		.uart_i_wb_dat     (uart_i_wb_dat),
-		.uart_i_wb_sel     (uart_i_wb_sel),
-		.uart_i_wb_cyc     (uart_i_wb_cyc),
-		.uart_i_wb_stb     (uart_i_wb_stb),
-		.uart_i_wb_we      (uart_i_wb_we),
-		.testout_i_wb_adr  (testout_i_wb_adr),
-		.testout_i_wb_dat  (testout_i_wb_dat),
-		.testout_i_wb_sel  (testout_i_wb_sel),
-		.testout_i_wb_cyc  (testout_i_wb_cyc),
-		.testout_i_wb_stb  (testout_i_wb_stb),
-		.testout_i_wb_we   (testout_i_wb_we),
-		.sd0_i_wb_adr      (sd0_i_wb_adr),
-		.sd0_i_wb_dat      (sd0_i_wb_dat),
-		.sd0_i_wb_sel      (sd0_i_wb_sel),
-		.sd0_i_wb_cyc      (sd0_i_wb_cyc),
-		.sd0_i_wb_stb      (sd0_i_wb_stb),
-		.sd0_i_wb_we       (sd0_i_wb_we),
-		.sd1_i_wb_adr      (sd1_i_wb_adr),
-		.sd1_i_wb_dat      (sd1_i_wb_dat),
-		.sd1_i_wb_sel      (sd1_i_wb_sel),
-		.sd1_i_wb_cyc      (sd1_i_wb_cyc),
-		.sd1_i_wb_stb      (sd1_i_wb_stb),
-		.sd1_i_wb_we       (sd1_i_wb_we),
-		.dma0_i_wb_adr     (dma0_i_wb_adr),
-		.dma0_i_wb_dat     (dma0_i_wb_dat),
-		.dma0_i_wb_sel     (dma0_i_wb_sel),
-		.dma0_i_wb_cyc     (dma0_i_wb_cyc),
-		.dma0_i_wb_stb     (dma0_i_wb_stb),
-		.dma0_i_wb_we      (dma0_i_wb_we),
-		.dma1_i_wb_adr     (dma1_i_wb_adr),
-		.dma1_i_wb_dat     (dma1_i_wb_dat),
-		.dma1_i_wb_sel     (dma1_i_wb_sel),
-		.dma1_i_wb_cyc     (dma1_i_wb_cyc),
-		.dma1_i_wb_stb     (dma1_i_wb_stb),
-		.dma1_i_wb_we      (dma1_i_wb_we),
-		.sha256_0_i_wb_adr (sha256_0_i_wb_adr),
-		.sha256_0_i_wb_dat (sha256_0_i_wb_dat),
-		.sha256_0_i_wb_sel (sha256_0_i_wb_sel),
-		.sha256_0_i_wb_cyc (sha256_0_i_wb_cyc),
-		.sha256_0_i_wb_stb (sha256_0_i_wb_stb),
-		.sha256_0_i_wb_we  (sha256_0_i_wb_we),
-		.sha256_1_i_wb_adr (sha256_1_i_wb_adr),
-		.sha256_1_i_wb_dat (sha256_1_i_wb_dat),
-		.sha256_1_i_wb_sel (sha256_1_i_wb_sel),
-		.sha256_1_i_wb_cyc (sha256_1_i_wb_cyc),
-		.sha256_1_i_wb_stb (sha256_1_i_wb_stb),
-		.sha256_1_i_wb_we  (sha256_1_i_wb_we),
-		.smoke_i_wb_adr    (smoke_i_wb_adr),
-		.smoke_i_wb_dat    (smoke_i_wb_dat),
-		.smoke_i_wb_sel    (smoke_i_wb_sel),
-		.smoke_i_wb_tga    (smoke_i_wb_tga),
-		.smoke_i_wb_cyc    (smoke_i_wb_cyc),
-		.smoke_i_wb_stb    (smoke_i_wb_stb),
-		.smoke_i_wb_we     (smoke_i_wb_we)
+	soc_wb_system u_ic (
+		.clk                     (clk),
+		.rst_n                   (rst_ni),
+		.rb_grant_en             (rg_rb_grant_en),
+		.cpu_o_wb_adr            (cpu_o_wb_adr),
+		.cpu_o_wb_dat            (cpu_o_wb_dat),
+		.cpu_o_wb_sel            (cpu_o_wb_sel),
+		.cpu_o_wb_tga            (rg_bank_sel),
+		.cpu_o_wb_cyc            (cpu_o_wb_cyc),
+		.cpu_o_wb_stb            (cpu_o_wb_stb),
+		.cpu_o_wb_we             (cpu_o_wb_we),
+		.dma0m_o_wb_adr          (dma0m_o_wb_adr),
+		.dma0m_o_wb_dat          (dma0m_o_wb_dat),
+		.dma0m_o_wb_sel          (dma0m_o_wb_sel),
+		.dma0m_o_wb_tga          (2'b00),
+		.dma0m_o_wb_cyc          (dma0m_o_wb_cyc),
+		.dma0m_o_wb_stb          (dma0m_o_wb_stb),
+		.dma0m_o_wb_we           (dma0m_o_wb_we),
+		.dma1m_o_wb_adr          (dma1m_o_wb_adr),
+		.dma1m_o_wb_dat          (dma1m_o_wb_dat),
+		.dma1m_o_wb_sel          (dma1m_o_wb_sel),
+		.dma1m_o_wb_tga          (2'b00),
+		.dma1m_o_wb_cyc          (dma1m_o_wb_cyc),
+		.dma1m_o_wb_stb          (dma1m_o_wb_stb),
+		.dma1m_o_wb_we           (dma1m_o_wb_we),
+		.sram_o_wb_dat           (sram_o_wb_dat),
+		.sram_o_wb_ack           (sram_o_wb_ack),
+		.flash_xip_o_wb_dat      (flash_xip_o_wb_dat),
+		.flash_xip_o_wb_ack      (flash_xip_o_wb_ack),
+		.flash_cfg_o_wb_dat      (flash_cfg_o_wb_dat),
+		.flash_cfg_o_wb_ack      (flash_cfg_o_wb_ack),
+		.uart_o_wb_dat           (uart_o_wb_dat),
+		.uart_o_wb_ack           (uart_o_wb_ack),
+		.testout_o_wb_dat        (testout_o_wb_dat),
+		.testout_o_wb_ack        (testout_o_wb_ack),
+		.sd0_o_wb_dat            (sd0_o_wb_dat),
+		.sd0_o_wb_ack            (sd0_o_wb_ack),
+		.sd1_o_wb_dat            (sd1_o_wb_dat),
+		.sd1_o_wb_ack            (sd1_o_wb_ack),
+		.dma0_o_wb_dat           (dma0_o_wb_dat),
+		.dma0_o_wb_ack           (dma0_o_wb_ack),
+		.dma1_o_wb_dat           (dma1_o_wb_dat),
+		.dma1_o_wb_ack           (dma1_o_wb_ack),
+		.sha256_0_ro_busy        (sha256_0_ro_busy),
+		.sha256_0_ro_done        (sha256_0_ro_done),
+		.sha256_0_ro_hash0       (sha256_0_ro_hash0),
+		.sha256_0_ro_hash1       (sha256_0_ro_hash1),
+		.sha256_0_ro_hash2       (sha256_0_ro_hash2),
+		.sha256_0_ro_hash3       (sha256_0_ro_hash3),
+		.sha256_0_ro_hash4       (sha256_0_ro_hash4),
+		.sha256_0_ro_hash5       (sha256_0_ro_hash5),
+		.sha256_0_ro_hash6       (sha256_0_ro_hash6),
+		.sha256_0_ro_hash7       (sha256_0_ro_hash7),
+		.sha256_1_ro_busy        (sha256_1_ro_busy),
+		.sha256_1_ro_done        (sha256_1_ro_done),
+		.sha256_1_ro_hash0       (sha256_1_ro_hash0),
+		.sha256_1_ro_hash1       (sha256_1_ro_hash1),
+		.sha256_1_ro_hash2       (sha256_1_ro_hash2),
+		.sha256_1_ro_hash3       (sha256_1_ro_hash3),
+		.sha256_1_ro_hash4       (sha256_1_ro_hash4),
+		.sha256_1_ro_hash5       (sha256_1_ro_hash5),
+		.sha256_1_ro_hash6       (sha256_1_ro_hash6),
+		.sha256_1_ro_hash7       (sha256_1_ro_hash7),
+		.ro_busy                 (ro_busy),
+		.ro_code                 (ro_code),
+		.rg_capture_strb         (rg_capture_strb),
+		.rg_capture_hwdata       (rg_capture_hwdata),
+		.ext_data                (ext_data),
+		.ext_data_ready          (ext_data_ready),
+		.c_rg_sticky_set         (p_rg_go),
+		.cpu_i_wb_dat            (cpu_i_wb_dat),
+		.cpu_i_wb_ack            (cpu_i_wb_ack),
+		.dma0m_i_wb_dat          (dma0m_i_wb_dat),
+		.dma0m_i_wb_ack          (dma0m_i_wb_ack),
+		.dma1m_i_wb_dat          (dma1m_i_wb_dat),
+		.dma1m_i_wb_ack          (dma1m_i_wb_ack),
+		.sram_i_wb_adr           (sram_i_wb_adr),
+		.sram_i_wb_dat           (sram_i_wb_dat),
+		.sram_i_wb_sel           (sram_i_wb_sel),
+		.sram_i_wb_cyc           (sram_i_wb_cyc),
+		.sram_i_wb_stb           (sram_i_wb_stb),
+		.sram_i_wb_we            (sram_i_wb_we),
+		.flash_xip_i_wb_adr      (flash_xip_i_wb_adr),
+		.flash_xip_i_wb_dat      (flash_xip_i_wb_dat),
+		.flash_xip_i_wb_sel      (flash_xip_i_wb_sel),
+		.flash_xip_i_wb_cyc      (flash_xip_i_wb_cyc),
+		.flash_xip_i_wb_stb      (flash_xip_i_wb_stb),
+		.flash_xip_i_wb_we       (flash_xip_i_wb_we),
+		.flash_cfg_i_wb_adr      (flash_cfg_i_wb_adr),
+		.flash_cfg_i_wb_dat      (flash_cfg_i_wb_dat),
+		.flash_cfg_i_wb_sel      (flash_cfg_i_wb_sel),
+		.flash_cfg_i_wb_cyc      (flash_cfg_i_wb_cyc),
+		.flash_cfg_i_wb_stb      (flash_cfg_i_wb_stb),
+		.flash_cfg_i_wb_we       (flash_cfg_i_wb_we),
+		.uart_i_wb_adr           (uart_i_wb_adr),
+		.uart_i_wb_dat           (uart_i_wb_dat),
+		.uart_i_wb_sel           (uart_i_wb_sel),
+		.uart_i_wb_cyc           (uart_i_wb_cyc),
+		.uart_i_wb_stb           (uart_i_wb_stb),
+		.uart_i_wb_we            (uart_i_wb_we),
+		.testout_i_wb_adr        (testout_i_wb_adr),
+		.testout_i_wb_dat        (testout_i_wb_dat),
+		.testout_i_wb_sel        (testout_i_wb_sel),
+		.testout_i_wb_cyc        (testout_i_wb_cyc),
+		.testout_i_wb_stb        (testout_i_wb_stb),
+		.testout_i_wb_we         (testout_i_wb_we),
+		.sd0_i_wb_adr            (sd0_i_wb_adr),
+		.sd0_i_wb_dat            (sd0_i_wb_dat),
+		.sd0_i_wb_sel            (sd0_i_wb_sel),
+		.sd0_i_wb_cyc            (sd0_i_wb_cyc),
+		.sd0_i_wb_stb            (sd0_i_wb_stb),
+		.sd0_i_wb_we             (sd0_i_wb_we),
+		.sd1_i_wb_adr            (sd1_i_wb_adr),
+		.sd1_i_wb_dat            (sd1_i_wb_dat),
+		.sd1_i_wb_sel            (sd1_i_wb_sel),
+		.sd1_i_wb_cyc            (sd1_i_wb_cyc),
+		.sd1_i_wb_stb            (sd1_i_wb_stb),
+		.sd1_i_wb_we             (sd1_i_wb_we),
+		.dma0_i_wb_adr           (dma0_i_wb_adr),
+		.dma0_i_wb_dat           (dma0_i_wb_dat),
+		.dma0_i_wb_sel           (dma0_i_wb_sel),
+		.dma0_i_wb_cyc           (dma0_i_wb_cyc),
+		.dma0_i_wb_stb           (dma0_i_wb_stb),
+		.dma0_i_wb_we            (dma0_i_wb_we),
+		.dma1_i_wb_adr           (dma1_i_wb_adr),
+		.dma1_i_wb_dat           (dma1_i_wb_dat),
+		.dma1_i_wb_sel           (dma1_i_wb_sel),
+		.dma1_i_wb_cyc           (dma1_i_wb_cyc),
+		.dma1_i_wb_stb           (dma1_i_wb_stb),
+		.dma1_i_wb_we            (dma1_i_wb_we),
+		.sha256_0_rg_soft_reset  (sha256_0_rg_soft_reset),
+		.sha256_0_p_rg_done_clear(sha256_0_p_rg_done_clear),
+		.sha256_1_rg_soft_reset  (sha256_1_rg_soft_reset),
+		.sha256_1_p_rg_done_clear(sha256_1_p_rg_done_clear),
+		.rg_enable               (),
+		.rg_mode                 (),
+		.rg_capture              (),
+		.ext_data_wdata          (ext_data_wdata),
+		.ext_data_wren           (ext_data_wren),
+		.ext_data_wstrb          (ext_data_wstrb),
+		.ext_data_rden           (ext_data_rden),
+		.ext_data_rst            (ext_data_rst),
+		.p_rg_go                 (p_rg_go),
+		.c_rg_sticky             (),
+		.rg_cfg                  (),
+		.o_bank_sel              (),
+		.rg_bank_sel             (rg_bank_sel),
+		.rg_rb_grant_en          (rg_rb_grant_en),
+		.rg_key_0                (),
+		.rg_key_1                (),
+		.rg_key_2                ()
 	);
 	wb_sram #(
 		.WORDS(16384),
@@ -544,54 +542,6 @@ module soc_top (
 		.m_axis_tlast (axs1_tlast),
 		.o_irq        (o_irq)
 	);
-	sha256_regfile u_sha256_0_csr (
-		.i_clk          (clk),
-		.i_rst_n        (rst_ni),
-		.sha256_i_wb_cyc(sha256_0_i_wb_cyc),
-		.sha256_i_wb_stb(sha256_0_i_wb_stb),
-		.sha256_i_wb_we (sha256_0_i_wb_we),
-		.sha256_i_wb_adr(sha256_0_i_wb_adr),
-		.sha256_i_wb_dat(sha256_0_i_wb_dat),
-		.sha256_i_wb_sel(sha256_0_i_wb_sel),
-		.ro_busy        (sha256_0_ro_busy),
-		.ro_done        (sha256_0_ro_done),
-		.ro_hash0       (sha256_0_ro_hash0),
-		.ro_hash1       (sha256_0_ro_hash1),
-		.ro_hash2       (sha256_0_ro_hash2),
-		.ro_hash3       (sha256_0_ro_hash3),
-		.ro_hash4       (sha256_0_ro_hash4),
-		.ro_hash5       (sha256_0_ro_hash5),
-		.ro_hash6       (sha256_0_ro_hash6),
-		.ro_hash7       (sha256_0_ro_hash7),
-		.sha256_o_wb_ack(sha256_0_o_wb_ack),
-		.sha256_o_wb_dat(sha256_0_o_wb_dat),
-		.rg_soft_reset  (sha256_0_rg_soft_reset),
-		.p_rg_done_clear(sha256_0_p_rg_done_clear)
-	);
-	sha256_regfile u_sha256_1_csr (
-		.i_clk          (clk),
-		.i_rst_n        (rst_ni),
-		.sha256_i_wb_cyc(sha256_1_i_wb_cyc),
-		.sha256_i_wb_stb(sha256_1_i_wb_stb),
-		.sha256_i_wb_we (sha256_1_i_wb_we),
-		.sha256_i_wb_adr(sha256_1_i_wb_adr),
-		.sha256_i_wb_dat(sha256_1_i_wb_dat),
-		.sha256_i_wb_sel(sha256_1_i_wb_sel),
-		.ro_busy        (sha256_1_ro_busy),
-		.ro_done        (sha256_1_ro_done),
-		.ro_hash0       (sha256_1_ro_hash0),
-		.ro_hash1       (sha256_1_ro_hash1),
-		.ro_hash2       (sha256_1_ro_hash2),
-		.ro_hash3       (sha256_1_ro_hash3),
-		.ro_hash4       (sha256_1_ro_hash4),
-		.ro_hash5       (sha256_1_ro_hash5),
-		.ro_hash6       (sha256_1_ro_hash6),
-		.ro_hash7       (sha256_1_ro_hash7),
-		.sha256_o_wb_ack(sha256_1_o_wb_ack),
-		.sha256_o_wb_dat(sha256_1_o_wb_dat),
-		.rg_soft_reset  (sha256_1_rg_soft_reset),
-		.p_rg_done_clear(sha256_1_p_rg_done_clear)
-	);
 	sha256wb u_sha256_0_core (
 		.irq_o          (irq_srcs[4]),
 		.clk            (clk),
@@ -633,43 +583,6 @@ module soc_top (
 		.ro_hash5       (sha256_1_ro_hash5),
 		.ro_hash6       (sha256_1_ro_hash6),
 		.ro_hash7       (sha256_1_ro_hash7)
-	);
-	smoke_regfile u_smoke_csr (
-		.i_clk            (clk),
-		.i_rst_n          (rst_ni),
-		.smoke_i_wb_cyc   (smoke_i_wb_cyc),
-		.smoke_i_wb_stb   (smoke_i_wb_stb),
-		.smoke_i_wb_we    (smoke_i_wb_we),
-		.smoke_i_wb_adr   (smoke_i_wb_adr),
-		.smoke_i_wb_dat   (smoke_i_wb_dat),
-		.smoke_i_wb_sel   (smoke_i_wb_sel),
-		.smoke_i_wb_tga   (smoke_i_wb_tga),
-		.ro_busy          (ro_busy),
-		.ro_code          (ro_code),
-		.rg_capture_strb  (rg_capture_strb),
-		.rg_capture_hwdata(rg_capture_hwdata),
-		.ext_data         (ext_data),
-		.ext_data_ready   (ext_data_ready),
-		.c_rg_sticky_set  (p_rg_go),
-		.smoke_o_wb_ack   (smoke_o_wb_ack),
-		.smoke_o_wb_dat   (smoke_o_wb_dat),
-		.rg_enable        (),
-		.rg_mode          (),
-		.rg_capture       (),
-		.ext_data_wdata   (ext_data_wdata),
-		.ext_data_wren    (ext_data_wren),
-		.ext_data_wstrb   (ext_data_wstrb),
-		.ext_data_rden    (ext_data_rden),
-		.ext_data_rst     (ext_data_rst),
-		.p_rg_go          (p_rg_go),
-		.c_rg_sticky      (),
-		.rg_cfg           (),
-		.o_bank_sel       (),
-		.rg_bank_sel      (rg_bank_sel),
-		.rg_rb_grant_en   (rg_rb_grant_en),
-		.rg_key_0         (),
-		.rg_key_1         (),
-		.rg_key_2         ()
 	);
 	smoke_wb u_smoke_glue (
 		.clk              (clk),

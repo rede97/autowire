@@ -64,7 +64,7 @@ function wbPortName(table: string, stem: string): string {
 	return `${table}_${stem}`;
 }
 
-type PortDecl = {
+export type PortDecl = {
 	dir: "input" | "output";
 	packed: string;
 	name: string;
@@ -225,7 +225,7 @@ function fieldSidebandComment(
 	return `${f.access} ${role}: ${f.name} — ${f.desc}`;
 }
 
-function collectPorts(laid: LaidRegfile): PortDecl[] {
+export function collectPorts(laid: LaidRegfile): PortDecl[] {
 	const { def, cells, shadows, tga_width } = laid;
 	const t = def.name;
 	const wb = (stem: string) => wbPortName(t, stem);

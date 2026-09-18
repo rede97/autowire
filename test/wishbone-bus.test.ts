@@ -3,12 +3,24 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { soc_wb } from "../demo/soc/bus/soc_wb.ts";
-import { Bus, Master, Slave } from "../src/plugins/wishbone-bus/dsl.ts";
+import { sha256 } from "../demo/soc/regs/sha256_wb.ts";
+import { smoke } from "../demo/soc/regs/smoke.ts";
+import {
+	Bus,
+	Master,
+	Slave,
+	SlaveRegfile,
+} from "../src/plugins/wishbone-bus/dsl.ts";
 import {
 	busModuleKind,
 	busModuleName,
 	emitBusSv,
 } from "../src/plugins/wishbone-bus/emit.ts";
+import { emitBusSystemSv } from "../src/plugins/wishbone-bus/emit-attach.ts";
+import {
+	emitBusMapC,
+	emitBusMapUvm,
+} from "../src/plugins/wishbone-bus/emit-map.ts";
 import { generateAll } from "../src/plugins/wishbone-bus/generate.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
@@ -48,9 +60,13 @@ describe("wishbone-bus", () => {
 			join(import.meta.dir, "..", "demo", "soc", "autowire.toml"),
 		);
 		expect(ws.busSources.some((s) => s.id === "soc")).toBe(true);
+		expect(ws.busCExport?.endsWith("fw/gen/bus")).toBe(true);
 		const paths = await generateAll(ws, ws.busSources);
 		expect(paths.some((p) => p.endsWith("soc_wb_interconnect.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("soc_wb_system.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("wb_cfg_pipe.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("soc_wb_map.h"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("ral_block_soc_wb.sv"))).toBe(true);
 	});
 
 	test("zero masters also decoder", () => {
@@ -223,5 +239,59 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(paths.some((p) => p.endsWith("wb_cfg_pipe.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("tiny_decoder.sv"))).toBe(true);
 		expect(paths).toHaveLength(2);
+	});
+
+	test("SlaveRegfile derives id/mask/tag and supports multi-hang", () => {
+		expect(
+			soc_wb.slaves.find((s) => s.name === "sha256_0")?.regfile?.name,
+		).toBe("sha256");
+		expect(
+			soc_wb.slaves.find((s) => s.name === "sha256_1")?.regfile?.name,
+		).toBe("sha256");
+		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.regfile?.name).toBe(
+			"smoke",
+		);
+		expect(
+			soc_wb.slaves.find((s) => s.name === "sram")?.regfile,
+		).toBeUndefined();
+		expect(soc_wb.slaves.find((s) => s.name === "sha256_0")?.mask).toBe(
+			0xffff_ffc0,
+		);
+		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.mask).toBe(
+			0xffff_ffc0,
+		);
+		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.tag).toBe(2);
+		expect(() => SlaveRegfile(smoke, 0x0300_6000, { tag: 1 })).toThrow(
+			/tga_width/,
+		);
+		expect(() => SlaveRegfile(sha256, 0x0300_4010, { id: "sha256_x" })).toThrow(
+			/not aligned/,
+		);
+	});
+
+	test("wrapper and software map cover attached hangs", () => {
+		const wrap = emitBusSystemSv(soc_wb);
+		expect(wrap).toContain("module soc_wb_system");
+		expect(wrap).toContain("soc_wb_interconnect u_ic");
+		expect(wrap).toContain("sha256_regfile u_sha256_0");
+		expect(wrap).toContain("sha256_regfile u_sha256_1");
+		expect(wrap).toContain("smoke_regfile u_smoke");
+		expect(wrap).toContain(".sha256_i_wb_cyc(sha256_0_i_wb_cyc)");
+		expect(wrap).toMatch(/\.rg_soft_reset\s+\(sha256_0_rg_soft_reset\)/);
+		expect(wrap).toMatch(/\.rg_rb_grant_en\s+\(rg_rb_grant_en\)/);
+		expect(wrap).not.toContain("sram_regfile");
+		expect(wrap).not.toMatch(/^\s*(input|output).*sha256_0_i_wb_cyc/m);
+		const map = emitBusMapC(soc_wb);
+		expect(map).toContain("#define SOC_WB_SHA256_0_BASE 0x03004000u");
+		expect(map).toContain("#define SOC_WB_SMOKE_BASE 0x03006000u");
+		expect(map).toContain("#define SOC_WB_SMOKE_FABRIC_OFFSET 0x00000030u");
+		expect(map).toContain("shadow bank");
+		expect(map).toContain('#include "sha256.h"');
+		const uvm = emitBusMapUvm(soc_wb);
+		expect(uvm).toContain("class ral_block_soc_wb");
+		expect(uvm).toContain('`include "ral_SHA256.sv"');
+		expect(uvm).toContain("default_map.add_reg(this.sha256_0_CTRL");
+		expect(uvm).toContain("32'h03004000");
+		expect(uvm).toContain("32'h03006030");
 	});
 });

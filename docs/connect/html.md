@@ -312,18 +312,16 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 | 多实例同名 output | 必须 open 或改名（否则短路 error） |
 
 ```html
-<!-- good: one RTL, N fabric slaves — rewrite WB prefix + sidebands to slave id -->
-<aw-inst id="sha256_0" mod="sha256_regfile">
+<!-- good: attached leaves are inside the bus Type-A wrapper; HTML only insts the system -->
+<aw-inst id="u_ic" mod="soc_wb_system">
   <aw-template>
-    <aw-connect port="i_clk" to="clk"></aw-connect>
-    <aw-connect port="i_rst_n" to="rst_ni"></aw-connect>
-    <aw-rewrite match="^sha256_([io]_wb_.+)$" to="${id}_$1"></aw-rewrite>
-    <aw-rewrite match="^(rg_|p_rg_|ro_).*$" to="${id}_$&"></aw-rewrite>
+    <aw-connect port="rst_n" to="rst_ni"></aw-connect>
+    <aw-connect port="rb_grant_en" to="rg_rb_grant_en"></aw-connect>
   </aw-template>
 </aw-inst>
 ```
 
-当 `RegfileDef.name` 与 bus slave id **相同**时，WB 口可 identity 省略（demo `smoke_regfile`）；只改 sideband 前缀。
+未挂到 `SlaveRegfile(...)` 的外设（SRAM / UART / sdspi / DMA）仍 `aw-inst`。当 `RegfileDef.name` 与 bus slave id **相同**时，wrapper 侧带不加前缀（demo `smoke`）；`id !== name` 时 sideband 加 `{id}_`（demo `sha256_0_rg_*`）。
 
 ### 3.6 其余标签
 

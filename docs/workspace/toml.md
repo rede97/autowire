@@ -120,7 +120,7 @@ deps = ["soc_top"]
 2. **禁止**再用单一 `dir` 混写三类产物（迁移期：仅设置了旧 `dir` 时，实现可临时把 connect dump 落到该目录并 **警告**；新工作区用三分目录）。  
 3. 插件 **禁止**往 `connect_dir` / `sim_dir` 写生成物；只进 `plugins_dir/<id>/`。  
 4. `.autowire/` 仍只放索引/快照/调试临时物，**不是**上述三类产物目录。  
-5. 类型 A regfile：toml `[regfile.<source_id>] ts=` 指向 SoT **文件**（可含多个 `RegfileDef` 导出；可选 `exports=`）；非 RTL 导出路径见 `[plugins.regfile]`：`export=` Excel 工作簿、`c=` C 头目录、`uvm=` uvm_reg 目录（[`../plugins/wishbone-regfile.md`](../plugins/wishbone-regfile.md) §6；均非 SoT）。软件/文档身份 = 有效 `sheet`（缺省 = `name`）；同 sheet 的多例化共用一份 C/`uvm_reg`/Excel。C / uvm_reg **禁止**写进 `plugins_dir`。demo/soc 的 C 头落在 `fw/gen/regfile/`，**入库展示**（与 `demo/soc/gen/` 同类；generate 只覆盖写入，**禁止**整目录删除）。
+5. 类型 A regfile：toml `[regfile.<source_id>] ts=` 指向 SoT **文件**（可含多个 `RegfileDef` 导出；可选 `exports=`）；非 RTL 导出路径见 `[plugins.regfile]`：`export=` Excel 工作簿、`c=` C 头目录、`uvm=` uvm_reg 目录（[`../plugins/wishbone-regfile.md`](../plugins/wishbone-regfile.md) §6；均非 SoT）。软件/文档身份 = 有效 `sheet`（缺省 = `name`）；同 sheet 的多例化共用一份 C/`uvm_reg`/Excel。C / uvm_reg **禁止**写进 `plugins_dir`。demo/soc 的 C 头落在 `fw/gen/regfile/`，**入库展示**（与 `demo/soc/gen/` 同类；generate 只覆盖写入，**禁止**整目录删除）。类型 A bus：`[bus.<source_id>] ts=`；`[plugins.bus] c=` / `uvm=` 写软件地址图（C overlay / `uvm_reg_block`），同样禁止进 `plugins_dir`。挂接了 `RegfileDef` 时 generate 另写 Type-A wrapper `<name>_system.sv` 进 `plugins_dir/wishbone-bus/`。
 
 ### 4.1 `[connect.<id>]`（DE 连接单元 DAG）
 

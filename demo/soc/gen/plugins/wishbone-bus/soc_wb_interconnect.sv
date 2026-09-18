@@ -18,9 +18,9 @@
 //    0x03001000  mask=0xfffffff0  sd1 — sdspi 1  pipe=4
 //    0x03002000  mask=0xfffffff0  dma0 — sd_rd_dma CSR 0  pipe=3
 //    0x03003000  mask=0xfffffff0  dma1 — sd_rd_dma CSR 1  pipe=1
-//    0x03004000  mask=0xffffffc0  sha256_0 — sha256wb lane 0  pipe=2
-//    0x03005000  mask=0xffffffc0  sha256_1 — sha256wb lane 1  pipe=4
-//    0x03006000  mask=0xfffff000  smoke — wishbone-regfile smoke (TGA 2 → shadow bank)  pipe=3
+//    0x03004000  mask=0xffffffc0  sha256_0 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane  pipe=2
+//    0x03005000  mask=0xffffffc0  sha256_1 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane  pipe=4
+//    0x03006000  mask=0xffffffc0  smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)  pipe=3
 //------------------------------------------------------------------------------
 
 module soc_wb_interconnect (
@@ -147,7 +147,7 @@ module soc_wb_interconnect (
 	output logic        dma1_i_wb_we,
 	input  logic [31:0] dma1_o_wb_dat,
 	input  logic        dma1_o_wb_ack,
-	// Slave sha256_0 — sha256wb lane 0,
+	// Slave sha256_0 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane,
 	//   base=0x03004000  mask=0xffffffc0  pipe=2,
 	output logic [31:0] sha256_0_i_wb_adr,
 	output logic [31:0] sha256_0_i_wb_dat,
@@ -157,7 +157,7 @@ module soc_wb_interconnect (
 	output logic        sha256_0_i_wb_we,
 	input  logic [31:0] sha256_0_o_wb_dat,
 	input  logic        sha256_0_o_wb_ack,
-	// Slave sha256_1 — sha256wb lane 1,
+	// Slave sha256_1 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane,
 	//   base=0x03005000  mask=0xffffffc0  pipe=4,
 	output logic [31:0] sha256_1_i_wb_adr,
 	output logic [31:0] sha256_1_i_wb_dat,
@@ -167,8 +167,8 @@ module soc_wb_interconnect (
 	output logic        sha256_1_i_wb_we,
 	input  logic [31:0] sha256_1_o_wb_dat,
 	input  logic        sha256_1_o_wb_ack,
-	// Slave smoke — wishbone-regfile smoke (TGA 2 → shadow bank),
-	//   base=0x03006000  mask=0xfffff000  pipe=3,
+	// Slave smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide),
+	//   base=0x03006000  mask=0xffffffc0  pipe=3,
 	output logic [31:0] smoke_i_wb_adr,
 	output logic [31:0] smoke_i_wb_dat,
 	output logic [3:0]  smoke_i_wb_sel,
@@ -288,7 +288,7 @@ module soc_wb_interconnect (
 	always_comb begin
 		slot_sel = 12'b0;
 		unmapped = 1'b1;
-		if ((g_adr & 32'hfffff000) == 32'h03006000) begin
+		if ((g_adr & 32'hffffffc0) == 32'h03006000) begin
 			slot_sel = 12'd1 << SLOT_SMOKE;
 			unmapped = 1'b0;
 		end
@@ -619,7 +619,7 @@ module soc_wb_interconnect (
 		.m_cyc(slot_sel[SLOT_SMOKE] & g_cyc),
 		.m_stb(slot_sel[SLOT_SMOKE] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_SMOKE] ? g_adr & ~32'hfffff000 : 32'd0),
+		.m_adr(slot_sel[SLOT_SMOKE] ? g_adr & ~32'hffffffc0 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_tga(g_tga[1:0]),

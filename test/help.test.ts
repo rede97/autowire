@@ -91,7 +91,9 @@ test("each slice prints independently", () => {
 	expect(renderHelp("agent")).toContain("docs/mcp/");
 	expect(renderHelp("status")).toContain("Wishbone regfile — implementing now");
 	expect(renderHelp("status")).toContain("no awx-regfile");
-	expect(renderHelp("status")).toContain("Wishbone bus — implementing now");
+	expect(renderHelp("status")).toContain("soc_wb_system");
+	expect(renderHelp("status")).toContain("SlaveRegfile");
+	expect(renderHelp("workspace")).toContain("[plugins.bus]");
 	expect(renderHelp("status")).toContain("type A = generate");
 	expect(renderHelp("status")).toContain("no plugin-private port API");
 	expect(renderHelp("status")).toContain("Workspace MCP");

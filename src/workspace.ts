@@ -72,6 +72,10 @@ export interface WorkspaceConfig {
 	regfileCExport: string | null;
 	/** Optional uvm_reg SV directory ([plugins.regfile] uvm); field-layout emit */
 	regfileUvmExport: string | null;
+	/** Optional C software-map directory ([plugins.bus] c) */
+	busCExport: string | null;
+	/** Optional uvm_reg_block directory ([plugins.bus] uvm) */
+	busUvmExport: string | null;
 }
 
 /** One [connect.<id>] or [sim.<id>] entry */
@@ -342,13 +346,17 @@ export async function loadWorkspace(
 	const busSources = parseBusSources(bus, rel);
 	const plugins = isObj(doc.plugins) ? doc.plugins : {};
 	const pluginsRegfile = isObj(plugins.regfile) ? plugins.regfile : {};
-	const regfileExcelExport = optPluginRegfilePath(
+	const pluginsBus = isObj(plugins.bus) ? plugins.bus : {};
+	const regfileExcelExport = optPluginPath(
+		"regfile",
 		pluginsRegfile,
 		"export",
 		rel,
 	);
-	const regfileCExport = optPluginRegfilePath(pluginsRegfile, "c", rel);
-	const regfileUvmExport = optPluginRegfilePath(pluginsRegfile, "uvm", rel);
+	const regfileCExport = optPluginPath("regfile", pluginsRegfile, "c", rel);
+	const regfileUvmExport = optPluginPath("regfile", pluginsRegfile, "uvm", rel);
+	const busCExport = optPluginPath("bus", pluginsBus, "c", rel);
+	const busUvmExport = optPluginPath("bus", pluginsBus, "uvm", rel);
 	return {
 		hdxmlBin: typeof hdxml.bin === "string" ? rel(hdxml.bin) : null,
 		root,
@@ -387,11 +395,14 @@ export async function loadWorkspace(
 		regfileExcelExport,
 		regfileCExport,
 		regfileUvmExport,
+		busCExport,
+		busUvmExport,
 	};
 }
 
-/** Optional [plugins.regfile] path (export= file; c=/uvm= directories). */
-function optPluginRegfilePath(
+/** Optional [plugins.regfile] / [plugins.bus] path. */
+function optPluginPath(
+	plugin: "regfile" | "bus",
 	table: Record<string, unknown>,
 	key: string,
 	rel: (p: string) => string,
@@ -400,7 +411,7 @@ function optPluginRegfilePath(
 	if (v === undefined) return null;
 	if (typeof v !== "string" || v.length === 0) {
 		throw new Error(
-			`autowire.toml: [plugins.regfile] ${key} must be a non-empty string`,
+			`autowire.toml: [plugins.${plugin}] ${key} must be a non-empty string`,
 		);
 	}
 	return rel(v);

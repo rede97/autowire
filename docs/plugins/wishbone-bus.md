@@ -57,7 +57,7 @@
 3. **禁止** v1 端点使用 Pipelined `STALL`。  
 4. **禁止**再引入第二套 cfg 内核信号名。  
 5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
-6. **TGA 建模（已裁定）**：`Bus(..., { tagWidth? })` = fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）；`Slave(name, desc, base, mask, tag? | { tag?, pipe? })` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
+6. **TGA 建模（已裁定）**：`Bus(..., { tagWidth? })` = fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）；`Slave(name, desc, base, mask, tag? | { tag?, pipe? })` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
 7. **Decode 槽位名**：生成 `localparam SLOT_<SLAVE>`（slave 名大写，从 0 起）；`slot_sel` 下标与 one-hot 赋值 **必须**用该名（`slot_sel[SLOT_SD1]`、`slot_sel = NS'd1 << SLOT_SD1`），**禁止**裸十进制下标。
 
 ## 3. 长路径 pipe（写 posted / 读阻塞）
@@ -68,7 +68,8 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generat
 
 | 侧 | 配置 |
 |---|---|
-| **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
+| **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` 字符串窗口；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
+| **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, mask?, desc? })` 挂接叶子 |
 | **Master** | **本模块不配**。上一级 fabric 已在其 slave 口（即本模块 master 的对端）插入 pipe |
 
 第五参仍可写数字：`Slave(..., 2)` = `tag=2`（兼容）；pipe 必须走 options 对象。
@@ -156,8 +157,11 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 
 - 协议子集与 pipe **以本文为准**；叶子口 **必须**遵守。  
 - 生成编排 **可以**同一 plugin id 一次打出 arb+decoder+regfile，或分插件；每个生成模经 **analysis → RtlIndex 普通叶子**；connect 侧一律 `aw-inst` 例化（**禁止**插件树私有口表向上递推）。  
+- **`SlaveRegfile` 挂 `RegfileDef`**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, mask?, desc? })`。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`（demo：`sha256` ×2 → `sha256_0`/`sha256_1`）。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。`mask` 缺省 = 叶子 layout span 向上取 2 的幂；`(base & mask) === base`。字符串 slave（SRAM/UART/sdspi/DMA）仍写 `Slave(name, desc, base, mask, …)`，**禁止**给 `Slave` 重载 `RegfileDef`。  
+- 若 bus 上有挂接的 regfile：generate **必须**再打一份 Type-A **wrapper** `<bus>_system`（例化 interconnect + 各挂接 `*_regfile`；WB 内收；sideband 在 `id !== name` 时加 `{id}_` 前缀）。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
+- 软件地址图由本插件组装：`[plugins.bus] c=` → `<bus>_map.h`（`BASE` + cell `OFFSET` + overlay）；`uvm=` → `ral_block_<bus>.sv`（`add_reg(base+offset)`）。regfile 插件的 C/`uvm_reg` **只**出字段 layout。  
 - 地址图数据在 Table/端口模型里；**禁止**把 pin 级连线写进 `autowire.toml`。  
-- 产物进 `plugins_dir/<plugin-id>/`；与 connect/sim dump 目录分家（[`README.md`](./README.md) §3）。
+- 产物进 `plugins_dir/<plugin-id>/`；软件 map **禁止**进 `plugins_dir`（与 regfile C/UVM 同纪律）。与 connect/sim dump 目录分家（[`README.md`](./README.md) §3）。
 
 ## 7. 工作区
 
@@ -166,11 +170,17 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 ts = "bus/soc_wb.ts"
 # exports = ["soc_wb"]   # 可选；省略 = 全部 BusDef
 
+[plugins.bus]
+c   = "fw/gen/bus"     # <name>_map.h（git-tracked showcase in demo/soc）
+uvm = "dv/ral"         # ral_block_<name>.sv
+
 # out → plugins_dir/wishbone-bus/wb_cfg_pipe.sv
 #                      + <name>_decoder.sv | <name>_interconnect.sv
+#                      + <name>_system.sv   # 仅当有 SlaveRegfile
 # NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）
 # demo/soc：各 slave PIPE 不等长（0/1/2/3/4）；跨 slave 的 posted 写后固件读屏障
 #           smoke FABRIC.rb_grant_en（复位 0）驱动 interconnect rb_grant_en
+#           HTML u_ic = soc_wb_system；sram/uart/sdspi/DMA 仍字符串 slave
 ```
 
 ## 8. 仍开放
@@ -180,6 +190,6 @@ ts = "bus/soc_wb.ts"
 3. Bridge 目录：仅 `apb2wb` 还是可插其它。  
 4. 固件窗 + DMA：块周期连续写是否进 v2。  
 5. 默认 slave `pipe`（现缺省 0；作者按口配置）。  
-6. **软件地址图**（C overlay / `uvm_reg_block` map）：由本插件组装 `Slave(base)` 窗 + 身份匹配 regfile 的 cell 相对 offset + TGA/shadow tag。regfile 插件的 C/`uvm_reg` **只**出字段 layout（见 [`wishbone-regfile.md`](./wishbone-regfile.md) §6.1）。
 
-**已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。
+**已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。  
+**已裁定软件图 / 挂接**：`SlaveRegfile(RegfileDef, …)` + Type-A wrapper + bus C overlay / `uvm_reg_block`（见 §6）。

@@ -23,10 +23,15 @@ connect_dir = "gen/connect"
 sim_dir = "gen/sim"
 plugins_dir = "gen/plugins"
 
-# Field-layout C / Excel / uvm_reg (not SoT; bases / cell offsets stay in fw/common/soc_map.h)
+# Field-layout C / Excel / uvm_reg (not SoT)
 [plugins.regfile]
 c = "fw/gen/regfile"
 export = "fw/gen/regfile/regfiles.xlsx"
+uvm = "dv/ral"
+
+# Software map: Slave window + cell offset (git-tracked showcase)
+[plugins.bus]
+c = "fw/gen/bus"
 uvm = "dv/ral"
 
 # wishbone-regfile SoT

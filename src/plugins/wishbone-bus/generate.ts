@@ -5,7 +5,15 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { BusSource, WorkspaceConfig } from "../../workspace.ts";
 import { type BusDef, isBusDef } from "./dsl.ts";
-import { busModuleName, emitBusSv } from "./emit.ts";
+import { busModuleName, busSystemModuleName, emitBusSv } from "./emit.ts";
+import { emitBusSystemSv } from "./emit-attach.ts";
+import {
+	attachedSlaves,
+	busMapHeaderName,
+	busRalBlockName,
+	emitBusMapC,
+	emitBusMapUvm,
+} from "./emit-map.ts";
 
 export const PLUGIN_ID = "wishbone-bus";
 
@@ -83,13 +91,35 @@ async function generatePipeModule(outDir: string): Promise<string> {
 export async function generateDef(
 	ws: WorkspaceConfig,
 	def: BusDef,
-): Promise<string> {
+): Promise<string[]> {
 	const sv = emitBusSv(def);
 	const outDir = join(ws.pluginsDir, PLUGIN_ID);
 	await mkdir(outDir, { recursive: true });
+	const paths: string[] = [];
 	const outPath = join(outDir, `${busModuleName(def)}.sv`);
 	await Bun.write(outPath, sv);
-	return outPath;
+	paths.push(outPath);
+	const wrap = emitBusSystemSv(def);
+	if (wrap) {
+		const wrapPath = join(outDir, `${busSystemModuleName(def)}.sv`);
+		await Bun.write(wrapPath, wrap);
+		paths.push(wrapPath);
+	}
+	if (attachedSlaves(def).length > 0) {
+		if (ws.busCExport) {
+			await mkdir(ws.busCExport, { recursive: true });
+			const cPath = join(ws.busCExport, busMapHeaderName(def));
+			await Bun.write(cPath, emitBusMapC(def));
+			paths.push(cPath);
+		}
+		if (ws.busUvmExport) {
+			await mkdir(ws.busUvmExport, { recursive: true });
+			const uPath = join(ws.busUvmExport, `${busRalBlockName(def)}.sv`);
+			await Bun.write(uPath, emitBusMapUvm(def));
+			paths.push(uPath);
+		}
+	}
+	return paths;
 }
 
 export async function generateAll(
@@ -111,7 +141,7 @@ export async function generateAll(
 				);
 			}
 			leafNames.add(mod);
-			paths.push(await generateDef(ws, def));
+			paths.push(...(await generateDef(ws, def)));
 		}
 	}
 	return paths;

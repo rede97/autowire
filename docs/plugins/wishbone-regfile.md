@@ -18,7 +18,7 @@
 - 数据模型：`Table` ≈ 一份导出的 `RegfileDef`；内含 Block / Cell / Field（Access 语义继承主干，见 §5）。  
 - **SoT 只有** 配置的 `.ts` 模块中导出的 `RegfileDef`（见 §3.1）；**禁止** HTML 字段树、Python、Excel、regpy、其它 DSL 当寄存器权威。  
 - Excel / C / UVM **只出导出**：路径见 §6；**禁止**当 SoT、**禁止**从这些产物回写 TS。  
-- 落盘后经 `analysis` 进 RtlIndex，connect HTML 用 **`<aw-inst mod="<name>_regfile">`** 例化（与普通叶子相同）。**禁止**再引入 HTML 寄存器桩标签。  
+- 落盘后经 `analysis` 进 RtlIndex。未挂到 bus 的叶子仍可 `<aw-inst mod="<name>_regfile">`。已 `SlaveRegfile(...)` 的叶子由 bus Type-A wrapper 例化，HTML **禁止**再声明。**禁止**再引入 HTML 寄存器桩标签。  
 - 生成后经 `analysis` 进 RtlIndex；connect **只例化**，见 §4。
 
 不在本文范围：arbiter/decoder 树拓扑、SoC fabric（见 bus 文）；connect 方言本身；整窗 RAM/`block_regfile`（后期，见 §7）。
@@ -62,7 +62,7 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 **命名对齐**
 
 - 脚本 **export 绑定名** 与 `RegfileDef.name` **必须相同**（模块名 `<name>_regfile` / 默认 `sheet` / 报错都认这个名）。  
-  例：`export const smoke = Regfile("smoke", …)` → 模块 `smoke_regfile` → `<aw-inst mod="smoke_regfile">`。  
+  例：`export const smoke = Regfile("smoke", …)` → 模块 `smoke_regfile` → bus wrapper 或 `<aw-inst mod="smoke_regfile">`。  
 - toml **`[regfile.<source_id>]`** 的 id 只标识 **SoT 文件槽**（可含多个 export），**不必**等于某个叶子名。  
 - 重名 / 找不到导出 → generate 报错。
 
@@ -75,7 +75,7 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 
 **Connect 引用（非 SoT）**
 
-- generate → `analysis` → RtlIndex 叶子后，在 connect HTML 里 **`<aw-inst mod="<name>_regfile">`**（可经薄包装适配 `i_clk`/`i_wb_adr` 口名）。  
+- generate → `analysis` → RtlIndex 叶子后：未挂 bus 的叶子在 HTML **`<aw-inst mod="<name>_regfile">`**；已挂 `SlaveRegfile` 的叶子只出现在 bus wrapper 内。  
 - **禁止** HTML 寄存器描述桩 / `awx-reg-*` 字段树。
 
 **作者面 API**（草稿：[`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts)；契约以该文件 + 本节为准）
@@ -171,7 +171,7 @@ Block("wide", "Wide fields", BlockDefault.byteAlign(4), [
 其它规则：
 
 1. **一份** `RegfileDef.name` 导出 ↔ **一个**生成叶子模（硬件例化 / WB identity）。软件与文档身份 = 有效 **`sheet`**（空/缺省 = `name`）。  
-2. 同一 `.ts` 模块 / 工作区登记内可多个导出；**`name` 必须唯一**（一份 `name` ↔ 一份 SV 叶子）。同一 IP 多挂总线：**一份** SoT + **多次** `<aw-inst mod="<name>_regfile">`，用 rewrite 接到各 slave id（demo：`sha256_regfile` ×2 → `sha256_0`/`sha256_1`）。有效 `sheet` **可以**被不同 `name` 共享（C/UVM/Excel 只写一份）；共享时 **字段 layout 必须相同**，不同 → generate 报错。  
+2. 同一 `.ts` 模块 / 工作区登记内可多个导出；**`name` 必须唯一**（一份 `name` ↔ 一份 SV 叶子）。同一 IP 多挂总线：**一份** SoT + bus `SlaveRegfile(regfile, base, { id })` 多次（demo：`sha256` ×2 → wrapper 内 `sha256_0`/`sha256_1`）。有效 `sheet` **可以**被不同 `name` 共享（C/UVM/Excel 只写一份）；共享时 **字段 layout 必须相同**，不同 → generate 报错。  
 3. 有效 `sheet` **必须**是稳定标识符（`[A-Za-z_][A-Za-z0-9_]*`）。  
 4. 工作簿路径：`autowire.toml` 的 **`plugins.regfile.export`**（例 `"ip_regfiles.xlsx"`）；**永远**文档产物；改寄存器 **只改** TS。未配置 export → 可不写 Excel。  
 5. HTML 桩 **结构**上可与 `aw-mod` 同槽；**语义**上由 wishbone-regfile **generate**，不进 connect elaborate，不写 `.autowire/connect/`。  
@@ -192,11 +192,11 @@ generate：TS RegfileDef export
     →  plugins_dir/<plugin-id>/*_regfile.sv
     →  （若配置了 [plugins.regfile]）Excel / C 头 / uvm_reg（§6）
     →  analysis（hdxml hash 增量）→ RtlIndex
-    →  connect：<aw-inst mod="…_regfile"> + aw-connect 接 WB 口
+    →  connect：未挂 bus 则 <aw-inst mod="…_regfile">；已挂则只例化 bus wrapper
        （口表只认 ctx.leaf；禁止插件 providePorts 旁路）
 ```
 
-- **禁止**经 connect 路径直接吐 regfile SV——只走 generate → leaf → `<aw-inst>`。  
+- **禁止**经 connect 路径直接吐 regfile SV——只走 generate → leaf → RtlIndex（HTML 或 bus wrapper 再例化）。  
 - 声明 **禁止**登记为 `[connect.<id>]` / `[sim.<id>]`；toml 用 `[regfile.<source_id>] ts=` 指向 SoT **文件**（可含多个 export）。  
 - 字段重叠 / 共享 `sheet` 但 layout 不同 / 桩带子女等自检在 **generate** 失败即不落盘。  
 - SV 只进 `plugins_dir/<plugin-id>/`；Excel / C / uvm_reg 只写 `[plugins.regfile]` 所指路径，**禁止**当 SoT。
@@ -506,7 +506,7 @@ ts = "docs/examples/regfile/regfile.ts"
 - 省略某键 → 跳过该导出。键必须是非空字符串。  
 - Excel 工作表名来自 **有效 `sheet`**（缺省 = `name`），不是 HTML 属性。同 sheet 的多例化共用一份软件/文档产物。  
 - C / uvm_reg / Excel **禁止**进 `plugins_dir`（那是 SV 叶子）；也 **禁止**当 connect/sim dump。
-- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；顶层例化两次，rewrite 到 bus slave `sha256_0`/`sha256_1`。窗基址与 cell offset 仍在 `fw/common/soc_map.h`（bus software map 后做）。C 头 **入库展示**（`fw/gen/regfile/*.h`，与 `demo/soc/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（**不是** `.ralf`）。
+- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；bus `SlaveRegfile(sha256, base, { id })` 挂两次，Type-A wrapper `soc_wb_system` 内例化；HTML **不再** `aw-inst mod="sha256_regfile"`。窗基址与 cell offset 由 `[plugins.bus] c=` 写出 `soc_wb_map.h`；`fw/common/soc_map.h` 只做别名。C 头 **入库展示**（`fw/gen/regfile/*.h` 与 `fw/gen/bus/*.h`，与 `demo/soc/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（**不是** `.ralf`）；`ral_block_soc_wb.sv` 由 bus 组装。
 
 ### 6.1 C 头、uvm_reg 与 Excel（已裁定；C / uvm_reg / Excel emit 已落地）
 
@@ -519,9 +519,10 @@ regfile generate（本插件）
     每 cell：字段位域 layout
     shadow：只当注释（名 / copies）
         ↓
-wishbone-bus generate（后做）
-    Slave(base, mask) 窗 + 叶子 cell 相对 offset → 绝对 MMIO
+wishbone-bus generate
+    SlaveRegfile(RegfileDef, base) 窗 + 叶子 cell 相对 offset → 绝对 MMIO
     Bus.tagWidth / Slave.tag / 谁驱动 TGA → 选 shadow bank
+    Type-A wrapper 内收已挂接叶子
 ```
 
 | 产物 | toml | 落盘 | 本插件写出 | **不**在本插件 |
@@ -546,7 +547,7 @@ wishbone-bus generate（后做）
 
 已裁定：
 
-- ~~Table 载体 / SoT~~ → **TypeScript `RegfileDef` 命名导出**（`Regfile(...)`）；connect 只 `<aw-inst mod="*_regfile">`。  
+- ~~Table 载体 / SoT~~ → **TypeScript `RegfileDef` 命名导出**（`Regfile(...)`）；未挂 bus 时 connect `<aw-inst mod="*_regfile">`，已挂则只出现在 bus wrapper。  
 - ~~Excel~~ → 工作表名 = `RegfileDef.sheet`（空/缺省 = `name`）；工作簿 = `plugins.regfile.export`（仅文档）。  
 - ~~数据/地址位宽~~ → **`DAT_*` 固定 32**（`SEL`=4）；**`addr_width` 必填**（TS opts，无缺省）。  
 - ~~地址标记 / 对齐~~ → Cell/Block **`offset` 可省略**；按 `bytes_align`（4 的倍数）**编译器式自动拼接**；写出 `offset` 才钉址。  

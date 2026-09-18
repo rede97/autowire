@@ -34,6 +34,125 @@ export function busModuleName(def: BusDef): string {
 	return `${def.name.toLowerCase()}_${busModuleKind(def)}`;
 }
 
+/** Type-A wrapper that instantiates the fabric + attached regfile leaves. */
+export function busSystemModuleName(def: BusDef): string {
+	return `${def.name.toLowerCase()}_system`;
+}
+
+export type FabricPort = {
+	readonly dir: "input" | "output";
+	readonly packed: string;
+	readonly name: string;
+	readonly comment?: string;
+};
+
+function slaveWbPorts(s: WbSlave, aw: number): FabricPort[] {
+	const n = s.name;
+	const st = s.tag ?? 0;
+	const ports: FabricPort[] = [
+		{
+			dir: "output",
+			packed: packedRange(aw),
+			name: wb(n, "i_wb_adr"),
+			comment: `Slave ${n} — ${s.desc}`,
+		},
+		{ dir: "output", packed: "[31:0]", name: wb(n, "i_wb_dat") },
+		{ dir: "output", packed: "[3:0]", name: wb(n, "i_wb_sel") },
+	];
+	if (st > 0) {
+		ports.push({
+			dir: "output",
+			packed: packedRange(st),
+			name: wb(n, "i_wb_tga"),
+		});
+	}
+	ports.push(
+		{ dir: "output", packed: "", name: wb(n, "i_wb_cyc") },
+		{ dir: "output", packed: "", name: wb(n, "i_wb_stb") },
+		{ dir: "output", packed: "", name: wb(n, "i_wb_we") },
+		{ dir: "input", packed: "[31:0]", name: wb(n, "o_wb_dat") },
+		{ dir: "input", packed: "", name: wb(n, "o_wb_ack") },
+	);
+	return ports;
+}
+
+function masterWbPorts(
+	name: string,
+	desc: string,
+	aw: number,
+	tw: number,
+): FabricPort[] {
+	const ports: FabricPort[] = [
+		{
+			dir: "input",
+			packed: packedRange(aw),
+			name: wb(name, "o_wb_adr"),
+			comment: `Master ${name} — ${desc}`,
+		},
+		{ dir: "input", packed: "[31:0]", name: wb(name, "o_wb_dat") },
+		{ dir: "input", packed: "[3:0]", name: wb(name, "o_wb_sel") },
+	];
+	if (tw > 0) {
+		ports.push({
+			dir: "input",
+			packed: packedRange(tw),
+			name: wb(name, "o_wb_tga"),
+		});
+	}
+	ports.push(
+		{ dir: "input", packed: "", name: wb(name, "o_wb_cyc") },
+		{ dir: "input", packed: "", name: wb(name, "o_wb_stb") },
+		{ dir: "input", packed: "", name: wb(name, "o_wb_we") },
+		{ dir: "output", packed: "[31:0]", name: wb(name, "i_wb_dat") },
+		{ dir: "output", packed: "", name: wb(name, "i_wb_ack") },
+	);
+	return ports;
+}
+
+/** Flattened fabric ports (clk/rst first; then masters; then slaves). */
+export function listFabricPorts(def: BusDef): FabricPort[] {
+	const kind = busModuleKind(def);
+	const aw = def.addr_width;
+	const tw = def.tag_width;
+	const ports: FabricPort[] = [
+		{ dir: "input", packed: "", name: "clk" },
+		{ dir: "input", packed: "", name: "rst_n" },
+	];
+	if (kind === "interconnect") {
+		ports.push({ dir: "input", packed: "", name: "rb_grant_en" });
+	}
+	if (kind === "decoder") {
+		ports.push(
+			{
+				dir: "input",
+				packed: packedRange(aw),
+				name: "m_adr_i",
+				comment: "Single master (flat; decoder mode)",
+			},
+			{ dir: "input", packed: "[31:0]", name: "m_dat_i" },
+			{ dir: "input", packed: "[3:0]", name: "m_sel_i" },
+		);
+		if (tw > 0) {
+			ports.push({ dir: "input", packed: packedRange(tw), name: "m_tga_i" });
+		}
+		ports.push(
+			{ dir: "input", packed: "", name: "m_cyc_i" },
+			{ dir: "input", packed: "", name: "m_stb_i" },
+			{ dir: "input", packed: "", name: "m_we_i" },
+			{ dir: "output", packed: "[31:0]", name: "m_dat_o" },
+			{ dir: "output", packed: "", name: "m_ack_o" },
+		);
+	} else {
+		for (const m of def.masters) {
+			ports.push(...masterWbPorts(m.name, m.desc, aw, tw));
+		}
+	}
+	for (const s of def.slaves) {
+		ports.push(...slaveWbPorts(s, aw));
+	}
+	return ports;
+}
+
 function slavePortBlock(s: WbSlave, aw: number): string[] {
 	const n = s.name;
 	const adr = packedRange(aw).padEnd(7);

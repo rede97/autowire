@@ -37,6 +37,12 @@ export interface LaidRegfile {
 	readonly tga_width: number;
 }
 
+/** Exclusive end of the laid-out byte map (max cell offset + 4). */
+export function layoutByteSpan(laid: LaidRegfile): number {
+	if (laid.cells.length === 0) return CELL_BYTES;
+	return Math.max(...laid.cells.map((c) => c.byte_offset + CELL_BYTES));
+}
+
 function alignUp(v: number, a: number): number {
 	return Math.ceil(v / a) * a;
 }

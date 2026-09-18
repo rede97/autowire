@@ -31,6 +31,8 @@ describe("workspace", () => {
 		expect(cfg.regfileExcelExport).toBeNull();
 		expect(cfg.regfileCExport).toBeNull();
 		expect(cfg.regfileUvmExport).toBeNull();
+		expect(cfg.busCExport).toBeNull();
+		expect(cfg.busUvmExport).toBeNull();
 		expect(hdxmlArgs(cfg)).toEqual([
 			"--output-dir",
 			join(dir, ".autowire/hdxml"),
@@ -216,6 +218,27 @@ c = ""
 `);
 		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
 			"[plugins.regfile] c",
+		);
+	});
+
+	test("[plugins.bus] c/uvm resolve as optional paths", async () => {
+		const dir = tempWorkspace(`
+[plugins.bus]
+c = "fw/gen/bus"
+uvm = "dv/ral"
+`);
+		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
+		expect(cfg.busCExport).toBe(join(dir, "fw/gen/bus"));
+		expect(cfg.busUvmExport).toBe(join(dir, "dv/ral"));
+	});
+
+	test("[plugins.bus] empty c= is rejected", async () => {
+		const dir = tempWorkspace(`
+[plugins.bus]
+c = ""
+`);
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"[plugins.bus] c",
 		);
 	});
 

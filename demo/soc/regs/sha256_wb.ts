@@ -1,6 +1,6 @@
 // SoT for demo/soc sha256 Wishbone CSR (CTRL + HASH0..7).
-// One RTL leaf (sha256_regfile); soc_top instantiates it twice and rewrites
-// WB/sidebands to bus slave ids sha256_0 / sha256_1.
+// One RTL leaf (sha256_regfile); bus SlaveRegfile(sha256, base, { id }) hangs it twice
+// inside soc_wb_system (sha256_0 / sha256_1). HTML does not re-declare the CSR.
 // Glue (AXIS / sticky done) stays in rtl/sha256_wb_regs.v + sha256wb.
 // Generate → gen/plugins/wishbone-regfile/sha256_regfile.sv + fw/gen/regfile/sha256.h
 

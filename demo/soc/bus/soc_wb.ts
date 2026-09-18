@@ -1,11 +1,15 @@
 // SoC Wishbone fabric SoT (wishbone-bus). Named slaves identity-match regfile ports.
-// Generate → gen/plugins/wishbone-bus/soc_wb_interconnect.sv
+// Generate → gen/plugins/wishbone-bus/soc_wb_interconnect.sv + soc_wb_system.sv
+// Attached RegfileDef hangs (sha256 ×2, smoke) live inside soc_wb_system.
 
 import {
 	Bus,
 	Master,
 	Slave,
+	SlaveRegfile,
 } from "../../../src/plugins/wishbone-bus/dsl.ts";
+import { sha256 } from "../regs/sha256_wb.ts";
+import { smoke } from "../regs/smoke.ts";
 
 export const soc_wb = Bus(
 	"soc_wb",
@@ -27,12 +31,9 @@ export const soc_wb = Bus(
 			Slave("sd1", "sdspi 1", 0x0300_1000, 0xffff_fff0, { pipe: 4 }),
 			Slave("dma0", "sd_rd_dma CSR 0", 0x0300_2000, 0xffff_fff0, { pipe: 3 }),
 			Slave("dma1", "sd_rd_dma CSR 1", 0x0300_3000, 0xffff_fff0, { pipe: 1 }),
-			Slave("sha256_0", "sha256wb lane 0", 0x0300_4000, 0xffff_ffc0, { pipe: 2 }),
-			Slave("sha256_1", "sha256wb lane 1", 0x0300_5000, 0xffff_ffc0, { pipe: 4 }),
-			Slave("smoke", "wishbone-regfile smoke (TGA 2 → shadow bank)", 0x0300_6000, 0xffff_f000, {
-				tag: 2,
-				pipe: 3,
-			}),
+			SlaveRegfile(sha256, 0x0300_4000, { id: "sha256_0", pipe: 2 }),
+			SlaveRegfile(sha256, 0x0300_5000, { id: "sha256_1", pipe: 4 }),
+			SlaveRegfile(smoke, 0x0300_6000, { pipe: 3 }),
 		],
 	},
 );

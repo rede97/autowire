@@ -22,8 +22,9 @@ OBJCOPY := $(CROSS)objcopy
 OBJDUMP := $(CROSS)objdump
 
 REGFILE := $(FW_ROOT)/gen/regfile
+BUSMAP  := $(FW_ROOT)/gen/bus
 CFLAGS  := -march=rv32imc -mabi=ilp32 -Os -g -ffreestanding -nostdlib \
-	-fno-builtin -Wall -Wextra -Wno-array-bounds -I$(COMMON) -I$(REGFILE)
+	-fno-builtin -Wall -Wextra -Wno-array-bounds -I$(COMMON) -I$(REGFILE) -I$(BUSMAP)
 LDFLAGS := -T $(abspath link.ld) -nostdlib -Wl,--gc-sections
 
 OBJS := $(BUILD)/crt0.o $(BUILD)/main.o
@@ -39,7 +40,7 @@ $(BUILD)/crt0.o: $(COMMON)/crt0.S | $(BUILD)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BUILD)/main.o: main.c $(COMMON)/soc_map.h \
-		$(REGFILE)/smoke.h $(REGFILE)/sha256.h | $(BUILD)
+		$(REGFILE)/smoke.h $(REGFILE)/sha256.h $(BUSMAP)/soc_wb_map.h | $(BUILD)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BUILD)/firmware.elf: $(OBJS) link.ld

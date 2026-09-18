@@ -1,23 +1,22 @@
 // SPDX-License-Identifier: MIT
 // SoC memory map for C firmware (mirrors connect/soc_top.html).
-// Field layouts come from wishbone-regfile C export (fw/gen/regfile).
-// Bases and cell offsets stay here until wishbone-bus software map.
+// Field layouts: wishbone-regfile C export (fw/gen/regfile).
+// Window bases + cell offsets: wishbone-bus software map (fw/gen/bus).
 
 #pragma once
 
 #include <stdint.h>
 
-#include "sha256.h"
-#include "smoke.h"
+#include "soc_wb_map.h"
 
 #define SRAM_BASE      0x00000000u
 #define FLASH_BASE     0x01000000u
 #define TESTOUT_ADDR   0x02000010u
 #define DMA0_BASE      0x03002000u
 #define DMA1_BASE      0x03003000u
-#define SHA0_BASE      0x03004000u
-#define SHA1_BASE      0x03005000u
-#define REGFILE_SMOKE_BASE 0x03006000u
+#define SHA0_BASE      SOC_WB_SHA256_0_BASE
+#define SHA1_BASE      SOC_WB_SHA256_1_BASE
+#define REGFILE_SMOKE_BASE SOC_WB_SMOKE_BASE
 
 #define DMA_CTRL       0x0u
 #define DMA_STATUS     0x4u
@@ -29,24 +28,22 @@
 #define DMA_STATUS_BUSY  (1u << 0)
 #define DMA_STATUS_DONE  (1u << 1)
 
-/* Cell offsets (byte ADR) until bus software map lands.
-   SMOKE_OFF_* so names do not collide with generated union SMOKE_*. */
-#define SHA_CTRL       0x0u
-#define SHA_HASH0      0x4u
+#define SHA_CTRL       SOC_WB_SHA256_CTRL_OFFSET
+#define SHA_HASH0      SOC_WB_SHA256_HASH0_OFFSET
 
-#define SMOKE_OFF_ID       0x000u
-#define SMOKE_OFF_STATUS   0x004u
-#define SMOKE_OFF_CFG      0x008u
-#define SMOKE_OFF_FEED     0x00cu
-#define SMOKE_OFF_FIFO     0x010u
-#define SMOKE_OFF_CMD      0x014u
-#define SMOKE_OFF_IRQ      0x018u
-#define SMOKE_OFF_BANK     0x01cu
-#define SMOKE_OFF_KEY0     0x020u
-#define SMOKE_OFF_KEY1     0x024u
-#define SMOKE_OFF_KEY2     0x028u
-#define SMOKE_OFF_BANKSEL  0x02cu
-#define SMOKE_OFF_FABRIC   0x030u
+#define SMOKE_OFF_ID       SOC_WB_SMOKE_ID_OFFSET
+#define SMOKE_OFF_STATUS   SOC_WB_SMOKE_STATUS_OFFSET
+#define SMOKE_OFF_CFG      SOC_WB_SMOKE_CFG_OFFSET
+#define SMOKE_OFF_FEED     SOC_WB_SMOKE_FEED_OFFSET
+#define SMOKE_OFF_FIFO     SOC_WB_SMOKE_FIFO_OFFSET
+#define SMOKE_OFF_CMD      SOC_WB_SMOKE_CMD_OFFSET
+#define SMOKE_OFF_IRQ      SOC_WB_SMOKE_IRQ_OFFSET
+#define SMOKE_OFF_BANK     SOC_WB_SMOKE_BANK_OFFSET
+#define SMOKE_OFF_KEY0     SOC_WB_SMOKE_KEY_KEY_0_OFFSET
+#define SMOKE_OFF_KEY1     SOC_WB_SMOKE_KEY_KEY_1_OFFSET
+#define SMOKE_OFF_KEY2     SOC_WB_SMOKE_KEY_KEY_2_OFFSET
+#define SMOKE_OFF_BANKSEL  SOC_WB_SMOKE_BANKSEL_OFFSET
+#define SMOKE_OFF_FABRIC   SOC_WB_SMOKE_FABRIC_OFFSET
 
 #define MARK_ALIVE     0x00000001u
 #define MARK_FAIL      0xdead0001u
