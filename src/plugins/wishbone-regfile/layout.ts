@@ -91,6 +91,18 @@ function packFields(
 	return out;
 }
 
+function logicalSliceLabel(
+	name: string,
+	fullWidth: number,
+	lo: number,
+	width: number,
+): string {
+	const hi = lo + width - 1;
+	const top = fullWidth - 1;
+	const piece = width === 1 ? `${name}[${lo}]` : `${name}[${hi}:${lo}]`;
+	return `${piece} of [${top}:0]`;
+}
+
 function splitWideField(
 	f: RegField,
 ): { name: string; fields: RegField[]; sliceBitBase: number }[] {
@@ -99,18 +111,22 @@ function splitWideField(
 	let remaining = f.width;
 	let base = 0;
 	let i = 0;
+	const split = f.width > CELL_BITS;
 	while (remaining > 0) {
 		const w = Math.min(CELL_BITS, remaining);
-		const name = f.width > CELL_BITS ? `${f.name}_${i}` : f.name;
+		const name = split ? `${f.name}_${i}` : f.name;
+		const loc = split
+			? ` (${logicalSliceLabel(f.name, f.width, base, w)})`
+			: "";
 		slices.push({
 			name,
 			sliceBitBase: base,
 			fields: [
 				{
-					name: f.width > CELL_BITS ? `${f.name}_${i}` : f.name,
+					name,
 					access: f.access,
 					width: w,
-					desc: f.desc,
+					desc: `${f.desc}${loc}`,
 					reset: f.reset,
 				},
 			],
@@ -194,7 +210,7 @@ function layoutBlock(
 		for (const [si, sl] of slices.entries()) {
 			const autoCell: RegCell = {
 				name: slices.length > 1 ? `${block.name}_${sl.name}` : sl.name,
-				desc: f.desc,
+				desc: sl.fields[0]?.desc ?? f.desc,
 				...(block.shadow !== undefined ? { shadow: block.shadow } : {}),
 				fields: sl.fields,
 			};

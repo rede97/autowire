@@ -29,6 +29,7 @@ import {
 	RegfileDefault,
 } from "../src/plugins/wishbone-regfile/dsl.ts";
 import { emitRegfileSv } from "../src/plugins/wishbone-regfile/emit.ts";
+import { buildRegfileWorkbook } from "../src/plugins/wishbone-regfile/emit-excel.ts";
 import {
 	emitRegfileC,
 	emitRegfileUvm,
@@ -220,6 +221,45 @@ describe("wishbone-regfile smoke features", () => {
 		});
 	}
 
+	test("wide field slices document logical bit range in desc", () => {
+		const laid = layoutRegfile(smoke_block_wide);
+		expect(laid.cells.map((c) => c.fields[0]?.field.desc)).toEqual([
+			"96-bit key auto-split (key[31:0] of [95:0])",
+			"96-bit key auto-split (key[63:32] of [95:0])",
+			"96-bit key auto-split (key[95:64] of [95:0])",
+		]);
+		expect(laid.cells.map((c) => c.desc)).toEqual([
+			"96-bit key auto-split (key[31:0] of [95:0])",
+			"96-bit key auto-split (key[63:32] of [95:0])",
+			"96-bit key auto-split (key[95:64] of [95:0])",
+		]);
+		const sv = emitRegfileSv(laid);
+		expect(sv).toContain("key[31:0] of [95:0]");
+		expect(sv).toContain("key[63:32] of [95:0]");
+		expect(sv).toContain("key[95:64] of [95:0]");
+		expect(sv).not.toContain("slice0 of");
+		const c = emitRegfileC(laid);
+		expect(c).toContain("key[63:32] of [95:0]");
+		const uvm = emitRegfileUvm(laid);
+		expect(uvm).toContain("key[95:64] of [95:0]");
+		const wb = buildRegfileWorkbook([laid]);
+		const ws = wb.getWorksheet("smoke_block_wide");
+		const descs: string[] = [];
+		ws?.eachRow((row, n) => {
+			if (n === 1) return;
+			const d = row.getCell(8).value;
+			if (typeof d === "string" && d.includes("of [95:0]")) descs.push(d);
+		});
+		expect(descs).toEqual([
+			"96-bit key auto-split (key[31:0] of [95:0])",
+			"96-bit key auto-split (key[31:0] of [95:0])",
+			"96-bit key auto-split (key[63:32] of [95:0])",
+			"96-bit key auto-split (key[63:32] of [95:0])",
+			"96-bit key auto-split (key[95:64] of [95:0])",
+			"96-bit key auto-split (key[95:64] of [95:0])",
+		]);
+	});
+
 	test("shadow sel encoder is lowest-set-bit priority (broadcast remap)", () => {
 		// Audit: ascending loop selected the HIGHEST set bit, contradicting the
 		// emitted comment; contract pins lowest set bit (read path stays bitwise-OR).
@@ -321,7 +361,7 @@ endmodule
 		expect(uvm).not.toContain("tagBits");
 	});
 
-	test("generateAll writes C and uvm_reg when toml paths are set", async () => {
+	test("generateAll writes C, uvm_reg, and Excel when toml paths are set", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_sw_"));
 		const smoke = join(
 			import.meta.dir,
@@ -339,6 +379,7 @@ plugins_dir = "gen/plugins"
 [plugins.regfile]
 c = "fw/gen"
 uvm = "dv/ral"
+export = "docs/regs.xlsx"
 [regfile.smoke]
 ts = "${smoke.replaceAll("\\", "/")}"
 exports = ["smoke_rw"]
@@ -349,10 +390,13 @@ exports = ["smoke_rw"]
 		expect(paths.some((p) => p.endsWith("smoke_rw_regfile.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("smoke_rw.h"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("ral_SMOKE_RW.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("regs.xlsx"))).toBe(true);
 		const hdr = readFileSync(join(dir, "fw/gen/smoke_rw.h"), "utf8");
 		expect(hdr).toContain("union SMOKE_RW_CFG");
 		const ral = readFileSync(join(dir, "dv/ral/ral_SMOKE_RW.sv"), "utf8");
 		expect(ral).toContain("class ral_reg_smoke_rw_CFG");
+		const xlsx = readFileSync(join(dir, "docs/regs.xlsx"));
+		expect(xlsx.byteLength).toBeGreaterThan(0);
 		rmSync(dir, { recursive: true, force: true });
 	});
 
@@ -448,6 +492,61 @@ ts = "${smoke.replaceAll("\\", "/")}"
 				paths.some((p) => p.includes(`${def.name.toLowerCase()}_regfile.sv`)),
 			).toBe(true);
 		}
+	});
+});
+
+describe("wishbone-regfile Excel export", () => {
+	const formulaOf = (cell: { formula?: string; value?: unknown }): string => {
+		if (typeof cell.formula === "string" && cell.formula.length > 0) {
+			return cell.formula;
+		}
+		const v = cell.value;
+		if (v && typeof v === "object" && "formula" in v) {
+			return String((v as { formula: string }).formula);
+		}
+		return "";
+	};
+
+	test("trunk columns minus empty A and ADDRWIDTH; MSB-first reserved", () => {
+		const wb = buildRegfileWorkbook([layoutRegfile(smoke_rw)]);
+		const ws = wb.getWorksheet("smoke_rw");
+		expect(ws).toBeDefined();
+		const headers = ((ws?.getRow(1).values as unknown[]) ?? [])
+			.slice(1)
+			.map(String)
+			.join("|");
+		expect(headers).toContain("Sub-Addr");
+		expect(headers).toContain("SHADOW");
+		expect(headers).not.toContain("ADDRWIDTH");
+		expect(ws?.columnCount).toBe(12);
+
+		const cellRow = ws?.getRow(2);
+		expect(cellRow?.getCell(1).value).toBe("00");
+		expect(cellRow?.getCell(7).value).toBe("CFG");
+		expect(formulaOf(cellRow?.getCell(4) ?? {})).toMatch(/^SUM\(D3:D\d+\)$/);
+		expect(formulaOf(cellRow?.getCell(5) ?? {})).toContain("32'h");
+
+		const topField = ws?.getRow(3);
+		expect(topField?.getCell(2).value).toBe(11);
+		expect(topField?.getCell(3).value).toBe(31);
+		expect(topField?.getCell(6).value).toBe("RO");
+		expect(topField?.getCell(7).value).toBe("reserved");
+		expect(topField?.getCell(8).value).toBe("RESERVED");
+		expect(topField?.getCell(12).value).toBe("");
+	});
+
+	test("SHADOW on cell row only; reset dict uses copy 0", () => {
+		const wb = buildRegfileWorkbook([layoutRegfile(smoke_shadow)]);
+		const ws = wb.getWorksheet("smoke_shadow");
+		expect(ws).toBeDefined();
+		expect(ws?.getRow(2).getCell(7).value).toBe("CFG");
+		expect(ws?.getRow(2).getCell(12).value).toBe("bank");
+		let cfgReset: unknown;
+		ws?.eachRow((row, n) => {
+			if (n === 1) return;
+			if (row.getCell(7).value === "cfg") cfgReset = row.getCell(9).value;
+		});
+		expect(cfgReset).toBe(1);
 	});
 });
 

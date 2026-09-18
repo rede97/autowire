@@ -130,10 +130,10 @@ union SMOKE_FABRIC {
 	struct SMOKE_FABRIC_BITS bit;
 };
 
-/* Cell key_key_0 — 96-bit key
+/* Cell key_key_0 — 96-bit key (key[31:0] of [95:0])
 */
 struct SMOKE_KEY_KEY_0_BITS {
-	volatile uint32_t KEY_0 : 32; /* bit [31:0] 96-bit key */
+	volatile uint32_t KEY_0 : 32; /* bit [31:0] 96-bit key (key[31:0] of [95:0]) */
 };
 
 union SMOKE_KEY_KEY_0 {
@@ -141,10 +141,10 @@ union SMOKE_KEY_KEY_0 {
 	struct SMOKE_KEY_KEY_0_BITS bit;
 };
 
-/* Cell key_key_1 — 96-bit key
+/* Cell key_key_1 — 96-bit key (key[63:32] of [95:0])
 */
 struct SMOKE_KEY_KEY_1_BITS {
-	volatile uint32_t KEY_1 : 32; /* bit [31:0] 96-bit key */
+	volatile uint32_t KEY_1 : 32; /* bit [31:0] 96-bit key (key[63:32] of [95:0]) */
 };
 
 union SMOKE_KEY_KEY_1 {
@@ -152,10 +152,10 @@ union SMOKE_KEY_KEY_1 {
 	struct SMOKE_KEY_KEY_1_BITS bit;
 };
 
-/* Cell key_key_2 — 96-bit key
+/* Cell key_key_2 — 96-bit key (key[95:64] of [95:0])
 */
 struct SMOKE_KEY_KEY_2_BITS {
-	volatile uint32_t KEY_2 : 32; /* bit [31:0] 96-bit key */
+	volatile uint32_t KEY_2 : 32; /* bit [31:0] 96-bit key (key[95:64] of [95:0]) */
 };
 
 union SMOKE_KEY_KEY_2 {

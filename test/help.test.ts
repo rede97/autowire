@@ -75,7 +75,11 @@ test("each slice prints independently", () => {
 	expect(renderHelp("dont")).toContain("blur tools vs MCP");
 	expect(renderHelp("dont")).toContain("Workspace MCP");
 	expect(renderHelp("dont")).toContain("treat dump as the only validation");
-	expect(renderHelp("status")).toContain("uvm_reg");
+	expect(renderHelp("status")).toContain("Excel workbook");
+	expect(renderHelp("status")).toContain("uvm_reg, not .ralf");
+	expect(renderHelp("status")).toContain("wide-field split");
+	expect(renderHelp("status")).toContain("ADDRWIDTH");
+	expect(renderHelp("workspace")).toContain("Excel workbook");
 	expect(renderHelp("status")).toContain("field-layout emit");
 	expect(renderHelp("status")).toContain("fw/gen/regfile");
 	expect(renderHelp("status")).toContain("git-tracked showcase");

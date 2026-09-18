@@ -23,9 +23,11 @@ connect_dir = "gen/connect"
 sim_dir = "gen/sim"
 plugins_dir = "gen/plugins"
 
-# Field-layout C headers (not SoT; bases / cell offsets stay in fw/common/soc_map.h)
+# Field-layout C / Excel / uvm_reg (not SoT; bases / cell offsets stay in fw/common/soc_map.h)
 [plugins.regfile]
 c = "fw/gen/regfile"
+export = "fw/gen/regfile/regfiles.xlsx"
+uvm = "dv/ral"
 
 # wishbone-regfile SoT
 [regfile.sha256]

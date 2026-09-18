@@ -165,12 +165,8 @@ function fieldMapComment(c: LaidCell, pads: FieldCommentPads): string[] {
 	}
 	for (const lf of c.fields) {
 		const f = lf.field;
-		const slice =
-			lf.slice_index !== null
-				? ` (slice${lf.slice_index} of ${lf.logical_name})`
-				: "";
 		lines.push(
-			`\t//   ${fieldBits(lf).padEnd(pads.bits)}  ${f.access.padEnd(pads.access)}  ${f.name.padEnd(pads.name)} — ${f.desc}${slice}`,
+			`\t//   ${fieldBits(lf).padEnd(pads.bits)}  ${f.access.padEnd(pads.access)}  ${f.name.padEnd(pads.name)} — ${f.desc}`,
 		);
 	}
 	return lines;

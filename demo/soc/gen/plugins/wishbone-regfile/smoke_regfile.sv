@@ -18,9 +18,9 @@
 //    0x0000001c  BANK      — Shadowed RW  shadow=bank
 //    0x0000002c  BANKSEL   — Shadow bank select (drives fabric TGA)
 //    0x00000030  FABRIC    — Wishbone interconnect fabric controls
-//    0x00000020  key_key_0 — 96-bit key
-//    0x00000024  key_key_1 — 96-bit key
-//    0x00000028  key_key_2 — 96-bit key
+//    0x00000020  key_key_0 — 96-bit key (key[31:0] of [95:0])
+//    0x00000024  key_key_1 — 96-bit key (key[63:32] of [95:0])
+//    0x00000028  key_key_2 — 96-bit key (key[95:64] of [95:0])
 //------------------------------------------------------------------------------
 
 module smoke_regfile (
@@ -90,11 +90,11 @@ module smoke_regfile (
 	output logic [1:0]  rg_bank_sel,
 	// RW register out: rb_grant_en — Arbiter: 0=fixed prio, 1=round-robin
 	output logic        rg_rb_grant_en,
-	// RW register out: key_0 — 96-bit key
+	// RW register out: key_0 — 96-bit key (key[31:0] of [95:0])
 	output logic [31:0] rg_key_0,
-	// RW register out: key_1 — 96-bit key
+	// RW register out: key_1 — 96-bit key (key[63:32] of [95:0])
 	output logic [31:0] rg_key_1,
-	// RW register out: key_2 — 96-bit key
+	// RW register out: key_2 — 96-bit key (key[95:64] of [95:0])
 	output logic [31:0] rg_key_2
 );
 
@@ -197,14 +197,14 @@ module smoke_regfile (
 	// Addr: 0x00000030  RegCell: FABRIC    — Wishbone interconnect fabric controls
 	//   [0]      RW   rb_grant_en — Arbiter: 0=fixed prio, 1=round-robin
 	assign addr_hit_30 = (smoke_i_wb_adr[31:2] == 30'd12);
-	// Addr: 0x00000020  RegCell: key_key_0 — 96-bit key
-	//   [31:0]   RW   key_0       — 96-bit key (slice0 of key)
+	// Addr: 0x00000020  RegCell: key_key_0 — 96-bit key (key[31:0] of [95:0])
+	//   [31:0]   RW   key_0       — 96-bit key (key[31:0] of [95:0])
 	assign addr_hit_20 = (smoke_i_wb_adr[31:2] == 30'd8);
-	// Addr: 0x00000024  RegCell: key_key_1 — 96-bit key
-	//   [31:0]   RW   key_1       — 96-bit key (slice1 of key)
+	// Addr: 0x00000024  RegCell: key_key_1 — 96-bit key (key[63:32] of [95:0])
+	//   [31:0]   RW   key_1       — 96-bit key (key[63:32] of [95:0])
 	assign addr_hit_24 = (smoke_i_wb_adr[31:2] == 30'd9);
-	// Addr: 0x00000028  RegCell: key_key_2 — 96-bit key
-	//   [31:0]   RW   key_2       — 96-bit key (slice2 of key)
+	// Addr: 0x00000028  RegCell: key_key_2 — 96-bit key (key[95:64] of [95:0])
+	//   [31:0]   RW   key_2       — 96-bit key (key[95:64] of [95:0])
 	assign addr_hit_28 = (smoke_i_wb_adr[31:2] == 30'd10);
 
 	assign hit = |{
@@ -415,8 +415,8 @@ module smoke_regfile (
 	end
 	assign rg_rb_grant_en = rg_rb_grant_en_q;
 
-	// Addr: 0x00000020  RegCell: key_key_0 — 96-bit key
-	//   [31:0]   RW   key_0       — 96-bit key (slice0 of key)
+	// Addr: 0x00000020  RegCell: key_key_0 — 96-bit key (key[31:0] of [95:0])
+	//   [31:0]   RW   key_0       — 96-bit key (key[31:0] of [95:0])
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			rg_key_0_q <= 32'h0;
@@ -437,8 +437,8 @@ module smoke_regfile (
 	end
 	assign rg_key_0 = rg_key_0_q;
 
-	// Addr: 0x00000024  RegCell: key_key_1 — 96-bit key
-	//   [31:0]   RW   key_1       — 96-bit key (slice1 of key)
+	// Addr: 0x00000024  RegCell: key_key_1 — 96-bit key (key[63:32] of [95:0])
+	//   [31:0]   RW   key_1       — 96-bit key (key[63:32] of [95:0])
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			rg_key_1_q <= 32'h0;
@@ -459,8 +459,8 @@ module smoke_regfile (
 	end
 	assign rg_key_1 = rg_key_1_q;
 
-	// Addr: 0x00000028  RegCell: key_key_2 — 96-bit key
-	//   [31:0]   RW   key_2       — 96-bit key (slice2 of key)
+	// Addr: 0x00000028  RegCell: key_key_2 — 96-bit key (key[95:64] of [95:0])
+	//   [31:0]   RW   key_2       — 96-bit key (key[95:64] of [95:0])
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			rg_key_2_q <= 32'h0;
@@ -547,17 +547,17 @@ module smoke_regfile (
 			end
 			// key_key_0 @ 0x00000020
 			rd_sel_20: begin
-				// RW  [31:0]  key_0       — 96-bit key
+				// RW  [31:0]  key_0       — 96-bit key (key[31:0] of [95:0])
 				rd_data[31:0] = rg_key_0_q;
 			end
 			// key_key_1 @ 0x00000024
 			rd_sel_24: begin
-				// RW  [31:0]  key_1       — 96-bit key
+				// RW  [31:0]  key_1       — 96-bit key (key[63:32] of [95:0])
 				rd_data[31:0] = rg_key_1_q;
 			end
 			// key_key_2 @ 0x00000028
 			rd_sel_28: begin
-				// RW  [31:0]  key_2       — 96-bit key
+				// RW  [31:0]  key_2       — 96-bit key (key[95:64] of [95:0])
 				rd_data[31:0] = rg_key_2_q;
 			end
 			default: rd_data = 32'h0;

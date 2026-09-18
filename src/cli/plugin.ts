@@ -47,11 +47,6 @@ export function registerPlugin(program: Command): void {
 					try {
 						const paths = await generateRegfileAll(ws, ws.regfileSources);
 						for (const p of paths) console.log(p);
-						if (ws.regfileExcelExport) {
-							console.error(
-								`note: [plugins.regfile] export=${ws.regfileExcelExport} (Excel emit not landed yet)`,
-							);
-						}
 					} catch (e) {
 						console.error(e instanceof Error ? e.message : e);
 						process.exit(1);

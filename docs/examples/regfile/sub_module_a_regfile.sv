@@ -10,9 +10,9 @@
 //  Address map:
 //    0x00  CFG0       — Main config  shadow=lane
 //    0x10  STATUS     — Status
-//    0x20  ctrl_key_0 — 96-bit key; auto-split + auto offset
-//    0x30  ctrl_key_1 — 96-bit key; auto-split + auto offset
-//    0x40  ctrl_key_2 — 96-bit key; auto-split + auto offset
+//    0x20  ctrl_key_0 — 96-bit key; auto-split + auto offset (key[31:0] of [95:0])
+//    0x30  ctrl_key_1 — 96-bit key; auto-split + auto offset (key[63:32] of [95:0])
+//    0x40  ctrl_key_2 — 96-bit key; auto-split + auto offset (key[95:64] of [95:0])
 //    0x44  SCRATCH    — Scratch pad
 //    0x48  HW_FEED    — Hardware feed
 //    0x4c  EXT_FIFO   — External FIFO window
@@ -60,11 +60,11 @@ module sub_module_a_regfile (
 	input  logic        c_rg_irq_sticky_set,
 	// W1P write-1 pulse out: pulse_cmd — Write 1 → one-cycle pulse out
 	output logic        p_rg_pulse_cmd,
-	// RW register out: key_0 — 96-bit key; auto-split + auto offset
+	// RW register out: key_0 — 96-bit key; auto-split + auto offset (key[31:0] of [95:0])
 	output logic [31:0] rg_key_0,
-	// RW register out: key_1 — 96-bit key; auto-split + auto offset
+	// RW register out: key_1 — 96-bit key; auto-split + auto offset (key[63:32] of [95:0])
 	output logic [31:0] rg_key_1,
-	// RW register out: key_2 — 96-bit key; auto-split + auto offset
+	// RW register out: key_2 — 96-bit key; auto-split + auto offset (key[95:64] of [95:0])
 	output logic [31:0] rg_key_2,
 	// RW register out: word — Scratch word
 	output logic [31:0] rg_word,
@@ -156,14 +156,14 @@ module sub_module_a_regfile (
 	//   [8]      W1C  irq_sticky — Sticky IRQ; write 1 to clear
 	//   [16]     W1P  pulse_cmd  — Write 1 → one-cycle pulse out
 	assign addr_hit_10 = (sub_module_a_i_wb_adr[7:2] == 6'd4);
-	// Addr: 0x20  RegCell: ctrl_key_0 — 96-bit key; auto-split + auto offset
-	//   [31:0]   RW   key_0      — 96-bit key; auto-split + auto offset (slice0 of key)
+	// Addr: 0x20  RegCell: ctrl_key_0 — 96-bit key; auto-split + auto offset (key[31:0] of [95:0])
+	//   [31:0]   RW   key_0      — 96-bit key; auto-split + auto offset (key[31:0] of [95:0])
 	assign addr_hit_20 = (sub_module_a_i_wb_adr[7:2] == 6'd8);
-	// Addr: 0x30  RegCell: ctrl_key_1 — 96-bit key; auto-split + auto offset
-	//   [31:0]   RW   key_1      — 96-bit key; auto-split + auto offset (slice1 of key)
+	// Addr: 0x30  RegCell: ctrl_key_1 — 96-bit key; auto-split + auto offset (key[63:32] of [95:0])
+	//   [31:0]   RW   key_1      — 96-bit key; auto-split + auto offset (key[63:32] of [95:0])
 	assign addr_hit_30 = (sub_module_a_i_wb_adr[7:2] == 6'd12);
-	// Addr: 0x40  RegCell: ctrl_key_2 — 96-bit key; auto-split + auto offset
-	//   [31:0]   RW   key_2      — 96-bit key; auto-split + auto offset (slice2 of key)
+	// Addr: 0x40  RegCell: ctrl_key_2 — 96-bit key; auto-split + auto offset (key[95:64] of [95:0])
+	//   [31:0]   RW   key_2      — 96-bit key; auto-split + auto offset (key[95:64] of [95:0])
 	assign addr_hit_40 = (sub_module_a_i_wb_adr[7:2] == 6'd16);
 	// Addr: 0x44  RegCell: SCRATCH    — Scratch pad
 	//   [31:0]   RW   word       — Scratch word
@@ -332,8 +332,8 @@ module sub_module_a_regfile (
 	end
 	assign c_rg_irq_sticky = c_rg_irq_sticky_q;
 
-	// Addr: 0x20  RegCell: ctrl_key_0 — 96-bit key; auto-split + auto offset
-	//   [31:0]   RW   key_0      — 96-bit key; auto-split + auto offset (slice0 of key)
+	// Addr: 0x20  RegCell: ctrl_key_0 — 96-bit key; auto-split + auto offset (key[31:0] of [95:0])
+	//   [31:0]   RW   key_0      — 96-bit key; auto-split + auto offset (key[31:0] of [95:0])
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			rg_key_0_q <= 32'h0;
@@ -354,8 +354,8 @@ module sub_module_a_regfile (
 	end
 	assign rg_key_0 = rg_key_0_q;
 
-	// Addr: 0x30  RegCell: ctrl_key_1 — 96-bit key; auto-split + auto offset
-	//   [31:0]   RW   key_1      — 96-bit key; auto-split + auto offset (slice1 of key)
+	// Addr: 0x30  RegCell: ctrl_key_1 — 96-bit key; auto-split + auto offset (key[63:32] of [95:0])
+	//   [31:0]   RW   key_1      — 96-bit key; auto-split + auto offset (key[63:32] of [95:0])
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			rg_key_1_q <= 32'h0;
@@ -376,8 +376,8 @@ module sub_module_a_regfile (
 	end
 	assign rg_key_1 = rg_key_1_q;
 
-	// Addr: 0x40  RegCell: ctrl_key_2 — 96-bit key; auto-split + auto offset
-	//   [31:0]   RW   key_2      — 96-bit key; auto-split + auto offset (slice2 of key)
+	// Addr: 0x40  RegCell: ctrl_key_2 — 96-bit key; auto-split + auto offset (key[95:64] of [95:0])
+	//   [31:0]   RW   key_2      — 96-bit key; auto-split + auto offset (key[95:64] of [95:0])
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			rg_key_2_q <= 32'h0;
@@ -492,17 +492,17 @@ module sub_module_a_regfile (
 			end
 			// ctrl_key_0 @ 0x20
 			rd_sel_20: begin
-				// RW  [31:0]  key_0      — 96-bit key; auto-split + auto offset
+				// RW  [31:0]  key_0      — 96-bit key; auto-split + auto offset (key[31:0] of [95:0])
 				rd_data[31:0] = rg_key_0_q;
 			end
 			// ctrl_key_1 @ 0x30
 			rd_sel_30: begin
-				// RW  [31:0]  key_1      — 96-bit key; auto-split + auto offset
+				// RW  [31:0]  key_1      — 96-bit key; auto-split + auto offset (key[63:32] of [95:0])
 				rd_data[31:0] = rg_key_1_q;
 			end
 			// ctrl_key_2 @ 0x40
 			rd_sel_40: begin
-				// RW  [31:0]  key_2      — 96-bit key; auto-split + auto offset
+				// RW  [31:0]  key_2      — 96-bit key; auto-split + auto offset (key[95:64] of [95:0])
 				rd_data[31:0] = rg_key_2_q;
 			end
 			// SCRATCH @ 0x44

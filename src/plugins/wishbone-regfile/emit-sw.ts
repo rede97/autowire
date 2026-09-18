@@ -13,7 +13,7 @@ import type { LaidCell, LaidRegfile } from "./layout.ts";
 
 const CELL_BITS = 32;
 
-type PackedBit = {
+export type PackedBit = {
 	name: string;
 	width: number;
 	bit_offset: number;
@@ -23,7 +23,7 @@ type PackedBit = {
 	reserved: boolean;
 };
 
-function resetCopy0(r: FieldReset | undefined): number {
+export function resetCopy0(r: FieldReset | undefined): number {
 	if (r === undefined) return 0;
 	if (typeof r === "number") return r;
 	return r[0] ?? 0;
@@ -52,7 +52,7 @@ function bitRange(lo: number, width: number): string {
 	return width === 1 ? `bit [${lo}]` : `bit [${hi}:${lo}]`;
 }
 
-function fieldsWithReserved(cell: LaidCell): PackedBit[] {
+export function fieldsWithReserved(cell: LaidCell): PackedBit[] {
 	const sorted = [...cell.fields].sort((a, b) => a.bit_offset - b.bit_offset);
 	const out: PackedBit[] = [];
 	let cursor = 0;

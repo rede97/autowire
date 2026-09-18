@@ -6,12 +6,13 @@ import { pathToFileURL } from "node:url";
 import type { RegfileSource, WorkspaceConfig } from "../../workspace.ts";
 import { effectiveSheet, isRegfileDef, type RegfileDef } from "./dsl.ts";
 import { emitRegfileSv } from "./emit.ts";
+import { writeRegfileExcel } from "./emit-excel.ts";
 import {
 	emitRegfileC,
 	emitRegfileUvm,
 	swLayoutFingerprint,
 } from "./emit-sw.ts";
-import { layoutRegfile } from "./layout.ts";
+import { type LaidRegfile, layoutRegfile } from "./layout.ts";
 
 export const PLUGIN_ID = "wishbone-regfile";
 
@@ -78,6 +79,7 @@ export async function generateDef(
 	ws: WorkspaceConfig,
 	def: RegfileDef,
 	swSheets: Map<string, string> = new Map(),
+	excelBySheet: Map<string, LaidRegfile> = new Map(),
 ): Promise<string[]> {
 	const laid = layoutRegfile(def);
 	const paths: string[] = [];
@@ -98,6 +100,7 @@ export async function generateDef(
 		return paths;
 	}
 	swSheets.set(table, fp);
+	if (ws.regfileExcelExport) excelBySheet.set(table, laid);
 	if (ws.regfileCExport) {
 		await mkdir(ws.regfileCExport, { recursive: true });
 		const cPath = join(ws.regfileCExport, `${table}.h`);
@@ -120,6 +123,7 @@ export async function generateAll(
 	const paths: string[] = [];
 	const leafNames = new Set<string>();
 	const swSheets = new Map<string, string>();
+	const excelBySheet = new Map<string, LaidRegfile>();
 	for (const src of sources) {
 		const defs = await loadRegfileDefsFromSource(src);
 		for (const def of defs) {
@@ -129,8 +133,12 @@ export async function generateAll(
 				);
 			}
 			leafNames.add(def.name);
-			paths.push(...(await generateDef(ws, def, swSheets)));
+			paths.push(...(await generateDef(ws, def, swSheets, excelBySheet)));
 		}
+	}
+	if (ws.regfileExcelExport) {
+		await writeRegfileExcel(ws.regfileExcelExport, [...excelBySheet.values()]);
+		paths.push(ws.regfileExcelExport);
 	}
 	return paths;
 }

@@ -163,7 +163,7 @@ Block("wide", "Wide fields", BlockDefault.byteAlign(4), [
 
 1. **仅 Block** 提供该能力；独立 cell / cell 内 field **不**自动跨 cell 拆分。  
 2. Block 直接子级的 Field，若放不进当前自动 cell 剩余空间或 **`width > 32`**：按定义序切开，生成连续 cell（**`offset` 可全省略**，按 block `bytes_align` 自动拼），每片 ≤32、按 `bits_align` 对齐。  
-3. 分片**内部**命名（已定）：cell ≈ `<field>_<i>`；field 片 ≈ `<name>_<i>`（`i` 自 0）；**旁路/功能口对外自动拼齐**为原 `width` 向量（作者不看分片口）。  
+3. 分片**内部**命名（已定）：cell ≈ `<field>_<i>`；field 片 ≈ `<name>_<i>`（`i` 自 0 = **LSB**）；**旁路/功能口对外自动拼齐**为原 `width` 向量（作者不看分片口）。每片 cell/field 的 **desc 与注释**必须写明该片在完整字段空间的位置：`name[hi:lo] of [W-1:0]`（例 96-bit `key` → `key[31:0] of [95:0]` / `key[63:32] of [95:0]` / `key[95:64] of [95:0]`）。  
 4. 拆出的连续 cell **共享**同一 shadow（来自 **Block** `.shadow(...)` 缺省；无则皆无）——宽 field **禁止**按分片挂不同 shadow。  
 5. 与显式 `offset` 钉死的 cell **混排**：按定义序；**禁止**占用冲突。  
 6. 作者 **应当**对超长逻辑场用 block 直挂 field，**不必**手写多 cell，也 **不必**手算地址或手拼旁路向量。
@@ -506,9 +506,9 @@ ts = "docs/examples/regfile/regfile.ts"
 - 省略某键 → 跳过该导出。键必须是非空字符串。  
 - Excel 工作表名来自 **有效 `sheet`**（缺省 = `name`），不是 HTML 属性。同 sheet 的多例化共用一份软件/文档产物。  
 - C / uvm_reg / Excel **禁止**进 `plugins_dir`（那是 SV 叶子）；也 **禁止**当 connect/sim dump。
-- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h`；顶层例化两次，rewrite 到 bus slave `sha256_0`/`sha256_1`。窗基址与 cell offset 仍在 `fw/common/soc_map.h`（bus software map 后做）。C 头 **入库展示**（`fw/gen/regfile/*.h`，与 `demo/soc/gen/` 同类；**禁止**当临时产物删掉）。
+- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；顶层例化两次，rewrite 到 bus slave `sha256_0`/`sha256_1`。窗基址与 cell offset 仍在 `fw/common/soc_map.h`（bus software map 后做）。C 头 **入库展示**（`fw/gen/regfile/*.h`，与 `demo/soc/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（**不是** `.ralf`）。
 
-### 6.1 C 头与 uvm_reg（已裁定；C / uvm_reg emit 已落地；Excel emit TBD）
+### 6.1 C 头、uvm_reg 与 Excel（已裁定；C / uvm_reg / Excel emit 已落地）
 
 与 Excel 同类：**只是 SoT 的导出**。**禁止**从 `.h` / `uvm_reg` / Excel 回写 TS。
 
@@ -526,7 +526,7 @@ wishbone-bus generate（后做）
 
 | 产物 | toml | 落盘 | 本插件写出 | **不**在本插件 |
 |---|---|---|---|---|
-| Excel | `export=` **文件** | 每表一 sheet | 文档（可含叶子 offset，非软件运行图） | — |
+| Excel | `export=` **文件** | 每表一 sheet | 对照主干 `gen_excel_doc.py`：**cell 黄行 + field 行（MSB 在上）+ reserved 灰行**；公式算位宽 / `'h` / `DEC2HEX` / 加权复位和。列：Sub-Addr（叶子 byte offset，无 `0x`）/ Start Bit / End Bit / Bit Width / Default Value / R/W Property / Name / Description / Reset Dec / Hex / Sum / SHADOW（仅 cell 行填 `shadow` 名）。**删**主干空列 A、`Selection ADDRWIDTH`（恒空；窗宽/TGA 归 bus）。复位只写 copy 0。**禁止**墙钟/用户名 | 窗基址、TGA/`tagBits`、`remaps`、物理 copy 展开 |
 | C | `c=` **目录** | `<sheet>.h`（空 = `name`；同 sheet 只写一份） | 对照主干 `gen_chead.py` 的 **cell 形**：每 cell `struct …_BITS` 位域 + `union { volatile uint32_t all; … bit; }`。LSB=0 与 Field bit `offset` 一致。shadow 只写注释。头稳定（plugin id + 表名），**禁止**墙钟/用户名 | `OFFSET_*` / 带 padding 的整表 overlay / 窗基址 / TGA |
 | UVM | `uvm=` **目录** | `ral_<SHEET>.sv` | 对照主干 `gen_ralf.py` 的 **cell 级结果**：`class ral_reg_<table>_<cell> extends uvm_reg` + `uvm_reg_field`（width / lsb / access / reset）。**禁止** `.ralf` 文本。shadow 只写注释 | `ral_block_*` 的 `default_map.add_reg(offset)`、窗基址、TGA；block 组装归 bus |
 
@@ -562,7 +562,7 @@ wishbone-bus generate（后做）
 - ~~`remaps` 未命中~~ → **空操作**（不打 copy）+ Wishbone **正常 ACK**（防卡死）；整组省略 `remaps` 仍为 identity。  
 - ~~广播读~~ → bitmask 多 bit 时读数据 **按位或**。  
 - ~~RO + shadow 口形~~ → 功能 in **恒 per-copy 数组**；读用 bitmask（或）。  
-- ~~宽 field 内部分片名~~ → cell/field 片 `<name>_<i>`；对外拼齐。  
+- ~~宽 field 内部分片名~~ → cell/field 片 `<name>_<i>`（`i`=0 = LSB）；desc/注释带完整空间 `name[hi:lo] of [W-1:0]`；对外拼齐。  
 - ~~plugin id~~ → **分立**：`wishbone-bus` 与 `wishbone-regfile`（共享协议子集文档，生成器分开）。  
 - ~~固件窗~~ → v1 **只预留**描述/不做整窗 RAM 生成（§7）。  
 - ~~导出名 vs `name`~~ → **必须相同**。  

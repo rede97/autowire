@@ -10,7 +10,7 @@ the SPI flash model via `$readmemh` / `+firmware=…`.
 | Path | Role |
 |------|------|
 | `common/` | `soc_map.h` (window bases + cell offsets + mmio), `sdspi_regs.h`, `link.ld`, `crt0.S`, `makehex.py` |
-| `gen/regfile/` | Generated field-layout headers (`smoke.h`, `sha256.h`) from `[plugins.regfile] c=`; **git-tracked showcase** (regenerate in place, do not delete) |
+| `gen/regfile/` | Generated field-layout headers (`smoke.h`, `sha256.h`) and Excel `regfiles.xlsx` from `[plugins.regfile]`; **git-tracked showcase** for `.h` (regenerate in place, do not delete) |
 | `basic_smoke/` | SRAM zeros SHA + flash `@0x0100_1000` KAT SHA + dual DMA SRAM KAT under RR |
 | `regfile_smoke/` | Wishbone-regfile MMIO smoke (RC/RO/RW/RWW counter/RWE FIFO loopback/…) |
 | `sd_sha256/` | SD0 init + CMD17 → DMA0 (FIFO A, no `src_inc`) → SHA256_0 |
@@ -23,7 +23,7 @@ Flash XIP reset PC = `0x0100_0000`. SRAM = `0x0000_0000`..`0x0000_FFFF`
 
 ```bash
 # from demo/soc
-bun ../../index.ts plugin generate wishbone-regfile   # SV + fw/gen/regfile/*.h
+bun ../../index.ts plugin generate wishbone-regfile   # SV + C + Excel + uvm_reg
 ./sim/verilator/run.sh              # basic_smoke (SRAM + flash KAT + dual DMA RR)
 ./sim/verilator/run.sh --regfile    # wishbone-regfile MMIO (FIFO loopback + counters)
 ./sim/verilator/run.sh --sd         # sd_sha256 + sdspisim card image

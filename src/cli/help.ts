@@ -91,7 +91,7 @@ Parallel (does not block connect)
     demo/soc: one sha256_regfile instantiated twice (rewrite WB to slave id);
     C sha256.h; smoke identity-match;
     [plugins.regfile] c=fw/gen/regfile (git-tracked showcase, do not delete);
-    firmware uses generated cell unions
+    uvm=dv/ral (uvm_reg, not .ralf); firmware uses generated cell unions
     (soc_map.h keeps window bases + cell offsets until bus software map);
     SoT = TypeScript Regfile(...) exports (RegfileDef); no HTML field tree;
     connect aw-inst mod=*_regfile (or thin WB wrapper); no awx-regfile;
@@ -99,9 +99,11 @@ Parallel (does not block connect)
     sheet empty = name (C/UVM/Excel stem); shared sheet = one header if two names
     share layout; same sheet + different layout → generate error;
     toml ts= not html=;
-    [plugins.regfile] export= Excel file (emit TBD), c= C-header dir, uvm= uvm_reg dir
+    [plugins.regfile] export= Excel workbook (trunk columns; leaf offset;
+    no empty A / ADDRWIDTH), c= C-header dir, uvm= uvm_reg dir
     (SoT exports only; no reverse to TS);
-    C/UVM field-layout emit: per-cell struct+bitfield / uvm_reg; shadow as comments;
+    C/UVM/Excel field-layout emit: per-cell struct+bitfield / uvm_reg /
+    trunk sheet; shadow as comments; Excel documents leaf cell offset;
     address map + TGA/shadow tag assembled by wishbone-bus;
     DAT=32 ADR=byte; write posted at fabric slave PIPE / read blocks to leaf;
     RWE read_write_block default false (posted fabric: true risks bus lock);
@@ -109,7 +111,8 @@ Parallel (does not block connect)
     SEL byte-masked writes (RW/RWW RMW, W1C/W1P masked); RWE ext_<field>_wstrb;
     W1C c_rg_<field>_set hw set (set wins); RWW same-cycle SW > HW;
     RWE o_<shadow>_sel (lowest set bit) + optional ext_<field>_ready;
-    Access RC = ReadConst (reset= baked readback)
+    Access RC = ReadConst (reset= baked readback);
+    wide-field split: comments/desc name[hi:lo] of [W-1:0] (index 0 = LSB)
   Wishbone bus — implementing now (docs/plugins/wishbone-bus.md);
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
     NM>1 → interconnect (arbiter: rb_grant_en 0=fixed lowest-index /
@@ -145,7 +148,7 @@ Shared by deps / web / cli for the RTL universe:
                         connect ids; dump → sim_dir (no .autowire/connect XML)
   [regfile.<source>]    wishbone-regfile SoT file: ts=; optional exports=[]; omit exports = all RegfileDef
   [bus.<source>]        wishbone-bus SoT file: ts=; optional exports=[]; BusDef → decoder|interconnect
-  [plugins.regfile]     SoT exports: export= Excel file (emit TBD);
+  [plugins.regfile]     SoT exports: export= Excel workbook (trunk-style);
                         c= C header directory; uvm= uvm_reg SV directory
   [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
