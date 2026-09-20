@@ -2,7 +2,7 @@
 // One RTL leaf (sha256_regfile); bus SlaveRegfile(sha256, base, { id }) hangs it twice
 // inside soc_wb_system (sha256_0 / sha256_1). HTML does not re-declare the CSR.
 // Glue (AXIS / sticky done) stays in rtl/sha256_wb_regs.v + sha256wb.
-// Generate → gen/plugins/wishbone-regfile/sha256_regfile.sv + fw/gen/regfile/sha256.h
+// Generate → gen/plugins/wishbone/sha256_regfile.sv + fw/gen/wishbone/sha256.h
 
 export {
 	Access,

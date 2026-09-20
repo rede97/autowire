@@ -62,7 +62,7 @@
 
 ## 3. 长路径 pipe（写 posted / 读阻塞）
 
-Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generate` 写出通用模 [`wb_cfg_pipe`](./rtl/wb_cfg_pipe_template.sv) → `plugins_dir/wishbone-bus/wb_cfg_pipe.sv`，每口 PIPE>0 例化一次。connect **不必**例化 `wb_cfg_pipe`。
+Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generate` 写出通用模 [`wb_cfg_pipe`](./rtl/wb_cfg_pipe_template.sv) → `plugins_dir/wishbone/wb_cfg_pipe.sv`，每口 PIPE>0 例化一次。connect **不必**例化 `wb_cfg_pipe`。
 
 ### 3.1 谁配置
 
@@ -156,25 +156,25 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 ## 6. 与 regfile 插件的关系
 
 - 协议子集与 pipe **以本文为准**；叶子口 **必须**遵守。  
-- 生成编排 **可以**同一 plugin id 一次打出 arb+decoder+regfile，或分插件；每个生成模经 **analysis → RtlIndex 普通叶子**；connect 侧一律 `aw-inst` 例化（**禁止**插件树私有口表向上递推）。  
+- 生成编排 **必须**同一 plugin id `wishbone` 一次打出 arb+decoder+regfile（类型仍分立）；每个生成模经 **analysis → RtlIndex 普通叶子**；connect 侧一律 `aw-inst` 例化（**禁止**插件树私有口表向上递推）。  
 - **`SlaveRegfile` 挂 `RegfileDef`**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, mask?, desc? })`。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`（demo：`sha256` ×2 → `sha256_0`/`sha256_1`）。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。`mask` 缺省 = 叶子 layout span 向上取 2 的幂；`(base & mask) === base`。字符串 slave（SRAM/UART/sdspi/DMA）仍写 `Slave(name, desc, base, mask, …)`，**禁止**给 `Slave` 重载 `RegfileDef`。  
 - 若 bus 上有挂接的 regfile：generate **必须**再打一份 Type-A **wrapper** `<bus>_system`（例化 interconnect + 各挂接 `*_regfile`；WB 内收；sideband 在 `id !== name` 时加 `{id}_` 前缀）。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
-- 软件地址图由本插件组装：`[plugins.bus] c=` → `<bus>_map.h`（`BASE` + cell `OFFSET` + overlay）；`uvm=` → `ral_block_<bus>.sv`（`add_reg(base+offset)`）。regfile 插件的 C/`uvm_reg` **只**出字段 layout。  
+- 软件地址图由同一插件打包：`[plugins.wishbone] c=` → `<bus>_map.h` + 字段 `.h` + `wishbone.h`；`uvm=` → `ral_block_<bus>.sv` + `ral_<SHEET>.sv` + `ral_wishbone.sv`（`add_reg(base+offset)`）。叶子 C/`uvm_reg` **只**出字段 layout。  
 - 地址图数据在 Table/端口模型里；**禁止**把 pin 级连线写进 `autowire.toml`。  
 - 产物进 `plugins_dir/<plugin-id>/`；软件 map **禁止**进 `plugins_dir`（与 regfile C/UVM 同纪律）。与 connect/sim dump 目录分家（[`README.md`](./README.md) §3）。
 
 ## 7. 工作区
 
 ```toml
-[bus.soc]
+[wishbone.soc]
 ts = "bus/soc_wb.ts"
 # exports = ["soc_wb"]   # 可选；省略 = 全部 BusDef
 
-[plugins.bus]
-c   = "fw/gen/bus"     # <name>_map.h（git-tracked showcase in demo/soc）
-uvm = "dv/ral"         # ral_block_<name>.sv
+[plugins.wishbone]
+c   = "fw/gen/wishbone"  # <name>_map.h（git-tracked showcase in demo/soc）
+uvm = "dv/ral"           # ral_block_<name>.sv
 
-# out → plugins_dir/wishbone-bus/wb_cfg_pipe.sv
+# out → plugins_dir/wishbone/wb_cfg_pipe.sv
 #                      + <name>_decoder.sv | <name>_interconnect.sv
 #                      + <name>_system.sv   # 仅当有 SlaveRegfile
 # NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）

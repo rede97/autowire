@@ -23,27 +23,22 @@ connect_dir = "gen/connect"
 sim_dir = "gen/sim"
 plugins_dir = "gen/plugins"
 
-# Field-layout C / Excel / uvm_reg (not SoT)
-[plugins.regfile]
-c = "fw/gen/regfile"
-export = "fw/gen/regfile/regfiles.xlsx"
+# Packed C / Excel / uvm_reg (not SoT)
+[plugins.wishbone]
+c = "fw/gen/wishbone"
+export = "fw/gen/wishbone/wishbone.xlsx"
 uvm = "dv/ral"
 
-# Software map: Slave window + cell offset (git-tracked showcase)
-[plugins.bus]
-c = "fw/gen/bus"
-uvm = "dv/ral"
-
-# wishbone-regfile SoT
-[regfile.sha256]
+# wishbone SoT (RegfileDef and BusDef stay separate types)
+[wishbone.sha256]
 ts = "regs/sha256_wb.ts"
 exports = ["sha256"]
 
-[regfile.smoke]
+[wishbone.smoke]
 ts = "regs/smoke.ts"
 exports = ["smoke"]
 
-[bus.soc]
+[wishbone.soc]
 ts = "bus/soc_wb.ts"
 exports = ["soc_wb"]
 

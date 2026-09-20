@@ -1,5 +1,5 @@
-// SoC Wishbone fabric SoT (wishbone-bus). Named slaves identity-match regfile ports.
-// Generate → gen/plugins/wishbone-bus/soc_wb_interconnect.sv + soc_wb_system.sv
+// SoC Wishbone fabric SoT. Named slaves identity-match regfile ports.
+// Generate → gen/plugins/wishbone/soc_wb_interconnect.sv + soc_wb_system.sv
 // Attached RegfileDef hangs (sha256 ×2, smoke) live inside soc_wb_system.
 
 import {

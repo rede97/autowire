@@ -23,7 +23,7 @@
 [dump]
 connect_dir = "gen/connect"   # DE：aw-mod 单元
 sim_dir     = "gen/sim"       # DV：aw-tb-mod 单元
-plugins_dir = "gen/plugins"   # 类型 A 插件；例如 gen/plugins/wishbone-regfile/
+plugins_dir = "gen/plugins"   # 类型 A 插件；例如 gen/plugins/wishbone/
 
 [connect.soc_top]
 html = "connect/soc_top.html"

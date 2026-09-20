@@ -45,12 +45,12 @@
 ## 4. 注册面（草案）
 
 ```text
-plugin id          唯一名（如 wishbone-regfile、seq-asm）
+plugin id          唯一名（如 wishbone、seq-asm）
 kind               generator | elaborate
 tags[]             自定义元素名（必须带插件前缀，见 §5）
 hooks              可选：expand（类型 B）/ before-instances / on-template / before-dump（只读）/
                    generate（类型 A：写 SV）
-toml section       可选：[plugin.<id>] / [regfile.<source>] …
+toml section       可选：[plugins.wishbone] / [wishbone.<source>] …
 ```
 
 宿主 **必须**：
@@ -68,9 +68,9 @@ toml section       可选：[plugin.<id>] / [regfile.<source>] …
 | 标签名 | **必须**登记且带插件前缀；regfile **禁止** `awx-reg-*` HTML 描述树（见 [`wishbone-regfile.md`](./wishbone-regfile.md) §3.1） |
 | 放在 `aw-content` / 文档根 | 类型 B：**可以**（展开为 `aw-inst` 等） |
 | 放在 `aw-submods` | **可以**：嵌套 `aw-mod`（类型 B 展开结果） |
-| 类型 A 声明 | toml `[regfile.<source_id>] ts=` 指向含一个或多个 `RegfileDef` 的 `.ts`；可选 `exports=`；**禁止** `html=` 当 SoT |
+| 类型 A 声明 | toml `[wishbone.<source_id>] ts=` 指向含一个或多个 `RegfileDef` / `BusDef` 的 `.ts`；可选 `exports=`；**禁止** `html=` 当 SoT |
 | 生成后再连线 | connect **只**用 `<aw-inst mod="已生成模块名">`（或薄 WB 包装） |
-| 寄存器 SoT | **仅** TS `Regfile(...)` 命名导出；Excel 仅文档（`plugins.regfile.export`；`sheet` 空 = `name`）；**禁止** HTML/其它 DSL 当权威；**禁止**放进 `aw-content` |
+| 寄存器 SoT | **仅** TS `Regfile(...)` 命名导出；Excel 仅文档（`plugins.wishbone.export`；`sheet` 空 = `name`）；**禁止** HTML/其它 DSL 当权威；**禁止**放进 `aw-content` |
 ## 6. 与 connect 生命周期的关系（目标编排）
 
 插件 **不推翻**「check ≠ elaborate、dump 只认 `aw-render`」。要扩的是**编排顺序**与注册面：
@@ -95,7 +95,7 @@ connect / sim 单元：
 
 ```text
 autowire.toml
-  [plugin.wishbone-regfile] …
+  [plugins.wishbone] …
   [connect.phy_wrap] html=…
 
 A: generate → plugins_dir/<id>/*.sv → analysis → leaf

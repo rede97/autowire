@@ -40,7 +40,7 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
 ## 3. 验证纪律（demo/soc/sim/ + fw/ 模式）
 
 - **主冒烟路径：Verilator + C 固件**（不要求 iverilog）：
-  - 基础：`./sim/verilator/run.sh` → `fw/basic_smoke`：① SRAM 64×0 软填充→DMA0→SHA0；② Flash XIP `0x0100_1000` 划区 KAT（同旧 `gen_firmware.py` 向量）→DMA0（`src_inc`）→SHA0；③ 写 `FABRIC.rb_grant_en` 开 round-robin 后 DMA0+DMA1 并发打同一 SRAM 缓冲 → SHA0/SHA1。字段位域来自 `fw/gen/regfile/*.h`，窗基址来自 `fw/gen/bus/soc_wb_map.h`（`plugin generate`；**入库展示，禁止当临时产物删除**）。
+  - 基础：`./sim/verilator/run.sh` → `fw/basic_smoke`：① SRAM 64×0 软填充→DMA0→SHA0；② Flash XIP `0x0100_1000` 划区 KAT（同旧 `gen_firmware.py` 向量）→DMA0（`src_inc`）→SHA0；③ 写 `FABRIC.rb_grant_en` 开 round-robin 后 DMA0+DMA1 并发打同一 SRAM 缓冲 → SHA0/SHA1。字段位域与窗基址来自 `fw/gen/wishbone/`（`plugin generate wishbone`；**入库展示，禁止当临时产物删除**）。
   - SD：`./sim/verilator/run.sh --sd` → `fw/sd_sha256` + GPL-3 `third_party/sdspisim` + `images/zeros_sha.img`。
   - GPL 边界：`sdspisim` 只进 Verilator C++ harness；固件侧用 MIT `fw/common/sdspi_regs.h`。
 - **遗留（非门禁，但须可跑）**：`sim/gen_firmware.py` + `sim/run_smoke.sh`（iverilog 迷你汇编器）——脚本会**先重跑 `plugin generate all`** 并把 `gen/plugins/**` 编入 filelist；tb 层级探针以 `gen/connect` 当前例化名（`u_sha256_0_core.u_regs` / `u_sram.mem`）为准；`sim/run_fw_zeros.sh` 已转发到 Verilator。

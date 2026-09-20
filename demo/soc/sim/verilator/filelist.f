@@ -15,11 +15,11 @@ rtl/sha256_wb_regs.v
 rtl/smoke_wb.v
 
 # Type-A plugins (bun ../../index.ts plugin generate all)
-gen/plugins/wishbone-bus/wb_cfg_pipe.sv
-gen/plugins/wishbone-bus/soc_wb_interconnect.sv
-gen/plugins/wishbone-bus/soc_wb_system.sv
-gen/plugins/wishbone-regfile/sha256_regfile.sv
-gen/plugins/wishbone-regfile/smoke_regfile.sv
+gen/plugins/wishbone/wb_cfg_pipe.sv
+gen/plugins/wishbone/soc_wb_interconnect.sv
+gen/plugins/wishbone/soc_wb_system.sv
+gen/plugins/wishbone/sha256_regfile.sv
+gen/plugins/wishbone/smoke_regfile.sv
 
 ip/picorv32/picorv32.v
 ip/picorv32/picosoc/simpleuart.v

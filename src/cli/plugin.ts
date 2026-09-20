@@ -1,17 +1,10 @@
 // `autowire plugin generate` — type-A plugin generators.
 
 import type { Command } from "commander";
-import {
-	PLUGIN_ID as BUS_PLUGIN_ID,
-	generateAll as generateBusAll,
-} from "../plugins/wishbone-bus/generate.ts";
-import {
-	generateAll as generateRegfileAll,
-	PLUGIN_ID as REGFILE_PLUGIN_ID,
-} from "../plugins/wishbone-regfile/generate.ts";
+import { generateAll, PLUGIN_ID } from "../plugins/wishbone/generate.ts";
 import { requireWorkspace } from "./shared.ts";
 
-const KNOWN = [REGFILE_PLUGIN_ID, BUS_PLUGIN_ID] as const;
+const ALIASES = new Set(["wishbone-regfile", "wishbone-bus"]);
 
 export function registerPlugin(program: Command): void {
 	const plugin = program
@@ -23,8 +16,8 @@ export function registerPlugin(program: Command): void {
 		.description("Run a type-A generator into [dump] plugins_dir/<plugin-id>/")
 		.argument(
 			"[plugin-id]",
-			`plugin id (default: ${REGFILE_PLUGIN_ID}; or "all")`,
-			REGFILE_PLUGIN_ID,
+			`plugin id (default: ${PLUGIN_ID}; or "all")`,
+			PLUGIN_ID,
 		)
 		.option(
 			"--workspace <path>",
@@ -32,46 +25,35 @@ export function registerPlugin(program: Command): void {
 		)
 		.action(async (pluginId: string, opts: { workspace?: string }) => {
 			const ws = await requireWorkspace(opts.workspace ?? process.cwd());
-			const ids = pluginId === "all" ? [...KNOWN] : ([pluginId] as string[]);
-			for (const id of ids) {
-				if (id === REGFILE_PLUGIN_ID) {
-					if (ws.regfileSources.length === 0) {
-						if (pluginId !== "all") {
-							console.error(
-								`autowire.toml: no [regfile.<source_id>] ts= for ${id}`,
-							);
-							process.exit(1);
-						}
-						continue;
-					}
-					try {
-						const paths = await generateRegfileAll(ws, ws.regfileSources);
-						for (const p of paths) console.log(p);
-					} catch (e) {
-						console.error(e instanceof Error ? e.message : e);
-						process.exit(1);
-					}
-				} else if (id === BUS_PLUGIN_ID) {
-					if (ws.busSources.length === 0) {
-						if (pluginId !== "all") {
-							console.error(
-								`autowire.toml: no [bus.<source_id>] ts= for ${id}`,
-							);
-							process.exit(1);
-						}
-						continue;
-					}
-					try {
-						const paths = await generateBusAll(ws, ws.busSources);
-						for (const p of paths) console.log(p);
-					} catch (e) {
-						console.error(e instanceof Error ? e.message : e);
-						process.exit(1);
-					}
-				} else {
+			let id = pluginId;
+			if (ALIASES.has(id)) {
+				console.error(
+					`plugin id "${id}" is an alias of ${PLUGIN_ID}; running ${PLUGIN_ID}`,
+				);
+				id = PLUGIN_ID;
+			}
+			const ids = id === "all" ? [PLUGIN_ID] : [id];
+			for (const runId of ids) {
+				if (runId !== PLUGIN_ID) {
 					console.error(
-						`unknown plugin id "${id}" (v1: ${KNOWN.join(", ")}, or all)`,
+						`unknown plugin id "${runId}" (v1: ${PLUGIN_ID}, or all)`,
 					);
+					process.exit(1);
+				}
+				if (ws.wishboneSources.length === 0) {
+					if (pluginId !== "all") {
+						console.error(
+							`autowire.toml: no [wishbone.<source_id>] ts= for ${PLUGIN_ID}`,
+						);
+						process.exit(1);
+					}
+					continue;
+				}
+				try {
+					const paths = await generateAll(ws);
+					for (const p of paths) console.log(p);
+				} catch (e) {
+					console.error(e instanceof Error ? e.message : e);
 					process.exit(1);
 				}
 			}

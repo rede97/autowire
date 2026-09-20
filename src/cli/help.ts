@@ -86,26 +86,29 @@ Parallel (does not block connect)
     (hash incremental; no plugin-private port API);
     type B = expand → core aw-* like submods (childRenders); then check → elaborate;
     orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
-  Wishbone regfile — implementing now (docs/plugins/wishbone-regfile.md);
+  Wishbone — implementing now (docs/plugins/wishbone-regfile.md + wishbone-bus.md);
+    one plugin id wishbone (aliases wishbone-regfile / wishbone-bus warn + same generate);
+    two DSL types stay: RegfileDef vs BusDef (no merged IR);
     draft API + samples: docs/examples/regfile/regfile.ts;
+    toml [wishbone.<source>] ts= (one file may export either or both; optional exports=);
+    [plugins.wishbone] packed software (SoT exports only; no reverse to TS):
+    export= Excel (field sheets + MAP_<bus> address map; trunk columns; leaf offset;
+    no empty A / ADDRWIDTH), c= C dir (layout .h + <bus>_map.h + wishbone.h umbrella),
+    uvm= uvm_reg dir (ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv; not .ralf);
+    git-tracked showcase fw/gen/wishbone (do not delete);
+    generate: listed + attached-leaf SV, then fabric/wrapper; RTL → plugins_dir/wishbone/;
     demo/soc: one sha256_regfile RTL, two fabric hangs via SlaveRegfile(..., { id });
     C sha256.h; smoke identity-match (id = RegfileDef.name);
-    [plugins.regfile] c=fw/gen/regfile (git-tracked showcase, do not delete);
-    uvm=dv/ral (uvm_reg, not .ralf); firmware uses generated cell unions;
-    soc_map.h aliases wishbone-bus software map macros;
-    SoT = TypeScript Regfile(...) exports (RegfileDef); no HTML field tree;
+    firmware uses generated cell unions; soc_map.h aliases software map macros;
+    SoT = TypeScript exports; no HTML field tree;
     attached leaves are inside the bus Type-A wrapper (no HTML *_regfile inst);
     string slaves (SRAM/UART/sdspi/DMA) stay aw-inst; no awx-regfile;
-    toml [regfile.<source>] ts= (one file may export many RegfileDef; optional exports=);
     sheet empty = name (C/UVM/Excel stem); shared sheet = one header if two names
     share layout; same sheet + different layout → generate error;
     toml ts= not html=;
-    [plugins.regfile] export= Excel workbook (trunk columns; leaf offset;
-    no empty A / ADDRWIDTH), c= C-header dir, uvm= uvm_reg dir
-    (SoT exports only; no reverse to TS);
     C/UVM/Excel field-layout emit: per-cell struct+bitfield / uvm_reg /
     trunk sheet; shadow as comments; Excel documents leaf cell offset;
-    address map + TGA/shadow tag assembled by wishbone-bus;
+    address map + TGA/shadow tag packed in the same Excel / C / uvm_reg set;
     DAT=32 ADR=byte; write posted at fabric slave PIPE / read blocks to leaf;
     RWE read_write_block default false (posted fabric: true risks bus lock);
     WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
@@ -113,15 +116,14 @@ Parallel (does not block connect)
     W1C c_rg_<field>_set hw set (set wins); RWW same-cycle SW > HW;
     RWE o_<shadow>_sel (lowest set bit) + optional ext_<field>_ready;
     Access RC = ReadConst (reset= baked readback);
-    wide-field split: comments/desc name[hi:lo] of [W-1:0] (index 0 = LSB)
-  Wishbone bus — implementing now (docs/plugins/wishbone-bus.md);
+    wide-field split: comments/desc name[hi:lo] of [W-1:0] (index 0 = LSB);
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
     NM>1 → interconnect (arbiter: rb_grant_en 0=fixed lowest-index /
     1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
     demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives u_ic.rb_grant_en;
     basic_smoke enables RR then dual DMA SRAM KAT on SHA0+SHA1;
     demo/soc bus/soc_wb.ts → soc_wb_interconnect + soc_wb_system (mixed slave PIPE 0/1/2/3/4);
-    toml [bus.<source>] ts=; ADR=byte; fabric addr_width parametrized;
+    ADR=byte; fabric addr_width parametrized;
     TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out;
     slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
     blocking read; PIPE=0 combo; TGA ports always on the module, omitted at
@@ -131,11 +133,8 @@ Parallel (does not block connect)
     SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, mask?, desc? }): id defaults to
     RegfileDef.name (multi-hang = distinct id); tag defaults to leaf tga_width;
     mask defaults to pow2 layout span; (base & mask) === base; TGA must match;
-    software map [plugins.bus] c= (BASE + cell OFFSET + overlay struct) /
-    uvm= ral_block_* add_reg(base+offset); leaf C/UVM stay field-layout only;
     Type-A wrapper <bus>_system instantiates interconnect + attached *_regfile
     (sidebands promoted; WB internalized; HTML aw-inst soc_wb_system)
-
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
   Do not treat connect aw-submods as a code-gen hook — generators emit SV then aw-inst
@@ -153,11 +152,10 @@ Shared by deps / web / cli for the RTL universe:
   [connect.<id>]        DE unit: html= + optional deps= (DAG; aw-mod root; → connect_dir)
   [sim.<id>]            DV TB unit: html= under sim/; aw-tb-mod root; deps may list
                         connect ids; dump → sim_dir (no .autowire/connect XML)
-  [regfile.<source>]    wishbone-regfile SoT file: ts=; optional exports=[]; omit exports = all RegfileDef
-  [bus.<source>]        wishbone-bus SoT file: ts=; optional exports=[]; BusDef → decoder|interconnect
-  [plugins.regfile]     SoT exports: export= Excel workbook (trunk-style);
-                        c= C header directory; uvm= uvm_reg SV directory
-  [plugins.bus]         software map: c= C overlay dir; uvm= uvm_reg_block dir
+  [wishbone.<source>]   wishbone SoT file: ts=; optional exports=[]; omit = all
+                        RegfileDef and/or BusDef exports (types stay separate)
+  [plugins.wishbone]    packed software: export= Excel (field sheets + MAP_*);
+                        c= C dir (layout + map + wishbone.h); uvm= uvm_reg dir
   [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
                         sim_dir="gen/sim"          DV TB tops

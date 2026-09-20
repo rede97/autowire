@@ -19,6 +19,7 @@ import {
 	sub_module_a,
 	sub_module_b,
 } from "../docs/examples/regfile/regfile.ts";
+import { generateAll } from "../src/plugins/wishbone/generate.ts";
 import {
 	Access,
 	Cell,
@@ -34,10 +35,7 @@ import {
 	emitRegfileC,
 	emitRegfileUvm,
 } from "../src/plugins/wishbone-regfile/emit-sw.ts";
-import {
-	generateAll,
-	generateDef,
-} from "../src/plugins/wishbone-regfile/generate.ts";
+import { generateDef } from "../src/plugins/wishbone-regfile/generate.ts";
 import { layoutRegfile } from "../src/plugins/wishbone-regfile/layout.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
@@ -145,14 +143,14 @@ describe("wishbone-regfile", () => {
 			`
 [dump]
 plugins_dir = "gen/plugins"
-[regfile.examples]
+[wishbone.examples]
 ts = "${example.replaceAll("\\", "/")}"
 `,
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
-		expect(ws.regfileSources).toHaveLength(1);
-		expect(ws.regfileSources[0]?.exports).toBeNull();
-		const paths = await generateAll(ws, ws.regfileSources);
+		expect(ws.wishboneSources).toHaveLength(1);
+		expect(ws.wishboneSources[0]?.exports).toBeNull();
+		const paths = await generateAll(ws);
 		expect(paths.some((p) => p.includes("sub_module_a_regfile.sv"))).toBe(true);
 		expect(paths.some((p) => p.includes("sub_module_b_regfile.sv"))).toBe(true);
 	});
@@ -172,14 +170,14 @@ ts = "${example.replaceAll("\\", "/")}"
 			`
 [dump]
 plugins_dir = "gen/plugins"
-[regfile.examples]
+[wishbone.examples]
 ts = "${example.replaceAll("\\", "/")}"
 exports = ["sub_module_b"]
 `,
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
-		expect(ws.regfileSources[0]?.exports).toEqual(["sub_module_b"]);
-		const paths = await generateAll(ws, ws.regfileSources);
+		expect(ws.wishboneSources[0]?.exports).toEqual(["sub_module_b"]);
+		const paths = await generateAll(ws);
 		expect(paths).toHaveLength(1);
 		expect(paths[0]).toContain("sub_module_b_regfile.sv");
 	});
@@ -376,20 +374,22 @@ endmodule
 			`
 [dump]
 plugins_dir = "gen/plugins"
-[plugins.regfile]
+[plugins.wishbone]
 c = "fw/gen"
 uvm = "dv/ral"
 export = "docs/regs.xlsx"
-[regfile.smoke]
+[wishbone.smoke]
 ts = "${smoke.replaceAll("\\", "/")}"
 exports = ["smoke_rw"]
 `,
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
-		const paths = await generateAll(ws, ws.regfileSources);
+		const paths = await generateAll(ws);
 		expect(paths.some((p) => p.endsWith("smoke_rw_regfile.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("smoke_rw.h"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("wishbone.h"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("ral_SMOKE_RW.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("ral_wishbone.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("regs.xlsx"))).toBe(true);
 		const hdr = readFileSync(join(dir, "fw/gen/smoke_rw.h"), "utf8");
 		expect(hdr).toContain("union SMOKE_RW_CFG");
@@ -407,7 +407,7 @@ exports = ["smoke_rw"]
 			`
 [dump]
 plugins_dir = "gen/plugins"
-[plugins.regfile]
+[plugins.wishbone]
 c = "fw/gen"
 `,
 		);
@@ -478,12 +478,12 @@ c = "fw/gen"
 			`
 [dump]
 plugins_dir = "gen/plugins"
-[regfile.smoke]
+[wishbone.smoke]
 ts = "${smoke.replaceAll("\\", "/")}"
 `,
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
-		const paths = await generateAll(ws, ws.regfileSources);
+		const paths = await generateAll(ws);
 		// on-bus `smoke` + per-Access leaves
 		expect(paths.length).toBe(cases.length + 1);
 		expect(paths.some((p) => p.includes("smoke_regfile.sv"))).toBe(true);
@@ -586,15 +586,16 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		const ws = await loadWorkspace(
 			join(import.meta.dir, "..", "demo", "soc", "autowire.toml"),
 		);
-		expect(ws.regfileSources.some((s) => s.id === "sha256")).toBe(true);
-		expect(ws.regfileCExport?.endsWith("fw/gen/regfile")).toBe(true);
-		const paths = await generateAll(ws, ws.regfileSources);
+		expect(ws.wishboneSources.some((s) => s.id === "sha256")).toBe(true);
+		expect(ws.wishboneCExport?.endsWith("fw/gen/wishbone")).toBe(true);
+		const paths = await generateAll(ws);
 		expect(paths.filter((p) => p.endsWith("sha256_regfile.sv"))).toHaveLength(
 			1,
 		);
 		expect(paths.some((p) => p.endsWith("sha256_0_regfile.sv"))).toBe(false);
 		expect(paths.some((p) => p.endsWith("sha256_1_regfile.sv"))).toBe(false);
 		expect(paths.filter((p) => p.endsWith("sha256.h"))).toHaveLength(1);
+		expect(paths.some((p) => p.endsWith("wishbone.h"))).toBe(true);
 		const hdr = readFileSync(
 			join(
 				import.meta.dir,
@@ -603,7 +604,7 @@ describe("wishbone-regfile demo/soc sha256", () => {
 				"soc",
 				"fw",
 				"gen",
-				"regfile",
+				"wishbone",
 				"sha256.h",
 			),
 			"utf8",

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // SoC memory map for C firmware (mirrors connect/soc_top.html).
-// Field layouts: wishbone-regfile C export (fw/gen/regfile).
-// Window bases + cell offsets: wishbone-bus software map (fw/gen/bus).
+// Field layouts + window bases: wishbone packed C export (fw/gen/wishbone).
 
 #pragma once
 

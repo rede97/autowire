@@ -28,11 +28,9 @@ describe("workspace", () => {
 		expect(cfg.simDir).toBe(join(dir, "gen/sim"));
 		expect(cfg.pluginsDir).toBe(join(dir, "gen/plugins"));
 		expect(cfg.simUnits).toEqual([]);
-		expect(cfg.regfileExcelExport).toBeNull();
-		expect(cfg.regfileCExport).toBeNull();
-		expect(cfg.regfileUvmExport).toBeNull();
-		expect(cfg.busCExport).toBeNull();
-		expect(cfg.busUvmExport).toBeNull();
+		expect(cfg.wishboneExcelExport).toBeNull();
+		expect(cfg.wishboneCExport).toBeNull();
+		expect(cfg.wishboneUvmExport).toBeNull();
 		expect(hdxmlArgs(cfg)).toEqual([
 			"--output-dir",
 			join(dir, ".autowire/hdxml"),
@@ -198,47 +196,46 @@ DEPTH = 16
 		expect(findWorkspace(tmpdir())).toBe(findWorkspace(tmpdir())); // must not throw
 	});
 
-	test("[plugins.regfile] export/c/uvm resolve as optional paths", async () => {
+	test("[plugins.wishbone] export/c/uvm resolve as optional paths", async () => {
 		const dir = tempWorkspace(`
-[plugins.regfile]
+[plugins.wishbone]
 export = "docs/regs.xlsx"
-c = "fw/gen/regfile"
+c = "fw/gen/wishbone"
 uvm = "dv/ral"
 `);
 		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
-		expect(cfg.regfileExcelExport).toBe(join(dir, "docs/regs.xlsx"));
-		expect(cfg.regfileCExport).toBe(join(dir, "fw/gen/regfile"));
-		expect(cfg.regfileUvmExport).toBe(join(dir, "dv/ral"));
+		expect(cfg.wishboneExcelExport).toBe(join(dir, "docs/regs.xlsx"));
+		expect(cfg.wishboneCExport).toBe(join(dir, "fw/gen/wishbone"));
+		expect(cfg.wishboneUvmExport).toBe(join(dir, "dv/ral"));
 	});
 
-	test("[plugins.regfile] empty c= is rejected", async () => {
+	test("[plugins.wishbone] empty c= is rejected", async () => {
 		const dir = tempWorkspace(`
-[plugins.regfile]
+[plugins.wishbone]
 c = ""
 `);
 		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
-			"[plugins.regfile] c",
+			"[plugins.wishbone] c",
 		);
 	});
 
-	test("[plugins.bus] c/uvm resolve as optional paths", async () => {
+	test("[regfile.*] is rejected in favor of [wishbone.*]", async () => {
+		const dir = tempWorkspace(`
+[regfile.smoke]
+ts = "regs/smoke.ts"
+`);
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"[regfile.*] is removed",
+		);
+	});
+
+	test("[plugins.bus] is rejected in favor of [plugins.wishbone]", async () => {
 		const dir = tempWorkspace(`
 [plugins.bus]
 c = "fw/gen/bus"
-uvm = "dv/ral"
-`);
-		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
-		expect(cfg.busCExport).toBe(join(dir, "fw/gen/bus"));
-		expect(cfg.busUvmExport).toBe(join(dir, "dv/ral"));
-	});
-
-	test("[plugins.bus] empty c= is rejected", async () => {
-		const dir = tempWorkspace(`
-[plugins.bus]
-c = ""
 `);
 		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
-			"[plugins.bus] c",
+			"[plugins.bus] is removed",
 		);
 	});
 

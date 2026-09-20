@@ -62,20 +62,14 @@ export interface WorkspaceConfig {
 	connectUnits: ConnectUnit[];
 	/** DV sim units ([sim.<id>] html + deps); may depend on connect ids */
 	simUnits: ConnectUnit[];
-	/** Type-A wishbone-regfile SoT sources ([regfile.<source_id>] ts=) */
-	regfileSources: RegfileSource[];
-	/** Type-A wishbone-bus SoT sources ([bus.<source_id>] ts=) */
-	busSources: BusSource[];
-	/** Optional Excel workbook path ([plugins.regfile] export); docs product */
-	regfileExcelExport: string | null;
-	/** Optional C header directory ([plugins.regfile] c); field-layout emit */
-	regfileCExport: string | null;
-	/** Optional uvm_reg SV directory ([plugins.regfile] uvm); field-layout emit */
-	regfileUvmExport: string | null;
-	/** Optional C software-map directory ([plugins.bus] c) */
-	busCExport: string | null;
-	/** Optional uvm_reg_block directory ([plugins.bus] uvm) */
-	busUvmExport: string | null;
+	/** Type-A wishbone SoT sources ([wishbone.<source_id>] ts=) */
+	wishboneSources: WishboneSource[];
+	/** Optional Excel workbook path ([plugins.wishbone] export); packed docs */
+	wishboneExcelExport: string | null;
+	/** Optional C header directory ([plugins.wishbone] c); packed layout+map */
+	wishboneCExport: string | null;
+	/** Optional uvm_reg SV directory ([plugins.wishbone] uvm); packed RAL */
+	wishboneUvmExport: string | null;
 }
 
 /** One [connect.<id>] or [sim.<id>] entry */
@@ -89,25 +83,18 @@ export interface ConnectUnit {
 }
 
 /**
- * One [regfile.<source_id>] entry — a SoT .ts module that may export many RegfileDef.
- * toml id names the source file slot, not a single leaf module.
+ * One [wishbone.<source_id>] entry — a SoT .ts module that may export
+ * RegfileDef and/or BusDef (types stay separate). toml id names the source
+ * file slot, not a single leaf or fabric module.
  */
-export interface RegfileSource {
+export interface WishboneSource {
 	id: string;
 	/** Absolute path to the .ts module */
 	ts: string;
 	/**
-	 * Export names to generate; null/omit = every export that is a RegfileDef.
+	 * Export names to generate; null/omit = every export that is a
+	 * RegfileDef or BusDef.
 	 */
-	exports: string[] | null;
-}
-
-/**
- * One [bus.<source_id>] entry — SoT .ts exporting BusDef (wishbone-bus).
- */
-export interface BusSource {
-	id: string;
-	ts: string;
 	exports: string[] | null;
 }
 
@@ -340,23 +327,33 @@ export async function loadWorkspace(
 		);
 	}
 	assertUnitDepsDag([...connectUnits, ...simUnits]);
-	const regfile = isObj(doc.regfile) ? doc.regfile : {};
-	const regfileSources = parseRegfileSources(regfile, rel);
-	const bus = isObj(doc.bus) ? doc.bus : {};
-	const busSources = parseBusSources(bus, rel);
+	if (doc.regfile !== undefined) {
+		throw new Error(
+			"autowire.toml: [regfile.*] is removed — use [wishbone.<source>] ts=",
+		);
+	}
+	if (doc.bus !== undefined) {
+		throw new Error(
+			"autowire.toml: [bus.*] is removed — use [wishbone.<source>] ts=",
+		);
+	}
+	const wishbone = isObj(doc.wishbone) ? doc.wishbone : {};
+	const wishboneSources = parseWishboneSources(wishbone, rel);
 	const plugins = isObj(doc.plugins) ? doc.plugins : {};
-	const pluginsRegfile = isObj(plugins.regfile) ? plugins.regfile : {};
-	const pluginsBus = isObj(plugins.bus) ? plugins.bus : {};
-	const regfileExcelExport = optPluginPath(
-		"regfile",
-		pluginsRegfile,
-		"export",
-		rel,
-	);
-	const regfileCExport = optPluginPath("regfile", pluginsRegfile, "c", rel);
-	const regfileUvmExport = optPluginPath("regfile", pluginsRegfile, "uvm", rel);
-	const busCExport = optPluginPath("bus", pluginsBus, "c", rel);
-	const busUvmExport = optPluginPath("bus", pluginsBus, "uvm", rel);
+	if (plugins.regfile !== undefined) {
+		throw new Error(
+			"autowire.toml: [plugins.regfile] is removed — use [plugins.wishbone]",
+		);
+	}
+	if (plugins.bus !== undefined) {
+		throw new Error(
+			"autowire.toml: [plugins.bus] is removed — use [plugins.wishbone]",
+		);
+	}
+	const pluginsWishbone = isObj(plugins.wishbone) ? plugins.wishbone : {};
+	const wishboneExcelExport = optPluginPath(pluginsWishbone, "export", rel);
+	const wishboneCExport = optPluginPath(pluginsWishbone, "c", rel);
+	const wishboneUvmExport = optPluginPath(pluginsWishbone, "uvm", rel);
 	return {
 		hdxmlBin: typeof hdxml.bin === "string" ? rel(hdxml.bin) : null,
 		root,
@@ -390,19 +387,15 @@ export async function loadWorkspace(
 		styleLocalparamUpper: style.localparam_upper === true,
 		connectUnits,
 		simUnits,
-		regfileSources,
-		busSources,
-		regfileExcelExport,
-		regfileCExport,
-		regfileUvmExport,
-		busCExport,
-		busUvmExport,
+		wishboneSources,
+		wishboneExcelExport,
+		wishboneCExport,
+		wishboneUvmExport,
 	};
 }
 
-/** Optional [plugins.regfile] / [plugins.bus] path. */
+/** Optional [plugins.wishbone] path. */
 function optPluginPath(
-	plugin: "regfile" | "bus",
 	table: Record<string, unknown>,
 	key: string,
 	rel: (p: string) => string,
@@ -411,85 +404,48 @@ function optPluginPath(
 	if (v === undefined) return null;
 	if (typeof v !== "string" || v.length === 0) {
 		throw new Error(
-			`autowire.toml: [plugins.${plugin}] ${key} must be a non-empty string`,
+			`autowire.toml: [plugins.wishbone] ${key} must be a non-empty string`,
 		);
 	}
 	return rel(v);
 }
 
-function parseRegfileSources(
+function parseWishboneSources(
 	table: Record<string, unknown>,
 	rel: (p: string) => string,
-): RegfileSource[] {
-	const out: RegfileSource[] = [];
+): WishboneSource[] {
+	const out: WishboneSource[] = [];
 	for (const [id, raw] of Object.entries(table)) {
 		if (!isObj(raw)) {
-			throw new Error(`autowire.toml: [regfile.${id}] must be a table`);
+			throw new Error(`autowire.toml: [wishbone.${id}] must be a table`);
 		}
 		if (typeof raw.ts !== "string" || raw.ts.length === 0) {
 			throw new Error(
-				`autowire.toml: [regfile.${id}] ts= is required (path to SoT .ts)`,
+				`autowire.toml: [wishbone.${id}] ts= is required (path to SoT .ts)`,
 			);
 		}
 		if (raw.html !== undefined) {
 			throw new Error(
-				`autowire.toml: [regfile.${id}] html= is forbidden (SoT is ts= only)`,
+				`autowire.toml: [wishbone.${id}] html= is forbidden (SoT is ts= only)`,
 			);
 		}
 		if (raw.export !== undefined) {
 			throw new Error(
-				`autowire.toml: [regfile.${id}] export= is removed — use exports = ["a","b"] or omit to take all RegfileDef exports`,
+				`autowire.toml: [wishbone.${id}] export= is removed — use exports = ["a","b"] or omit to take all RegfileDef and BusDef exports`,
 			);
 		}
 		let exports: string[] | null = null;
 		if (raw.exports !== undefined) {
 			if (!Array.isArray(raw.exports) || raw.exports.length === 0) {
 				throw new Error(
-					`autowire.toml: [regfile.${id}] exports must be a non-empty string array`,
+					`autowire.toml: [wishbone.${id}] exports must be a non-empty string array`,
 				);
 			}
 			exports = [];
 			for (const e of raw.exports) {
 				if (typeof e !== "string" || e.length === 0) {
 					throw new Error(
-						`autowire.toml: [regfile.${id}] exports entries must be non-empty strings`,
-					);
-				}
-				exports.push(e);
-			}
-		}
-		out.push({ id, ts: rel(raw.ts), exports });
-	}
-	out.sort((a, b) => a.id.localeCompare(b.id));
-	return out;
-}
-
-function parseBusSources(
-	table: Record<string, unknown>,
-	rel: (p: string) => string,
-): BusSource[] {
-	const out: BusSource[] = [];
-	for (const [id, raw] of Object.entries(table)) {
-		if (!isObj(raw)) {
-			throw new Error(`autowire.toml: [bus.${id}] must be a table`);
-		}
-		if (typeof raw.ts !== "string" || raw.ts.length === 0) {
-			throw new Error(
-				`autowire.toml: [bus.${id}] ts= is required (path to SoT .ts)`,
-			);
-		}
-		let exports: string[] | null = null;
-		if (raw.exports !== undefined) {
-			if (!Array.isArray(raw.exports) || raw.exports.length === 0) {
-				throw new Error(
-					`autowire.toml: [bus.${id}] exports must be a non-empty string array`,
-				);
-			}
-			exports = [];
-			for (const e of raw.exports) {
-				if (typeof e !== "string" || e.length === 0) {
-					throw new Error(
-						`autowire.toml: [bus.${id}] exports entries must be non-empty strings`,
+						`autowire.toml: [wishbone.${id}] exports entries must be non-empty strings`,
 					);
 				}
 				exports.push(e);
@@ -567,6 +523,14 @@ connect_dir = "gen/connect"
 sim_dir = "gen/sim"
 plugins_dir = "gen/plugins"
 # dir = "gen"  # deprecated single sink (compat only)
+
+# Type-A wishbone (RegfileDef + BusDef stay separate types).
+# [plugins.wishbone]
+# export = "fw/gen/wishbone/wishbone.xlsx"
+# c = "fw/gen/wishbone"
+# uvm = "dv/ral"
+# [wishbone.soc]
+# ts = "bus/soc_wb.ts"
 
 [style]
 # Param overrides: param_inline = true (default) writes simple overrides into

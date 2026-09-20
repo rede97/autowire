@@ -21,10 +21,9 @@ CC      := $(CROSS)gcc
 OBJCOPY := $(CROSS)objcopy
 OBJDUMP := $(CROSS)objdump
 
-REGFILE := $(FW_ROOT)/gen/regfile
-BUSMAP  := $(FW_ROOT)/gen/bus
+WISHBONE := $(FW_ROOT)/gen/wishbone
 CFLAGS  := -march=rv32imc -mabi=ilp32 -Os -g -ffreestanding -nostdlib \
-	-fno-builtin -Wall -Wextra -Wno-array-bounds -I$(COMMON) -I$(REGFILE) -I$(BUSMAP)
+	-fno-builtin -Wall -Wextra -Wno-array-bounds -I$(COMMON) -I$(WISHBONE)
 LDFLAGS := -T $(abspath link.ld) -nostdlib -Wl,--gc-sections
 
 OBJS := $(BUILD)/crt0.o $(BUILD)/main.o

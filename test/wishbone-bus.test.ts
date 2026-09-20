@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { soc_wb } from "../demo/soc/bus/soc_wb.ts";
 import { sha256 } from "../demo/soc/regs/sha256_wb.ts";
 import { smoke } from "../demo/soc/regs/smoke.ts";
+import { generateAll } from "../src/plugins/wishbone/generate.ts";
 import {
 	Bus,
 	Master,
@@ -21,7 +22,6 @@ import {
 	emitBusMapC,
 	emitBusMapUvm,
 } from "../src/plugins/wishbone-bus/emit-map.ts";
-import { generateAll } from "../src/plugins/wishbone-bus/generate.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
 describe("wishbone-bus", () => {
@@ -59,9 +59,9 @@ describe("wishbone-bus", () => {
 		const ws = await loadWorkspace(
 			join(import.meta.dir, "..", "demo", "soc", "autowire.toml"),
 		);
-		expect(ws.busSources.some((s) => s.id === "soc")).toBe(true);
-		expect(ws.busCExport?.endsWith("fw/gen/bus")).toBe(true);
-		const paths = await generateAll(ws, ws.busSources);
+		expect(ws.wishboneSources.some((s) => s.id === "soc")).toBe(true);
+		expect(ws.wishboneCExport?.endsWith("fw/gen/wishbone")).toBe(true);
+		const paths = await generateAll(ws);
 		expect(paths.some((p) => p.endsWith("soc_wb_interconnect.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("soc_wb_system.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("wb_cfg_pipe.sv"))).toBe(true);
@@ -230,12 +230,12 @@ export const tiny = Bus("tiny", "t", {
 			`
 [dump]
 plugins_dir = "gen/plugins"
-[bus.t]
+[wishbone.t]
 ts = "${ts.replaceAll("\\", "/")}"
 `,
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
-		const paths = await generateAll(ws, ws.busSources);
+		const paths = await generateAll(ws);
 		expect(paths.some((p) => p.endsWith("wb_cfg_pipe.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("tiny_decoder.sv"))).toBe(true);
 		expect(paths).toHaveLength(2);

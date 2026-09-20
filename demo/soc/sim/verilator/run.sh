@@ -38,32 +38,32 @@ bash patches/apply.sh
 
 test -f "$CONN/soc_top.sv" || { echo "missing $CONN/soc_top.sv — dump first"; exit 1; }
 test -f "$CONN/sha256wb.sv" || { echo "missing $CONN/sha256wb.sv — dump first"; exit 1; }
-test -f gen/plugins/wishbone-bus/soc_wb_interconnect.sv || {
-	echo "missing gen/plugins/wishbone-bus/soc_wb_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f gen/plugins/wishbone/soc_wb_interconnect.sv || {
+	echo "missing gen/plugins/wishbone/soc_wb_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
-test -f gen/plugins/wishbone-regfile/sha256_regfile.sv || {
-	echo "missing gen/plugins/wishbone-regfile/sha256_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f gen/plugins/wishbone/sha256_regfile.sv || {
+	echo "missing gen/plugins/wishbone/sha256_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
-test -f gen/plugins/wishbone-regfile/smoke_regfile.sv || {
-	echo "missing gen/plugins/wishbone-regfile/smoke_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f gen/plugins/wishbone/smoke_regfile.sv || {
+	echo "missing gen/plugins/wishbone/smoke_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
-test -f fw/gen/regfile/smoke.h || {
-	echo "missing fw/gen/regfile/smoke.h — run: bun ../../index.ts plugin generate wishbone-regfile" >&2
+test -f fw/gen/wishbone/smoke.h || {
+	echo "missing fw/gen/wishbone/smoke.h — run: bun ../../index.ts plugin generate wishbone" >&2
 	exit 1
 }
-test -f fw/gen/regfile/sha256.h || {
-	echo "missing fw/gen/regfile/sha256.h — run: bun ../../index.ts plugin generate wishbone-regfile" >&2
+test -f fw/gen/wishbone/sha256.h || {
+	echo "missing fw/gen/wishbone/sha256.h — run: bun ../../index.ts plugin generate wishbone" >&2
 	exit 1
 }
-test -f fw/gen/bus/soc_wb_map.h || {
-	echo "missing fw/gen/bus/soc_wb_map.h — run: bun ../../index.ts plugin generate wishbone-bus" >&2
+test -f fw/gen/wishbone/soc_wb_map.h || {
+	echo "missing fw/gen/wishbone/soc_wb_map.h — run: bun ../../index.ts plugin generate wishbone" >&2
 	exit 1
 }
-test -f gen/plugins/wishbone-bus/soc_wb_system.sv || {
-	echo "missing gen/plugins/wishbone-bus/soc_wb_system.sv — run: bun ../../index.ts plugin generate wishbone-bus" >&2
+test -f gen/plugins/wishbone/soc_wb_system.sv || {
+	echo "missing gen/plugins/wishbone/soc_wb_system.sv — run: bun ../../index.ts plugin generate wishbone" >&2
 	exit 1
 }
 

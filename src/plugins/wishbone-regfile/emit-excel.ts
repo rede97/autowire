@@ -1,14 +1,17 @@
-// Excel docs export from a laid-out wishbone-regfile.
-// Column layout follows master gen_excel_doc.py, minus unused columns
-// (leading empty, Selection ADDRWIDTH). Leaf cell offset is documented;
-// fabric window / TGA stay with wishbone-bus. No reverse import to TS.
+// Excel docs export for the wishbone plugin pack.
+// Field sheets follow master gen_excel_doc.py, minus unused columns
+// (leading empty, Selection ADDRWIDTH). MAP_<bus> sheets add Slave window +
+// cell absolute addresses. No reverse import to TS.
 
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import ExcelJS from "exceljs";
+import type { BusDef } from "../wishbone-bus/dsl.ts";
+import { attachedSlaves } from "../wishbone-bus/emit-map.ts";
 import { effectiveSheet } from "./dsl.ts";
 import { fieldsWithReserved } from "./emit-sw.ts";
 import type { LaidCell, LaidRegfile } from "./layout.ts";
+import { layoutRegfile } from "./layout.ts";
 
 const CELL_BITS = 32;
 
@@ -183,25 +186,112 @@ function addSheet(wb: ExcelJS.Workbook, laid: LaidRegfile): void {
 	for (const cell of laid.cells) appendCellBlock(ws, laid, cell);
 }
 
-/** Build one workbook: one worksheet per unique sheet identity. */
+const MAP_HEADER = [
+	"Slave",
+	"Base",
+	"Mask",
+	"Pipe",
+	"Tag",
+	"Cell",
+	"Sheet",
+	"Offset",
+	"Absolute",
+	"Shadow",
+	"Description",
+] as const;
+
+export function busMapSheetName(def: BusDef): string {
+	const name = `MAP_${def.name}`;
+	if (name.length > 31) {
+		throw new Error(
+			`wishbone: Excel MAP sheet name "${name}" exceeds 31 characters`,
+		);
+	}
+	return name;
+}
+
+function hexWin(n: number): string {
+	return `0x${n.toString(16).padStart(8, "0")}`;
+}
+
+function addBusMapSheet(wb: ExcelJS.Workbook, def: BusDef): void {
+	const hangs = attachedSlaves(def);
+	if (hangs.length === 0) return;
+	const name = busMapSheetName(def);
+	if (wb.getWorksheet(name)) {
+		throw new Error(`wishbone: Excel sheet "${name}" already exists`);
+	}
+	const ws = wb.addWorksheet(name);
+	ws.addRow([...MAP_HEADER]);
+	ws.getRow(1).height = 30;
+	for (let col = 1; col <= MAP_HEADER.length; col++) {
+		const cell = ws.getCell(1, col);
+		cell.font = HEADER_FONT;
+		cell.fill = HEADER_FILL;
+		cell.border = THIN as ExcelJS.Borders;
+		cell.alignment = HEADER_ALIGN;
+	}
+	ws.getColumn(1).width = 16;
+	ws.getColumn(6).width = 20;
+	ws.getColumn(7).width = 16;
+	ws.getColumn(11).width = 40;
+	for (const slave of hangs) {
+		const rf = slave.regfile;
+		if (!rf) continue;
+		const laid = layoutRegfile(rf);
+		const sheet = effectiveSheet(rf);
+		for (const cell of laid.cells) {
+			const r = (ws.lastRow?.number ?? 0) + 1;
+			ws.addRow([
+				slave.name,
+				hexWin(slave.base),
+				hexWin(slave.mask),
+				slave.pipe,
+				slave.tag ?? 0,
+				cell.name,
+				sheet,
+				hexWin(cell.byte_offset),
+				hexWin(slave.base + cell.byte_offset),
+				cell.shadow ?? "",
+				cell.desc,
+			]);
+			styleRange(ws, r, MAP_HEADER.length, CELL_FILL, FIELD_ALIGN);
+		}
+	}
+}
+
+/** Build one workbook: field sheets plus optional MAP_<bus> sheets. */
 export function buildRegfileWorkbook(
 	tables: readonly LaidRegfile[],
+	buses: readonly BusDef[] = [],
 ): ExcelJS.Workbook {
 	const wb = new ExcelJS.Workbook();
 	wb.creator = "autowire";
 	wb.lastModifiedBy = "autowire";
 	wb.created = new Date(0);
 	wb.modified = new Date(0);
+	const fieldNames = new Set(tables.map((t) => effectiveSheet(t.def)));
+	for (const bus of buses) {
+		if (attachedSlaves(bus).length === 0) continue;
+		const mapName = busMapSheetName(bus);
+		if (fieldNames.has(mapName)) {
+			throw new Error(
+				`wishbone: Excel field sheet "${mapName}" collides with a bus MAP sheet`,
+			);
+		}
+	}
 	for (const laid of tables) addSheet(wb, laid);
+	for (const bus of buses) addBusMapSheet(wb, bus);
 	return wb;
 }
 
 export async function writeRegfileExcel(
 	path: string,
 	tables: readonly LaidRegfile[],
+	buses: readonly BusDef[] = [],
 ): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
-	const wb = buildRegfileWorkbook(tables);
+	const wb = buildRegfileWorkbook(tables, buses);
 	const buf = await wb.xlsx.writeBuffer();
 	await Bun.write(path, buf);
 }
