@@ -506,7 +506,7 @@ ts = "docs/examples/regfile/regfile.ts"
 - 省略某键 → 跳过该导出。键必须是非空字符串。  
 - Excel 工作表名来自 **有效 `sheet`**（缺省 = `name`），不是 HTML 属性。同 sheet 的多例化共用一份软件/文档产物。  
 - C / uvm_reg / Excel **禁止**进 `plugins_dir`（那是 SV 叶子）；也 **禁止**当 connect/sim dump。
-- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；bus `SlaveRegfile(sha256, base, { id })` 挂两次，Type-A wrapper `soc_wb_system` 内例化；HTML **不再** `aw-inst mod="sha256_regfile"`。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`soc_wb_map.h` + `wishbone.h`）；`fw/common/soc_map.h` 只做别名。C 头 **入库展示**（`fw/gen/wishbone/*.h`，与 `demo/soc/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（**不是** `.ralf`）；`ral_block_soc_wb.sv` 与 `ral_wishbone.sv` 同套打包。
+- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；bus `SlaveRegfile(sha256, base, { id })` 挂两次，Type-A wrapper `soc_wb_system` 内例化；HTML **不再** `aw-inst mod="sha256_regfile"`。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`soc_wb_map.h` + `wishbone.h`）；`fw/common/soc_map.h` 只做别名。C 头 **入库展示**（`fw/gen/wishbone/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（**不是** `.ralf`）；`ral_block_soc_wb.sv` 与 `ral_wishbone.sv` 同套打包。
 
 ### 6.1 C 头、uvm_reg 与 Excel（已裁定；C / uvm_reg / Excel emit 已落地）
 

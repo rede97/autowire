@@ -154,7 +154,7 @@ describe("autowire web e2e", () => {
 		}
 	});
 
-	test("?dump=1 on soc_tb: writes gen/sim/tb_soc.sv (no connect XML for sim)", async () => {
+	test("?dump=1 on soc_tb: writes rtl/gen/sim/tb_soc.sv (no connect XML for sim)", async () => {
 		const page = await browser.newPage();
 		await page.goto(`${base}?unit=soc_tb&dump=1`);
 		const status = await waitStatus(page);

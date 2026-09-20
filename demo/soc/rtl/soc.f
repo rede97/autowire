@@ -13,11 +13,11 @@ rtl/soc_reset.v
 rtl/soc_irqmerge.v
 
 # Type-A wishbone (named-slave interconnect + attached-regfile wrapper + leaves)
-gen/plugins/wishbone/wb_cfg_pipe.sv
-gen/plugins/wishbone/soc_wb_interconnect.sv
-gen/plugins/wishbone/soc_wb_system.sv
-gen/plugins/wishbone/sha256_regfile.sv
-gen/plugins/wishbone/smoke_regfile.sv
+rtl/gen/plugins/wishbone/wb_cfg_pipe.sv
+rtl/gen/plugins/wishbone/soc_wb_interconnect.sv
+rtl/gen/plugins/wishbone/soc_wb_system.sv
+rtl/gen/plugins/wishbone/sha256_regfile.sv
+rtl/gen/plugins/wishbone/smoke_regfile.sv
 
 # picorv32: CPU + Wishbone wrapper (picorv32_wb lives in picorv32.v)
 # plus the picosoc UART / QSPI flash controller

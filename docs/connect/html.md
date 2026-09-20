@@ -428,7 +428,7 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 | [`examples/connect/06-author-open.html`](../examples/connect/06-author-open.html) | 显式悬空 `type="open"`（批量 + 覆盖回挂网） |
 | [`examples/connect/06-rendered-open.html`](../examples/connect/06-rendered-open.html) | open render（引擎实际产物） |
 | [`examples/connect/07-author-tb-top.html`](../examples/connect/07-author-tb-top.html) | `aw-tb-mod` 作者面（`[sim.*]`） |
-| demo：[`demo/soc/sim/soc_tb.html`](../../demo/soc/sim/soc_tb.html) | DV TB（`[sim.soc_tb]`；dump → `gen/sim/`） |
+| demo：[`demo/soc/sim/soc_tb.html`](../../demo/soc/sim/soc_tb.html) | DV TB（`[sim.soc_tb]`；dump → `rtl/gen/sim/`） |
 
 ## 9. 渲染生命周期
 

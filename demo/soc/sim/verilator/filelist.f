@@ -1,8 +1,8 @@
 # Verilator filelist (paths relative to demo/soc).
 # Generated connect wrappers must exist (web dump).
 
-gen/connect/soc_top.sv
-gen/connect/sha256wb.sv
+rtl/gen/connect/soc_top.sv
+rtl/gen/connect/sha256wb.sv
 
 rtl/wb_sram.v
 rtl/wb_uart.v
@@ -15,11 +15,11 @@ rtl/sha256_wb_regs.v
 rtl/smoke_wb.v
 
 # Type-A plugins (bun ../../index.ts plugin generate all)
-gen/plugins/wishbone/wb_cfg_pipe.sv
-gen/plugins/wishbone/soc_wb_interconnect.sv
-gen/plugins/wishbone/soc_wb_system.sv
-gen/plugins/wishbone/sha256_regfile.sv
-gen/plugins/wishbone/smoke_regfile.sv
+rtl/gen/plugins/wishbone/wb_cfg_pipe.sv
+rtl/gen/plugins/wishbone/soc_wb_interconnect.sv
+rtl/gen/plugins/wishbone/soc_wb_system.sv
+rtl/gen/plugins/wishbone/sha256_regfile.sv
+rtl/gen/plugins/wishbone/smoke_regfile.sv
 
 ip/picorv32/picorv32.v
 ip/picorv32/picosoc/simpleuart.v

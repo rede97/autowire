@@ -97,6 +97,7 @@ test("each slice prints independently", () => {
 	expect(renderHelp("workspace")).toContain("demo: sot/");
 	expect(renderHelp("workspace")).toContain("wb_reg_*.ts");
 	expect(renderHelp("workspace")).toContain("sot/connect/");
+	expect(renderHelp("workspace")).toContain("rtl/gen/");
 	expect(renderHelp("status")).toContain("sot/wb_bus_soc.ts");
 	expect(renderHelp("status")).toContain("type A = generate");
 	expect(renderHelp("status")).toContain("no plugin-private port API");

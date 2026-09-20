@@ -114,13 +114,15 @@ deps = ["soc_top"]
 | `sim_dir` | `gen/sim` | `[sim.<id>]` dump（`aw-tb-mod` TB 顶） | DV 仿真顶 |
 | `plugins_dir` | `gen/plugins` | 类型 A 插件 `generate` | 其下 **`plugins_dir/<plugin-id>/`** 再细分 |
 
+demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子同树；引擎默认仍是 `gen/`）。
+
 规则：
 
 1. **禁止** DE 包装与 DV TB 顶写在同一 HTML，或把 TB html 挂进 DE 作者树充 DE（demo：作者 SoT 在 `sot/`，TB 仍在 `sim/`）。  
 2. **禁止**再用单一 `dir` 混写三类产物（迁移期：仅设置了旧 `dir` 时，实现可临时把 connect dump 落到该目录并 **警告**；新工作区用三分目录）。  
 3. 插件 **禁止**往 `connect_dir` / `sim_dir` 写生成物；只进 `plugins_dir/<id>/`。  
 4. `.autowire/` 仍只放索引/快照/调试临时物，**不是**上述三类产物目录。  
-5. 类型 A wishbone：toml `[wishbone.<source_id>] ts=` 指向 SoT **文件**（可含 `RegfileDef` 与/或 `BusDef` 导出，类型仍分立；可选 `exports=`）；非 RTL 导出路径见 `[plugins.wishbone]`：`export=` Excel 工作簿（字段 sheet + `MAP_<bus>` 地址图）、`c=` C 头目录（layout `.h` + `<bus>_map.h` + `wishbone.h` 总头）、`uvm=` uvm_reg 目录（`ral_<SHEET>.sv` + `ral_block_*` + `ral_wishbone.sv`；[`../plugins/wishbone-regfile.md`](../plugins/wishbone-regfile.md) §6；均非 SoT）。软件/文档身份 = 有效 `sheet`（缺省 = `name`）；同 sheet 的多例化共用一份 C/`uvm_reg`/Excel 字段产物。C / uvm_reg **禁止**写进 `plugins_dir`。demo/soc 的 C 头落在 `fw/gen/wishbone/`，**入库展示**（与 `demo/soc/gen/` 同类；generate 只覆盖写入，**禁止**整目录删除）。RTL 进 `plugins_dir/wishbone/`（叶子 + interconnect/decoder + wrapper）。挂接了 `RegfileDef` 时 generate 另写 Type-A wrapper `<name>_system.sv`。
+5. 类型 A wishbone：toml `[wishbone.<source_id>] ts=` 指向 SoT **文件**（可含 `RegfileDef` 与/或 `BusDef` 导出，类型仍分立；可选 `exports=`）；非 RTL 导出路径见 `[plugins.wishbone]`：`export=` Excel 工作簿（字段 sheet + `MAP_<bus>` 地址图）、`c=` C 头目录（layout `.h` + `<bus>_map.h` + `wishbone.h` 总头）、`uvm=` uvm_reg 目录（`ral_<SHEET>.sv` + `ral_block_*` + `ral_wishbone.sv`；[`../plugins/wishbone-regfile.md`](../plugins/wishbone-regfile.md) §6；均非 SoT）。软件/文档身份 = 有效 `sheet`（缺省 = `name`）；同 sheet 的多例化共用一份 C/`uvm_reg`/Excel 字段产物。C / uvm_reg **禁止**写进 `plugins_dir`。demo/soc 的 C 头落在 `fw/gen/wishbone/`，**入库展示**（与 `demo/soc/rtl/gen/` 同类；generate 只覆盖写入，**禁止**整目录删除）。RTL 进 `plugins_dir/wishbone/`（叶子 + interconnect/decoder + wrapper）。挂接了 `RegfileDef` 时 generate 另写 Type-A wrapper `<name>_system.sv`。
 
 ### 4.1 `[connect.<id>]`（DE 连接单元 DAG）
 

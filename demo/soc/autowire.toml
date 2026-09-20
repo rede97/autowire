@@ -19,9 +19,9 @@ exclude_filenames = []
 dir = ".autowire/hdxml"
 
 [dump]
-connect_dir = "gen/connect"
-sim_dir = "gen/sim"
-plugins_dir = "gen/plugins"
+connect_dir = "rtl/gen/connect"
+sim_dir = "rtl/gen/sim"
+plugins_dir = "rtl/gen/plugins"
 
 # Packed C / Excel / uvm_reg (not SoT)
 [plugins.wishbone]
@@ -61,7 +61,7 @@ html = "sot/connect/sha256wb.html"
 html = "sot/connect/soc_top.html"
 deps = ["sha256wb"]
 
-# DV TB top (aw-tb-mod) — dump → gen/sim/
+# DV TB top (aw-tb-mod) — dump → rtl/gen/sim/
 [sim.soc_tb]
 html = "sim/soc_tb.html"
 deps = ["soc_top"]

@@ -164,6 +164,7 @@ Shared by deps / web / cli for the RTL universe:
                         sim_dir="gen/sim"          DV TB tops
                         plugins_dir="gen/plugins"  type-A plugins; subdirs per plugin id
                         dir="gen"                  deprecated single sink (compat warn)
+                        demo/soc dump → rtl/gen/{connect,sim,plugins}
   [style] param_inline      true (default) inline simple overrides | false: fold all to Mod__Inst__Param
   [style] port_align        declaration port columns: dir / type / packed, names left-aligned (default false)
   [style] param_align       declaration parameter = column (default false)

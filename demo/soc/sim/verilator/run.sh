@@ -9,7 +9,7 @@ cd "$ROOT"
 
 export PATH="${HOME}/wch/Toolchain/RISC-V Embedded GCC15/bin:${HOME}/wch/Toolchain/RISC-V Embedded GCC/bin:${PATH}"
 
-CONN=gen/connect
+CONN=rtl/gen/connect
 USE_SD=0
 FW_CASE=basic_smoke
 HEX=
@@ -38,16 +38,16 @@ bash patches/apply.sh
 
 test -f "$CONN/soc_top.sv" || { echo "missing $CONN/soc_top.sv — dump first"; exit 1; }
 test -f "$CONN/sha256wb.sv" || { echo "missing $CONN/sha256wb.sv — dump first"; exit 1; }
-test -f gen/plugins/wishbone/soc_wb_interconnect.sv || {
-	echo "missing gen/plugins/wishbone/soc_wb_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f rtl/gen/plugins/wishbone/soc_wb_interconnect.sv || {
+	echo "missing rtl/gen/plugins/wishbone/soc_wb_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
-test -f gen/plugins/wishbone/sha256_regfile.sv || {
-	echo "missing gen/plugins/wishbone/sha256_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f rtl/gen/plugins/wishbone/sha256_regfile.sv || {
+	echo "missing rtl/gen/plugins/wishbone/sha256_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
-test -f gen/plugins/wishbone/smoke_regfile.sv || {
-	echo "missing gen/plugins/wishbone/smoke_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f rtl/gen/plugins/wishbone/smoke_regfile.sv || {
+	echo "missing rtl/gen/plugins/wishbone/smoke_regfile.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
 test -f fw/gen/wishbone/smoke.h || {
@@ -62,8 +62,8 @@ test -f fw/gen/wishbone/soc_wb_map.h || {
 	echo "missing fw/gen/wishbone/soc_wb_map.h — run: bun ../../index.ts plugin generate wishbone" >&2
 	exit 1
 }
-test -f gen/plugins/wishbone/soc_wb_system.sv || {
-	echo "missing gen/plugins/wishbone/soc_wb_system.sv — run: bun ../../index.ts plugin generate wishbone" >&2
+test -f rtl/gen/plugins/wishbone/soc_wb_system.sv || {
+	echo "missing rtl/gen/plugins/wishbone/soc_wb_system.sv — run: bun ../../index.ts plugin generate wishbone" >&2
 	exit 1
 }
 
