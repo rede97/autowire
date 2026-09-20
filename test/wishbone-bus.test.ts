@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { soc_wb } from "../demo/soc/bus/soc_wb.ts";
-import { sha256 } from "../demo/soc/regs/sha256_wb.ts";
-import { smoke } from "../demo/soc/regs/smoke.ts";
+import { soc_wb } from "../demo/soc/sot/wb_bus_soc.ts";
+import { sha256 } from "../demo/soc/sot/wb_reg_sha256.ts";
+import { smoke } from "../demo/soc/sot/wb_reg_smoke.ts";
 import { generateAll } from "../src/plugins/wishbone/generate.ts";
 import {
 	Bus,

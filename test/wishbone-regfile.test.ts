@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sha256 } from "../demo/soc/regs/sha256_wb.ts";
+import { sha256 } from "../demo/soc/sot/wb_reg_sha256.ts";
 import {
 	smoke,
 	smoke_block_wide,
@@ -14,7 +14,7 @@ import {
 	smoke_shadow,
 	smoke_w1c,
 	smoke_w1p,
-} from "../demo/soc/regs/smoke.ts";
+} from "../demo/soc/sot/wb_reg_smoke.ts";
 import {
 	sub_module_a,
 	sub_module_b,
@@ -366,8 +366,8 @@ endmodule
 			"..",
 			"demo",
 			"soc",
-			"regs",
-			"smoke.ts",
+			"sot",
+			"wb_reg_smoke.ts",
 		);
 		writeFileSync(
 			join(dir, "autowire.toml"),
@@ -470,8 +470,8 @@ c = "fw/gen"
 			"..",
 			"demo",
 			"soc",
-			"regs",
-			"smoke.ts",
+			"sot",
+			"wb_reg_smoke.ts",
 		);
 		writeFileSync(
 			join(dir, "autowire.toml"),

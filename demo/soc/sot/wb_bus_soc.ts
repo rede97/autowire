@@ -8,8 +8,8 @@ import {
 	Slave,
 	SlaveRegfile,
 } from "../../../src/plugins/wishbone-bus/dsl.ts";
-import { sha256 } from "../regs/sha256_wb.ts";
-import { smoke } from "../regs/smoke.ts";
+import { sha256 } from "./wb_reg_sha256.ts";
+import { smoke } from "./wb_reg_smoke.ts";
 
 export const soc_wb = Bus(
 	"soc_wb",

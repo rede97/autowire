@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { soc_wb } from "../demo/soc/bus/soc_wb.ts";
-import { smoke } from "../demo/soc/regs/smoke.ts";
+import { soc_wb } from "../demo/soc/sot/wb_bus_soc.ts";
+import { smoke } from "../demo/soc/sot/wb_reg_smoke.ts";
 import { generateAll } from "../src/plugins/wishbone/generate.ts";
 import { buildRegfileWorkbook } from "../src/plugins/wishbone-regfile/emit-excel.ts";
 import { layoutRegfile } from "../src/plugins/wishbone-regfile/layout.ts";
@@ -29,7 +29,14 @@ describe("wishbone pack", () => {
 
 	test("bus source emits attached leaf SV without listing the leaf file", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "aw_wb_pack_"));
-		const bus = join(import.meta.dir, "..", "demo", "soc", "bus", "soc_wb.ts");
+		const bus = join(
+			import.meta.dir,
+			"..",
+			"demo",
+			"soc",
+			"sot",
+			"wb_bus_soc.ts",
+		);
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`

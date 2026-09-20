@@ -68,7 +68,7 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 
 **toml**
 
-- `[wishbone.<source_id>] ts = "regs/foo.ts"` 指向含 **一个或多个** `Regfile(...)` / `Bus(...)` 导出的模块（类型仍分立）。  
+- `[wishbone.<source_id>] ts = "sot/wb_reg_foo.ts"`（总线为 `sot/wb_bus_foo.ts`）指向含 **一个或多个** `Regfile(...)` / `Bus(...)` 导出的模块（类型仍分立）。  
 - 省略 `exports` → generate **该文件内全部** `RegfileDef` 导出；可选 `exports = ["a", "b"]` 只生成列出的绑定。  
 - **禁止** `html=` 充当 SoT。  
 - **禁止**把 regfile 源登记为 `[connect.<id>]` / `[sim.<id>]`（生成走 plugin generate，不走 connect elaborate）。

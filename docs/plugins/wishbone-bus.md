@@ -167,7 +167,7 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 
 ```toml
 [wishbone.soc]
-ts = "bus/soc_wb.ts"
+ts = "sot/wb_bus_soc.ts"
 # exports = ["soc_wb"]   # 可选；省略 = 全部 BusDef
 
 [plugins.wishbone]

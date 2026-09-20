@@ -29,17 +29,17 @@ c = "fw/gen/wishbone"
 export = "fw/gen/wishbone/wishbone.xlsx"
 uvm = "dv/ral"
 
-# wishbone SoT (RegfileDef and BusDef stay separate types)
+# Author SoT: sot/connect/*.html + sot/wb_reg_*.ts / sot/wb_bus_*.ts
 [wishbone.sha256]
-ts = "regs/sha256_wb.ts"
+ts = "sot/wb_reg_sha256.ts"
 exports = ["sha256"]
 
 [wishbone.smoke]
-ts = "regs/smoke.ts"
+ts = "sot/wb_reg_smoke.ts"
 exports = ["smoke"]
 
 [wishbone.soc]
-ts = "bus/soc_wb.ts"
+ts = "sot/wb_bus_soc.ts"
 exports = ["soc_wb"]
 
 [style]
@@ -54,11 +54,11 @@ localparam_upper = true
 
 # sha256 Wishbone re-wrap (regs leaf + streaming core)
 [connect.sha256wb]
-html = "connect/sha256wb.html"
+html = "sot/connect/sha256wb.html"
 
 # SoC top: cross-unit reference to sha256wb -> deps
 [connect.soc_top]
-html = "connect/soc_top.html"
+html = "sot/connect/soc_top.html"
 deps = ["sha256wb"]
 
 # DV TB top (aw-tb-mod) — dump → gen/sim/

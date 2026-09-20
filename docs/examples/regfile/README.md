@@ -3,8 +3,8 @@
 寄存器 **SoT** 为 TypeScript：`Regfile(...)` 命名导出（`RegfileDef`）。
 
 - 综合示例：[`regfile.ts`](./regfile.ts) + 展示 SV [`sub_module_a_regfile.sv`](./sub_module_a_regfile.sv) / [`sub_module_b_regfile.sv`](./sub_module_b_regfile.sv)
-- SoC 冒烟：[`demo/soc/regs/smoke.ts`](../../../demo/soc/regs/smoke.ts) → `smoke_regfile.sv` 由 `soc_wb_system` 挂上总线 + [`smoke_wb.v`](../../../demo/soc/rtl/smoke_wb.v)（仅 sideband glue）；打包 C：`fw/gen/wishbone/smoke.h` + `soc_wb_map.h`（入库展示）；固件：`fw/regfile_smoke`，`./sim/verilator/run.sh --regfile`
-- SoC sha256：[`demo/soc/regs/sha256_wb.ts`](../../../demo/soc/regs/sha256_wb.ts) → 一份 `sha256_regfile`，bus `SlaveRegfile(sha256, …, { id })` ×2 进 wrapper；C：`fw/gen/wishbone/sha256.h`；[`sha256_wb_regs.v`](../../../demo/soc/rtl/sha256_wb_regs.v) + `sha256wb` 仅 AXIS/core glue
+- SoC 冒烟：[`demo/soc/sot/wb_reg_smoke.ts`](../../../demo/soc/sot/wb_reg_smoke.ts) → `smoke_regfile.sv` 由 `soc_wb_system` 挂上总线 + [`smoke_wb.v`](../../../demo/soc/rtl/smoke_wb.v)（仅 sideband glue）；打包 C：`fw/gen/wishbone/smoke.h` + `soc_wb_map.h`（入库展示）；固件：`fw/regfile_smoke`，`./sim/verilator/run.sh --regfile`
+- SoC sha256：[`demo/soc/sot/wb_reg_sha256.ts`](../../../demo/soc/sot/wb_reg_sha256.ts) → 一份 `sha256_regfile`，bus `SlaveRegfile(sha256, …, { id })` ×2 进 wrapper；C：`fw/gen/wishbone/sha256.h`；[`sha256_wb_regs.v`](../../../demo/soc/rtl/sha256_wb_regs.v) + `sha256wb` 仅 AXIS/core glue
 - Excel：`[plugins.wishbone] export=` 一份工作簿（字段 sheet + `MAP_<bus>`；主干列；无空列 A / `ADDRWIDTH`）
 - DSL：[`src/plugins/wishbone-regfile/dsl.ts`](../../../src/plugins/wishbone-regfile/dsl.ts)
 - 契约：[`../../plugins/wishbone-regfile.md`](../../plugins/wishbone-regfile.md)

@@ -530,7 +530,7 @@ plugins_dir = "gen/plugins"
 # c = "fw/gen/wishbone"
 # uvm = "dv/ral"
 # [wishbone.soc]
-# ts = "bus/soc_wb.ts"
+# ts = "sot/wb_bus_soc.ts"
 
 [style]
 # Param overrides: param_inline = true (default) writes simple overrides into
@@ -538,9 +538,9 @@ plugins_dir = "gen/plugins"
 
 # Named DE units (DAG). Do not use flat [connect] html = [...].
 # [connect.sha256wb]
-# html = "connect/sha256wb.html"
+# html = "sot/connect/sha256wb.html"
 # [connect.soc_top]
-# html = "connect/soc_top.html"
+# html = "sot/connect/soc_top.html"
 # deps = ["sha256wb"]
 
 # DV TB tops (aw-tb-mod); dump → sim_dir. May deps= connect ids.

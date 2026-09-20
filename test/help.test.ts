@@ -94,6 +94,10 @@ test("each slice prints independently", () => {
 	expect(renderHelp("status")).toContain("soc_wb_system");
 	expect(renderHelp("status")).toContain("SlaveRegfile");
 	expect(renderHelp("workspace")).toContain("[plugins.wishbone]");
+	expect(renderHelp("workspace")).toContain("demo: sot/");
+	expect(renderHelp("workspace")).toContain("wb_reg_*.ts");
+	expect(renderHelp("workspace")).toContain("sot/connect/");
+	expect(renderHelp("status")).toContain("sot/wb_bus_soc.ts");
 	expect(renderHelp("status")).toContain("type A = generate");
 	expect(renderHelp("status")).toContain("no plugin-private port API");
 	expect(renderHelp("status")).toContain("Workspace MCP");

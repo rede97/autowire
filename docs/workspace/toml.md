@@ -94,10 +94,10 @@ plugins_dir = "gen/plugins"
 # 具名连接单元（禁止旧式 [connect] html = [...] 扁平列表）
 # id 仅用于 toml 依赖图；连线细节仍只在 HTML 内
 [connect.sha256wb]
-html = "connect/sha256wb.html"
+html = "sot/connect/sha256wb.html"
 
 [connect.soc_top]
-html = "connect/soc_top.html"
+html = "sot/connect/soc_top.html"
 deps = ["sha256wb"]
 
 # DV 仿真顶（与 DE connect 分节、分目录；根必须为 aw-tb-mod）
@@ -116,7 +116,7 @@ deps = ["soc_top"]
 
 规则：
 
-1. **禁止** DE 包装与 DV TB 顶写在同一 HTML，或把 TB html 挂在 `connect/` 作者树下充 DE。  
+1. **禁止** DE 包装与 DV TB 顶写在同一 HTML，或把 TB html 挂进 DE 作者树充 DE（demo：作者 SoT 在 `sot/`，TB 仍在 `sim/`）。  
 2. **禁止**再用单一 `dir` 混写三类产物（迁移期：仅设置了旧 `dir` 时，实现可临时把 connect dump 落到该目录并 **警告**；新工作区用三分目录）。  
 3. 插件 **禁止**往 `connect_dir` / `sim_dir` 写生成物；只进 `plugins_dir/<id>/`。  
 4. `.autowire/` 仍只放索引/快照/调试临时物，**不是**上述三类产物目录。  
@@ -126,7 +126,7 @@ deps = ["soc_top"]
 
 | 字段 | 必须 | 含义 |
 |---|---|---|
-| `html` | 是 | DE 连接 HTML（相对工作区根）；**应当**落在 `connect/`（或 DE 约定树）；**禁止**以 `aw-tb-mod` 为根 |
+| `html` | 是 | DE 连接 HTML（相对工作区根）；**应当**与 wishbone `ts=` 同树（demo：`sot/connect/` + `sot/wb_reg_*.ts` / `sot/wb_bus_*.ts`）；**禁止**以 `aw-tb-mod` 为根 |
 | `deps` | 否 | 其它连接单元 **id** 列表（不是路径、不是 `aw-mod@name`）；缺省 = `[]` |
 
 规则：

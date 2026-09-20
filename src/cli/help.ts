@@ -122,7 +122,7 @@ Parallel (does not block connect)
     1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
     demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives u_ic.rb_grant_en;
     basic_smoke enables RR then dual DMA SRAM KAT on SHA0+SHA1;
-    demo/soc bus/soc_wb.ts → soc_wb_interconnect + soc_wb_system (mixed slave PIPE 0/1/2/3/4);
+    demo/soc sot/wb_bus_soc.ts → soc_wb_interconnect + soc_wb_system (mixed slave PIPE 0/1/2/3/4);
     ADR=byte; fabric addr_width parametrized;
     TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out;
     slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
@@ -149,6 +149,9 @@ Commands: autowire init | autowire analysis  (see help analysis)
 Shared by deps / web / cli for the RTL universe:
   [hdxml] bin="…"       hdxml binary path (unset: --hdxml > $HDXML_BIN > repo target > PATH)
   [analysis.*]  .f / sources / walk / incdirs / defines / keep_raw / index dir
+  Author SoT            one tree (demo: sot/): connect HTML under sot/connect/;
+                        wishbone ts= as wb_reg_*.ts / wb_bus_*.ts;
+                        sim HTML stays under sim/ (DE vs DV)
   [connect.<id>]        DE unit: html= + optional deps= (DAG; aw-mod root; → connect_dir)
   [sim.<id>]            DV TB unit: html= under sim/; aw-tb-mod root; deps may list
                         connect ids; dump → sim_dir (no .autowire/connect XML)
