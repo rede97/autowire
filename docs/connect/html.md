@@ -321,7 +321,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 </aw-inst>
 ```
 
-未挂到 `SlaveRegfile(...)` 的外设（SRAM / UART / sdspi / DMA）仍 `aw-inst`。当 `RegfileDef.name` 与 bus slave id **相同**时，wrapper 侧带不加前缀（demo `smoke`）；`id !== name` 时 sideband 加 `{id}_`（demo `sha256_0_rg_*`）。
+未挂到 `SlaveRegfile(...)` 的外设（SRAM / UART / sdspi / DMA）仍 `aw-inst`（窗口优先 `SlaveRegion` + `Size`）。当 `RegfileDef.name` 与 bus slave id **相同**时，wrapper 侧带不加前缀（demo `smoke`）；`id !== name` 时 sideband 加 `{id}_`（demo `sha256_0_rg_*`）。
 
 ### 3.6 其余标签
 

@@ -9,18 +9,18 @@
 //  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read; master PIPE is parent)
 //------------------------------------------------------------------------------
 //  Address map:
-//    0x00000000  mask=0xffff0000  sram — 64 KiB SRAM  pipe=2
-//    0x01000000  mask=0xff000000  flash_xip — SPI flash XIP  pipe=1
-//    0x02000000  mask=0xfffffffc  flash_cfg — SPI flash cfg
+//    0x00000000  size=0x00010000  mask=0xffff0000  sram — 64 KiB SRAM  pipe=2
+//    0x01000000  size=0x01000000  mask=0xff000000  flash_xip — SPI flash XIP  pipe=1
+//    0x02000000  size=0x00000004  mask=0xfffffffc  flash_cfg — SPI flash cfg
 //    0x02000004  mask=0xfffffff8  uart — simpleuart  pipe=3
-//    0x02000010  mask=0xfffffffc  testout — test output  pipe=1
-//    0x03000000  mask=0xfffffff0  sd0 — sdspi 0  pipe=2
-//    0x03001000  mask=0xfffffff0  sd1 — sdspi 1  pipe=4
-//    0x03002000  mask=0xfffffff0  dma0 — sd_rd_dma CSR 0  pipe=3
-//    0x03003000  mask=0xfffffff0  dma1 — sd_rd_dma CSR 1  pipe=1
-//    0x03004000  mask=0xffffffc0  sha256_0 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane  pipe=2
-//    0x03005000  mask=0xffffffc0  sha256_1 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane  pipe=4
-//    0x03006000  mask=0xffffffc0  smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)  pipe=3
+//    0x02000010  size=0x00000004  mask=0xfffffffc  testout — test output  pipe=1
+//    0x03000000  size=0x00000010  mask=0xfffffff0  sd0 — sdspi 0  pipe=2
+//    0x03001000  size=0x00000010  mask=0xfffffff0  sd1 — sdspi 1  pipe=4
+//    0x03002000  size=0x00000010  mask=0xfffffff0  dma0 — sd_rd_dma CSR 0  pipe=3
+//    0x03003000  size=0x00000010  mask=0xfffffff0  dma1 — sd_rd_dma CSR 1  pipe=1
+//    0x03004000  size=0x00000024  mask=0xffffffc0  sha256_0 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane  pipe=2
+//    0x03005000  size=0x00000024  mask=0xffffffc0  sha256_1 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane  pipe=4
+//    0x03006000  size=0x00000034  mask=0xffffffc0  smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)  pipe=3
 //------------------------------------------------------------------------------
 
 module soc_wb_interconnect (
@@ -58,7 +58,7 @@ module soc_wb_interconnect (
 	output logic [31:0] dma1m_i_wb_dat,
 	output logic        dma1m_i_wb_ack,
 	// Slave sram — 64 KiB SRAM,
-	//   base=0x00000000  mask=0xffff0000  pipe=2,
+	//   base=0x00000000  size=0x00010000  mask=0xffff0000  pipe=2,
 	output logic [31:0] sram_i_wb_adr,
 	output logic [31:0] sram_i_wb_dat,
 	output logic [3:0]  sram_i_wb_sel,
@@ -68,7 +68,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sram_o_wb_dat,
 	input  logic        sram_o_wb_ack,
 	// Slave flash_xip — SPI flash XIP,
-	//   base=0x01000000  mask=0xff000000  pipe=1,
+	//   base=0x01000000  size=0x01000000  mask=0xff000000  pipe=1,
 	output logic [31:0] flash_xip_i_wb_adr,
 	output logic [31:0] flash_xip_i_wb_dat,
 	output logic [3:0]  flash_xip_i_wb_sel,
@@ -78,7 +78,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] flash_xip_o_wb_dat,
 	input  logic        flash_xip_o_wb_ack,
 	// Slave flash_cfg — SPI flash cfg,
-	//   base=0x02000000  mask=0xfffffffc,
+	//   base=0x02000000  size=0x00000004  mask=0xfffffffc,
 	output logic [31:0] flash_cfg_i_wb_adr,
 	output logic [31:0] flash_cfg_i_wb_dat,
 	output logic [3:0]  flash_cfg_i_wb_sel,
@@ -98,7 +98,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] uart_o_wb_dat,
 	input  logic        uart_o_wb_ack,
 	// Slave testout — test output,
-	//   base=0x02000010  mask=0xfffffffc  pipe=1,
+	//   base=0x02000010  size=0x00000004  mask=0xfffffffc  pipe=1,
 	output logic [31:0] testout_i_wb_adr,
 	output logic [31:0] testout_i_wb_dat,
 	output logic [3:0]  testout_i_wb_sel,
@@ -108,7 +108,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] testout_o_wb_dat,
 	input  logic        testout_o_wb_ack,
 	// Slave sd0 — sdspi 0,
-	//   base=0x03000000  mask=0xfffffff0  pipe=2,
+	//   base=0x03000000  size=0x00000010  mask=0xfffffff0  pipe=2,
 	output logic [31:0] sd0_i_wb_adr,
 	output logic [31:0] sd0_i_wb_dat,
 	output logic [3:0]  sd0_i_wb_sel,
@@ -118,7 +118,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sd0_o_wb_dat,
 	input  logic        sd0_o_wb_ack,
 	// Slave sd1 — sdspi 1,
-	//   base=0x03001000  mask=0xfffffff0  pipe=4,
+	//   base=0x03001000  size=0x00000010  mask=0xfffffff0  pipe=4,
 	output logic [31:0] sd1_i_wb_adr,
 	output logic [31:0] sd1_i_wb_dat,
 	output logic [3:0]  sd1_i_wb_sel,
@@ -128,7 +128,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sd1_o_wb_dat,
 	input  logic        sd1_o_wb_ack,
 	// Slave dma0 — sd_rd_dma CSR 0,
-	//   base=0x03002000  mask=0xfffffff0  pipe=3,
+	//   base=0x03002000  size=0x00000010  mask=0xfffffff0  pipe=3,
 	output logic [31:0] dma0_i_wb_adr,
 	output logic [31:0] dma0_i_wb_dat,
 	output logic [3:0]  dma0_i_wb_sel,
@@ -138,7 +138,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] dma0_o_wb_dat,
 	input  logic        dma0_o_wb_ack,
 	// Slave dma1 — sd_rd_dma CSR 1,
-	//   base=0x03003000  mask=0xfffffff0  pipe=1,
+	//   base=0x03003000  size=0x00000010  mask=0xfffffff0  pipe=1,
 	output logic [31:0] dma1_i_wb_adr,
 	output logic [31:0] dma1_i_wb_dat,
 	output logic [3:0]  dma1_i_wb_sel,
@@ -148,7 +148,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] dma1_o_wb_dat,
 	input  logic        dma1_o_wb_ack,
 	// Slave sha256_0 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane,
-	//   base=0x03004000  mask=0xffffffc0  pipe=2,
+	//   base=0x03004000  size=0x00000024  mask=0xffffffc0  pipe=2,
 	output logic [31:0] sha256_0_i_wb_adr,
 	output logic [31:0] sha256_0_i_wb_dat,
 	output logic [3:0]  sha256_0_i_wb_sel,
@@ -158,7 +158,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sha256_0_o_wb_dat,
 	input  logic        sha256_0_o_wb_ack,
 	// Slave sha256_1 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane,
-	//   base=0x03005000  mask=0xffffffc0  pipe=4,
+	//   base=0x03005000  size=0x00000024  mask=0xffffffc0  pipe=4,
 	output logic [31:0] sha256_1_i_wb_adr,
 	output logic [31:0] sha256_1_i_wb_dat,
 	output logic [3:0]  sha256_1_i_wb_sel,
@@ -168,7 +168,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] sha256_1_o_wb_dat,
 	input  logic        sha256_1_o_wb_ack,
 	// Slave smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide),
-	//   base=0x03006000  mask=0xffffffc0  pipe=3,
+	//   base=0x03006000  size=0x00000034  mask=0xffffffc0  pipe=3,
 	output logic [31:0] smoke_i_wb_adr,
 	output logic [31:0] smoke_i_wb_dat,
 	output logic [3:0]  smoke_i_wb_sel,

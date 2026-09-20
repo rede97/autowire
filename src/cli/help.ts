@@ -102,7 +102,8 @@ Parallel (does not block connect)
     firmware uses generated cell unions; soc_map.h aliases software map macros;
     SoT = TypeScript exports; no HTML field tree;
     attached leaves are inside the bus Type-A wrapper (no HTML *_regfile inst);
-    string slaves (SRAM/UART/sdspi/DMA) stay aw-inst; no awx-regfile;
+    string slaves (SRAM/UART/sdspi/DMA) stay aw-inst (prefer SlaveRegion+Size);
+    no awx-regfile;
     sheet empty = name (C/UVM/Excel stem); shared sheet = one header if two names
     share layout; same sheet + different layout → generate error;
     toml ts= not html=;
@@ -130,9 +131,12 @@ Parallel (does not block connect)
     instance when Slave has no tag);
     master PIPE is parent-defined, not on this bus;
     decode: localparam SLOT_<SLAVE> indexes slot_sel (no bare slot_sel[6]);
-    SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, mask?, desc? }): id defaults to
-    RegfileDef.name (multi-hang = distinct id); tag defaults to leaf tga_width;
-    mask defaults to pow2 layout span; (base & mask) === base; TGA must match;
+    SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? }): string window by
+    span; decode mask = pow2 ceil(Size); (base & mask) === base;
+    Slave(name, desc, base, mask, ...) is a raw port (no overlap check);
+    SlaveRegfile is SlaveRegion sugar: Size(layout span) + leaf; optional size=;
+    Bus rejects overlapping Region/Regfile windows; raw Slave is excluded;
+    tag defaults to leaf tga_width; TGA must match; id defaults to RegfileDef.name;
     Type-A wrapper <bus>_system instantiates interconnect + attached *_regfile
     (sidebands promoted; WB internalized; HTML aw-inst soc_wb_system)
   Register Table + Block/Cell (data); Excel is documentation only

@@ -93,6 +93,12 @@ test("each slice prints independently", () => {
 	expect(renderHelp("status")).toContain("no awx-regfile");
 	expect(renderHelp("status")).toContain("soc_wb_system");
 	expect(renderHelp("status")).toContain("SlaveRegfile");
+	expect(renderHelp("status")).toContain("SlaveRegion");
+	expect(renderHelp("status")).toContain("Size(bytes)");
+	expect(renderHelp("status")).toContain("prefer SlaveRegion+Size");
+	expect(renderHelp("status")).toContain("raw port");
+	expect(renderHelp("status")).toContain("SlaveRegfile is SlaveRegion sugar");
+	expect(renderHelp("status")).toContain("overlapping Region");
 	expect(renderHelp("workspace")).toContain("[plugins.wishbone]");
 	expect(renderHelp("workspace")).toContain("demo: sot/");
 	expect(renderHelp("workspace")).toContain("wb_reg_*.ts");

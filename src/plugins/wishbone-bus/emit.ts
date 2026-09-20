@@ -159,7 +159,7 @@ function slavePortBlock(s: WbSlave, aw: number): string[] {
 	const st = s.tag ?? 0;
 	const lines = [
 		`\t// Slave ${n} — ${s.desc}`,
-		`\t//   base=0x${hex(s.base)}  mask=0x${hex(s.mask)}${s.pipe > 0 ? `  pipe=${s.pipe}` : ""}`,
+		`\t//   base=0x${hex(s.base)}${s.size !== undefined ? `  size=0x${hex(s.size)}` : ""}  mask=0x${hex(s.mask)}${s.pipe > 0 ? `  pipe=${s.pipe}` : ""}`,
 		`\toutput logic ${adr}${wb(n, "i_wb_adr")},`,
 		`\toutput logic [31:0] ${wb(n, "i_wb_dat")},`,
 		`\toutput logic [3:0]  ${wb(n, "i_wb_sel")},`,
@@ -626,7 +626,7 @@ export function emitBusSv(def: BusDef): string {
 	for (const s of def.slaves) {
 		const pipeNote = (s.pipe ?? 0) > 0 ? `  pipe=${s.pipe}` : "";
 		lines.push(
-			`//    0x${hex(s.base)}  mask=0x${hex(s.mask)}  ${s.name} — ${s.desc}${pipeNote}`,
+			`//    0x${hex(s.base)}${s.size !== undefined ? `  size=0x${hex(s.size)}` : ""}  mask=0x${hex(s.mask)}  ${s.name} — ${s.desc}${pipeNote}`,
 		);
 	}
 	lines.push(

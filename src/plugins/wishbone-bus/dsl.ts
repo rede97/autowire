@@ -21,11 +21,14 @@ export type SlaveRegfileOpts = SlaveOpts & {
 	 * Distinct ids hang the same SoT leaf more than once.
 	 */
 	readonly id?: string;
-	/** Override auto-derived window mask (pow2 span of the laid-out leaf). */
-	readonly mask?: number;
+	/** Override auto `Size(layout span)`. Must cover the laid-out leaf. */
+	readonly size?: RegionSize;
 	/** Override `RegfileDef.desc` on this hang. */
 	readonly desc?: string;
 };
+
+/** `raw` = `Slave(mask)` (unchecked). `region` = `SlaveRegion` / `SlaveRegfile`. */
+export type SlaveWindow = "raw" | "region";
 
 export type WbSlave = {
 	readonly name: string;
@@ -40,9 +43,34 @@ export type WbSlave = {
 	readonly pipe: number;
 	/** Attached Type-A leaf (string slaves leave this unset). */
 	readonly regfile?: RegfileDef;
-	/** Mask was derived from layout span; Bus may re-derive with `addr_width`. */
+	/** Author span in bytes when the window came from `SlaveRegion` / `Size`. */
+	readonly size?: number;
+	/** Mask was derived from layout span or `Size`; Bus may re-derive with `addr_width`. */
 	readonly mask_auto?: boolean;
+	readonly window: SlaveWindow;
 };
+
+/** Author-facing window span (bytes). Decode still uses a 2^N match mask. */
+export type RegionSize = {
+	readonly kind: "wishbone-region-size";
+	readonly bytes: number;
+};
+
+export function Size(bytes: number): RegionSize {
+	if (!Number.isInteger(bytes) || bytes < 1) {
+		throw new Error("wishbone-bus: Size(bytes) must be an integer >= 1");
+	}
+	return { kind: "wishbone-region-size", bytes };
+}
+
+export function isRegionSize(v: unknown): v is RegionSize {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		(v as RegionSize).kind === "wishbone-region-size" &&
+		typeof (v as RegionSize).bytes === "number"
+	);
+}
 
 export type WbMaster = {
 	readonly name: string;
@@ -139,50 +167,31 @@ function attachRegfile(
 	opts: SlaveRegfileOpts,
 ): WbSlave {
 	const name = opts.id ?? regfile.name;
-	requireIdent("slave", name);
-	if (!Number.isInteger(base) || base < 0) {
-		throw new Error(`wishbone-bus: slave ${name} base must be >= 0`);
-	}
-	const { tag: tagOpt, pipe } = parseSlaveOpts(name, {
-		tag: opts.tag,
-		pipe: opts.pipe,
-	});
 	const laid = layoutRegfile(regfile);
 	const tga = laid.tga_width;
-	if (tagOpt !== undefined && tagOpt !== tga) {
+	if (opts.tag !== undefined && opts.tag !== tga) {
 		throw new Error(
-			`wishbone-bus: slave ${name} tag ${tagOpt} != regfile "${regfile.name}" tga_width ${tga}`,
+			`wishbone-bus: slave ${name} tag ${opts.tag} != regfile "${regfile.name}" tga_width ${tga}`,
 		);
 	}
-	const tag = tga > 0 ? tga : undefined;
 	const span = layoutByteSpan(laid);
-	const maskAuto = opts.mask === undefined;
-	const mask = maskAuto ? deriveWindowMask(span, 32) : opts.mask;
-	if (!Number.isInteger(mask) || mask < 0) {
-		throw new Error(`wishbone-bus: slave ${name} mask must be >= 0`);
-	}
-	if ((base & mask) >>> 0 !== base >>> 0) {
+	const size = opts.size ?? Size(span);
+	if (!isRegionSize(size)) {
 		throw new Error(
-			`wishbone-bus: slave ${name} base 0x${base.toString(16)} is not aligned to mask 0x${mask.toString(16)}`,
+			`wishbone-bus: SlaveRegfile(${name}, ...) size must be Size(bytes)`,
 		);
 	}
-	const win = windowBytes(mask, 32);
+	const win = windowBytes(deriveWindowMask(size.bytes, 32), 32);
 	if (win < span) {
 		throw new Error(
 			`wishbone-bus: slave ${name} window 0x${win.toString(16)} is smaller than layout span 0x${span.toString(16)}`,
 		);
 	}
-	const desc = opts.desc ?? regfile.desc;
-	return {
-		name,
-		desc,
-		base,
-		mask,
-		pipe,
-		regfile,
-		...(tag ? { tag } : {}),
-		...(maskAuto ? { mask_auto: true } : {}),
-	};
+	const region = SlaveRegion(name, opts.desc ?? regfile.desc, base, size, {
+		tag: tga > 0 ? tga : opts.tag,
+		pipe: opts.pipe,
+	});
+	return { ...region, regfile };
 }
 
 export function Slave(
@@ -200,7 +209,55 @@ export function Slave(
 		throw new Error(`wishbone-bus: slave ${name} mask must be >= 0`);
 	}
 	const { tag, pipe } = parseSlaveOpts(name, tagOrOpts);
-	return { name, desc, base, mask, pipe, ...(tag ? { tag } : {}) };
+	return {
+		name,
+		desc,
+		base,
+		mask,
+		pipe,
+		window: "raw",
+		...(tag ? { tag } : {}),
+	};
+}
+
+/**
+ * String slave window by byte span (`Size`), not a raw match mask.
+ * Decode still uses `deriveWindowMask` (ceil to 2^N); base must align.
+ */
+export function SlaveRegion(
+	name: string,
+	desc: string,
+	base: number,
+	size: RegionSize,
+	tagOrOpts?: number | SlaveOpts,
+): WbSlave {
+	requireIdent("slave", name);
+	if (!isRegionSize(size)) {
+		throw new Error(
+			`wishbone-bus: SlaveRegion(${name}, ...) fourth arg must be Size(bytes)`,
+		);
+	}
+	if (!Number.isInteger(base) || base < 0) {
+		throw new Error(`wishbone-bus: slave ${name} base must be >= 0`);
+	}
+	const { tag, pipe } = parseSlaveOpts(name, tagOrOpts);
+	const mask = deriveWindowMask(size.bytes, 32);
+	if ((base & mask) >>> 0 !== base >>> 0) {
+		throw new Error(
+			`wishbone-bus: slave ${name} base 0x${base.toString(16)} is not aligned to Size(0x${size.bytes.toString(16)}) mask 0x${mask.toString(16)}`,
+		);
+	}
+	return {
+		name,
+		desc,
+		base,
+		mask,
+		pipe,
+		size: size.bytes,
+		mask_auto: true,
+		window: "region",
+		...(tag ? { tag } : {}),
+	};
 }
 
 /** Hang a wishbone-regfile leaf on this bus (distinct from string `Slave`). */
@@ -227,9 +284,20 @@ export function Master(name: string, desc: string): WbMaster {
 	return { name, desc };
 }
 
+function resolveRegion(s: WbSlave, addrWidth: number): WbSlave {
+	if (s.size === undefined) return s;
+	const mask = deriveWindowMask(s.size, addrWidth);
+	if ((s.base & mask) >>> 0 !== s.base >>> 0) {
+		throw new Error(
+			`wishbone-bus: slave ${s.name} base 0x${s.base.toString(16)} is not aligned to Size(0x${s.size.toString(16)}) mask 0x${mask.toString(16)}`,
+		);
+	}
+	return { ...s, mask };
+}
+
 function resolveAttached(s: WbSlave, addrWidth: number): WbSlave {
 	const rf = s.regfile;
-	if (!rf) return s;
+	if (!rf) return resolveRegion(s, addrWidth);
 	const laid = layoutRegfile(rf);
 	if ((s.tag ?? 0) !== laid.tga_width) {
 		throw new Error(
@@ -242,10 +310,11 @@ function resolveAttached(s: WbSlave, addrWidth: number): WbSlave {
 		);
 	}
 	const span = layoutByteSpan(laid);
-	const mask = s.mask_auto ? deriveWindowMask(span, addrWidth) : s.mask;
+	const sizeBytes = s.size ?? span;
+	const mask = deriveWindowMask(sizeBytes, addrWidth);
 	if ((s.base & mask) >>> 0 !== s.base >>> 0) {
 		throw new Error(
-			`wishbone-bus: slave ${s.name} base 0x${s.base.toString(16)} is not aligned to mask 0x${mask.toString(16)}`,
+			`wishbone-bus: slave ${s.name} base 0x${s.base.toString(16)} is not aligned to Size(0x${sizeBytes.toString(16)}) mask 0x${mask.toString(16)}`,
 		);
 	}
 	const win = windowBytes(mask, addrWidth);
@@ -254,7 +323,42 @@ function resolveAttached(s: WbSlave, addrWidth: number): WbSlave {
 			`wishbone-bus: slave ${s.name} window 0x${win.toString(16)} is smaller than layout span 0x${span.toString(16)}`,
 		);
 	}
-	return { ...s, mask };
+	return { ...s, mask, size: sizeBytes, window: "region" };
+}
+
+function hexWin(n: number): string {
+	return `0x${(n >>> 0).toString(16)}`;
+}
+
+/**
+ * Pow2-aligned regions overlap iff one decode window contains the other's base.
+ * Raw `Slave(mask)` ports are excluded.
+ */
+export function regionWindowsOverlap(a: WbSlave, b: WbSlave): boolean {
+	return (
+		(a.base & b.mask) >>> 0 === b.base >>> 0 ||
+		(b.base & a.mask) >>> 0 === a.base >>> 0
+	);
+}
+
+function assertNoRegionOverlap(
+	bus: string,
+	slaves: readonly WbSlave[],
+	addrWidth: number,
+): void {
+	const regions = slaves.filter((s) => s.window === "region");
+	for (let i = 0; i < regions.length; i++) {
+		for (let j = i + 1; j < regions.length; j++) {
+			const a = regions[i];
+			const b = regions[j];
+			if (!a || !b || !regionWindowsOverlap(a, b)) continue;
+			const aSize = a.size ?? windowBytes(a.mask, addrWidth);
+			const bSize = b.size ?? windowBytes(b.mask, addrWidth);
+			throw new Error(
+				`wishbone-bus: bus ${bus} region "${a.name}" (${hexWin(a.base)} Size(${hexWin(aSize)})) overlaps "${b.name}" (${hexWin(b.base)} Size(${hexWin(bSize)}))`,
+			);
+		}
+	}
 }
 
 export function Bus(
@@ -284,6 +388,7 @@ export function Bus(
 		}
 		seen.add(s.name);
 	}
+	assertNoRegionOverlap(name, slaves, addr_width);
 	const tag_width =
 		opts.tagWidth ?? Math.max(0, ...slaves.map((s) => s.tag ?? 0));
 	if (!Number.isInteger(tag_width) || tag_width < 0) {

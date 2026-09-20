@@ -9,8 +9,10 @@ import { generateAll } from "../src/plugins/wishbone/generate.ts";
 import {
 	Bus,
 	Master,
+	Size,
 	Slave,
 	SlaveRegfile,
+	SlaveRegion,
 } from "../src/plugins/wishbone-bus/dsl.ts";
 import {
 	busModuleKind,
@@ -241,6 +243,35 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(paths).toHaveLength(2);
 	});
 
+	test("SlaveRegion Size derives pow2 mask and rejects unaligned base", () => {
+		const sram = SlaveRegion("sram", "64K", 0, Size(0x1_0000));
+		expect(sram.size).toBe(0x1_0000);
+		expect(sram.mask).toBe(0xffff_0000);
+		expect(sram.mask_auto).toBe(true);
+		expect(SlaveRegion("cell", "36B span", 0, Size(36)).mask).toBe(0xffff_ffc0);
+		expect(soc_wb.slaves.find((s) => s.name === "sram")?.size).toBe(0x1_0000);
+		expect(soc_wb.slaves.find((s) => s.name === "sram")?.mask).toBe(
+			0xffff_0000,
+		);
+		expect(soc_wb.slaves.find((s) => s.name === "sd0")?.size).toBe(16);
+		expect(soc_wb.slaves.find((s) => s.name === "sram")?.window).toBe("region");
+		expect(soc_wb.slaves.find((s) => s.name === "uart")?.size).toBeUndefined();
+		expect(soc_wb.slaves.find((s) => s.name === "uart")?.window).toBe("raw");
+		expect(soc_wb.slaves.find((s) => s.name === "uart")?.mask).toBe(
+			0xffff_fff8,
+		);
+		const narrow = Bus("narrow_sz", "16-bit Size", {
+			slaves: [SlaveRegion("s0", "S0", 0x100, Size(0x100))],
+			addrWidth: 16,
+		});
+		expect(narrow.slaves[0]?.mask).toBe(0xff00);
+		expect(() => SlaveRegion("bad", "t", 0x10, Size(32))).toThrow(/aligned/);
+		expect(() => Size(0)).toThrow(/Size/);
+		expect(() =>
+			SlaveRegion("bad", "t", 0, 0x100 as unknown as ReturnType<typeof Size>),
+		).toThrow(/Size/);
+	});
+
 	test("SlaveRegfile derives id/mask/tag and supports multi-hang", () => {
 		expect(
 			soc_wb.slaves.find((s) => s.name === "sha256_0")?.regfile?.name,
@@ -267,6 +298,46 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(() => SlaveRegfile(sha256, 0x0300_4010, { id: "sha256_x" })).toThrow(
 			/not aligned/,
 		);
+		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.window).toBe(
+			"region",
+		);
+		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.size).toBeDefined();
+		expect(() => SlaveRegfile(smoke, 0, { size: Size(4) })).toThrow(/smaller/);
+	});
+
+	test("Bus checks region overlap; raw Slave(mask) is unchecked", () => {
+		expect(() =>
+			Bus("hit", "overlap", {
+				slaves: [
+					SlaveRegion("hi", "64K", 0, Size(0x1_0000)),
+					SlaveRegion("lo", "inside", 0x1000, Size(0x100)),
+				],
+			}),
+		).toThrow(/overlaps/);
+		expect(() =>
+			Bus("rfhit", "regfile vs region", {
+				slaves: [
+					SlaveRegfile(smoke, 0x0300_6000),
+					SlaveRegion("alias", "same win", 0x0300_6000, Size(0x40)),
+				],
+			}),
+		).toThrow(/overlaps/);
+		expect(() =>
+			Bus("rawok", "raw vs region", {
+				slaves: [
+					Slave("raw", "unchecked", 0, 0xffff_0000),
+					SlaveRegion("sram", "64K", 0, Size(0x1_0000)),
+				],
+			}),
+		).not.toThrow();
+		expect(() =>
+			Bus("raw2", "two raw", {
+				slaves: [
+					Slave("a", "A", 0, 0xffff_0000),
+					Slave("b", "B", 0, 0xffff_0000),
+				],
+			}),
+		).not.toThrow();
 	});
 
 	test("wrapper and software map cover attached hangs", () => {
