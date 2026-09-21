@@ -3,18 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256 } from "../demo/soc/sot/wb_reg_sha256.ts";
-import {
-	smoke,
-	smoke_block_wide,
-	smoke_rc,
-	smoke_ro,
-	smoke_rw,
-	smoke_rwe,
-	smoke_rww,
-	smoke_shadow,
-	smoke_w1c,
-	smoke_w1p,
-} from "../demo/soc/sot/wb_reg_smoke.ts";
+import { smoke } from "../demo/soc/sot/wb_reg_smoke.ts";
 import {
 	sub_module_a,
 	sub_module_b,
@@ -38,6 +27,17 @@ import {
 import { generateDef } from "../src/plugins/wishbone-regfile/generate.ts";
 import { layoutRegfile } from "../src/plugins/wishbone-regfile/layout.ts";
 import { loadWorkspace } from "../src/workspace.ts";
+import {
+	smoke_block_wide,
+	smoke_rc,
+	smoke_ro,
+	smoke_rw,
+	smoke_rwe,
+	smoke_rww,
+	smoke_shadow,
+	smoke_w1c,
+	smoke_w1p,
+} from "./fixtures/wb_reg_access.ts";
 
 describe("wishbone-regfile", () => {
 	test("layout sub_module_b packs ID cell at 0", () => {
@@ -361,14 +361,7 @@ endmodule
 
 	test("generateAll writes C, uvm_reg, and Excel when toml paths are set", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_sw_"));
-		const smoke = join(
-			import.meta.dir,
-			"..",
-			"demo",
-			"soc",
-			"sot",
-			"wb_reg_smoke.ts",
-		);
+		const access = join(import.meta.dir, "fixtures", "wb_reg_access.ts");
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
@@ -378,8 +371,8 @@ plugins_dir = "gen/plugins"
 c = "fw/gen"
 uvm = "dv/ral"
 export = "docs/regs.xlsx"
-[wishbone.smoke]
-ts = "${smoke.replaceAll("\\", "/")}"
+[wishbone.access]
+ts = "${access.replaceAll("\\", "/")}"
 exports = ["smoke_rw"]
 `,
 		);
@@ -463,30 +456,22 @@ c = "fw/gen"
 		expect(sv).toMatch(/rg_rb_grant_en_q <= 1'h0/);
 	});
 
-	test("smoke.ts generates all feature leaves via plugin generate", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_smoke_"));
-		const smoke = join(
-			import.meta.dir,
-			"..",
-			"demo",
-			"soc",
-			"sot",
-			"wb_reg_smoke.ts",
-		);
+	test("access fixture generates all feature leaves via plugin generate", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_access_"));
+		const access = join(import.meta.dir, "fixtures", "wb_reg_access.ts");
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
 [dump]
 plugins_dir = "gen/plugins"
-[wishbone.smoke]
-ts = "${smoke.replaceAll("\\", "/")}"
+[wishbone.access]
+ts = "${access.replaceAll("\\", "/")}"
 `,
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
 		const paths = await generateAll(ws);
-		// on-bus `smoke` + per-Access leaves
-		expect(paths.length).toBe(cases.length + 1);
-		expect(paths.some((p) => p.includes("smoke_regfile.sv"))).toBe(true);
+		expect(paths.length).toBe(cases.length);
+		expect(paths.some((p) => p.includes("smoke_regfile.sv"))).toBe(false);
 		for (const { def } of cases) {
 			expect(
 				paths.some((p) => p.includes(`${def.name.toLowerCase()}_regfile.sv`)),
