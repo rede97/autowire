@@ -2,30 +2,23 @@
 <!--
   Connect unit "soc_top": small demo SoC after picosoc.
     picorv32 (picorv32_wb, Wishbone master) + SRAM + spimemio XIP flash +
-    simpleuart + test output + 2x sdspi (SPI SD card) + 2x sd_rd_dma
-    (Wishbone master -> AXI4-Stream) + 2x sha256wb (AXIS glue + core) +
-    smoke_wb glue. Attached sha256_regfile ×2 and smoke_regfile live inside
-    soc_wb_system (wishbone-bus Type-A wrapper); HTML does not re-declare them.
-  Buses: Wishbone B4 classic (named-slave interconnect from wishbone-bus;
-  masters named {m}_o_wb_* / {m}_i_wb_* too; slaves {name}_i_wb_* / {name}_o_wb_*).
-  TGA: fabric 2-bit (smoke shadow bank); cpu port = smoke rg_bank_sel CSR,
-  dma ports tied 2'b00. Arbiter: u_ic.rb_grant_en = smoke rg_rb_grant_en
-  (FABRIC @ 0x030, reset 0 = fixed priority).
-  AXI4-Stream (DMA -> sha256 lanes).
+    simpleuart + test output + 2× sd_sha_ch (SD + DMA + SHA256 channel) +
+    smoke_wb glue. Attached smoke_regfile lives inside soc_wb_system;
+    sha256_regfile lives inside each channel's sd_sha_system.
+  Top fabric is a CPU-only decoder cascaded into two channel interconnects
+  (one sd_sha BusDef, two SlaveBus hangs). Channel DMA cannot reach SRAM/flash.
+  TGA: fabric 2-bit (smoke shadow bank); cpu port = smoke rg_bank_sel CSR.
+  Channel arbiter: rb_grant_en = smoke rg_rb_grant_en (FABRIC @ 0x030, reset 0).
   Memory map (byte addresses) / slave id (aw-inst id):
     0x0000_0000  sram
     0x0100_0000  flash_xip
     0x0200_0000  flash_cfg (cfg side of wb_spiflash)
     0x0200_0004  uart
     0x0200_0010  testout
-    0x0300_0000  sd0
-    0x0300_1000  sd1
-    0x0300_2000  dma0 (sd_rd_dma CSR)
-    0x0300_3000  dma1
-    0x0300_4000  sha256_0
-    0x0300_5000  sha256_1
+    0x0300_0000  ch0  (sd 0x00 / dma 0x10 / sha256 0x40 relative)
+    0x0300_1000  ch1  (same relative map)
     0x0300_6000  smoke
-  Masters: m0 = CPU, m1 = DMA0, m2 = DMA1 (idx = master slot).
+  Master: CPU (decoder). Each channel adds local engine master "eng".
 -->
 <html lang="en">
   <head>
@@ -39,39 +32,35 @@
           <aw-imports></aw-imports>
           <aw-params></aw-params>
           <aw-localparams></aw-localparams>
-          <!-- no author ports: unconnected nets auto-export upward
-               (inputs: undriven nets; outputs: driven-but-unloaded nets) -->
           <aw-ports></aw-ports>
           <aw-templates>
-            <!-- Wishbone master: leaf wbm_* → named nets {id}_o_wb_* / {id}_i_wb_* -->
             <aw-template name="wb_mst" inst_name="${id}_${idx}">
               <aw-rewrite match="^wbm_(.+)_o$" to="${id}_o_wb_$1"></aw-rewrite>
               <aw-rewrite match="^wbm_(.+)_i$" to="${id}_i_wb_$1"></aw-rewrite>
             </aw-template>
-            <!-- Wishbone named slave: leaf i_wb_*/o_wb_* → {id}_*; one RegExp -->
             <aw-template name="wb_slv" inst_name="u_${id}">
               <aw-rewrite match="^rst_n$" to="rst_ni"></aw-rewrite>
               <aw-rewrite match="^([io]_wb_.+)$" to="${id}_$1"></aw-rewrite>
             </aw-template>
-            <!-- sha256 glue+core: AXIS via idx; sideband prefix set per inst to bus slave id -->
-            <aw-template name="sha_lane" inst_name="u_${id}">
-              <aw-connect port="s_axis_tdata" to="axs${idx}_tdata" width="31:0"></aw-connect>
-              <aw-connect port="s_axis_tvalid" to="axs${idx}_tvalid"></aw-connect>
-              <aw-connect port="s_axis_tready" to="axs${idx}_tready"></aw-connect>
-              <aw-connect port="s_axis_tlast" to="axs${idx}_tlast"></aw-connect>
+            <aw-template name="ch" inst_name="u_${id}">
+              <aw-rewrite match="^rst_n$" to="rst_ni"></aw-rewrite>
+              <aw-rewrite match="^([io]_wb_.+)$" to="${id}_$1"></aw-rewrite>
+              <aw-connect port="rb_grant_en" to="rg_rb_grant_en"></aw-connect>
+              <aw-rewrite match="^o_cs_n$" to="sd${idx}_cs_n"></aw-rewrite>
+              <aw-rewrite match="^o_sck$" to="sd${idx}_sck"></aw-rewrite>
+              <aw-rewrite match="^o_mosi$" to="sd${idx}_mosi"></aw-rewrite>
+              <aw-rewrite match="^i_miso$" to="sd${idx}_miso"></aw-rewrite>
+              <aw-rewrite match="^i_cd$" to="sd${idx}_cd"></aw-rewrite>
             </aw-template>
           </aw-templates>
           <aw-insts>
-            <!-- active-low resetn -> active-high rst for picorv32_wb / sdspi -->
             <aw-inst id="u_rst" mod="soc_reset">
               <aw-template>
-                <!-- clk inferred by name -->
                 <aw-connect port="i_rst_n" to="rst_ni"></aw-connect>
                 <aw-connect port="o_rst" to="rst"></aw-connect>
               </aw-template>
             </aw-inst>
 
-            <!-- CPU: picorv32 with Wishbone master (master slot 0) -->
             <aw-inst id="cpu" mod="picorv32_wb" idx="0">
               <aw-template base="wb_mst" inst_name="u_cpu">
                 <aw-param name="BARREL_SHIFTER" expr="1"></aw-param>
@@ -101,19 +90,14 @@
                 <aw-connect port="mem_instr" type="open"></aw-connect>
               </aw-template>
             </aw-inst>
-            <!-- named-slave interconnect (wishbone-bus generate); masters named too.
-                 soc_wb_system wraps the fabric + attached sha256/smoke regfiles. -->
+
+            <!-- CPU-only decoder + attached smoke_regfile. Cascade slaves ch0/ch1. -->
             <aw-inst id="u_ic" mod="soc_wb_system">
               <aw-template>
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>
-                <!-- smoke FABRIC.rb_grant_en (reset 0 = fixed prio; 1 = round-robin) -->
-                <aw-connect port="rb_grant_en" to="rg_rb_grant_en"></aw-connect>
-                <!-- master/slave ports identity-match {name}_o_wb_* / {name}_i_wb_* -->
-                <!-- cpu TGA = smoke rg_bank_sel CSR; dma masters have no tag -->
-                <aw-connect port="cpu_o_wb_tga" to="rg_bank_sel"></aw-connect>
-                <aw-connect port="dma0m_o_wb_tga" to="2'b00" type="const"></aw-connect>
-                <aw-connect port="dma1m_o_wb_tga" to="2'b00" type="const"></aw-connect>
-                <!-- attached smoke: glue sidebands; only non-identity written -->
+                <aw-rewrite match="^m_(adr|dat|sel|cyc|stb|we)_i$" to="cpu_o_wb_$1"></aw-rewrite>
+                <aw-rewrite match="^m_(dat|ack)_o$" to="cpu_i_wb_$1"></aw-rewrite>
+                <aw-connect port="m_tga_i" to="rg_bank_sel"></aw-connect>
                 <aw-connect port="c_rg_sticky_set" to="p_rg_go"></aw-connect>
                 <aw-rewrite
                   match="^(rg_enable|rg_mode|rg_capture|c_rg_sticky|rg_cfg|o_bank_sel|rg_key_\d)$"
@@ -122,7 +106,6 @@
               </aw-template>
             </aw-inst>
 
-            <!-- sram: 64 KiB -->
             <aw-inst id="sram" mod="wb_sram">
               <aw-template base="wb_slv">
                 <aw-param name="WORDS" expr="16384"></aw-param>
@@ -130,7 +113,6 @@
               </aw-template>
             </aw-inst>
 
-            <!-- flash_xip + flash_cfg (cfg: one rewrite i_cfg_* → flash_cfg_i_wb_*) -->
             <aw-inst id="flash_xip" mod="wb_spiflash">
               <aw-template base="wb_slv" inst_name="u_flash">
                 <aw-rewrite match="^i_cfg_(.+)$" to="flash_cfg_i_wb_$1"></aw-rewrite>
@@ -149,82 +131,18 @@
               </aw-template>
             </aw-inst>
 
-            <!-- sd0 / sd1: third-party addr/data + DW-parse junk → explicit widths -->
-            <aw-inst id="sd0" mod="sdspi">
-              <aw-template base="wb_slv" inst_name="u_sd0">
-                <aw-rewrite match="^i_wb_addr$" to="sd0_i_wb_adr" width="31:0" part="3:2"></aw-rewrite>
-                <aw-rewrite match="^i_wb_data$" to="sd0_i_wb_dat" width="31:0"></aw-rewrite>
-                <aw-rewrite match="^o_wb_data$" to="sd0_o_wb_dat" width="31:0"></aw-rewrite>
-                <aw-rewrite match="^i_wb_sel$" to="sd0_i_wb_sel" width="3:0"></aw-rewrite>
-                <aw-connect port="i_clk" to="clk"></aw-connect>
-                <aw-connect port="i_sd_reset" to="rst"></aw-connect>
-                <aw-rewrite match="^o_wb_stall$" type="open"></aw-rewrite>
-                <aw-rewrite match="^o_debug$" type="open"></aw-rewrite>
-                <aw-connect port="i_bus_grant" to="1'b1" type="const"></aw-connect>
-                <aw-connect port="o_cs_n" to="sd0_cs_n"></aw-connect>
-                <aw-connect port="o_sck" to="sd0_sck"></aw-connect>
-                <aw-connect port="o_mosi" to="sd0_mosi"></aw-connect>
-                <aw-connect port="i_miso" to="sd0_miso"></aw-connect>
-                <aw-connect port="i_card_detect" to="sd0_cd"></aw-connect>
-                <aw-connect port="o_int" to="irq_srcs" width="5:0" part="0"></aw-connect>
+            <aw-inst id="ch0" mod="sd_sha_ch" idx="0">
+              <aw-template base="ch">
+                <aw-connect port="o_sd_irq" to="irq_srcs" width="5:0" part="0"></aw-connect>
+                <aw-connect port="o_dma_irq" to="irq_srcs" width="5:0" part="2"></aw-connect>
+                <aw-connect port="o_sha_irq" to="irq_srcs" width="5:0" part="4"></aw-connect>
               </aw-template>
             </aw-inst>
-            <aw-inst id="sd1" mod="sdspi">
-              <aw-template base="wb_slv" inst_name="u_sd1">
-                <aw-rewrite match="^i_wb_addr$" to="sd1_i_wb_adr" width="31:0" part="3:2"></aw-rewrite>
-                <aw-rewrite match="^i_wb_data$" to="sd1_i_wb_dat" width="31:0"></aw-rewrite>
-                <aw-rewrite match="^o_wb_data$" to="sd1_o_wb_dat" width="31:0"></aw-rewrite>
-                <aw-rewrite match="^i_wb_sel$" to="sd1_i_wb_sel" width="3:0"></aw-rewrite>
-                <aw-connect port="i_clk" to="clk"></aw-connect>
-                <aw-connect port="i_sd_reset" to="rst"></aw-connect>
-                <aw-rewrite match="^o_wb_stall$" type="open"></aw-rewrite>
-                <aw-rewrite match="^o_debug$" type="open"></aw-rewrite>
-                <aw-connect port="i_bus_grant" to="1'b1" type="const"></aw-connect>
-                <aw-connect port="o_cs_n" to="sd1_cs_n"></aw-connect>
-                <aw-connect port="o_sck" to="sd1_sck"></aw-connect>
-                <aw-connect port="o_mosi" to="sd1_mosi"></aw-connect>
-                <aw-connect port="i_miso" to="sd1_miso"></aw-connect>
-                <aw-connect port="i_card_detect" to="sd1_cd"></aw-connect>
-                <aw-connect port="o_int" to="irq_srcs" width="5:0" part="1"></aw-connect>
-              </aw-template>
-            </aw-inst>
-
-            <!-- DMA: wb_mst + wb_slv (adr/dat aligned); AXIS/irq only extras -->
-            <aw-inst id="dma0m" mod="sd_rd_dma" idx="1">
-              <aw-template base="wb_mst" inst_name="u_dma0"></aw-template>
-              <aw-template base="wb_slv">
-                <!-- slave iface keeps bus-slave name dma0 (master iface renamed dma0m) -->
-                <aw-rewrite match="^([io]_wb_.+)$" to="dma0_$1"></aw-rewrite>
-                <aw-connect port="o_irq" to="irq_srcs" width="5:0" part="2"></aw-connect>
-                <aw-connect port="m_axis_tdata" to="axs0_tdata" width="31:0"></aw-connect>
-                <aw-connect port="m_axis_tvalid" to="axs0_tvalid"></aw-connect>
-                <aw-connect port="m_axis_tready" to="axs0_tready"></aw-connect>
-                <aw-connect port="m_axis_tlast" to="axs0_tlast"></aw-connect>
-              </aw-template>
-            </aw-inst>
-            <aw-inst id="dma1m" mod="sd_rd_dma" idx="2">
-              <aw-template base="wb_mst" inst_name="u_dma1"></aw-template>
-              <aw-template base="wb_slv">
-                <aw-rewrite match="^([io]_wb_.+)$" to="dma1_$1"></aw-rewrite>
-                <aw-connect port="m_axis_tdata" to="axs1_tdata" width="31:0"></aw-connect>
-                <aw-connect port="m_axis_tvalid" to="axs1_tvalid"></aw-connect>
-                <aw-connect port="m_axis_tready" to="axs1_tready"></aw-connect>
-                <aw-connect port="m_axis_tlast" to="axs1_tlast"></aw-connect>
-              </aw-template>
-            </aw-inst>
-
-            <!-- sha256 glue lanes: AXIS via idx; sideband prefix = bus slave id
-                 (CSR leaves live inside soc_wb_system) -->
-            <aw-inst id="sha256_0_core" mod="sha256wb" idx="0">
-              <aw-template base="sha_lane">
-                <aw-rewrite match="^(rg_|p_rg_|ro_).*$" to="sha256_0_$&"></aw-rewrite>
-                <aw-connect port="irq_o" to="irq_srcs" width="5:0" part="4"></aw-connect>
-              </aw-template>
-            </aw-inst>
-            <aw-inst id="sha256_1_core" mod="sha256wb" idx="1">
-              <aw-template base="sha_lane">
-                <aw-rewrite match="^(rg_|p_rg_|ro_).*$" to="sha256_1_$&"></aw-rewrite>
-                <aw-connect port="irq_o" to="irq_srcs" width="5:0" part="5"></aw-connect>
+            <aw-inst id="ch1" mod="sd_sha_ch" idx="1">
+              <aw-template base="ch">
+                <aw-connect port="o_sd_irq" to="irq_srcs" width="5:0" part="1"></aw-connect>
+                <aw-connect port="o_dma_irq" to="irq_srcs" width="5:0" part="3"></aw-connect>
+                <aw-connect port="o_sha_irq" to="irq_srcs" width="5:0" part="5"></aw-connect>
               </aw-template>
             </aw-inst>
 
@@ -234,7 +152,6 @@
               </aw-template>
             </aw-inst>
 
-            <!-- interrupt merge: irq_srcs[5:0] -> irq_bus[31:0] at bits 5..10 -->
             <aw-inst id="u_irq" mod="soc_irqmerge">
               <aw-template>
                 <aw-connect port="i_ints" to="irq_srcs" width="5:0"></aw-connect>

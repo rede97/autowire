@@ -129,7 +129,8 @@ int main(void)
 
 	sha_soft_reset_at(SHA0_BASE);
 	mmio_write(DMA0_BASE + DMA_STATUS, DMA_STATUS_DONE);
-	mmio_write(DMA0_BASE + DMA_SRC, SD0_BASE + SDSPI_FIFO_A);
+	/* Channel DMA sees window-relative addresses (sd @ 0x00). */
+	mmio_write(DMA0_BASE + DMA_SRC, CH_SD_OFF + SDSPI_FIFO_A);
 	mmio_write(DMA0_BASE + DMA_LEN, MSG_WORDS);
 	mmio_write(DMA0_BASE + DMA_CTRL, DMA_CTRL_START);
 	(void)mmio_barrier(DMA0_BASE + DMA_STATUS);

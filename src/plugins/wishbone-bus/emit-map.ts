@@ -24,6 +24,23 @@ export function attachedSlaves(def: BusDef): WbSlave[] {
 	return def.slaves.filter((s) => s.regfile !== undefined);
 }
 
+/** Direct + nested `SlaveRegfile` hangs, with parent-window bases and prefixed ids. */
+export function mapHangsDeep(def: BusDef): WbSlave[] {
+	const out: WbSlave[] = [];
+	const walk = (bus: BusDef, absBase: number, prefix: string): void => {
+		for (const slave of bus.slaves) {
+			const name = prefix ? `${prefix}${slave.name}` : slave.name;
+			const base = (absBase + slave.base) >>> 0;
+			if (slave.regfile) {
+				out.push({ ...slave, name, base });
+			}
+			if (slave.bus) walk(slave.bus, base, `${name}_`);
+		}
+	};
+	walk(def, 0, "");
+	return out;
+}
+
 export function busMapHeaderName(def: BusDef): string {
 	return `${def.name.toLowerCase()}_map.h`;
 }
@@ -41,7 +58,7 @@ type Hang = {
 
 function hangsOf(def: BusDef): Hang[] {
 	const out: Hang[] = [];
-	for (const slave of attachedSlaves(def)) {
+	for (const slave of mapHangsDeep(def)) {
 		const rf = slave.regfile;
 		if (!rf) continue;
 		const laid = layoutRegfile(rf);

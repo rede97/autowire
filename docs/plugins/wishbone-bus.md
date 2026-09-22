@@ -31,7 +31,7 @@
 | Regfile / IC slave | **`{name}_i_wb_*` / `{name}_o_wb_*`**（叶视角；与 `RegfileDef.name` **同名 → identity**；异名束用一条 rewrite，见 connect §3.5.5） |
 | 多主（interconnect） | **`{master}_o_wb_*`**（master 驱动：ADR/DAT_O/SEL/CYC/STB/WE/+TGA）/ **`{master}_i_wb_{dat,ack}`**（master 接收）；单主 decoder 仍 flat `m_*` |
 
-  > **命名空间**：master 口与 slave 口共享 `{name}_*_wb_*` 空间；同一叶子**双角色**（既是 master 又是 slave，如 DMA 引擎 + 其 CSR 口）时两个角色**必须**取不同名（demo：`dma0` = CSR slave / `dma0m` = 引擎 master），否则 `o_wb_dat`/`i_wb_dat` 撞网。
+  > **命名空间**：master 口与 slave 口共享 `{name}_*_wb_*` 空间；同一叶子**双角色**（既是 master 又是 slave，如 DMA 引擎 + 其 CSR 口）时两个角色**必须**取不同名（demo channel：`dma` = CSR slave / `eng` = 引擎 master），否则 `o_wb_dat`/`i_wb_dat` 撞网。
 | clk/rst | `clk` / `rst_n`（fabric） |
 
 例：`smoke_i_wb_cyc`、`smoke_o_wb_ack`、`smoke_i_wb_adr`。
@@ -71,6 +71,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generat
 | **SlaveRegion** | `SlaveRegion(name, desc, base, Size(bytes), { pipe: N, tag? })` 字符串窗口按 **字节跨度**；底层 mask = span 向上取 2 的幂；`(base & mask) === base`；**参与**区间重叠检查 |
 | **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（原始 match mask）；**不**做对齐/重叠检查；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
 | **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（叶子 + `Size(layout span)`，可 `size=` 覆盖且必须盖住 span） |
+| **SlaveBus** | `SlaveBus(BusDef, base, { id?, pipe?, tag?, size?, desc?, uplink? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模 **必须** 有 `Master("uplink")`（或 `uplink=`）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`，子地址是窗相对的 |
 | **Master** | **本模块不配**。上一级 fabric 已在其 slave 口（即本模块 master 的对端）插入 pipe |
 
 第五参仍可写数字：`Slave(..., 2)` = `tag=2`（兼容）；pipe 必须走 options 对象。
@@ -115,7 +116,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generat
 | 与旧 Python | 同构 | 新路径，慎用 |
 
 - Decoder：地址窗 + 可选 broadcast；下行仍是 WB（`STB` 扇出，`ACK`/`DAT` 回并）。  
-- Arbiter：多 WB master；口 `rb_grant_en`：**0** = 固定优先级（最低 master 下标胜）；**1** = round-robin（上次 grant 之后的下一个请求者，绕回最低下标）。事务中 `CYC` 锁定 grant。demo/soc：`smoke` `FABRIC.rb_grant_en`（复位 0）驱动 `u_ic.rb_grant_en`；`basic_smoke` 打开后双 DMA 并发 SRAM KAT。  
+- Arbiter：多 WB master；口 `rb_grant_en`：**0** = 固定优先级（最低 master 下标胜）；**1** = round-robin（上次 grant 之后的下一个请求者，绕回最低下标）。事务中 `CYC` 锁定 grant。demo/soc：`smoke` `FABRIC.rb_grant_en`（复位 0）驱动 **每个 channel** `rb_grant_en`；`basic_smoke` 写该 CSR，SD→SHA DMA 在 `--sd`。  
 - Bridge：仅边界协议转换（如 `apb2wb`）；**禁止**让 APB 成为 decoder/regfile 原生口。  
 - 即便将来提供 `topology = crossbar`，slave 侧 **仍必须**有地址窗/选通；matrix **不能**取消译码职责。
 
@@ -159,8 +160,9 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 - 协议子集与 pipe **以本文为准**；叶子口 **必须**遵守。  
 - 生成编排 **必须**同一 plugin id `wishbone` 一次打出 arb+decoder+regfile（类型仍分立）；每个生成模经 **analysis → RtlIndex 普通叶子**；connect 侧一律 `aw-inst` 例化（**禁止**插件树私有口表向上递推）。  
 - **字符串窗口**：优先 `SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? })`。`Size` 是作者面跨度（字节）；底层 mask = `deriveWindowMask`（向上取 2 的幂）；`(base & mask) === base`。`Bus()` **必须**拒绝 Region 窗口两两重叠（含 `SlaveRegfile`）。原始 `Slave(name, desc, base, mask, …)` 是 **Raw** 口：**禁止**对它做对齐/重叠检查（demo `uart`）。**禁止**给 `Slave` / `SlaveRegion` 重载 `RegfileDef`。  
-- **`SlaveRegfile` = `SlaveRegion` 语法糖**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, size?, desc? })`。默认 `Size(layout span)` 再 2^N 对齐；`size=` 可放大窗口，**禁止**小于 span。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`（demo：`sha256` ×2 → `sha256_0`/`sha256_1`）。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。  
-- 若 bus 上有挂接的 regfile：generate **必须**再打一份 Type-A **wrapper** `<bus>_system`（例化 interconnect + 各挂接 `*_regfile`；WB 内收；sideband 在 `id !== name` 时加 `{id}_` 前缀）。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
+- **`SlaveRegfile` = `SlaveRegion` 语法糖**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, size?, desc? })`。默认 `Size(layout span)` 再 2^N 对齐；`size=` 可放大窗口，**禁止**小于 span。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。  
+- **`SlaveBus` = `SlaveRegion` 语法糖**：`SlaveBus(child, base, { id?, pipe?, tag?, size?, desc?, uplink? })`。用于 **级联多级 decoder**（也允许子级是 interconnect）。`id` 缺省 = `BusDef.name`；同一 child 多挂用不同 `id`（demo：`sd_sha` ×2 → `ch0`/`ch1`）。默认 `Size(busByteSpan(child))`；`size=` 可放大，**禁止**小于 child span。子总线 **必须**声明 `Master("uplink")`（或 `uplink=`）：interconnect 上该 master 口在 Type-A wrapper 里 **remap** 成 `i_wb_*` / `o_wb_*`（父级 Slave 窗 identity）；decoder 子级 remap `m_*`。父级译码已下发窗内 offset（`adr & ~mask`），子地址是相对的。channel 内 DMA 的 SRC **必须**写相对地址。**禁止**假设子 DMA 能打到父级 SRAM/flash（没有自动 downlink）。generate **必须**对 child RTL 只打一份，HTML 例化 N 次。  
+- 若 bus 上有挂接的 regfile **或** `Master("uplink")`：generate **必须**再打一份 Type-A **wrapper** `<bus>_system`。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
 - 软件地址图由同一插件打包：`[plugins.wishbone] c=` → `<bus>_map.h` + 字段 `.h` + `wishbone.h`；`uvm=` → `ral_block_<bus>.sv` + `ral_<SHEET>.sv` + `ral_wishbone.sv`（`add_reg(base+offset)`）。叶子 C/`uvm_reg` **只**出字段 layout。  
 - 地址图数据在 Table/端口模型里；**禁止**把 pin 级连线写进 `autowire.toml`。  
 - 产物进 `plugins_dir/<plugin-id>/`；软件 map **禁止**进 `plugins_dir`（与 regfile C/UVM 同纪律）。与 connect/sim dump 目录分家（[`README.md`](./README.md) §3）。
@@ -178,11 +180,12 @@ uvm = "dv/ral"           # ral_block_<name>.sv
 
 # out → plugins_dir/wishbone/wb_cfg_pipe.sv
 #                      + <name>_decoder.sv | <name>_interconnect.sv
-#                      + <name>_system.sv   # 仅当有 SlaveRegfile
+#                      + <name>_system.sv   # SlaveRegfile 和/或 Master("uplink")
 # NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）
-# demo/soc：各 slave PIPE 不等长（0/1/2/3/4）；跨 slave 的 posted 写后固件读屏障
-#           smoke FABRIC.rb_grant_en（复位 0）驱动 interconnect rb_grant_en
-#           HTML u_ic = soc_wb_system；sram/uart/sdspi/DMA 仍字符串 slave
+# demo/soc：顶层 soc_wb = CPU decoder；两个 SlaveBus(sd_sha) channel
+#           HTML u_ic = soc_wb_system；u_ch0/u_ch1 = sd_sha_ch
+#           各 slave PIPE 不等长（顶层 cascade 2/4 + channel 内 2/3）
+#           smoke FABRIC.rb_grant_en 驱动两个 channel rb_grant_en
 ```
 
 ## 8. 仍开放
@@ -192,6 +195,8 @@ uvm = "dv/ral"           # ral_block_<name>.sv
 3. Bridge 目录：仅 `apb2wb` 还是可插其它。  
 4. 固件窗 + DMA：块周期连续写是否进 v2。  
 5. 默认 slave `pipe`（现缺省 0；作者按口配置）。  
+6. SlaveBus downlink（子 DMA 打回父级窗口）— v1 **不**自动生成。  
 
 **已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。  
-**已裁定软件图 / 挂接**：`SlaveRegfile(RegfileDef, …)` + Type-A wrapper + bus C overlay / `uvm_reg_block`（见 §6）。
+**已裁定软件图 / 挂接**：`SlaveRegfile(RegfileDef, …)` + Type-A wrapper + bus C overlay / `uvm_reg_block`（见 §6）。  
+**已裁定级联**：`SlaveBus(BusDef, …)` = Region 语法糖；多级 decoder 级联；子级可以是 interconnect；一份 BusDef × N 平行 channel。

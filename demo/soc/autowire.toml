@@ -42,6 +42,10 @@ exports = ["smoke"]
 ts = "sot/wb_bus_soc.ts"
 exports = ["soc_wb"]
 
+[wishbone.sd_sha]
+ts = "sot/wb_bus_sd_sha.ts"
+exports = ["sd_sha"]
+
 [style]
 # traditional RTL look: aligned declaration/inst ports + params + signals,
 # uppercased folding names (param_inline stays at its default true)
@@ -56,10 +60,15 @@ localparam_upper = true
 [connect.sha256wb]
 html = "sot/connect/sha256wb.html"
 
-# SoC top: cross-unit reference to sha256wb -> deps
+# SD + DMA + SHA256 channel (one BusDef, instantiated twice from soc_top)
+[connect.sd_sha_ch]
+html = "sot/connect/sd_sha_ch.html"
+deps = ["sha256wb"]
+
+# SoC top: cross-unit reference to sd_sha_ch -> deps
 [connect.soc_top]
 html = "sot/connect/soc_top.html"
-deps = ["sha256wb"]
+deps = ["sd_sha_ch"]
 
 # DV TB top (aw-tb-mod) — dump → rtl/gen/sim/
 [sim.soc_tb]

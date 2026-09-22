@@ -10,10 +10,10 @@ the SPI flash model via `$readmemh` / `+firmware=…`.
 | Path | Role |
 |------|------|
 | `common/` | `soc_map.h` (aliases bus map + mmio helpers), `sdspi_regs.h`, `link.ld`, `crt0.S`, `makehex.py` |
-| `gen/wishbone/` | Packed generated C (`smoke.h`, `sha256.h`, `soc_wb_map.h`, `wishbone.h`) and Excel `wishbone.xlsx` from `[plugins.wishbone]`; **git-tracked showcase** (regenerate in place, do not delete) |
-| `basic_smoke/` | SRAM zeros SHA + flash `@0x0100_1000` KAT SHA + dual DMA SRAM KAT under RR |
+| `gen/wishbone/` | Packed generated C (`smoke.h`, `sha256.h`, `sd_sha_map.h`, `soc_wb_map.h`, `wishbone.h`) and Excel `wishbone.xlsx` from `[plugins.wishbone]`; **git-tracked showcase** (regenerate in place, do not delete) |
+| `basic_smoke/` | Cascade MMIO: smoke ID + SHA0/SHA1 CTRL via two `SlaveBus` channels + grant CSR |
 | `regfile_smoke/` | Wishbone-regfile MMIO smoke (RC/RO/RW/RWW counter/RWE FIFO loopback/…) |
-| `sd_sha256/` | SD0 init + CMD17 → DMA0 (FIFO A, no `src_inc`) → SHA256_0 |
+| `sd_sha256/` | SD0 init + CMD17 → channel DMA (FIFO A, relative SRC) → SHA256 |
 
 Flash XIP reset PC = `0x0100_0000`. SRAM = `0x0000_0000`..`0x0000_FFFF`
 (stack top `0x0001_0000`). KAT payload lives at flash offset `0x1000`
@@ -24,7 +24,7 @@ Flash XIP reset PC = `0x0100_0000`. SRAM = `0x0000_0000`..`0x0000_FFFF`
 ```bash
 # from demo/soc
 bun ../../index.ts plugin generate wishbone   # SV + packed C / Excel / uvm_reg
-./sim/verilator/run.sh              # basic_smoke (SRAM + flash KAT + dual DMA RR)
+./sim/verilator/run.sh              # basic_smoke (cascade MMIO + grant CSR)
 ./sim/verilator/run.sh --regfile    # wishbone-regfile MMIO (FIFO loopback + counters)
 ./sim/verilator/run.sh --sd         # sd_sha256 + sdspisim card image
 ```

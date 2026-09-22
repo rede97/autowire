@@ -7,7 +7,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import ExcelJS from "exceljs";
 import type { BusDef } from "../wishbone-bus/dsl.ts";
-import { attachedSlaves } from "../wishbone-bus/emit-map.ts";
+import { mapHangsDeep } from "../wishbone-bus/emit-map.ts";
 import { effectiveSheet } from "./dsl.ts";
 import { fieldsWithReserved } from "./emit-sw.ts";
 import type { LaidCell, LaidRegfile } from "./layout.ts";
@@ -215,7 +215,7 @@ function hexWin(n: number): string {
 }
 
 function addBusMapSheet(wb: ExcelJS.Workbook, def: BusDef): void {
-	const hangs = attachedSlaves(def);
+	const hangs = mapHangsDeep(def);
 	if (hangs.length === 0) return;
 	const name = busMapSheetName(def);
 	if (wb.getWorksheet(name)) {
@@ -272,7 +272,7 @@ export function buildRegfileWorkbook(
 	wb.modified = new Date(0);
 	const fieldNames = new Set(tables.map((t) => effectiveSheet(t.def)));
 	for (const bus of buses) {
-		if (attachedSlaves(bus).length === 0) continue;
+		if (mapHangsDeep(bus).length === 0) continue;
 		const mapName = busMapSheetName(bus);
 		if (fieldNames.has(mapName)) {
 			throw new Error(

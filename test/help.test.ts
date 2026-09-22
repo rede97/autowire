@@ -98,6 +98,8 @@ test("each slice prints independently", () => {
 	expect(renderHelp("status")).toContain("prefer SlaveRegion+Size");
 	expect(renderHelp("status")).toContain("raw port");
 	expect(renderHelp("status")).toContain("SlaveRegfile is SlaveRegion sugar");
+	expect(renderHelp("status")).toContain("SlaveBus is SlaveRegion sugar");
+	expect(renderHelp("status")).toContain('Master("uplink")');
 	expect(renderHelp("status")).toContain("overlapping Region");
 	expect(renderHelp("workspace")).toContain("[plugins.wishbone]");
 	expect(renderHelp("workspace")).toContain("demo: sot/");

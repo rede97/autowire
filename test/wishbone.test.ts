@@ -23,7 +23,7 @@ describe("wishbone pack", () => {
 			if (typeof v === "string") slaves.add(v);
 		});
 		expect(slaves.has("smoke")).toBe(true);
-		expect(slaves.has("sha256_0")).toBe(true);
+		expect(slaves.has("ch0_sha256")).toBe(true);
 		expect(slaves.has("sram")).toBe(false);
 	});
 
@@ -56,6 +56,7 @@ exports = ["soc_wb"]
 		expect(paths.some((p) => p.endsWith("sha256_regfile.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("smoke_regfile.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("soc_wb_system.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("sd_sha_system.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("wishbone.h"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("ral_wishbone.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("wishbone.xlsx"))).toBe(true);

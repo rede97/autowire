@@ -97,12 +97,18 @@ Parallel (does not block connect)
     uvm= uvm_reg dir (ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv; not .ralf);
     git-tracked showcase fw/gen/wishbone (do not delete);
     generate: listed + attached-leaf SV, then fabric/wrapper; RTL → plugins_dir/wishbone/;
-    demo/soc: one sha256_regfile RTL, two fabric hangs via SlaveRegfile(..., { id });
+    demo/soc: one sha256_regfile RTL, one hang per sd_sha channel via SlaveRegfile;
     C sha256.h; smoke identity-match (id = RegfileDef.name);
     firmware uses generated cell unions; soc_map.h aliases software map macros;
     SoT = TypeScript exports; no HTML field tree;
     attached leaves are inside the bus Type-A wrapper (no HTML *_regfile inst);
-    string slaves (SRAM/UART/sdspi/DMA) stay aw-inst (prefer SlaveRegion+Size);
+    string slaves (SRAM/UART) stay aw-inst (prefer SlaveRegion+Size);
+    SlaveBus is SlaveRegion sugar: hang a child BusDef as a window; child RTL
+    once, N instances; child Master("uplink") remaps to i_wb_* / o_wb_* on
+    <bus>_system; parent forwards window-offset ADR (adr & ~mask);
+    demo: top soc_wb is a CPU decoder; two SlaveBus(sd_sha) channels (ch0/ch1);
+    HTML sot/connect/sd_sha_ch.html wraps sd+dma+sha256wb; DMA SRC is relative;
+    channel DMA cannot reach parent SRAM/flash (no downlink);
     no awx-regfile;
     sheet empty = name (C/UVM/Excel stem); shared sheet = one header if two names
     share layout; same sheet + different layout → generate error;
@@ -121,9 +127,10 @@ Parallel (does not block connect)
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
     NM>1 → interconnect (arbiter: rb_grant_en 0=fixed lowest-index /
     1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
-    demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives u_ic.rb_grant_en;
-    basic_smoke enables RR then dual DMA SRAM KAT on SHA0+SHA1;
-    demo/soc sot/wb_bus_soc.ts → soc_wb_interconnect + soc_wb_system (mixed slave PIPE 0/1/2/3/4);
+    demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives each channel rb_grant_en;
+    basic_smoke checks cascade SHA MMIO + grant CSR; --sd is channel DMA+SHA;
+    demo/soc sot/wb_bus_soc.ts → soc_wb_decoder + soc_wb_system;
+    sot/wb_bus_sd_sha.ts → sd_sha_interconnect + sd_sha_system (mixed slave PIPE);
     ADR=byte; fabric addr_width parametrized;
     TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out;
     slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
@@ -135,10 +142,13 @@ Parallel (does not block connect)
     span; decode mask = pow2 ceil(Size); (base & mask) === base;
     Slave(name, desc, base, mask, ...) is a raw port (no overlap check);
     SlaveRegfile is SlaveRegion sugar: Size(layout span) + leaf; optional size=;
-    Bus rejects overlapping Region/Regfile windows; raw Slave is excluded;
+    SlaveBus is SlaveRegion sugar: Size(child span) + child BusDef; optional size=;
+    child must declare Master("uplink") (cascade face);
+    Bus rejects overlapping Region/Regfile/SlaveBus windows; raw Slave is excluded;
     tag defaults to leaf tga_width; TGA must match; id defaults to RegfileDef.name;
     Type-A wrapper <bus>_system instantiates interconnect + attached *_regfile
-    (sidebands promoted; WB internalized; HTML aw-inst soc_wb_system)
+    (sidebands promoted; WB internalized; HTML aw-inst soc_wb_system / sd_sha_system);
+    uplink master ports become i_wb_* / o_wb_* on the child wrapper
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
   Do not treat connect aw-submods as a code-gen hook — generators emit SV then aw-inst

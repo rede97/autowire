@@ -6,6 +6,7 @@
 
 `include "ral_SHA256.sv"
 `include "ral_SMOKE.sv"
+`include "ral_block_sd_sha.sv"
 `include "ral_block_soc_wb.sv"
 
 `endif

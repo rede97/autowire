@@ -21,10 +21,10 @@ always @(posedge clk) begin
 		if (test_data === 32'hdead0001) begin
 			$display("FAIL: sha256 digest mismatch");
 			$display("actual: %08x %08x %08x %08x %08x %08x %08x %08x",
-				u_dut.u_sha256_0_core.u_regs.i_hash0, u_dut.u_sha256_0_core.u_regs.i_hash1,
-				u_dut.u_sha256_0_core.u_regs.i_hash2, u_dut.u_sha256_0_core.u_regs.i_hash3,
-				u_dut.u_sha256_0_core.u_regs.i_hash4, u_dut.u_sha256_0_core.u_regs.i_hash5,
-				u_dut.u_sha256_0_core.u_regs.i_hash6, u_dut.u_sha256_0_core.u_regs.i_hash7);
+				u_dut.u_ch0.u_sha.u_regs.i_hash0, u_dut.u_ch0.u_sha.u_regs.i_hash1,
+				u_dut.u_ch0.u_sha.u_regs.i_hash2, u_dut.u_ch0.u_sha.u_regs.i_hash3,
+				u_dut.u_ch0.u_sha.u_regs.i_hash4, u_dut.u_ch0.u_sha.u_regs.i_hash5,
+				u_dut.u_ch0.u_sha.u_regs.i_hash6, u_dut.u_ch0.u_sha.u_regs.i_hash7);
 			$display("sram: %08x %08x %08x %08x %08x %08x %08x %08x",
 				u_dut.u_sram.mem[64], u_dut.u_sram.mem[65],
 				u_dut.u_sram.mem[66], u_dut.u_sram.mem[67],
@@ -33,7 +33,7 @@ always @(posedge clk) begin
 			$finish;
 		end
 		if (test_data === 32'h600d600d) begin
-			$display("SMOKE PASS: cpu boot + sram copy + dma -> axis -> sha256 digest ok");
+			$display("SMOKE PASS: cpu boot + cascade MMIO + channel SHA idle");
 			$finish;
 		end
 		test_count = test_count + 1;

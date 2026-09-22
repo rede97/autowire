@@ -171,7 +171,7 @@ Block("wide", "Wide fields", BlockDefault.byteAlign(4), [
 其它规则：
 
 1. **一份** `RegfileDef.name` 导出 ↔ **一个**生成叶子模（硬件例化 / WB identity）。软件与文档身份 = 有效 **`sheet`**（空/缺省 = `name`）。  
-2. 同一 `.ts` 模块 / 工作区登记内可多个导出；**`name` 必须唯一**（一份 `name` ↔ 一份 SV 叶子）。同一 IP 多挂总线：**一份** SoT + bus `SlaveRegfile(regfile, base, { id })` 多次（demo：`sha256` ×2 → wrapper 内 `sha256_0`/`sha256_1`）。有效 `sheet` **可以**被不同 `name` 共享（C/UVM/Excel 只写一份）；共享时 **字段 layout 必须相同**，不同 → generate 报错。  
+2. 同一 `.ts` 模块 / 工作区登记内可多个导出；**`name` 必须唯一**（一份 `name` ↔ 一份 SV 叶子）。同一 IP 多挂总线：**一份** SoT + bus `SlaveRegfile(regfile, base, { id })` 多次，或挂到可复用的 child `BusDef` 再 `SlaveBus` ×N（demo：`sha256` 挂在 `sd_sha` 上，两个 channel 例化同一 wrapper）。有效 `sheet` **可以**被不同 `name` 共享（C/UVM/Excel 只写一份）；共享时 **字段 layout 必须相同**，不同 → generate 报错。  
 3. 有效 `sheet` **必须**是稳定标识符（`[A-Za-z_][A-Za-z0-9_]*`）。  
 4. 工作簿路径：`autowire.toml` 的 **`plugins.wishbone.export`**（例 `"fw/gen/wishbone/wishbone.xlsx"`）；**永远**文档产物；改寄存器 **只改** TS。未配置 export → 可不写 Excel。  
 5. HTML 桩 **结构**上可与 `aw-mod` 同槽；**语义**上由 wishbone-regfile **generate**，不进 connect elaborate，不写 `.autowire/connect/`。  
@@ -506,7 +506,7 @@ ts = "docs/examples/regfile/regfile.ts"
 - 省略某键 → 跳过该导出。键必须是非空字符串。  
 - Excel 工作表名来自 **有效 `sheet`**（缺省 = `name`），不是 HTML 属性。同 sheet 的多例化共用一份软件/文档产物。  
 - C / uvm_reg / Excel **禁止**进 `plugins_dir`（那是 SV 叶子）；也 **禁止**当 connect/sim dump。
-- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；bus `SlaveRegfile(sha256, base, { id })` 挂两次，Type-A wrapper `soc_wb_system` 内例化；HTML **不再** `aw-inst mod="sha256_regfile"`。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`soc_wb_map.h` + `wishbone.h`）；`fw/common/soc_map.h` 只做别名。C 头 **入库展示**（`fw/gen/wishbone/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（**不是** `.ralf`）；`ral_block_soc_wb.sv` 与 `ral_wishbone.sv` 同套打包。
+- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；channel bus `SlaveRegfile(sha256, 0x40)` 挂一次，两个 `SlaveBus` channel 例化同一 `sd_sha_system`；HTML **不再** `aw-inst mod="sha256_regfile"`。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`soc_wb_map.h` overlay `ch0_sha256` / `ch1_sha256` + `wishbone.h`）；`fw/common/soc_map.h` 只做别名。C 头 **入库展示**（`fw/gen/wishbone/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（**不是** `.ralf`）；`ral_block_soc_wb.sv` 与 `ral_wishbone.sv` 同套打包。
 
 ### 6.1 C 头、uvm_reg 与 Excel（已裁定；C / uvm_reg / Excel emit 已落地）
 

@@ -2,6 +2,7 @@
 # Generated connect wrappers must exist (web dump).
 
 rtl/gen/connect/soc_top.sv
+rtl/gen/connect/sd_sha_ch.sv
 rtl/gen/connect/sha256wb.sv
 
 rtl/wb_sram.v
@@ -16,8 +17,10 @@ rtl/smoke_wb.v
 
 # Type-A plugins (bun ../../index.ts plugin generate all)
 rtl/gen/plugins/wishbone/wb_cfg_pipe.sv
-rtl/gen/plugins/wishbone/soc_wb_interconnect.sv
+rtl/gen/plugins/wishbone/soc_wb_decoder.sv
 rtl/gen/plugins/wishbone/soc_wb_system.sv
+rtl/gen/plugins/wishbone/sd_sha_interconnect.sv
+rtl/gen/plugins/wishbone/sd_sha_system.sv
 rtl/gen/plugins/wishbone/sha256_regfile.sv
 rtl/gen/plugins/wishbone/smoke_regfile.sv
 

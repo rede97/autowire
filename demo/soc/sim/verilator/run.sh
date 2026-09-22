@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Verilator SoC smoke (primary DV path). Usage (from demo/soc):
-#   ./sim/verilator/run.sh              # basic_smoke: SRAM zeros + flash KAT SHA
+#   ./sim/verilator/run.sh              # basic_smoke: cascade MMIO + smoke CSR
 #   ./sim/verilator/run.sh --regfile    # wishbone-regfile MMIO smoke (FIFO/counter)
-#   ./sim/verilator/run.sh --sd         # sd_sha256 + card image
+#   ./sim/verilator/run.sh --sd         # sd_sha256 + card image (channel DMA)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
@@ -38,8 +38,17 @@ bash patches/apply.sh
 
 test -f "$CONN/soc_top.sv" || { echo "missing $CONN/soc_top.sv — dump first"; exit 1; }
 test -f "$CONN/sha256wb.sv" || { echo "missing $CONN/sha256wb.sv — dump first"; exit 1; }
-test -f rtl/gen/plugins/wishbone/soc_wb_interconnect.sv || {
-	echo "missing rtl/gen/plugins/wishbone/soc_wb_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f "$CONN/sd_sha_ch.sv" || { echo "missing $CONN/sd_sha_ch.sv — dump first"; exit 1; }
+test -f rtl/gen/plugins/wishbone/soc_wb_decoder.sv || {
+	echo "missing rtl/gen/plugins/wishbone/soc_wb_decoder.sv — run: bun ../../index.ts plugin generate all" >&2
+	exit 1
+}
+test -f rtl/gen/plugins/wishbone/sd_sha_interconnect.sv || {
+	echo "missing rtl/gen/plugins/wishbone/sd_sha_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
+	exit 1
+}
+test -f rtl/gen/plugins/wishbone/sd_sha_system.sv || {
+	echo "missing rtl/gen/plugins/wishbone/sd_sha_system.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
 test -f rtl/gen/plugins/wishbone/sha256_regfile.sv || {

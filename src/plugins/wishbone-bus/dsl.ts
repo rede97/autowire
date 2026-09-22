@@ -27,6 +27,25 @@ export type SlaveRegfileOpts = SlaveOpts & {
 	readonly desc?: string;
 };
 
+/**
+ * Cascade master name on a child `BusDef` (`SlaveBus` sugar).
+ * Interconnect: named `{uplink}_o_wb_*` / `{uplink}_i_wb_*`.
+ * Decoder (NM<=1): still flat `m_*`; the wrapper remaps them to `i_wb_*` / `o_wb_*`.
+ */
+export const UPLINK_MASTER = "uplink";
+
+/** Extra options when `SlaveBus` hangs a child fabric. */
+export type SlaveBusOpts = SlaveOpts & {
+	/** Parent slave id. Defaults to `BusDef.name`. Distinct ids reuse one child RTL. */
+	readonly id?: string;
+	/** Override auto `Size(child span)`. Must cover `busByteSpan(child)`. */
+	readonly size?: RegionSize;
+	/** Override `BusDef.desc` on this hang. */
+	readonly desc?: string;
+	/** Child master that faces the parent window. Defaults to `uplink`. */
+	readonly uplink?: string;
+};
+
 /** `raw` = `Slave(mask)` (unchecked). `region` = `SlaveRegion` / `SlaveRegfile`. */
 export type SlaveWindow = "raw" | "region";
 
@@ -43,6 +62,10 @@ export type WbSlave = {
 	readonly pipe: number;
 	/** Attached Type-A leaf (string slaves leave this unset). */
 	readonly regfile?: RegfileDef;
+	/** Child fabric hung via `SlaveBus` (generated once; instantiated per hang). */
+	readonly bus?: BusDef;
+	/** Child master that faces this parent window (`SlaveBus` only). */
+	readonly uplink?: string;
 	/** Author span in bytes when the window came from `SlaveRegion` / `Size`. */
 	readonly size?: number;
 	/** Mask was derived from layout span or `Size`; Bus may re-derive with `addr_width`. */
@@ -279,6 +302,94 @@ export function SlaveRegfile(
 	return attachRegfile(regfile, base, opts ?? {});
 }
 
+/**
+ * Inclusive end of a slave decode window (`base + windowBytes`).
+ * Used to size a parent `SlaveBus` hang over a child fabric.
+ */
+export function busByteSpan(def: BusDef): number {
+	let end = 0;
+	for (const s of def.slaves) {
+		const win = windowBytes(s.mask, def.addr_width);
+		const e = (s.base + win) >>> 0;
+		if (e > end) end = e;
+	}
+	return end < 1 ? 1 : end;
+}
+
+/**
+ * Hang a child `BusDef` as a Region window. Child RTL is generated once;
+ * each hang is a separate instance. Child addresses are window-relative
+ * (parent already forwards `adr & ~mask`). Child must declare `Master("uplink")`
+ * (or `opts.uplink`) as the cascade face.
+ */
+export function SlaveBus(
+	child: BusDef,
+	base: number,
+	opts?: SlaveBusOpts,
+): WbSlave {
+	if (!isBusDef(child)) {
+		throw new Error("wishbone-bus: SlaveBus(...) first arg is not a BusDef");
+	}
+	if (!Number.isInteger(base) || base < 0) {
+		throw new Error(
+			"wishbone-bus: SlaveBus(bus, base, opts?) base must be >= 0",
+		);
+	}
+	const uplink = opts?.uplink ?? UPLINK_MASTER;
+	if (!child.masters.some((m) => m.name === uplink)) {
+		throw new Error(
+			`wishbone-bus: SlaveBus(${child.name}) needs Master("${uplink}") as the cascade face`,
+		);
+	}
+	const span = busByteSpan(child);
+	const size = opts?.size ?? Size(span);
+	if (!isRegionSize(size)) {
+		throw new Error(
+			`wishbone-bus: SlaveBus(${opts?.id ?? child.name}, ...) size must be Size(bytes)`,
+		);
+	}
+	const name = opts?.id ?? child.name;
+	const region = SlaveRegion(name, opts?.desc ?? child.desc, base, size, {
+		tag: opts?.tag,
+		pipe: opts?.pipe,
+	});
+	const win = windowBytes(region.mask, 32);
+	if (win < span) {
+		throw new Error(
+			`wishbone-bus: slave ${name} window 0x${win.toString(16)} is smaller than child "${child.name}" span 0x${span.toString(16)}`,
+		);
+	}
+	return { ...region, bus: child, uplink };
+}
+
+/** Child fabrics hung via `SlaveBus`, depth-first, unique by `BusDef.name`. */
+export function flattenBuses(listed: readonly BusDef[]): BusDef[] {
+	const out: BusDef[] = [];
+	const seen = new Set<string>();
+	const walk = (def: BusDef): void => {
+		for (const s of def.slaves) {
+			if (s.bus) walk(s.bus);
+		}
+		if (seen.has(def.name)) return;
+		seen.add(def.name);
+		out.push(def);
+	};
+	for (const def of listed) walk(def);
+	return out;
+}
+
+function assertAcyclicBus(def: BusDef, stack: string[]): void {
+	if (stack.includes(def.name)) {
+		throw new Error(
+			`wishbone-bus: cyclic SlaveBus ${[...stack, def.name].join(" -> ")}`,
+		);
+	}
+	const next = [...stack, def.name];
+	for (const s of def.slaves) {
+		if (s.bus) assertAcyclicBus(s.bus, next);
+	}
+}
+
 export function Master(name: string, desc: string): WbMaster {
 	requireIdent("master", name);
 	return { name, desc };
@@ -401,7 +512,7 @@ export function Bus(
 			);
 		}
 	}
-	return {
+	const def: BusDef = {
 		kind: "wishbone-bus",
 		name,
 		desc,
@@ -410,4 +521,6 @@ export function Bus(
 		addr_width,
 		tag_width,
 	};
+	assertAcyclicBus(def, []);
+	return def;
 }

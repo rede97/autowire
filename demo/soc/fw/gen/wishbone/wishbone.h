@@ -6,6 +6,7 @@
 
 #include "sha256.h"
 #include "smoke.h"
+#include "sd_sha_map.h"
 #include "soc_wb_map.h"
 
 #endif /* AUTOWIRE_WISHBONE_H */

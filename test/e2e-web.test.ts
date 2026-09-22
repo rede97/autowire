@@ -133,15 +133,18 @@ describe("autowire web e2e", () => {
 		await page.goto(`${base}?unit=soc_top&dump=1`);
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain("dump: 2 file(s)");
+		expect(status.text).toContain("dump: 3 file(s)");
 		expect(existsSync(join(DEMO, ".autowire", "connect", "sha256wb.xml"))).toBe(
 			true,
 		);
+		expect(
+			existsSync(join(DEMO, ".autowire", "connect", "sd_sha_ch.xml")),
+		).toBe(true);
 		expect(existsSync(join(DEMO, ".autowire", "connect", "soc_top.xml"))).toBe(
 			true,
 		);
 		await page.close();
-		const names = ["soc_top", "sha256wb"];
+		const names = ["soc_top", "sd_sha_ch", "sha256wb"];
 		await mkdir(GOLDEN_DIR, { recursive: true });
 		for (const n of names) {
 			const got = await readFile(join(ws.connectDir, `${n}.sv`), "utf8");
@@ -234,14 +237,14 @@ describe("autowire web e2e", () => {
 	});
 
 	test("check error path: tb without dep snapshot reports missing snapshot", async () => {
-		await rm(join(DEMO, ".autowire", "connect", "sha256wb.xml"), {
+		await rm(join(DEMO, ".autowire", "connect", "sd_sha_ch.xml"), {
 			force: true,
 		});
 		const page = await browser.newPage();
 		await page.goto(`${base}?unit=soc_top&check=1`);
 		const status = await waitStatus(page);
 		expect(status.state).toBe("error");
-		expect(status.text).toContain('snapshot for "sha256wb" missing');
+		expect(status.text).toContain('snapshot for "sd_sha_ch" missing');
 		expect(await page.title()).toMatch(/\[error\]$/);
 		await page.close();
 		// restore shared state for later runs

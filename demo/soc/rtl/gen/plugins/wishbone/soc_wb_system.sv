@@ -3,48 +3,25 @@
 //
 //------------------------------------------------------------------------------
 //  Module: soc_wb_system
-//  Desc:   Demo SoC Wishbone interconnect (3 masters, named slaves)
-//  Fabric: soc_wb_interconnect
+//  Desc:   Demo SoC Wishbone decoder (CPU) cascaded into two sd_sha channels
+//  Fabric: soc_wb_decoder
 //  Attached regfile hangs:
-//    sha256_0  sha256_regfile  base=0x03004000  mask=0xffffffc0
-//    sha256_1  sha256_regfile  base=0x03005000  mask=0xffffffc0
 //    smoke  smoke_regfile  base=0x03006000  mask=0xffffffc0
 //------------------------------------------------------------------------------
 
 module soc_wb_system (
 	input  logic        clk,
 	input  logic        rst_n,
-	input  logic        rb_grant_en,
-	// Master cpu — picorv32_wb
-	input  logic [31:0] cpu_o_wb_adr,
-	input  logic [31:0] cpu_o_wb_dat,
-	input  logic [3:0]  cpu_o_wb_sel,
-	input  logic [1:0]  cpu_o_wb_tga,
-	input  logic        cpu_o_wb_cyc,
-	input  logic        cpu_o_wb_stb,
-	input  logic        cpu_o_wb_we,
-	output logic [31:0] cpu_i_wb_dat,
-	output logic        cpu_i_wb_ack,
-	// Master dma0m — sd_rd_dma engine lane 0
-	input  logic [31:0] dma0m_o_wb_adr,
-	input  logic [31:0] dma0m_o_wb_dat,
-	input  logic [3:0]  dma0m_o_wb_sel,
-	input  logic [1:0]  dma0m_o_wb_tga,
-	input  logic        dma0m_o_wb_cyc,
-	input  logic        dma0m_o_wb_stb,
-	input  logic        dma0m_o_wb_we,
-	output logic [31:0] dma0m_i_wb_dat,
-	output logic        dma0m_i_wb_ack,
-	// Master dma1m — sd_rd_dma engine lane 1
-	input  logic [31:0] dma1m_o_wb_adr,
-	input  logic [31:0] dma1m_o_wb_dat,
-	input  logic [3:0]  dma1m_o_wb_sel,
-	input  logic [1:0]  dma1m_o_wb_tga,
-	input  logic        dma1m_o_wb_cyc,
-	input  logic        dma1m_o_wb_stb,
-	input  logic        dma1m_o_wb_we,
-	output logic [31:0] dma1m_i_wb_dat,
-	output logic        dma1m_i_wb_ack,
+	// Single master (flat; decoder mode)
+	input  logic [31:0] m_adr_i,
+	input  logic [31:0] m_dat_i,
+	input  logic [3:0]  m_sel_i,
+	input  logic [1:0]  m_tga_i,
+	input  logic        m_cyc_i,
+	input  logic        m_stb_i,
+	input  logic        m_we_i,
+	output logic [31:0] m_dat_o,
+	output logic        m_ack_o,
 	// Slave sram — 64 KiB SRAM
 	output logic [31:0] sram_i_wb_adr,
 	output logic [31:0] sram_i_wb_dat,
@@ -90,94 +67,24 @@ module soc_wb_system (
 	output logic        testout_i_wb_we,
 	input  logic [31:0] testout_o_wb_dat,
 	input  logic        testout_o_wb_ack,
-	// Slave sd0 — sdspi 0
-	output logic [31:0] sd0_i_wb_adr,
-	output logic [31:0] sd0_i_wb_dat,
-	output logic [3:0]  sd0_i_wb_sel,
-	output logic        sd0_i_wb_cyc,
-	output logic        sd0_i_wb_stb,
-	output logic        sd0_i_wb_we,
-	input  logic [31:0] sd0_o_wb_dat,
-	input  logic        sd0_o_wb_ack,
-	// Slave sd1 — sdspi 1
-	output logic [31:0] sd1_i_wb_adr,
-	output logic [31:0] sd1_i_wb_dat,
-	output logic [3:0]  sd1_i_wb_sel,
-	output logic        sd1_i_wb_cyc,
-	output logic        sd1_i_wb_stb,
-	output logic        sd1_i_wb_we,
-	input  logic [31:0] sd1_o_wb_dat,
-	input  logic        sd1_o_wb_ack,
-	// Slave dma0 — sd_rd_dma CSR 0
-	output logic [31:0] dma0_i_wb_adr,
-	output logic [31:0] dma0_i_wb_dat,
-	output logic [3:0]  dma0_i_wb_sel,
-	output logic        dma0_i_wb_cyc,
-	output logic        dma0_i_wb_stb,
-	output logic        dma0_i_wb_we,
-	input  logic [31:0] dma0_o_wb_dat,
-	input  logic        dma0_o_wb_ack,
-	// Slave dma1 — sd_rd_dma CSR 1
-	output logic [31:0] dma1_i_wb_adr,
-	output logic [31:0] dma1_i_wb_dat,
-	output logic [3:0]  dma1_i_wb_sel,
-	output logic        dma1_i_wb_cyc,
-	output logic        dma1_i_wb_stb,
-	output logic        dma1_i_wb_we,
-	input  logic [31:0] dma1_o_wb_dat,
-	input  logic        dma1_o_wb_ack,
-	// Regfile sha256 hang sha256_0 sidebands
-	// Field / shadow sidebands
-	// RW register out: soft_reset — Soft reset hash core
-	output logic        sha256_0_rg_soft_reset,
-	// W1P write-1 pulse out: done_clear — Write 1 → pulse; glue clears sticky done
-	output logic        sha256_0_p_rg_done_clear,
-	// RO status in: busy — Hash core busy
-	input  logic        sha256_0_ro_busy,
-	// RO status in: done — Sticky done (from glue)
-	input  logic        sha256_0_ro_done,
-	// RO status in: hash0 — hash0
-	input  logic [31:0] sha256_0_ro_hash0,
-	// RO status in: hash1 — hash1
-	input  logic [31:0] sha256_0_ro_hash1,
-	// RO status in: hash2 — hash2
-	input  logic [31:0] sha256_0_ro_hash2,
-	// RO status in: hash3 — hash3
-	input  logic [31:0] sha256_0_ro_hash3,
-	// RO status in: hash4 — hash4
-	input  logic [31:0] sha256_0_ro_hash4,
-	// RO status in: hash5 — hash5
-	input  logic [31:0] sha256_0_ro_hash5,
-	// RO status in: hash6 — hash6
-	input  logic [31:0] sha256_0_ro_hash6,
-	// RO status in: hash7 — hash7
-	input  logic [31:0] sha256_0_ro_hash7,
-	// Regfile sha256 hang sha256_1 sidebands
-	// Field / shadow sidebands
-	// RW register out: soft_reset — Soft reset hash core
-	output logic        sha256_1_rg_soft_reset,
-	// W1P write-1 pulse out: done_clear — Write 1 → pulse; glue clears sticky done
-	output logic        sha256_1_p_rg_done_clear,
-	// RO status in: busy — Hash core busy
-	input  logic        sha256_1_ro_busy,
-	// RO status in: done — Sticky done (from glue)
-	input  logic        sha256_1_ro_done,
-	// RO status in: hash0 — hash0
-	input  logic [31:0] sha256_1_ro_hash0,
-	// RO status in: hash1 — hash1
-	input  logic [31:0] sha256_1_ro_hash1,
-	// RO status in: hash2 — hash2
-	input  logic [31:0] sha256_1_ro_hash2,
-	// RO status in: hash3 — hash3
-	input  logic [31:0] sha256_1_ro_hash3,
-	// RO status in: hash4 — hash4
-	input  logic [31:0] sha256_1_ro_hash4,
-	// RO status in: hash5 — hash5
-	input  logic [31:0] sha256_1_ro_hash5,
-	// RO status in: hash6 — hash6
-	input  logic [31:0] sha256_1_ro_hash6,
-	// RO status in: hash7 — hash7
-	input  logic [31:0] sha256_1_ro_hash7,
+	// Slave ch0 — SD + DMA + SHA256 channel interconnect (uplink + engine)
+	output logic [31:0] ch0_i_wb_adr,
+	output logic [31:0] ch0_i_wb_dat,
+	output logic [3:0]  ch0_i_wb_sel,
+	output logic        ch0_i_wb_cyc,
+	output logic        ch0_i_wb_stb,
+	output logic        ch0_i_wb_we,
+	input  logic [31:0] ch0_o_wb_dat,
+	input  logic        ch0_o_wb_ack,
+	// Slave ch1 — SD + DMA + SHA256 channel interconnect (uplink + engine)
+	output logic [31:0] ch1_i_wb_adr,
+	output logic [31:0] ch1_i_wb_dat,
+	output logic [3:0]  ch1_i_wb_sel,
+	output logic        ch1_i_wb_cyc,
+	output logic        ch1_i_wb_stb,
+	output logic        ch1_i_wb_we,
+	input  logic [31:0] ch1_o_wb_dat,
+	input  logic        ch1_o_wb_ack,
 	// Regfile smoke hang smoke sidebands
 	// Field / shadow sidebands
 	// RO status in: busy — Busy (tied in HTML)
@@ -230,26 +137,6 @@ module soc_wb_system (
 	output logic [31:0] rg_key_2
 );
 
-	// Internal WB: fabric slave sha256_0 ↔ sha256_regfile
-	logic [31:0] sha256_0_i_wb_adr;
-	logic [31:0] sha256_0_i_wb_dat;
-	logic [3:0]  sha256_0_i_wb_sel;
-	logic        sha256_0_i_wb_cyc;
-	logic        sha256_0_i_wb_stb;
-	logic        sha256_0_i_wb_we;
-	logic [31:0] sha256_0_o_wb_dat;
-	logic        sha256_0_o_wb_ack;
-
-	// Internal WB: fabric slave sha256_1 ↔ sha256_regfile
-	logic [31:0] sha256_1_i_wb_adr;
-	logic [31:0] sha256_1_i_wb_dat;
-	logic [3:0]  sha256_1_i_wb_sel;
-	logic        sha256_1_i_wb_cyc;
-	logic        sha256_1_i_wb_stb;
-	logic        sha256_1_i_wb_we;
-	logic [31:0] sha256_1_o_wb_dat;
-	logic        sha256_1_o_wb_ack;
-
 	// Internal WB: fabric slave smoke ↔ smoke_regfile
 	logic [31:0] smoke_i_wb_adr;
 	logic [31:0] smoke_i_wb_dat;
@@ -261,37 +148,18 @@ module soc_wb_system (
 	logic [31:0] smoke_o_wb_dat;
 	logic        smoke_o_wb_ack;
 
-	soc_wb_interconnect u_ic (
+	soc_wb_decoder u_ic (
 		.clk               (clk),
 		.rst_n             (rst_n),
-		.rb_grant_en       (rb_grant_en),
-		.cpu_o_wb_adr      (cpu_o_wb_adr),
-		.cpu_o_wb_dat      (cpu_o_wb_dat),
-		.cpu_o_wb_sel      (cpu_o_wb_sel),
-		.cpu_o_wb_tga      (cpu_o_wb_tga),
-		.cpu_o_wb_cyc      (cpu_o_wb_cyc),
-		.cpu_o_wb_stb      (cpu_o_wb_stb),
-		.cpu_o_wb_we       (cpu_o_wb_we),
-		.cpu_i_wb_dat      (cpu_i_wb_dat),
-		.cpu_i_wb_ack      (cpu_i_wb_ack),
-		.dma0m_o_wb_adr    (dma0m_o_wb_adr),
-		.dma0m_o_wb_dat    (dma0m_o_wb_dat),
-		.dma0m_o_wb_sel    (dma0m_o_wb_sel),
-		.dma0m_o_wb_tga    (dma0m_o_wb_tga),
-		.dma0m_o_wb_cyc    (dma0m_o_wb_cyc),
-		.dma0m_o_wb_stb    (dma0m_o_wb_stb),
-		.dma0m_o_wb_we     (dma0m_o_wb_we),
-		.dma0m_i_wb_dat    (dma0m_i_wb_dat),
-		.dma0m_i_wb_ack    (dma0m_i_wb_ack),
-		.dma1m_o_wb_adr    (dma1m_o_wb_adr),
-		.dma1m_o_wb_dat    (dma1m_o_wb_dat),
-		.dma1m_o_wb_sel    (dma1m_o_wb_sel),
-		.dma1m_o_wb_tga    (dma1m_o_wb_tga),
-		.dma1m_o_wb_cyc    (dma1m_o_wb_cyc),
-		.dma1m_o_wb_stb    (dma1m_o_wb_stb),
-		.dma1m_o_wb_we     (dma1m_o_wb_we),
-		.dma1m_i_wb_dat    (dma1m_i_wb_dat),
-		.dma1m_i_wb_ack    (dma1m_i_wb_ack),
+		.m_adr_i           (m_adr_i),
+		.m_dat_i           (m_dat_i),
+		.m_sel_i           (m_sel_i),
+		.m_tga_i           (m_tga_i),
+		.m_cyc_i           (m_cyc_i),
+		.m_stb_i           (m_stb_i),
+		.m_we_i            (m_we_i),
+		.m_dat_o           (m_dat_o),
+		.m_ack_o           (m_ack_o),
 		.sram_i_wb_adr     (sram_i_wb_adr),
 		.sram_i_wb_dat     (sram_i_wb_dat),
 		.sram_i_wb_sel     (sram_i_wb_sel),
@@ -332,54 +200,22 @@ module soc_wb_system (
 		.testout_i_wb_we   (testout_i_wb_we),
 		.testout_o_wb_dat  (testout_o_wb_dat),
 		.testout_o_wb_ack  (testout_o_wb_ack),
-		.sd0_i_wb_adr      (sd0_i_wb_adr),
-		.sd0_i_wb_dat      (sd0_i_wb_dat),
-		.sd0_i_wb_sel      (sd0_i_wb_sel),
-		.sd0_i_wb_cyc      (sd0_i_wb_cyc),
-		.sd0_i_wb_stb      (sd0_i_wb_stb),
-		.sd0_i_wb_we       (sd0_i_wb_we),
-		.sd0_o_wb_dat      (sd0_o_wb_dat),
-		.sd0_o_wb_ack      (sd0_o_wb_ack),
-		.sd1_i_wb_adr      (sd1_i_wb_adr),
-		.sd1_i_wb_dat      (sd1_i_wb_dat),
-		.sd1_i_wb_sel      (sd1_i_wb_sel),
-		.sd1_i_wb_cyc      (sd1_i_wb_cyc),
-		.sd1_i_wb_stb      (sd1_i_wb_stb),
-		.sd1_i_wb_we       (sd1_i_wb_we),
-		.sd1_o_wb_dat      (sd1_o_wb_dat),
-		.sd1_o_wb_ack      (sd1_o_wb_ack),
-		.dma0_i_wb_adr     (dma0_i_wb_adr),
-		.dma0_i_wb_dat     (dma0_i_wb_dat),
-		.dma0_i_wb_sel     (dma0_i_wb_sel),
-		.dma0_i_wb_cyc     (dma0_i_wb_cyc),
-		.dma0_i_wb_stb     (dma0_i_wb_stb),
-		.dma0_i_wb_we      (dma0_i_wb_we),
-		.dma0_o_wb_dat     (dma0_o_wb_dat),
-		.dma0_o_wb_ack     (dma0_o_wb_ack),
-		.dma1_i_wb_adr     (dma1_i_wb_adr),
-		.dma1_i_wb_dat     (dma1_i_wb_dat),
-		.dma1_i_wb_sel     (dma1_i_wb_sel),
-		.dma1_i_wb_cyc     (dma1_i_wb_cyc),
-		.dma1_i_wb_stb     (dma1_i_wb_stb),
-		.dma1_i_wb_we      (dma1_i_wb_we),
-		.dma1_o_wb_dat     (dma1_o_wb_dat),
-		.dma1_o_wb_ack     (dma1_o_wb_ack),
-		.sha256_0_i_wb_adr (sha256_0_i_wb_adr),
-		.sha256_0_i_wb_dat (sha256_0_i_wb_dat),
-		.sha256_0_i_wb_sel (sha256_0_i_wb_sel),
-		.sha256_0_i_wb_cyc (sha256_0_i_wb_cyc),
-		.sha256_0_i_wb_stb (sha256_0_i_wb_stb),
-		.sha256_0_i_wb_we  (sha256_0_i_wb_we),
-		.sha256_0_o_wb_dat (sha256_0_o_wb_dat),
-		.sha256_0_o_wb_ack (sha256_0_o_wb_ack),
-		.sha256_1_i_wb_adr (sha256_1_i_wb_adr),
-		.sha256_1_i_wb_dat (sha256_1_i_wb_dat),
-		.sha256_1_i_wb_sel (sha256_1_i_wb_sel),
-		.sha256_1_i_wb_cyc (sha256_1_i_wb_cyc),
-		.sha256_1_i_wb_stb (sha256_1_i_wb_stb),
-		.sha256_1_i_wb_we  (sha256_1_i_wb_we),
-		.sha256_1_o_wb_dat (sha256_1_o_wb_dat),
-		.sha256_1_o_wb_ack (sha256_1_o_wb_ack),
+		.ch0_i_wb_adr      (ch0_i_wb_adr),
+		.ch0_i_wb_dat      (ch0_i_wb_dat),
+		.ch0_i_wb_sel      (ch0_i_wb_sel),
+		.ch0_i_wb_cyc      (ch0_i_wb_cyc),
+		.ch0_i_wb_stb      (ch0_i_wb_stb),
+		.ch0_i_wb_we       (ch0_i_wb_we),
+		.ch0_o_wb_dat      (ch0_o_wb_dat),
+		.ch0_o_wb_ack      (ch0_o_wb_ack),
+		.ch1_i_wb_adr      (ch1_i_wb_adr),
+		.ch1_i_wb_dat      (ch1_i_wb_dat),
+		.ch1_i_wb_sel      (ch1_i_wb_sel),
+		.ch1_i_wb_cyc      (ch1_i_wb_cyc),
+		.ch1_i_wb_stb      (ch1_i_wb_stb),
+		.ch1_i_wb_we       (ch1_i_wb_we),
+		.ch1_o_wb_dat      (ch1_o_wb_dat),
+		.ch1_o_wb_ack      (ch1_o_wb_ack),
 		.smoke_i_wb_adr    (smoke_i_wb_adr),
 		.smoke_i_wb_dat    (smoke_i_wb_dat),
 		.smoke_i_wb_sel    (smoke_i_wb_sel),
@@ -389,56 +225,6 @@ module soc_wb_system (
 		.smoke_i_wb_we     (smoke_i_wb_we),
 		.smoke_o_wb_dat    (smoke_o_wb_dat),
 		.smoke_o_wb_ack    (smoke_o_wb_ack)
-	);
-
-	sha256_regfile u_sha256_0 (
-		.i_clk          (clk),
-		.i_rst_n        (rst_n),
-		.sha256_i_wb_cyc(sha256_0_i_wb_cyc),
-		.sha256_i_wb_stb(sha256_0_i_wb_stb),
-		.sha256_i_wb_we (sha256_0_i_wb_we),
-		.sha256_i_wb_adr(sha256_0_i_wb_adr),
-		.sha256_i_wb_dat(sha256_0_i_wb_dat),
-		.sha256_i_wb_sel(sha256_0_i_wb_sel),
-		.sha256_o_wb_ack(sha256_0_o_wb_ack),
-		.sha256_o_wb_dat(sha256_0_o_wb_dat),
-		.rg_soft_reset  (sha256_0_rg_soft_reset),
-		.p_rg_done_clear(sha256_0_p_rg_done_clear),
-		.ro_busy        (sha256_0_ro_busy),
-		.ro_done        (sha256_0_ro_done),
-		.ro_hash0       (sha256_0_ro_hash0),
-		.ro_hash1       (sha256_0_ro_hash1),
-		.ro_hash2       (sha256_0_ro_hash2),
-		.ro_hash3       (sha256_0_ro_hash3),
-		.ro_hash4       (sha256_0_ro_hash4),
-		.ro_hash5       (sha256_0_ro_hash5),
-		.ro_hash6       (sha256_0_ro_hash6),
-		.ro_hash7       (sha256_0_ro_hash7)
-	);
-
-	sha256_regfile u_sha256_1 (
-		.i_clk          (clk),
-		.i_rst_n        (rst_n),
-		.sha256_i_wb_cyc(sha256_1_i_wb_cyc),
-		.sha256_i_wb_stb(sha256_1_i_wb_stb),
-		.sha256_i_wb_we (sha256_1_i_wb_we),
-		.sha256_i_wb_adr(sha256_1_i_wb_adr),
-		.sha256_i_wb_dat(sha256_1_i_wb_dat),
-		.sha256_i_wb_sel(sha256_1_i_wb_sel),
-		.sha256_o_wb_ack(sha256_1_o_wb_ack),
-		.sha256_o_wb_dat(sha256_1_o_wb_dat),
-		.rg_soft_reset  (sha256_1_rg_soft_reset),
-		.p_rg_done_clear(sha256_1_p_rg_done_clear),
-		.ro_busy        (sha256_1_ro_busy),
-		.ro_done        (sha256_1_ro_done),
-		.ro_hash0       (sha256_1_ro_hash0),
-		.ro_hash1       (sha256_1_ro_hash1),
-		.ro_hash2       (sha256_1_ro_hash2),
-		.ro_hash3       (sha256_1_ro_hash3),
-		.ro_hash4       (sha256_1_ro_hash4),
-		.ro_hash5       (sha256_1_ro_hash5),
-		.ro_hash6       (sha256_1_ro_hash6),
-		.ro_hash7       (sha256_1_ro_hash7)
 	);
 
 	smoke_regfile u_smoke (

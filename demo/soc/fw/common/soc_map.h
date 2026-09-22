@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // SoC memory map for C firmware (mirrors connect/soc_top.html).
 // Field layouts + window bases: wishbone packed C export (fw/gen/wishbone).
+// Channel DMA SRC uses the child-relative map (parent strips the 4 KiB window).
 
 #pragma once
 
@@ -11,10 +12,15 @@
 #define SRAM_BASE      0x00000000u
 #define FLASH_BASE     0x01000000u
 #define TESTOUT_ADDR   0x02000010u
-#define DMA0_BASE      0x03002000u
-#define DMA1_BASE      0x03003000u
-#define SHA0_BASE      SOC_WB_SHA256_0_BASE
-#define SHA1_BASE      SOC_WB_SHA256_1_BASE
+#define CH0_BASE       0x03000000u
+#define CH1_BASE       0x03001000u
+#define CH_SD_OFF      0x00u
+#define CH_DMA_OFF     0x10u
+#define CH_SHA_OFF     0x40u
+#define DMA0_BASE      (CH0_BASE + CH_DMA_OFF)
+#define DMA1_BASE      (CH1_BASE + CH_DMA_OFF)
+#define SHA0_BASE      SOC_WB_CH0_SHA256_BASE
+#define SHA1_BASE      SOC_WB_CH1_SHA256_BASE
 #define REGFILE_SMOKE_BASE SOC_WB_SMOKE_BASE
 
 #define DMA_CTRL       0x0u

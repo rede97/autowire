@@ -12,10 +12,12 @@ rtl/smoke_wb.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v
 
-# Type-A wishbone (named-slave interconnect + attached-regfile wrapper + leaves)
+# Type-A wishbone (CPU decoder + two sd_sha channel interconnects + leaves)
 rtl/gen/plugins/wishbone/wb_cfg_pipe.sv
-rtl/gen/plugins/wishbone/soc_wb_interconnect.sv
+rtl/gen/plugins/wishbone/soc_wb_decoder.sv
 rtl/gen/plugins/wishbone/soc_wb_system.sv
+rtl/gen/plugins/wishbone/sd_sha_interconnect.sv
+rtl/gen/plugins/wishbone/sd_sha_system.sv
 rtl/gen/plugins/wishbone/sha256_regfile.sv
 rtl/gen/plugins/wishbone/smoke_regfile.sv
 
@@ -33,7 +35,7 @@ ip/sdspi/rtl/spi/spirxdata.v
 ip/sdspi/rtl/spi/spitxdata.v
 
 # sha256 streaming core (source: github.com/rede97/zynq_sha256;
-# AXIS glue in sha256_wb_regs; CSR = sha256_regfile (two hangs inside soc_wb_system)
+# AXIS glue in sha256_wb_regs; CSR = sha256_regfile (one hang per sd_sha channel)
 ip/sha256/sha256.v
 ip/sha256/sha256_chunk_process.v
 ip/sha256/sha256_chunk_compress.v

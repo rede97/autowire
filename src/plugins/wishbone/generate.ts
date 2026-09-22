@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { WishboneSource, WorkspaceConfig } from "../../workspace.ts";
-import { type BusDef, isBusDef } from "../wishbone-bus/dsl.ts";
+import { type BusDef, flattenBuses, isBusDef } from "../wishbone-bus/dsl.ts";
 import { busModuleName } from "../wishbone-bus/emit.ts";
 import {
 	attachedSlaves,
@@ -12,6 +12,7 @@ import {
 	busRalBlockName,
 	emitBusMapC,
 	emitBusMapUvm,
+	mapHangsDeep,
 } from "../wishbone-bus/emit-map.ts";
 import {
 	generateDef as generateBusDef,
@@ -120,7 +121,7 @@ async function packSoftware(
 	buses: readonly BusDef[],
 ): Promise<string[]> {
 	const paths: string[] = [];
-	const mapped = buses.filter((b) => attachedSlaves(b).length > 0);
+	const mapped = buses.filter((b) => mapHangsDeep(b).length > 0);
 	if (ws.wishboneCExport) {
 		await mkdir(ws.wishboneCExport, { recursive: true });
 		const headers: string[] = [...excelBySheet.keys()].map((s) => `${s}.h`);
@@ -205,12 +206,13 @@ export async function generateAll(ws: WorkspaceConfig): Promise<string[]> {
 		);
 	}
 	const fabricNames = new Set<string>();
-	if (buses.length > 0) {
+	const allBuses = flattenBuses(buses);
+	if (allBuses.length > 0) {
 		const outDir = join(ws.pluginsDir, PLUGIN_ID);
 		await mkdir(outDir, { recursive: true });
 		paths.push(await generatePipeModule(outDir));
 	}
-	for (const def of buses) {
+	for (const def of allBuses) {
 		const mod = busModuleName(def);
 		if (fabricNames.has(mod)) {
 			throw new Error(`wishbone: duplicate module "${mod}" across sources`);
@@ -225,6 +227,6 @@ export async function generateAll(ws: WorkspaceConfig): Promise<string[]> {
 		}
 		paths.push(...(await generateBusDef(ws, def)));
 	}
-	paths.push(...(await packSoftware(ws, excelBySheet, buses)));
+	paths.push(...(await packSoftware(ws, excelBySheet, allBuses)));
 	return paths;
 }

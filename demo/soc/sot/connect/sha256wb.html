@@ -2,8 +2,8 @@
 <!--
   Connect unit "sha256wb": streaming hash lane without CSR.
   AXIS + sticky-done glue (sha256_wb_regs) + sha256 core.
-  Wishbone CSR (sha256_{0,1}_regfile) lives on soc_top next to the interconnect;
-  sidebands (rg_soft_reset / ro_hash* / …) auto-export upward.
+  Wishbone CSR (sha256_regfile) lives inside sd_sha_system on each channel;
+  sidebands (rg_soft_reset / ro_hash* / …) auto-export into sd_sha_ch.
   Contract: docs/connect/html.md.
 -->
 <html lang="en">
