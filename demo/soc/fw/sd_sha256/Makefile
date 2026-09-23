@@ -40,7 +40,7 @@ $(BUILD)/crt0.o: $(COMMON)/crt0.S | $(BUILD)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BUILD)/main.o: main.c $(COMMON)/soc_map.h $(COMMON)/sdspi_regs.h \
-		$(REGFILE)/smoke.h $(REGFILE)/sha256.h $(BUSMAP)/soc_wb_map.h | $(BUILD)
+		$(WISHBONE)/smoke.h $(WISHBONE)/sha256.h $(WISHBONE)/soc_wb_map.h | $(BUILD)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BUILD)/firmware.elf: $(OBJS) $(COMMON)/link.ld

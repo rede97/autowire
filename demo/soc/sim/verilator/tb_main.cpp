@@ -4,6 +4,10 @@
 #include "Vtb_soc_vl.h"
 #include "verilated.h"
 
+// MinGW ld does not honor the weak sc_time_stamp Verilator declares for
+// legacy $time. The harness drives time via VerilatedContext::timeInc.
+double sc_time_stamp() { return 0; }
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>

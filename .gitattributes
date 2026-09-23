@@ -1,0 +1,17 @@
+# Linux line endings are the source of truth.
+# Store and check out text as LF on every platform, overriding core.autocrlf.
+* text=auto eol=lf
+
+# Binaries: never rewrite bytes.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.xlsx binary
+*.zip binary
+*.gz binary
+*.wasm binary
+*.exe binary
