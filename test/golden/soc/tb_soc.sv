@@ -10,6 +10,11 @@ module tb_soc;
 	logic        rst_ni;
 	logic        clk;
 	logic        trap;
+	logic        jtag_tck;
+	logic        jtag_tms;
+	logic        jtag_tdi;
+	logic        jtag_trst_n;
+	logic        jtag_tdo;
 	logic        flash_csb;
 	logic        flash_clk;
 	logic        flash_io0_oe;
@@ -28,6 +33,11 @@ module tb_soc;
 		.rst_ni      (rst_ni      ), // i
 		.clk         (clk         ), // i
 		.trap        (trap        ), // o
+		.jtag_tck    (jtag_tck    ), // i
+		.jtag_tms    (jtag_tms    ), // i
+		.jtag_tdi    (jtag_tdi    ), // i
+		.jtag_trst_n (jtag_trst_n ), // i
+		.jtag_tdo    (jtag_tdo    ), // o
 		.flash_io0_di(flash_io0   ), // i
 		.flash_io1_di(flash_io1   ), // i
 		.flash_io2_di(flash_io2   ), // i
@@ -58,5 +68,6 @@ module tb_soc;
 		.sd1_cd      (1'b1        )  // i
 	);
 
+`include "tb_board.svh"
 `include "tb_sim.svh"
 endmodule

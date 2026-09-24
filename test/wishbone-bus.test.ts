@@ -59,19 +59,21 @@ describe("wishbone-bus", () => {
 		expect(sv).not.toContain("s_cyc_o");
 	});
 
-	test("demo/soc top decoder cascades into two SlaveBus channels", () => {
-		expect(busModuleKind(soc_wb)).toBe("decoder");
+	test("demo/soc top interconnect (cpu + JTAG) cascades into two SlaveBus channels", () => {
+		expect(busModuleKind(soc_wb)).toBe("interconnect");
+		expect(soc_wb.masters.map((m) => m.name)).toEqual(["cpu", "dbg"]);
 		const sv = emitBusSv(soc_wb);
-		expect(sv).toContain("module soc_wb_decoder");
-		expect(sv).toContain("m_adr_i");
+		expect(sv).toContain("module soc_wb_interconnect");
+		expect(sv).toContain("cpu_o_wb_adr");
+		expect(sv).toContain("dbg_o_wb_adr");
 		expect(sv).toContain("ch0_i_wb_cyc");
 		expect(sv).toContain("ch1_o_wb_ack");
 		expect(sv).toContain("smoke_i_wb_cyc");
-		expect(sv).not.toContain("grant");
-		expect(sv).not.toContain("rb_grant_en");
+		expect(sv).toContain("rb_grant_en");
+		expect(sv).not.toContain("m_adr_i");
 	});
 
-	test("demo/soc toml generates decoder + channel interconnect", async () => {
+	test("demo/soc toml generates top + channel interconnect and master bridges", async () => {
 		const ws = await loadWorkspace(
 			join(import.meta.dir, "..", "demo", "soc", "autowire.toml"),
 		);
@@ -80,7 +82,10 @@ describe("wishbone-bus", () => {
 			ws.wishboneCExport?.replaceAll("\\", "/").endsWith("fw/gen/wishbone"),
 		).toBe(true);
 		const paths = await generateAll(ws);
-		expect(paths.some((p) => p.endsWith("soc_wb_decoder.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("soc_wb_interconnect.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("wb_jtag_tdr.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("wb_cdc.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("soc_wb_system.icl"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("soc_wb_system.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("sd_sha_interconnect.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("sd_sha_system.sv"))).toBe(true);
@@ -146,12 +151,11 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("[15:0] m_adr_i");
 	});
 
-	test("demo decoder drops unused integers and forwards smoke TGA", () => {
+	test("demo interconnect muxes master TGA and forwards smoke TGA", () => {
 		const sv = emitBusSv(soc_wb);
-		expect(sv).not.toContain("integer si");
-		expect(sv).not.toContain("integer oi");
 		expect(soc_wb.tag_width).toBe(2);
-		expect(sv).toContain("m_tga_i");
+		expect(sv).toContain("cpu_o_wb_tga");
+		expect(sv).toContain("dbg_o_wb_tga");
 		expect(sv).toContain("g_tga[1:0]");
 		expect(sv).not.toContain("sram_i_wb_tga");
 		expect(sv).toContain("localparam int unsigned SLOT_SRAM");
@@ -363,7 +367,9 @@ ts = "${ts.replaceAll("\\", "/")}"
 	test("wrapper and software map cover attached hangs", () => {
 		const wrap = emitBusSystemSv(soc_wb);
 		expect(wrap).toContain("module soc_wb_system");
-		expect(wrap).toContain("soc_wb_decoder u_ic");
+		expect(wrap).toContain("soc_wb_interconnect u_ic");
+		expect(wrap).toContain("wb_jtag_tdr #(.AW(32)) u_dbg_jtag");
+		expect(wrap).toContain("u_dbg_cdc");
 		expect(wrap).toContain("smoke_regfile u_smoke");
 		expect(wrap).not.toContain("sha256_regfile");
 		expect(wrap).toMatch(/\.rg_rb_grant_en\s+\(rg_rb_grant_en\)/);

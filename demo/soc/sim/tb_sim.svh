@@ -1,51 +1,54 @@
 // SPDX-License-Identifier: MIT
-// Body-post include for tb_soc: flash model + smoke checker (was tb_soc_smoke.v).
+// Body-post include for tb_soc: flash model + smoke checker.
+// Runner: sim/verilator/run.sh --tb-mod (Verilator --binary --timing,
+// firmware fw/basic_smoke). PASS needs both the firmware marker (0x600d600d)
+// and the external JTAG smoke (tb_jtag.svh) running concurrently through the
+// fabric arbiter.
 
-spiflash flash (
+`include "tb_jtag.svh"
+
+spiflash_vl flash (
 	.csb(flash_csb),
 	.clk(flash_clk),
-	.io0(flash_io0),
-	.io1(flash_io1),
-	.io2(flash_io2),
-	.io3(flash_io3)
+	.io0_di(flash_io0),
+	.io1_di(flash_io1),
+	.io2_di(flash_io2),
+	.io3_di(flash_io3),
+	.io0_do(fl_io0_do),
+	.io1_do(fl_io1_do),
+	.io2_do(fl_io2_do),
+	.io3_do(fl_io3_do),
+	.io0_oe(fl_io0_oe),
+	.io1_oe(fl_io1_oe),
+	.io2_oe(fl_io2_oe),
+	.io3_oe(fl_io3_oe)
 );
 
 integer test_count = 0;
+reg     fw_done = 1'b0;
 always @(posedge clk) begin
 	if (rst_ni && test_valid) begin
 		$display("testout: %08x", test_data);
-		if (test_count == 0 && test_data !== 32'h00000001) begin
-			$display("FAIL: alive marker %08x", test_data);
-			$finish;
-		end
-		if (test_data === 32'hdead0001) begin
-			$display("FAIL: sha256 digest mismatch");
-			$display("actual: %08x %08x %08x %08x %08x %08x %08x %08x",
-				u_dut.u_ch0.u_sha.u_regs.i_hash0, u_dut.u_ch0.u_sha.u_regs.i_hash1,
-				u_dut.u_ch0.u_sha.u_regs.i_hash2, u_dut.u_ch0.u_sha.u_regs.i_hash3,
-				u_dut.u_ch0.u_sha.u_regs.i_hash4, u_dut.u_ch0.u_sha.u_regs.i_hash5,
-				u_dut.u_ch0.u_sha.u_regs.i_hash6, u_dut.u_ch0.u_sha.u_regs.i_hash7);
-			$display("sram: %08x %08x %08x %08x %08x %08x %08x %08x",
-				u_dut.u_sram.mem[64], u_dut.u_sram.mem[65],
-				u_dut.u_sram.mem[66], u_dut.u_sram.mem[67],
-				u_dut.u_sram.mem[68], u_dut.u_sram.mem[69],
-				u_dut.u_sram.mem[70], u_dut.u_sram.mem[71]);
-			$finish;
-		end
+		if (test_count == 0 && test_data !== 32'h00000001)
+			$fatal(1, "FAIL: alive marker %08x", test_data);
+		if (test_data === 32'hdead0001)
+			$fatal(1, "FAIL: firmware reported failure");
 		if (test_data === 32'h600d600d) begin
-			$display("SMOKE PASS: cpu boot + cascade MMIO + channel SHA idle");
-			$finish;
+			$display("firmware done (jtag_done=%0d)", jtag_done);
+			fw_done <= 1'b1;
 		end
-		test_count = test_count + 1;
+		test_count <= test_count + 1;
 	end
-	if (rst_ni && trap) begin
-		$display("FAIL: cpu trap");
+	if (fw_done && jtag_done) begin
+		$display("SMOKE PASS: tb_soc (aw-tb-mod) cpu firmware + external JTAG");
 		$finish;
 	end
+	if (rst_ni && trap)
+		$fatal(1, "FAIL: cpu trap");
 end
 
 initial begin
-	#100000000;
-	$display("FAIL: timeout (test_count=%0d)", test_count);
-	$finish;
+	#200000000;
+	$fatal(1, "FAIL: timeout (test_count=%0d fw_done=%0d jtag_done=%0d)",
+		test_count, fw_done, jtag_done);
 end

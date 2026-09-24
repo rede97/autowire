@@ -13,8 +13,7 @@
 | Playwright Chromium | **Windows 原生**（`bunx playwright install chromium`） | e2e / Playwright MCP | 是 |
 | Git | Git for Windows 或 MSYS2 `git` 均可 | — | 是 |
 | Rust / cargo | **UCRT64** `mingw-w64-ucrt-x86_64-rust` | 构建 hdxml | 改 hdxml 时 |
-| iverilog / vvp | **UCRT64** `mingw-w64-ucrt-x86_64-iverilog` | regfile 仿真用例、遗留 smoke | 否（缺则用例 skip） |
-| Verilator | **UCRT64** `mingw-w64-ucrt-x86_64-verilator` | demo/soc 主冒烟 | 跑 demo 时 |
+| Verilator | **UCRT64** `mingw-w64-ucrt-x86_64-verilator` | 唯一仿真器：demo/soc 冒烟 + `bun test` RTL 仿真用例（`verilator_bin` + `mingw32-make`） | 否（缺则仿真用例 skip）；跑 demo 时是 |
 | RISC-V GCC | **UCRT64** `mingw-w64-ucrt-x86_64-riscv32-unknown-elf-{gcc,newlib}` | demo/soc 固件 | 跑 demo 时 |
 | Python / make | **UCRT64** `mingw-w64-ucrt-x86_64-{python,make}` | 固件 hex、镜像生成脚本 | 跑 demo 时 |
 | Verible | 官方 GitHub Windows release（MSYS2 无包） | `hdxml/tests/smoke.ts` 交叉解析 | 否 |
@@ -23,7 +22,7 @@
 
 1. **只用 UCRT64 环境**。MSYS2 包一律装 `mingw-w64-ucrt-x86_64-*`；bash 脚本在 **“MSYS2 UCRT64”** 终端里跑。**禁止**混装 MINGW64 / CLANG64 / MSYS 环境的同名工具（C 运行库不同，DLL 互相遮蔽）。
 2. **不要用 MSYS2 里的 node / npm 替代 Bun**（仓库规则：一律 Bun）。Bun、Biome、Playwright 保持 Windows 原生。
-3. **Windows PATH 只加 `C:\msys64\ucrt64\bin`**（用户 PATH）。PowerShell 里跑 `bun test` 时，iverilog / verilator 等靠它被 `Bun.which` 找到；不加则相关用例被 skip。**禁止**把 `C:\msys64\usr\bin` 加进 Windows PATH（MSYS 版 bash / coreutils / find 会遮蔽系统命令，路径语义也不同）。
+3. **Windows PATH 只加 `C:\msys64\ucrt64\bin`**（用户 PATH）。PowerShell 里跑 `bun test` 时，`verilator_bin` / `mingw32-make` 等靠它被 `Bun.which` 找到；不加则相关用例被 skip。**禁止**把 `C:\msys64\usr\bin` 加进 Windows PATH（MSYS 版 bash / coreutils / find 会遮蔽系统命令，路径语义也不同）。
 4. **UCRT64 终端要能找到 Windows 的 Bun**。二选一：
    - 在 `C:\msys64\ucrt64.ini` 打开 `MSYS2_PATH_TYPE=inherit`（继承 Windows PATH）；
    - 或在 `~/.bashrc` 加 `export PATH="$PATH:/c/Users/$USERNAME/.bun/bin"`。
@@ -44,7 +43,6 @@
 # MSYS2 UCRT64 终端
 pacman -S --needed \
   mingw-w64-ucrt-x86_64-rust \
-  mingw-w64-ucrt-x86_64-iverilog \
   mingw-w64-ucrt-x86_64-verilator \
   mingw-w64-ucrt-x86_64-python \
   mingw-w64-ucrt-x86_64-make \
@@ -64,7 +62,7 @@ git config --global core.autocrlf false
 
 ```powershell
 # 新开 PowerShell（PATH 已含 C:\msys64\ucrt64\bin）
-iverilog -V
+verilator_bin --version
 bun run lint      # Biome + tsc，零 error
-bun test          # 无 fail；iverilog 在 PATH 时无 skip
+bun test          # 无 fail；verilator 在 PATH 时无 skip
 ```

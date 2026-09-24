@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Thin Verilator top: soc_top + spiflash_vl (no inout Z / # delays).
+// jtag_* are driven by the C++ host in tb_main.cpp (external JTAG smoke).
 `timescale 1ns / 1ps
 module tb_soc_vl (
 	input  wire        clk,
@@ -11,7 +12,12 @@ module tb_soc_vl (
 	output wire        sd0_sck,
 	output wire        sd0_mosi,
 	input  wire        sd0_miso,
-	input  wire        sd0_cd
+	input  wire        sd0_cd,
+	input  wire        jtag_tck,
+	input  wire        jtag_tms,
+	input  wire        jtag_tdi,
+	input  wire        jtag_trst_n,
+	output wire        jtag_tdo
 );
 
 	wire flash_csb, flash_clk;
@@ -64,7 +70,12 @@ module tb_soc_vl (
 		.sd1_miso(1'b1),
 		.sd1_cd(1'b1),
 		.test_valid(test_valid),
-		.test_data(test_data)
+		.test_data(test_data),
+		.jtag_tck(jtag_tck),
+		.jtag_tms(jtag_tms),
+		.jtag_tdi(jtag_tdi),
+		.jtag_trst_n(jtag_trst_n),
+		.jtag_tdo(jtag_tdo)
 	);
 
 	spiflash_vl flash (

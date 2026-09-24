@@ -91,7 +91,7 @@ int main(void)
 
 	/* RWW: sync to a HW strb edge, SW-write 0xabcd, confirm readback, then
 	   wait for HW to move the field again. Retry the edge if the posted
-	   write loses the 64-cycle window (compiler scheduling / PIPE depth). */
+	   write loses the 256-cycle window (compiler scheduling / PIPE depth). */
 	for (;;) {
 		uint32_t edge;
 

@@ -43,4 +43,3 @@ gen/
 !demo/soc/fw/gen/
 
 # simulation build artifacts
-*.vvp

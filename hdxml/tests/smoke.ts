@@ -12,7 +12,6 @@ console.log("== 工具链");
 let ok = true;
 for (const t of [
 	"verilator",
-	"iverilog",
 	"verible-verilog-syntax",
 	"verible-verilog-lint",
 	"git",
@@ -61,12 +60,6 @@ const oracles: Record<string, (f: string) => number> = {
 				"--timing",
 				f,
 			],
-			stdout: "ignore",
-			stderr: "ignore",
-		}).exitCode,
-	"iverilog -g2012": (f) =>
-		Bun.spawnSync({
-			cmd: ["iverilog", "-g2012", "-t", "null", f],
 			stdout: "ignore",
 			stderr: "ignore",
 		}).exitCode,

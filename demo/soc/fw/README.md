@@ -3,7 +3,8 @@
 C firmware for SoC smoke / DV. Built with an RV32IMC toolchain and loaded into
 the SPI flash model via `$readmemh` / `+firmware=…`.
 
-**Primary runner: Verilator** (`sim/verilator/run.sh`). iverilog is not required.
+**Runner: Verilator only** (`sim/verilator/run.sh`). The external JTAG smoke
+(`sim/verilator/jtag_host.h`) runs concurrently with the firmware.
 
 ## Layout
 
@@ -17,7 +18,7 @@ the SPI flash model via `$readmemh` / `+firmware=…`.
 
 Flash XIP reset PC = `0x0100_0000`. SRAM = `0x0000_0000`..`0x0000_FFFF`
 (stack top `0x0001_0000`). KAT payload lives at flash offset `0x1000`
-(CPU `0x0100_1000`), same vector as legacy `sim/gen_firmware.py`.
+(CPU `0x0100_1000`).
 
 ## Build / run
 
@@ -27,14 +28,15 @@ bun ../../index.ts plugin generate wishbone   # SV + packed C / Excel / uvm_reg
 ./sim/verilator/run.sh              # basic_smoke (cascade MMIO + grant CSR)
 ./sim/verilator/run.sh --regfile    # wishbone-regfile MMIO (FIFO loopback + counters)
 ./sim/verilator/run.sh --sd         # sd_sha256 + sdspisim card image
+./sim/verilator/run.sh --tb-mod     # aw-tb-mod dump tb_soc (--binary) + SV JTAG host
 ```
 
 Toolchain: set `CROSS=` if needed (defaults probe `riscv32-wch-elf-`,
 `riscv-none-embed-`, `riscv64-unknown-elf-`, `riscv32-unknown-elf-`).
 
-Legacy Python KAT + iverilog scripts (`sim/gen_firmware.py`, `sim/run_smoke.sh`)
-remain for archaeology; not part of the required smoke path.
-`sim/run_fw_zeros.sh` is a legacy alias that forwards to Verilator `basic_smoke`.
+The JTAG smoke writes SRAM `0x0000_8000`; firmware must not use that word.
+Pass `+nojtag` to `sim/verilator/obj_dir/Vtb_soc_vl` to run the firmware alone
+(bisect a failure between the two masters).
 
 ## SD notes (`--sd`)
 

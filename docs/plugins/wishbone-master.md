@@ -152,14 +152,20 @@ Bus("soc_wb", "SoC cfg", {
 
 ## 7. 验证
 
-`test/wishbone-master.test.ts`（iverilog，`test/fixtures/wb_master_tb.sv`）：fabric 10ns / PCLK 14ns / 异步 WB 6ns / TCK 50ns，四个 master 共享一个 TB 存储 slave：
+`test/wishbone-master.test.ts`（Verilator `--binary --timing`，`test/fixtures/wb_master_tb.sv`；runner `test/fixtures/verilator.ts`）：fabric 10ns / PCLK 14ns / 异步 WB 6ns / TCK 50ns，四个 master 共享一个 TB 存储 slave：
 
 - 同域 WB、APB（字节写、PPROT 违例 → PSLVERR 且不写、叶子卡死 → 超时 PSLVERR 后恢复）、异步 WB 读写。
 - JTAG 写 / 读、busy 状态、busy 时丢弃 op → sticky err → nop 清除、`en=0` → err 且不写。
 - fabric 复位中：APB / 异步 WB / JTAG 全部立即报错不挂死；复位释放后恢复。
 - 四个 master 并发经仲裁写不同窗口后逐字校验。
 
-未做：CDC 工具签核（无开源 CDC 工具）、demo/soc 接入。
+demo/soc 接入（JTAG）：`sot/wb_bus_soc.ts` 加 `Master("dbg", …, { jtag: true })`；`rtl/demo_tap.v` 为 **DFT 占位 TAP**（IDCODE / BYPASS / USER=1000 → `dbg_sel`），顶层引出 `jtag_*`，`dbg_en` 绑 1。外部 JTAG 冒烟与 CPU 固件并发（共享 soc_wb 仲裁）：
+
+- `sim/verilator/run.sh`（默认 / `--regfile` / `--sd`）：C++ host `sim/verilator/jtag_host.h` 驱动 `jtag_*`。
+- `sim/verilator/run.sh --tb-mod`：aw-tb-mod dump 的 `tb_soc`（`--binary --timing`），SV host `sim/tb_jtag.svh`。
+- 序列：IDCODE → IR capture → BYPASS → USER：读 smoke ID、写读 SRAM `0x0000_8000`；两边都过才 PASS。
+
+未做：CDC 工具签核（无开源 CDC 工具）；demo 真实 DFT TAP / SIB 替换 `demo_tap`（留给后续工程检验反馈）。
 
 ## 8. 待裁定
 
@@ -170,4 +176,4 @@ Bus("soc_wb", "SoC cfg", {
 1. posted 写 / async FIFO 模式（多笔写吞吐）是否进 v2。
 2. CDC 约束提示（同步器清单、数据束 `set_max_delay -datapath_only`）的输出格式。
 3. ICL CaptureSource 建模与 Tessent / TestMAX 方言差异。
-4. demo/soc 是否加 APB / JTAG master 作展示。
+4. demo/soc 是否再加 APB master 作展示（JTAG 已接入，见 §7）。

@@ -1,7 +1,9 @@
-// SoC Wishbone fabric SoT. Top is a CPU-only decoder cascaded into two
+// SoC Wishbone fabric SoT. Top is a CPU + JTAG interconnect cascaded into two
 // parallel sd_sha channel interconnects (one BusDef, two SlaveBus hangs).
-// Generate → soc_wb_decoder.sv + soc_wb_system.sv (smoke leaf inside).
-// Channel RTL is generated once (sd_sha_*); HTML instantiates sd_sha_ch ×2.
+// Generate → soc_wb_interconnect.sv + soc_wb_system.sv (smoke leaf, JTAG TDR
+// + wb_cdc inside) + soc_wb_system.icl/.pdl. The chip TAP is rtl/demo_tap.v
+// (DFT placeholder). Channel RTL is generated once (sd_sha_*); HTML
+// instantiates sd_sha_ch ×2.
 
 import {
 	Bus,
@@ -17,9 +19,14 @@ import { smoke } from "./wb_reg_smoke.ts";
 
 export const soc_wb = Bus(
 	"soc_wb",
-	"Demo SoC Wishbone decoder (CPU) cascaded into two sd_sha channels",
+	"Demo SoC Wishbone interconnect (CPU + JTAG) cascaded into two sd_sha channels",
 	{
-		masters: [Master("cpu", "picorv32_wb")],
+		masters: [
+			Master("cpu", "picorv32_wb"),
+			Master("dbg", "External JTAG smoke (TDR behind demo_tap USER)", {
+				jtag: true,
+			}),
+		],
 		// Mixed slave PIPE depths (0/1/2/3/4) — cascade windows plus local pipes.
 		slaves: [
 			SlaveRegion("sram", "64 KiB SRAM", 0x0000_0000, Size(0x1_0000), {

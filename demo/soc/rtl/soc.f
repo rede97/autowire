@@ -11,10 +11,14 @@ rtl/sha256_wb_regs.v
 rtl/smoke_wb.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v
+rtl/demo_tap.v
 
-# Type-A wishbone (CPU decoder + two sd_sha channel interconnects + leaves)
+# Type-A wishbone (CPU + JTAG interconnect + two sd_sha channel interconnects + leaves)
 rtl/gen/plugins/wishbone/wb_cfg_pipe.sv
-rtl/gen/plugins/wishbone/soc_wb_decoder.sv
+rtl/gen/plugins/wishbone/wb_sync_cell.sv
+rtl/gen/plugins/wishbone/wb_cdc.sv
+rtl/gen/plugins/wishbone/wb_jtag_tdr.sv
+rtl/gen/plugins/wishbone/soc_wb_interconnect.sv
 rtl/gen/plugins/wishbone/soc_wb_system.sv
 rtl/gen/plugins/wishbone/sd_sha_interconnect.sv
 rtl/gen/plugins/wishbone/sd_sha_system.sv

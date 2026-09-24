@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  * Soft-padded SHA-256 KAT at flash VMA 0x01001000 (see link.ld .kat).
- * Words match sim/gen_firmware.py MSG_WORDS (LE in memory / XIP).
+ * Message words little-endian in memory / XIP.
  */
 	.section .kat.sha_msg, "a", @progbits
 	.balign 4

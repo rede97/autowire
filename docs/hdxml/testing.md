@@ -8,7 +8,7 @@
 |---|---|
 | `bun hdxml/tests/fetch.ts [名称...]` | 拉取语料（`tests/corpus/`）与 RTL 项目（`tests/projects/`），blobless + sparse 浅克隆；提交哈希追加到 `tests/MANIFEST.txt` 以便复现。无参数 = 全部（重写 MANIFEST）；带名称 = 只拉指定目标 |
 | `bun hdxml/tests/scan.ts [--refresh] [额外 hdxml 参数...]` | 全量扫描测试：逐目标独立 hdxml 进程，进度条原生渲染，统计走 `--summary` 报告文件，末尾统一打印汇总表；仅当某目标 `index.xml` 缺失（崩溃）时 exit 1 |
-| `bun hdxml/tests/smoke.ts [抽样数]` | 环境冒烟：工具链存在性 + 语料抽样交叉解析（verible / verilator / iverilog 成功率基线；按路径哈希稳定抽样） |
+| `bun hdxml/tests/smoke.ts [抽样数]` | 环境冒烟：工具链存在性 + 语料抽样交叉解析（verible / verilator 成功率基线；按路径哈希稳定抽样） |
 | `bun hdxml/tests/triage.ts [corpus 目标...]` | corpus 错误分类：对 scan 产物的错误文件逐个过 verible oracle——oracle 接受而 hdxml 拒绝 = **真·解析器差距**（sv-parser 语法覆盖）；oracle 也拒绝 = 故意非法/伪代码。附 preprocess / redefined 分类计数 |
 
 ## 2. scan.ts 语义

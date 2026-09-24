@@ -182,7 +182,7 @@ uvm = "dv/ral"           # ral_block_<name>.sv
 #                      + <name>_decoder.sv | <name>_interconnect.sv
 #                      + <name>_system.sv   # SlaveRegfile 和/或 Master("uplink")
 # NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）
-# demo/soc：顶层 soc_wb = CPU decoder；两个 SlaveBus(sd_sha) channel
+# demo/soc：顶层 soc_wb = interconnect（cpu + JTAG dbg，dbg 经 demo_tap USER）；两个 SlaveBus(sd_sha) channel
 #           HTML u_ic = soc_wb_system；u_ch0/u_ch1 = sd_sha_ch
 #           各 slave PIPE 不等长（顶层 cascade 2/4 + channel 内 2/3）
 #           smoke FABRIC.rb_grant_en 驱动两个 channel rb_grant_en

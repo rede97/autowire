@@ -19,9 +19,7 @@ import {
 	MASTER_MODULES,
 } from "../src/plugins/wishbone-bus/emit-master.ts";
 import { generateMasterModules } from "../src/plugins/wishbone-bus/generate.ts";
-
-const iverilogTest =
-	Bun.which("iverilog") && Bun.which("vvp") ? test : test.skip;
+import { verilatorSim, verilatorTest } from "./fixtures/verilator.ts";
 
 function mb(tagWidth?: number) {
 	return Bus("mb", "master bridge demo", {
@@ -149,8 +147,8 @@ describe("wishbone master bridges", () => {
 		expect(emitBusPdl(plain)).toBeNull();
 	});
 
-	iverilogTest(
-		"iverilog: APB / JTAG / async WB masters through wb_cdc",
+	verilatorTest(
+		"verilator: APB / JTAG / async WB masters through wb_cdc",
 		async () => {
 			const def = mb();
 			const dir = mkdtempSync(join(tmpdir(), "aw-wbm-"));
@@ -161,33 +159,17 @@ describe("wishbone master bridges", () => {
 			const mods = await generateMasterModules(dir);
 			expect(mods.length).toBe(MASTER_MODULES.length);
 			const tb = join(import.meta.dir, "fixtures/wb_master_tb.sv");
-			const vvp = join(dir, "tb.vvp");
-			const build = Bun.spawnSync({
-				cmd: [
-					"iverilog",
-					"-g2012",
-					"-o",
-					vvp,
-					"-s",
-					"tb",
-					tb,
-					system,
-					fabric,
-					...mods,
-				],
-				stderr: "pipe",
+			const r = verilatorSim({
+				dir: join(dir, "obj"),
+				top: "tb",
+				sources: [tb, system, fabric, ...mods],
 			});
-			const diag = build.stderr
-				.toString()
-				.split(/\r?\n/)
-				.filter((l) => l.trim() && !l.includes("sorry: constant selects"));
-			expect(diag).toEqual([]);
-			expect(build.exitCode).toBe(0);
-			const run = Bun.spawnSync({ cmd: ["vvp", "-N", vvp], stdout: "pipe" });
-			const out = run.stdout.toString();
-			expect(out).not.toContain("FAIL");
-			expect(out).toContain("PASS");
+			expect(r.buildLog).not.toContain("%Error");
+			expect(r.buildOk).toBe(true);
+			expect(r.stdout).not.toContain("FAIL");
+			expect(r.stdout).toContain("PASS");
+			expect(r.exitCode).toBe(0);
 		},
-		60_000,
+		180_000,
 	);
 });

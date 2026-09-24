@@ -23,7 +23,7 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
   → bun <repo>/index.ts check             # 作者面合法性 + deps（先于 render）
   → bun <repo>/index.ts web <top_unit>    # 起 127.0.0.1 页面
   → 浏览器打开 ?dump=1                    # check → render（deps 单元自动先行）→ 写 rtl/gen/connect|sim
-  → verilator 冒烟                         # sim/verilator/run.sh[+ --sd]；见 §6 / fw/README.md（主路径，不要求 iverilog）
+  → verilator 冒烟                         # sim/verilator/run.sh[+ --sd | --tb-mod]；见 §6 / fw/README.md（仅 Verilator）
 ```
 
 `.autowire/` 全部是可删生成物：`hdxml/`（RtlIndex）、`connect/<id>.xml`（抽象模块快照，唯一形式，无 html 快照）、`dump/<id>.html`（调试落盘）。
@@ -39,18 +39,18 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
 
 ## 3. 验证纪律（demo/soc/sim/ + fw/ 模式）
 
-- **主冒烟路径：Verilator + C 固件**（不要求 iverilog）：
-  - 基础：`./sim/verilator/run.sh` → `fw/basic_smoke`：顶层 decoder 级联进两个 `sd_sha` channel；CPU 打 smoke + SHA0/SHA1 CTRL；写 `FABRIC.rb_grant_en` 给两个 channel arbiter。**channel DMA 打不到父级 SRAM/flash**。SD→SHA DMA 走 `--sd`。字段位域与窗基址来自 `fw/gen/wishbone/`（`plugin generate wishbone`；**入库展示，禁止当临时产物删除**）。
+- **冒烟路径：仅 Verilator + C 固件**（不用 iverilog）：
+  - 基础：`./sim/verilator/run.sh` → `fw/basic_smoke`：顶层 interconnect（cpu + JTAG dbg）级联进两个 `sd_sha` channel；外部 JTAG 冒烟（`jtag_host.h`）与固件并发；CPU 打 smoke + SHA0/SHA1 CTRL；写 `FABRIC.rb_grant_en` 给两个 channel arbiter。**channel DMA 打不到父级 SRAM/flash**。SD→SHA DMA 走 `--sd`。字段位域与窗基址来自 `fw/gen/wishbone/`（`plugin generate wishbone`；**入库展示，禁止当临时产物删除**）。
   - SD：`./sim/verilator/run.sh --sd` → `fw/sd_sha256` + GPL-3 `third_party/sdspisim` + `images/zeros_sha.img`。
   - GPL 边界：`sdspisim` 只进 Verilator C++ harness；固件侧用 MIT `fw/common/sdspi_regs.h`。
-- **遗留（非门禁，但须可跑）**：`sim/gen_firmware.py` + `sim/run_smoke.sh`（iverilog 迷你汇编器）——脚本会**先重跑 `plugin generate all`** 并把 `rtl/gen/plugins/**` 编入 filelist；tb 层级探针以 `rtl/gen/connect` 当前例化名（`u_ch0.u_sha.u_regs` / `u_sram.mem`）为准；`sim/run_fw_zeros.sh` 已转发到 Verilator。
+  - aw-tb-mod：`./sim/verilator/run.sh --tb-mod` → dump 的 `rtl/gen/sim/tb_soc.sv`（`--binary --timing`；`sim/tb_board.svh` + `tb_sim.svh` + `tb_jtag.svh`；flash 用 `spiflash_vl`，pad 显式 OE 解析，无 inout Z）。
 - **Verilator 构建依赖**：`sim/verilator/Makefile` 把 `filelist.f` 里的 RTL 全部列进目标依赖——改叶子/生成物后 **不必** 手清 `obj_dir`（脏二进制曾静默跑旧 RTL）。
 - C 固件 SoT 是 **`.c` + Makefile**，不是手改 hex；hex 为构建产物（`fw/**/build/` gitignore）。
 - 仿真 SRAM 上电为 **X**：消息缓冲必须由固件显式清零/写入，不能假设上电为 0。
-- 已知答案测试（KAT）：`hashlib` / IP bench 向量；寄存器侧为 **每 32-bit 字字节反序**（与 `gen_firmware.py` 一致）。
+- 已知答案测试（KAT）：`hashlib` / IP bench 向量；寄存器侧为 **每 32-bit 字字节反序**。
 - **阴性控制必须做**：改 1 字节消息 → 必须 FAIL。
 - TB 观测：`test_valid/test_data`；pass=`0x600d600d` / fail=`0xdead0001` / alive=`0x1`。
-- 生成后验收路径：改插件生成器 → `plugin generate all` → `analysis` → web dump（`?dump=1`）→ `./sim/verilator/run.sh --regfile`（regfile 全 Access + SEL + shadow bank 覆盖）+ `./sim/run_smoke.sh`（iverilog 全 SoC 精编）。
+- 生成后验收路径：改插件生成器 → `plugin generate all` → `analysis` → web dump（`?dump=1`）→ `./sim/verilator/run.sh --regfile`（regfile 全 Access + SEL + shadow bank 覆盖）+ `./sim/verilator/run.sh --tb-mod`（aw-tb-mod dump 全 SoC）。
 
 ## 4. MCP 调试回路（已落地的官方路径）
 
@@ -74,7 +74,7 @@ Playwright MCP（浏览器 A 面）
 3. 寄存器拼接 `{22'h0, done, busy, 6'h0, sr}` 少 1 bit → done 错位，固件轮询死锁。**拼接宽度逐段数清**。
 4. 译码窗口 mask 小于寄存器跨度（32B 窗口装 36B 寄存器）→ 最后一个寄存器读成 0。
 5. 存储映射槽位步长（0x1000）与固件偏移（+0x200）不匹配 → 外设全部 unmapped。互联有 unmapped 立即 ack 兜底，表现为读 0 而非挂死。
-6. 多个 `always @*` 共享同一个 `integer` 循环变量 → iverilog 下互相重触发、仿真时间爬行。**每块独立 loop var**。
+6. 多个 `always @*` 共享同一个 `integer` 循环变量 → 事件驱动仿真器下互相重触发、仿真时间爬行。**每块独立 loop var**。
 7. 组合 ack 链路里把 `ack` 反馈进 `we`（`we = sel & ack & we_i` 且 `ack` 依赖 `wait(we)`）→ 零延迟振荡隐患；写使能别过 ack。
 8. 固定地址 DMA 读内存缓冲 → 同一 word 重复 32 次。FIFO 固定地址 / 内存扫址两种模式要分开（`src_inc`）。
 11. picorv32 WB 读事务 `sel=0`：ZipCPU `sdspi` 仅在 `sel!=0` 时推进 FIFO 指针——**不要**用 CPU `lw` 抽 FIFO，用 DMA（`sel=0xF`）。
@@ -87,7 +87,7 @@ Playwright MCP（浏览器 A 面）
 - `autowire cli` 未落地（等 Web 用例/golden 稳定）。
 - 工作区 MCP（docs/mcp/workspace.md）：草稿，节点级 html_edit 未实现；传输未定（stdio MCP vs CLI）。
 - 插件机制（docs/plugins/）：草稿。
-- demo/soc 验证路线（与 `fw/README.md` 对齐；**Verilator 为主，不要求 iverilog**）：
+- demo/soc 验证路线（与 `fw/README.md` 对齐；**仅 Verilator**）：
   1. **基础冒烟**：`sim/verilator/run.sh` — `fw/basic_smoke`（SRAM zeros SHA + Flash `0x0100_1000` KAT SHA + dual DMA RR）。
   2. **SD 冒烟**：`sim/verilator/run.sh --sd` — `sdspisim` + `fw/sd_sha256`（CMD17→FIFO→DMA→SHA）。
 - 固件拉 UART 打印仍可选（testout 已覆盖等价观测）。

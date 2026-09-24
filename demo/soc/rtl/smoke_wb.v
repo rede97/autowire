@@ -41,19 +41,21 @@ module smoke_wb (
 	assign ro_busy = ro_cnt[8];
 	assign ro_code = ro_cnt[7:0];
 
-	// --- RWW HW counter (pulse strb every 64 cycles; fw syncs to the edge) ---
+	// --- RWW HW counter (pulse strb every 256 cycles; fw syncs to the edge;
+	// the window must cover an XIP-fetched read / write / read-back through the
+	// arbitrated fabric) ---
 	reg [15:0] rww_cnt;
-	reg [5:0]  rww_div;
+	reg [7:0]  rww_div;
 	reg        rww_strb;
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			rww_cnt  <= 16'h0;
-			rww_div  <= 6'h0;
+			rww_div  <= 8'h0;
 			rww_strb <= 1'b0;
 		end else begin
-			rww_div  <= rww_div + 6'h1;
-			rww_strb <= (rww_div == 6'h3f);
-			if (rww_div == 6'h3f)
+			rww_div  <= rww_div + 8'h1;
+			rww_strb <= (rww_div == 8'hff);
+			if (rww_div == 8'hff)
 				rww_cnt <= rww_cnt + 16'h1;
 		end
 	end

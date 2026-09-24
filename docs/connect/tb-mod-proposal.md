@@ -67,6 +67,8 @@ deps = ["soc_top"]            # 可依赖 connect 单元 id；sim 单元不被 c
 >
 ```
 
+- `body-pre-include` 是 UVM / DV 环境入口（import package、声明 vif / interface 实例），落在 dump 网线声明 **之前**，所以 **禁止**驱动或引用 dump 出的网线；时钟 / 复位 / pad 驱动放 `body-post-include`（先用后声明，仿真器报错）。  
+- 属性值按空白切分，可列多个文件，按序各出一行 `` `include ``（demo：pre `tb_env_setup.svh`；post `tb_board.svh tb_sim.svh`）。  
 - 属性值**原样**写入 `` `include "…" ``；**不**复制、**不**改路径。  
 - 路径解析归 **DV filelist / `+incdir`**；check **不做**存在性检查。  
 - 仅 `aw-tb-mod`；`aw-mod` 上出现 → check **报错**。
@@ -112,7 +114,7 @@ endmodule
 | `src/workspace.ts` / dump API | 按单元种类选目录；插件 generate → `plugins_dir/<plugin-id>/` |
 | `src/core/aw.ts` / printer | `aw-tb-mod`；raw；body include；禁例化/params/ports/submods |
 | check | sim 页根必须 tb-mod；connect 页禁止 tb-mod；路径字符串形态 |
-| demo | [`sim/soc_tb.html`](../../demo/soc/sim/soc_tb.html) + `run_smoke.sh` |
+| demo | [`sim/soc_tb.html`](../../demo/soc/sim/soc_tb.html) + `sim/verilator/run.sh --tb-mod`（Verilator `--binary --timing`） |
 | 示例 | [`07-author-tb-top.html`](../examples/connect/07-author-tb-top.html) |
 
 ## 4. 已裁定

@@ -3,6 +3,10 @@
 #   ./sim/verilator/run.sh              # basic_smoke: cascade MMIO + smoke CSR
 #   ./sim/verilator/run.sh --regfile    # wishbone-regfile MMIO smoke (FIFO/counter)
 #   ./sim/verilator/run.sh --sd         # sd_sha256 + card image (channel DMA)
+#   ./sim/verilator/run.sh --tb-mod     # aw-tb-mod dump top rtl/gen/sim/tb_soc.sv
+#                                       # (--binary; basic_smoke + SV JTAG host)
+# The default / --regfile / --sd harness also runs the external JTAG smoke
+# (jtag_host.h) concurrently with the firmware.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
@@ -11,6 +15,7 @@ export PATH="${HOME}/wch/Toolchain/RISC-V Embedded GCC15/bin:${HOME}/wch/Toolcha
 
 CONN=rtl/gen/connect
 USE_SD=0
+TB_MOD=0
 FW_CASE=basic_smoke
 HEX=
 EXTRA=()
@@ -26,6 +31,10 @@ while [[ $# -gt 0 ]]; do
 		FW_CASE=regfile_smoke
 		shift
 		;;
+	--tb-mod)
+		TB_MOD=1
+		shift
+		;;
 	*)
 		echo "unknown arg: $1" >&2
 		exit 2
@@ -39,8 +48,8 @@ bash patches/apply.sh
 test -f "$CONN/soc_top.sv" || { echo "missing $CONN/soc_top.sv — dump first"; exit 1; }
 test -f "$CONN/sha256wb.sv" || { echo "missing $CONN/sha256wb.sv — dump first"; exit 1; }
 test -f "$CONN/sd_sha_ch.sv" || { echo "missing $CONN/sd_sha_ch.sv — dump first"; exit 1; }
-test -f rtl/gen/plugins/wishbone/soc_wb_decoder.sv || {
-	echo "missing rtl/gen/plugins/wishbone/soc_wb_decoder.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f rtl/gen/plugins/wishbone/soc_wb_interconnect.sv || {
+	echo "missing rtl/gen/plugins/wishbone/soc_wb_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
 test -f rtl/gen/plugins/wishbone/sd_sha_interconnect.sv || {
@@ -84,6 +93,16 @@ if [[ "$USE_SD" == 1 ]]; then
 	python3 sim/verilator/images/gen_zeros_sha_img.py \
 		sim/verilator/images/zeros_sha.img
 	EXTRA+=("+sdcard=sim/verilator/images/zeros_sha.img")
+fi
+
+if [[ "$TB_MOD" == 1 ]]; then
+	[[ "$USE_SD" == 0 && "$FW_CASE" == basic_smoke ]] || {
+		echo "--tb-mod runs basic_smoke only" >&2
+		exit 2
+	}
+	test -f rtl/gen/sim/tb_soc.sv || { echo "missing rtl/gen/sim/tb_soc.sv - dump soc_tb first"; exit 1; }
+	make -C sim/verilator tb_mod
+	exec sim/verilator/obj_dir_tb/Vtb_soc "+firmware=${HEX}"
 fi
 
 make -C sim/verilator USE_SD="$USE_SD"

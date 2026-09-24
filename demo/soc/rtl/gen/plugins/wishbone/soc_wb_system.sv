@@ -3,25 +3,28 @@
 //
 //------------------------------------------------------------------------------
 //  Module: soc_wb_system
-//  Desc:   Demo SoC Wishbone decoder (CPU) cascaded into two sd_sha channels
-//  Fabric: soc_wb_decoder
+//  Desc:   Demo SoC Wishbone interconnect (CPU + JTAG) cascaded into two sd_sha channels
+//  Fabric: soc_wb_interconnect
 //  Attached regfile hangs:
 //    smoke  smoke_regfile  base=0x03006000  mask=0xffffffc0
+//  Bridged masters (bridge / wb_cdc before the fabric):
+//    Master dbg — External JTAG smoke (TDR behind demo_tap USER) [JTAG TDR (DFT TAP / SIB client) + wb_cdc]
 //------------------------------------------------------------------------------
 
 module soc_wb_system (
 	input  logic        clk,
 	input  logic        rst_n,
-	// Single master (flat; decoder mode)
-	input  logic [31:0] m_adr_i,
-	input  logic [31:0] m_dat_i,
-	input  logic [3:0]  m_sel_i,
-	input  logic [1:0]  m_tga_i,
-	input  logic        m_cyc_i,
-	input  logic        m_stb_i,
-	input  logic        m_we_i,
-	output logic [31:0] m_dat_o,
-	output logic        m_ack_o,
+	input  logic        rb_grant_en,
+	// Master cpu — picorv32_wb
+	input  logic [31:0] cpu_o_wb_adr,
+	input  logic [31:0] cpu_o_wb_dat,
+	input  logic [3:0]  cpu_o_wb_sel,
+	input  logic [1:0]  cpu_o_wb_tga,
+	input  logic        cpu_o_wb_cyc,
+	input  logic        cpu_o_wb_stb,
+	input  logic        cpu_o_wb_we,
+	output logic [31:0] cpu_i_wb_dat,
+	output logic        cpu_i_wb_ack,
 	// Slave sram — 64 KiB SRAM
 	output logic [31:0] sram_i_wb_adr,
 	output logic [31:0] sram_i_wb_dat,
@@ -85,6 +88,16 @@ module soc_wb_system (
 	output logic        ch1_i_wb_we,
 	input  logic [31:0] ch1_o_wb_dat,
 	input  logic        ch1_o_wb_ack,
+	// Master dbg — External JTAG smoke (TDR behind demo_tap USER) [JTAG TDR (DFT TAP / SIB client) + wb_cdc]
+	input  logic        dbg_tck,
+	input  logic        dbg_trst_n,
+	input  logic        dbg_sel,
+	input  logic        dbg_capture_dr,
+	input  logic        dbg_shift_dr,
+	input  logic        dbg_update_dr,
+	input  logic        dbg_tdi,
+	output logic        dbg_tdo,
+	input  logic        dbg_en,
 	// Regfile smoke hang smoke sidebands
 	// Field / shadow sidebands
 	// RO status in: busy — Busy (tied in HTML)
@@ -148,18 +161,97 @@ module soc_wb_system (
 	logic [31:0] smoke_o_wb_dat;
 	logic        smoke_o_wb_ack;
 
-	soc_wb_decoder u_ic (
+	//------------------------------------------------------------------------------
+	//  Master dbg — External JTAG smoke (TDR behind demo_tap USER) [JTAG TDR (DFT TAP / SIB client) + wb_cdc]
+	//------------------------------------------------------------------------------
+	logic [31:0] dbg_fab_adr;
+	logic [31:0] dbg_fab_wdat;
+	logic [3:0]  dbg_fab_sel;
+	logic [1:0]  dbg_fab_tga;
+	logic        dbg_fab_cyc;
+	logic        dbg_fab_stb;
+	logic        dbg_fab_we;
+	logic [31:0] dbg_fab_rdat;
+	logic        dbg_fab_ack;
+	logic        dbg_src_cyc;
+	logic        dbg_src_stb;
+	logic        dbg_src_we;
+	logic [31:0] dbg_src_adr;
+	logic [31:0] dbg_src_wdat;
+	logic [3:0]  dbg_src_sel;
+	logic        dbg_src_ack;
+	logic        dbg_src_err;
+	logic [31:0] dbg_src_rdat;
+
+	wb_jtag_tdr #(.AW(32)) u_dbg_jtag (
+		.tck       (dbg_tck),
+		.trst_n    (dbg_trst_n),
+		.sel       (dbg_sel),
+		.capture_dr(dbg_capture_dr),
+		.shift_dr  (dbg_shift_dr),
+		.update_dr (dbg_update_dr),
+		.tdi       (dbg_tdi),
+		.tdo       (dbg_tdo),
+		.en        (dbg_en),
+		.wb_cyc    (dbg_src_cyc),
+		.wb_stb    (dbg_src_stb),
+		.wb_we     (dbg_src_we),
+		.wb_adr    (dbg_src_adr),
+		.wb_dat    (dbg_src_wdat),
+		.wb_sel    (dbg_src_sel),
+		.wb_ack    (dbg_src_ack),
+		.wb_err    (dbg_src_err),
+		.wb_rdat   (dbg_src_rdat)
+	);
+
+	wb_cdc #(.AW(32), .TW(2), .TIMEOUT(0)) u_dbg_cdc (
+		.s_clk  (dbg_tck),
+		.s_rst_n(dbg_trst_n),
+		.s_cyc  (dbg_src_cyc),
+		.s_stb  (dbg_src_stb),
+		.s_we   (dbg_src_we),
+		.s_adr  (dbg_src_adr),
+		.s_dat  (dbg_src_wdat),
+		.s_sel  (dbg_src_sel),
+		.s_tga  (2'd0),
+		.s_ack  (dbg_src_ack),
+		.s_err  (dbg_src_err),
+		.s_rdat (dbg_src_rdat),
+		.clk    (clk),
+		.rst_n  (rst_n),
+		.m_cyc  (dbg_fab_cyc),
+		.m_stb  (dbg_fab_stb),
+		.m_we   (dbg_fab_we),
+		.m_adr  (dbg_fab_adr),
+		.m_dat  (dbg_fab_wdat),
+		.m_sel  (dbg_fab_sel),
+		.m_tga  (dbg_fab_tga),
+		.m_ack  (dbg_fab_ack),
+		.m_rdat (dbg_fab_rdat)
+	);
+
+	soc_wb_interconnect u_ic (
 		.clk               (clk),
 		.rst_n             (rst_n),
-		.m_adr_i           (m_adr_i),
-		.m_dat_i           (m_dat_i),
-		.m_sel_i           (m_sel_i),
-		.m_tga_i           (m_tga_i),
-		.m_cyc_i           (m_cyc_i),
-		.m_stb_i           (m_stb_i),
-		.m_we_i            (m_we_i),
-		.m_dat_o           (m_dat_o),
-		.m_ack_o           (m_ack_o),
+		.rb_grant_en       (rb_grant_en),
+		.cpu_o_wb_adr      (cpu_o_wb_adr),
+		.cpu_o_wb_dat      (cpu_o_wb_dat),
+		.cpu_o_wb_sel      (cpu_o_wb_sel),
+		.cpu_o_wb_tga      (cpu_o_wb_tga),
+		.cpu_o_wb_cyc      (cpu_o_wb_cyc),
+		.cpu_o_wb_stb      (cpu_o_wb_stb),
+		.cpu_o_wb_we       (cpu_o_wb_we),
+		.cpu_i_wb_dat      (cpu_i_wb_dat),
+		.cpu_i_wb_ack      (cpu_i_wb_ack),
+		.dbg_o_wb_adr      (dbg_fab_adr),
+		.dbg_o_wb_dat      (dbg_fab_wdat),
+		.dbg_o_wb_sel      (dbg_fab_sel),
+		.dbg_o_wb_tga      (dbg_fab_tga),
+		.dbg_o_wb_cyc      (dbg_fab_cyc),
+		.dbg_o_wb_stb      (dbg_fab_stb),
+		.dbg_o_wb_we       (dbg_fab_we),
+		.dbg_i_wb_dat      (dbg_fab_rdat),
+		.dbg_i_wb_ack      (dbg_fab_ack),
 		.sram_i_wb_adr     (sram_i_wb_adr),
 		.sram_i_wb_dat     (sram_i_wb_dat),
 		.sram_i_wb_sel     (sram_i_wb_sel),

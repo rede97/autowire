@@ -3,6 +3,11 @@ module soc_top (
 	input  logic        rst_ni,
 	input  logic        clk,
 	output wire         trap,
+	input  wire         jtag_tck,
+	input  wire         jtag_tms,
+	input  wire         jtag_tdi,
+	input  wire         jtag_trst_n,
+	output wire         jtag_tdo,
 	input  wire         flash_io0_di,
 	input  wire         flash_io1_di,
 	input  wire         flash_io2_di,
@@ -42,6 +47,7 @@ module soc_top (
 	logic [31:0] cpu_i_wb_dat;
 	logic        cpu_i_wb_ack;
 	wire  [31:0] irq_bus;
+	logic        rg_rb_grant_en;
 	logic [1:0]  rg_bank_sel;
 	logic        p_rg_go;
 	logic [31:0] sram_o_wb_dat;
@@ -58,6 +64,13 @@ module soc_top (
 	logic        ch0_o_wb_ack;
 	logic [31:0] ch1_o_wb_dat;
 	logic        ch1_o_wb_ack;
+	logic        dbg_tck;
+	logic        dbg_trst_n;
+	logic        dbg_sel;
+	logic        dbg_capture_dr;
+	logic        dbg_shift_dr;
+	logic        dbg_update_dr;
+	logic        dbg_tdi;
 	logic        ro_busy;
 	logic [7:0]  ro_code;
 	logic        rg_capture_strb;
@@ -106,12 +119,12 @@ module soc_top (
 	logic        ch1_i_wb_cyc;
 	logic        ch1_i_wb_stb;
 	logic        ch1_i_wb_we;
+	logic        dbg_tdo;
 	logic [31:0] ext_data_wdata;
 	logic        ext_data_wren;
 	logic [3:0]  ext_data_wstrb;
 	logic        ext_data_rden;
 	logic        ext_data_rst;
-	logic        rg_rb_grant_en;
 	wire  [5:0]  irq_srcs;
 
 	soc_reset u_rst (
@@ -159,13 +172,14 @@ module soc_top (
 	soc_wb_system u_ic (
 		.clk               (clk               ), // i
 		.rst_n             (rst_ni            ), // i
-		.m_adr_i           (cpu_o_wb_adr      ), // i [31:0]
-		.m_dat_i           (cpu_o_wb_dat      ), // i [31:0]
-		.m_sel_i           (cpu_o_wb_sel      ), // i [3:0]
-		.m_tga_i           (rg_bank_sel       ), // i [1:0]
-		.m_cyc_i           (cpu_o_wb_cyc      ), // i
-		.m_stb_i           (cpu_o_wb_stb      ), // i
-		.m_we_i            (cpu_o_wb_we       ), // i
+		.rb_grant_en       (rg_rb_grant_en    ), // i
+		.cpu_o_wb_adr      (cpu_o_wb_adr      ), // i [31:0]
+		.cpu_o_wb_dat      (cpu_o_wb_dat      ), // i [31:0]
+		.cpu_o_wb_sel      (cpu_o_wb_sel      ), // i [3:0]
+		.cpu_o_wb_tga      (rg_bank_sel       ), // i [1:0]
+		.cpu_o_wb_cyc      (cpu_o_wb_cyc      ), // i
+		.cpu_o_wb_stb      (cpu_o_wb_stb      ), // i
+		.cpu_o_wb_we       (cpu_o_wb_we       ), // i
 		.sram_o_wb_dat     (sram_o_wb_dat     ), // i [31:0]
 		.sram_o_wb_ack     (sram_o_wb_ack     ), // i
 		.flash_xip_o_wb_dat(flash_xip_o_wb_dat), // i [31:0]
@@ -180,6 +194,14 @@ module soc_top (
 		.ch0_o_wb_ack      (ch0_o_wb_ack      ), // i
 		.ch1_o_wb_dat      (ch1_o_wb_dat      ), // i [31:0]
 		.ch1_o_wb_ack      (ch1_o_wb_ack      ), // i
+		.dbg_tck           (dbg_tck           ), // i
+		.dbg_trst_n        (dbg_trst_n        ), // i
+		.dbg_sel           (dbg_sel           ), // i
+		.dbg_capture_dr    (dbg_capture_dr    ), // i
+		.dbg_shift_dr      (dbg_shift_dr      ), // i
+		.dbg_update_dr     (dbg_update_dr     ), // i
+		.dbg_tdi           (dbg_tdi           ), // i
+		.dbg_en            (1'b1              ), // i
 		.ro_busy           (ro_busy           ), // i
 		.ro_code           (ro_code           ), // i [7:0]
 		.rg_capture_strb   (rg_capture_strb   ), // i
@@ -187,8 +209,8 @@ module soc_top (
 		.ext_data          (ext_data          ), // i [31:0]
 		.ext_data_ready    (ext_data_ready    ), // i
 		.c_rg_sticky_set   (p_rg_go           ), // i
-		.m_dat_o           (cpu_i_wb_dat      ), // o [31:0]
-		.m_ack_o           (cpu_i_wb_ack      ), // o
+		.cpu_i_wb_dat      (cpu_i_wb_dat      ), // o [31:0]
+		.cpu_i_wb_ack      (cpu_i_wb_ack      ), // o
 		.sram_i_wb_adr     (sram_i_wb_adr     ), // o [31:0]
 		.sram_i_wb_dat     (sram_i_wb_dat     ), // o [31:0]
 		.sram_i_wb_sel     (sram_i_wb_sel     ), // o [3:0]
@@ -231,6 +253,7 @@ module soc_top (
 		.ch1_i_wb_cyc      (ch1_i_wb_cyc      ), // o
 		.ch1_i_wb_stb      (ch1_i_wb_stb      ), // o
 		.ch1_i_wb_we       (ch1_i_wb_we       ), // o
+		.dbg_tdo           (dbg_tdo           ), // o
 		.rg_enable         (                  ), // o
 		.rg_mode           (                  ), // o [2:0]
 		.rg_capture        (                  ), // o [15:0]
@@ -248,6 +271,21 @@ module soc_top (
 		.rg_key_0          (                  ), // o [31:0]
 		.rg_key_1          (                  ), // o [31:0]
 		.rg_key_2          (                  )  // o [31:0]
+	);
+	demo_tap u_tap (
+		.jtag_tck          (jtag_tck          ), // i
+		.jtag_tms          (jtag_tms          ), // i
+		.jtag_tdi          (jtag_tdi          ), // i
+		.jtag_trst_n       (jtag_trst_n       ), // i
+		.dbg_tdo           (dbg_tdo           ), // i
+		.jtag_tdo          (jtag_tdo          ), // o
+		.dbg_tck           (dbg_tck           ), // o
+		.dbg_trst_n        (dbg_trst_n        ), // o
+		.dbg_sel           (dbg_sel           ), // o
+		.dbg_capture_dr    (dbg_capture_dr    ), // o
+		.dbg_shift_dr      (dbg_shift_dr      ), // o
+		.dbg_update_dr     (dbg_update_dr     ), // o
+		.dbg_tdi           (dbg_tdi           )  // o
 	);
 	wb_sram #(
 		.WORDS             (16384             ),

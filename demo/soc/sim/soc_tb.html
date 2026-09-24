@@ -3,7 +3,11 @@
   DV sim unit "soc_tb": aw-tb-mod top for SoC smoke.
   Contract: docs/connect/tb-mod-proposal.md
   toml: [sim.soc_tb] html=sim/soc_tb.html deps=["soc_top"]
-  Dump → rtl/gen/sim/tb_soc.sv; board clk/rst/flash/checker live in body includes.
+  Dump → rtl/gen/sim/tb_soc.sv.
+  body-pre  tb_env_setup.svh: UVM env hook (package imports, vif declarations);
+            lands before the dumped nets, so it must not drive them.
+  body-post tb_board.svh (clk / rst / flash pads) + tb_sim.svh (flash model,
+            checker, external JTAG host).
 -->
 <html lang="en">
   <head>
@@ -15,7 +19,7 @@
       <aw-tb-mod
         name="tb_soc"
         body-pre-include="tb_env_setup.svh"
-        body-post-include="tb_sim.svh"
+        body-post-include="tb_board.svh tb_sim.svh"
       >
         <aw-content>
           <aw-imports></aw-imports>

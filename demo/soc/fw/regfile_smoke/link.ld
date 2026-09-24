@@ -16,7 +16,7 @@ SECTIONS {
 		. = ALIGN(4);
 	} > FLASH
 
-	/* Soft-padded SHA message words (legacy gen_firmware.py KAT). */
+	/* Soft-padded SHA message words (KAT). */
 	.kat 0x01001000 : {
 		KEEP(*(.kat.sha_msg))
 		. = ALIGN(4);

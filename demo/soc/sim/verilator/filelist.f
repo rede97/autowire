@@ -14,10 +14,14 @@ rtl/soc_irqmerge.v
 rtl/sd_rd_dma.v
 rtl/sha256_wb_regs.v
 rtl/smoke_wb.v
+rtl/demo_tap.v
 
 # Type-A plugins (bun ../../index.ts plugin generate all)
 rtl/gen/plugins/wishbone/wb_cfg_pipe.sv
-rtl/gen/plugins/wishbone/soc_wb_decoder.sv
+rtl/gen/plugins/wishbone/wb_sync_cell.sv
+rtl/gen/plugins/wishbone/wb_cdc.sv
+rtl/gen/plugins/wishbone/wb_jtag_tdr.sv
+rtl/gen/plugins/wishbone/soc_wb_interconnect.sv
 rtl/gen/plugins/wishbone/soc_wb_system.sv
 rtl/gen/plugins/wishbone/sd_sha_interconnect.sv
 rtl/gen/plugins/wishbone/sd_sha_system.sv

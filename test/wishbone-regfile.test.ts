@@ -27,6 +27,7 @@ import {
 import { generateDef } from "../src/plugins/wishbone-regfile/generate.ts";
 import { layoutRegfile } from "../src/plugins/wishbone-regfile/layout.ts";
 import { loadWorkspace } from "../src/workspace.ts";
+import { verilatorSim, verilatorTest } from "./fixtures/verilator.ts";
 import {
 	smoke_block_wide,
 	smoke_rc,
@@ -38,9 +39,6 @@ import {
 	smoke_w1c,
 	smoke_w1p,
 } from "./fixtures/wb_reg_access.ts";
-
-const iverilogTest =
-	Bun.which("iverilog") && Bun.which("vvp") ? test : test.skip;
 
 describe("wishbone-regfile", () => {
 	test("layout sub_module_b packs ID cell at 0", () => {
@@ -269,14 +267,13 @@ describe("wishbone-regfile smoke features", () => {
 		expect(sv).toContain("for (int __i = 3; __i >= 0; __i--)");
 	});
 
-	iverilogTest(
+	verilatorTest(
 		"W1C hardware set survives a zero-lane write",
 		() => {
 			const dir = mkdtempSync(join(tmpdir(), "aw_regfile_w1c_"));
 			try {
 				const dut = join(dir, "smoke_w1c_regfile.sv");
 				const tb = join(dir, "tb.sv");
-				const vvp = join(dir, "tb.vvp");
 				writeFileSync(dut, emitRegfileSv(layoutRegfile(smoke_w1c)));
 				writeFileSync(
 					tb,
@@ -315,23 +312,19 @@ describe("wishbone-regfile smoke features", () => {
 endmodule
 `,
 				);
-				const compile = Bun.spawnSync({
-					cmd: ["iverilog", "-g2012", "-o", vvp, tb, dut],
-					stdout: "pipe",
-					stderr: "pipe",
+				const r = verilatorSim({
+					dir: join(dir, "obj"),
+					top: "tb",
+					sources: [tb, dut],
 				});
-				expect(compile.exitCode).toBe(0);
-				const sim = Bun.spawnSync({
-					cmd: ["vvp", vvp],
-					stdout: "pipe",
-					stderr: "pipe",
-				});
-				expect(sim.exitCode).toBe(0);
+				expect(r.buildLog).not.toContain("%Error");
+				expect(r.buildOk).toBe(true);
+				expect(r.exitCode).toBe(0);
 			} finally {
 				rmSync(dir, { recursive: true, force: true });
 			}
 		},
-		60000,
+		180_000,
 	);
 
 	test("C and uvm_reg exports are field layout only", () => {

@@ -5,10 +5,14 @@
     simpleuart + test output + 2× sd_sha_ch (SD + DMA + SHA256 channel) +
     smoke_wb glue. Attached smoke_regfile lives inside soc_wb_system;
     sha256_regfile lives inside each channel's sd_sha_system.
-  Top fabric is a CPU-only decoder cascaded into two channel interconnects
-  (one sd_sha BusDef, two SlaveBus hangs). Channel DMA cannot reach SRAM/flash.
-  TGA: fabric 2-bit (smoke shadow bank); cpu port = smoke rg_bank_sel CSR.
-  Channel arbiter: rb_grant_en = smoke rg_rb_grant_en (FABRIC @ 0x030, reset 0).
+  Top fabric is a CPU + JTAG interconnect cascaded into two channel
+  interconnects (one sd_sha BusDef, two SlaveBus hangs). Channel DMA cannot
+  reach SRAM/flash.
+  TGA: fabric 2-bit (smoke shadow bank); cpu port = smoke rg_bank_sel CSR;
+  the JTAG master always uses bank 0.
+  Arbiters (top + channels): rb_grant_en = smoke rg_rb_grant_en (FABRIC @ 0x030, reset 0).
+  JTAG: jtag_* pins → u_tap (demo_tap, DFT placeholder TAP) → USER IR selects
+  the dbg TDR inside soc_wb_system (wb_jtag_tdr + wb_cdc); dbg_en tied 1.
   Memory map (byte addresses) / slave id (aw-inst id):
     0x0000_0000  sram
     0x0100_0000  flash_xip
@@ -18,7 +22,7 @@
     0x0300_0000  ch0  (sd 0x00 / dma 0x10 / sha256 0x40 relative)
     0x0300_1000  ch1  (same relative map)
     0x0300_6000  smoke
-  Master: CPU (decoder). Each channel adds local engine master "eng".
+  Masters: CPU + dbg (JTAG). Each channel adds local engine master "eng".
 -->
 <html lang="en">
   <head>
@@ -91,19 +95,24 @@
               </aw-template>
             </aw-inst>
 
-            <!-- CPU-only decoder + attached smoke_regfile. Cascade slaves ch0/ch1. -->
+            <!-- CPU + JTAG interconnect + attached smoke_regfile. Cascade slaves ch0/ch1. -->
             <aw-inst id="u_ic" mod="soc_wb_system">
               <aw-template>
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>
-                <aw-rewrite match="^m_(adr|dat|sel|cyc|stb|we)_i$" to="cpu_o_wb_$1"></aw-rewrite>
-                <aw-rewrite match="^m_(dat|ack)_o$" to="cpu_i_wb_$1"></aw-rewrite>
-                <aw-connect port="m_tga_i" to="rg_bank_sel"></aw-connect>
+                <aw-connect port="rb_grant_en" to="rg_rb_grant_en"></aw-connect>
+                <aw-connect port="cpu_o_wb_tga" to="rg_bank_sel"></aw-connect>
+                <aw-connect port="dbg_en" to="1'b1" type="const"></aw-connect>
                 <aw-connect port="c_rg_sticky_set" to="p_rg_go"></aw-connect>
                 <aw-rewrite
                   match="^(rg_enable|rg_mode|rg_capture|c_rg_sticky|rg_cfg|o_bank_sel|rg_key_\d)$"
                   type="open"
                 ></aw-rewrite>
               </aw-template>
+            </aw-inst>
+
+            <!-- DFT placeholder TAP: external jtag_* pins; dbg_* identity-match u_ic. -->
+            <aw-inst id="u_tap" mod="demo_tap">
+              <aw-template></aw-template>
             </aw-inst>
 
             <aw-inst id="sram" mod="wb_sram">

@@ -107,7 +107,8 @@ Parallel (does not block connect)
     SlaveBus is SlaveRegion sugar: hang a child BusDef as a window; child RTL
     once, N instances; child Master("uplink") remaps to i_wb_* / o_wb_* on
     <bus>_system; parent forwards window-offset ADR (adr & ~mask);
-    demo: top soc_wb is a CPU decoder; two SlaveBus(sd_sha) channels (ch0/ch1);
+    demo: top soc_wb = interconnect (cpu + JTAG dbg master behind demo_tap USER);
+    two SlaveBus(sd_sha) channels (ch0/ch1);
     HTML sot/connect/sd_sha_ch.html wraps sd+dma+sha256wb; DMA SRC is relative;
     channel DMA cannot reach parent SRAM/flash (no downlink);
     no awx-regfile;
@@ -130,7 +131,9 @@ Parallel (does not block connect)
     1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
     demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives each channel rb_grant_en;
     basic_smoke checks cascade SHA MMIO + grant CSR; --sd is channel DMA+SHA;
-    demo/soc sot/wb_bus_soc.ts → soc_wb_decoder + soc_wb_system;
+    demo/soc sot/wb_bus_soc.ts → soc_wb_interconnect + soc_wb_system (+ JTAG TDR / wb_cdc);
+    demo sim: Verilator only (sim/verilator/run.sh; --tb-mod runs the aw-tb-mod
+    dump tb_soc); external JTAG smoke runs concurrently with the firmware;
     sot/wb_bus_sd_sha.ts → sd_sha_interconnect + sd_sha_system (mixed slave PIPE);
     ADR=byte; fabric addr_width parametrized;
     TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out;
