@@ -1,7 +1,7 @@
 # Autowire 插件与自定义标签
 
 > 状态：**草稿（接口已裁定，未落地）**。不堵连接核心轨道。  
-> Wishbone 实例：[`wishbone-regfile.md`](./wishbone-regfile.md)（叶子）、[`wishbone-bus.md`](./wishbone-bus.md)（块内配置树）。  
+> Wishbone 实例：[`wishbone-regfile.md`](./wishbone-regfile.md)（叶子）、[`wishbone-bus.md`](./wishbone-bus.md)（块内配置树）、[`wishbone-master.md`](./wishbone-master.md)（master 口 CDC/APB/JTAG）。  
 > 改本文时同步 `help status` Parallel、[`../architecture.md`](../architecture.md) §5、[`../connect/lifecycle.md`](../connect/lifecycle.md)、[`../connect/check.md`](../connect/check.md)。
 
 关键字「必须 / 应当 / 可以」按 RFC 2119。

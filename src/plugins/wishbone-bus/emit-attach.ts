@@ -12,6 +12,14 @@ import {
 	listFabricPorts,
 } from "./emit.ts";
 import { attachedSlaves } from "./emit-map.ts";
+import {
+	bridgedFabricNet,
+	bridgedMasters,
+	emitMasterBlocks,
+	isBridgedFabricPort,
+	masterFacePorts,
+	masterSummary,
+} from "./emit-master.ts";
 
 function hex(n: number): string {
 	return n.toString(16).padStart(8, "0");
@@ -196,13 +204,15 @@ function wrapperPorts(def: BusDef): Array<{
 	for (const p of listFabricPorts(def)) {
 		const hide =
 			[...attachedIds].some((id) => isSlaveWbPort(p.name, id)) ||
-			hidesCascadeFabricPort(p, def);
+			hidesCascadeFabricPort(p, def) ||
+			isBridgedFabricPort(def, p.name);
 		if (hide) continue;
 		ports.push(p);
 	}
 	if (hasCascadeFace(def)) {
 		ports.push(...cascadeWrapperPorts(def));
 	}
+	ports.push(...masterFacePorts(def));
 	for (const s of attached) {
 		const rf = s.regfile;
 		if (!rf) continue;
@@ -248,7 +258,7 @@ function fabricInst(def: BusDef): string[] {
 	const align = maxPort(fabric.map((p) => p.name));
 	const pairs = fabric.map((p) => ({
 		port: p.name,
-		net: cascadeNet(p.name, def),
+		net: bridgedFabricNet(def, p.name) ?? cascadeNet(p.name, def),
 	}));
 	return [`\t${ic} u_ic (`, ...instConns(pairs, align), "\t);"];
 }
@@ -315,7 +325,8 @@ function internalWbNets(def: BusDef): string[] {
 export function emitBusSystemSv(def: BusDef): string | null {
 	const attached = attachedSlaves(def);
 	const cascade = hasCascadeFace(def);
-	if (attached.length === 0 && !cascade) return null;
+	const bridged = bridgedMasters(def).length > 0;
+	if (attached.length === 0 && !cascade && !bridged) return null;
 	const mod = busSystemModuleName(def);
 	const ic = busModuleName(def);
 	const lines: string[] = [
@@ -342,6 +353,10 @@ export function emitBusSystemSv(def: BusDef): string | null {
 			`//    ${s.name}  ${rf.name}_regfile  base=0x${hex(s.base)}  mask=0x${hex(s.mask)}`,
 		);
 	}
+	if (bridged) {
+		lines.push("//  Bridged masters (bridge / wb_cdc before the fabric):");
+		lines.push(...masterSummary(def));
+	}
 	lines.push(
 		"//------------------------------------------------------------------------------",
 		"",
@@ -350,6 +365,7 @@ export function emitBusSystemSv(def: BusDef): string | null {
 	lines.push(...formatPortList(wrapperPorts(def)));
 	lines.push(");", "");
 	lines.push(...internalWbNets(def));
+	lines.push(...emitMasterBlocks(def));
 	lines.push(...fabricInst(def), "");
 	for (const s of attached) {
 		lines.push(...leafInst(def, s), "");

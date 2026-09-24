@@ -149,7 +149,15 @@ Parallel (does not block connect)
     tag defaults to leaf tga_width; TGA must match; id defaults to RegfileDef.name;
     Type-A wrapper <bus>_system instantiates interconnect + attached *_regfile
     (sidebands promoted; WB internalized; HTML aw-inst soc_wb_system / sd_sha_system);
-    uplink master ports become i_wb_* / o_wb_* on the child wrapper
+    uplink master ports become i_wb_* / o_wb_* on the child wrapper;
+    master faces (docs/plugins/wishbone-master.md): Master(name, desc, { apb | jtag | cdc,
+    timeout? }); bridge in the source clock → wb_cdc (4-phase req/ack, non-posted) → fabric;
+    fabric RTL unchanged, all bridge logic inside <bus>_system ({m}_fab_* nets);
+    wb_cdc ERR on fabric reset / timeout / drain (never hangs); APB PPROT mismatch → PSLVERR;
+    JTAG = TDR client of the DFT-owned chip TAP / SIB (no private TAP): shift {op,adr,dat},
+    capture {st,adr,rdat}; launch + poll (st 1 busy / 2 err sticky, nop clears); {m}_en gate;
+    emits wb_sync_cell / wb_cdc / wb_apb2wb / wb_jtag_tdr.sv + <bus>_system.icl/.pdl;
+    cascade face (uplink) cannot be bridged; duplicate master names rejected
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
   Do not treat connect aw-submods as a code-gen hook — generators emit SV then aw-inst

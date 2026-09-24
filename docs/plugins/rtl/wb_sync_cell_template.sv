@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: MIT
+//
+// wb_sync_cell — single-bit multi-flop synchronizer (behavioral).
+//
+// Every CDC crossing in the wishbone master path goes through this module so
+// CDC tools see one synchronizer type. Replace the body with the foundry sync
+// cell for signoff; keep the port list.
+
+module wb_sync_cell #(
+	parameter int unsigned STAGES    = 2,
+	parameter bit          RESET_VAL = 1'b0
+) (
+	input  logic clk,
+	input  logic rst_n,
+	input  logic d,
+	output logic q
+);
+
+	logic [STAGES-1:0] sync_q;
+
+	always_ff @(posedge clk or negedge rst_n) begin
+		if (!rst_n) sync_q <= {STAGES{RESET_VAL}};
+		else        sync_q <= {sync_q[STAGES-2:0], d};
+	end
+
+	assign q = sync_q[STAGES-1];
+
+endmodule

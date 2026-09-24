@@ -95,10 +95,49 @@ export function isRegionSize(v: unknown): v is RegionSize {
 	);
 }
 
+/** Native protocol on the `<bus>_system` face of a master. */
+export type WbMasterBridge = "wb" | "apb" | "jtag";
+
+export type ApbMasterOpts = {
+	/** PPROT filter: accept iff `(PPROT & mask) === value`; mismatch → PSLVERR. */
+	readonly pprot?: { readonly value: number; readonly mask?: number };
+};
+
+export type JtagMasterOpts = {
+	/** Run-Test/Idle TCK cycles between launch and poll in the emitted PDL. */
+	readonly idle?: number;
+};
+
+export type MasterOpts = {
+	/** Master runs in its own clock: insert `wb_cdc` into the fabric `clk`. */
+	readonly cdc?: boolean;
+	/** Source-clock cycles before `wb_cdc` aborts with ERR (0 = off). */
+	readonly timeout?: number;
+	/** APB completer face (`wb_apb2wb`). */
+	readonly apb?: true | ApbMasterOpts;
+	/** IEEE 1149.1 / 1687 TDR face (`wb_jtag_tdr`); always crosses from TCK. */
+	readonly jtag?: true | JtagMasterOpts;
+};
+
 export type WbMaster = {
 	readonly name: string;
 	readonly desc: string;
+	/** Omitted = `wb` (fabric-clock WB port, no wrapper logic). */
+	readonly bridge?: WbMasterBridge;
+	readonly cdc?: boolean;
+	readonly timeout?: number;
+	readonly pprot?: { readonly value: number; readonly mask: number };
+	readonly idle?: number;
 };
+
+export function masterBridge(m: WbMaster): WbMasterBridge {
+	return m.bridge ?? "wb";
+}
+
+/** Master needs bridge and/or CDC logic inside `<bus>_system`. */
+export function isBridgedMaster(m: WbMaster): boolean {
+	return masterBridge(m) !== "wb" || m.cdc === true;
+}
 
 export type BusDef = {
 	readonly kind: "wishbone-bus";
@@ -336,9 +375,15 @@ export function SlaveBus(
 		);
 	}
 	const uplink = opts?.uplink ?? UPLINK_MASTER;
-	if (!child.masters.some((m) => m.name === uplink)) {
+	const face = child.masters.find((m) => m.name === uplink);
+	if (!face) {
 		throw new Error(
 			`wishbone-bus: SlaveBus(${child.name}) needs Master("${uplink}") as the cascade face`,
+		);
+	}
+	if (isBridgedMaster(face)) {
+		throw new Error(
+			`wishbone-bus: SlaveBus(${child.name}) cascade face "${uplink}" cannot use apb/jtag/cdc`,
 		);
 	}
 	const span = busByteSpan(child);
@@ -390,9 +435,60 @@ function assertAcyclicBus(def: BusDef, stack: string[]): void {
 	}
 }
 
-export function Master(name: string, desc: string): WbMaster {
+export function Master(
+	name: string,
+	desc: string,
+	opts: MasterOpts = {},
+): WbMaster {
 	requireIdent("master", name);
-	return { name, desc };
+	if (opts.apb && opts.jtag) {
+		throw new Error(`wishbone-bus: master ${name} cannot be both apb and jtag`);
+	}
+	const bridge: WbMasterBridge = opts.apb ? "apb" : opts.jtag ? "jtag" : "wb";
+	if (bridge === "jtag" && opts.cdc === false) {
+		throw new Error(
+			`wishbone-bus: master ${name} jtag always crosses from TCK (cdc cannot be false)`,
+		);
+	}
+	const cdc = bridge === "jtag" || opts.cdc === true;
+	const timeout = opts.timeout ?? 0;
+	if (!Number.isInteger(timeout) || timeout < 0 || timeout > 0xffff) {
+		throw new Error(`wishbone-bus: master ${name} timeout must be 0..65535`);
+	}
+	if (timeout > 0 && !cdc) {
+		throw new Error(`wishbone-bus: master ${name} timeout needs cdc`);
+	}
+	if (bridge === "wb" && !cdc) return { name, desc };
+	const m: WbMaster = { name, desc, bridge, cdc, timeout };
+	if (bridge === "apb") {
+		const p = opts.apb === true ? undefined : opts.apb?.pprot;
+		if (p === undefined) return m;
+		const mask = p.mask ?? 0b111;
+		for (const [k, v] of [
+			["value", p.value],
+			["mask", mask],
+		] as const) {
+			if (!Number.isInteger(v) || v < 0 || v > 7) {
+				throw new Error(`wishbone-bus: master ${name} pprot ${k} must be 0..7`);
+			}
+		}
+		if ((p.value & ~mask) !== 0) {
+			throw new Error(
+				`wishbone-bus: master ${name} pprot value sets bits outside mask`,
+			);
+		}
+		return { ...m, pprot: { value: p.value, mask } };
+	}
+	if (bridge === "jtag") {
+		const idle = (opts.jtag === true ? undefined : opts.jtag?.idle) ?? 16;
+		if (!Number.isInteger(idle) || idle < 1 || idle > 0xffff) {
+			throw new Error(
+				`wishbone-bus: master ${name} jtag idle must be 1..65535`,
+			);
+		}
+		return { ...m, idle };
+	}
+	return m;
 }
 
 function resolveRegion(s: WbSlave, addrWidth: number): WbSlave {
@@ -484,6 +580,18 @@ export function Bus(
 ): BusDef {
 	requireIdent("bus", name);
 	const masters = opts.masters ?? [];
+	const masterNames = new Set<string>();
+	for (const m of masters) {
+		if (masterNames.has(m.name)) {
+			throw new Error(`wishbone-bus: duplicate master "${m.name}"`);
+		}
+		masterNames.add(m.name);
+		if (m.name === UPLINK_MASTER && isBridgedMaster(m)) {
+			throw new Error(
+				`wishbone-bus: bus ${name} cascade face "${UPLINK_MASTER}" cannot use apb/jtag/cdc`,
+			);
+		}
+	}
 	if (opts.slaves.length === 0) {
 		throw new Error(`wishbone-bus: bus ${name} needs at least one slave`);
 	}

@@ -11,7 +11,7 @@
 为 **IP / 子系统内部** 配置通路生成 Wishbone Classic 互联：
 
 ```text
-[可选 bridge，如 apb2wb]
+[可选 master 面：wb_apb2wb / wb_jtag_tdr → WB → wb_cdc，见 wishbone-master.md]
       →  Arbiter（多 master → 一下行）
       →  Decoder 树（地址窗 → 子 decoder / RegfilePort）
       →  Regfile 叶子（见 wishbone-regfile.md）
@@ -117,7 +117,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generat
 
 - Decoder：地址窗 + 可选 broadcast；下行仍是 WB（`STB` 扇出，`ACK`/`DAT` 回并）。  
 - Arbiter：多 WB master；口 `rb_grant_en`：**0** = 固定优先级（最低 master 下标胜）；**1** = round-robin（上次 grant 之后的下一个请求者，绕回最低下标）。事务中 `CYC` 锁定 grant。demo/soc：`smoke` `FABRIC.rb_grant_en`（复位 0）驱动 **每个 channel** `rb_grant_en`；`basic_smoke` 写该 CSR，SD→SHA DMA 在 `--sd`。  
-- Bridge：仅边界协议转换（如 `apb2wb`）；**禁止**让 APB 成为 decoder/regfile 原生口。  
+- Bridge：仅边界协议转换（如 `apb2wb`）；**禁止**让 APB 成为 decoder/regfile 原生口。CDC / APB / JTAG master 见 [`wishbone-master.md`](./wishbone-master.md)：先转 WB，再在 arbiter 前做 `wb_cdc`，全部在 `<bus>_system` 内。  
 - 即便将来提供 `topology = crossbar`，slave 侧 **仍必须**有地址窗/选通；matrix **不能**取消译码职责。
 
 ## 5. IP 内 vs SoC interconnect
@@ -192,7 +192,7 @@ uvm = "dv/ral"           # ral_block_<name>.sv
 
 1. Arbiter 更多默认策略（v1：`rb_grant_en` 固定 / 轮转已落地；其它策略后补）。  
 2. 是否提供 `topology = crossbar` 以及 M/N 上限。  
-3. Bridge 目录：仅 `apb2wb` 还是可插其它。  
+3. Bridge 目录：v1 = `wb_apb2wb` + `wb_jtag_tdr`（DFT TDR）+ `wb_cdc`；其余开放项见 [`wishbone-master.md`](./wishbone-master.md) §8。  
 4. 固件窗 + DMA：块周期连续写是否进 v2。  
 5. 默认 slave `pipe`（现缺省 0；作者按口配置）。  
 6. SlaveBus downlink（子 DMA 打回父级窗口）— v1 **不**自动生成。  

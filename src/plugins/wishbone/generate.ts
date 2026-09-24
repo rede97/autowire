@@ -14,8 +14,10 @@ import {
 	emitBusMapUvm,
 	mapHangsDeep,
 } from "../wishbone-bus/emit-map.ts";
+import { busNeedsMasterModules } from "../wishbone-bus/emit-master.ts";
 import {
 	generateDef as generateBusDef,
+	generateMasterModules,
 	generatePipeModule,
 } from "../wishbone-bus/generate.ts";
 import { isRegfileDef, type RegfileDef } from "../wishbone-regfile/dsl.ts";
@@ -211,6 +213,9 @@ export async function generateAll(ws: WorkspaceConfig): Promise<string[]> {
 		const outDir = join(ws.pluginsDir, PLUGIN_ID);
 		await mkdir(outDir, { recursive: true });
 		paths.push(await generatePipeModule(outDir));
+		if (allBuses.some(busNeedsMasterModules)) {
+			paths.push(...(await generateMasterModules(outDir)));
+		}
 	}
 	for (const def of allBuses) {
 		const mod = busModuleName(def);
