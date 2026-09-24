@@ -91,6 +91,12 @@ interface RuleConnect {
 	isConst: boolean;
 	open?: boolean;
 	isRaw?: boolean;
+	/** Target port direction, recorded for the render (printer dir comments). */
+	dir?: string;
+	/** Target port packed dims for this instance (overrides applied, folded). */
+	portPacked?: string | null;
+	/** Target port unpacked dims for this instance (overrides applied, folded). */
+	portUnpacked?: string | null;
 }
 
 interface RenderInstDraft {
@@ -1407,6 +1413,29 @@ function elaborateMod(
 		);
 		for (const [port, c] of ri.connects) {
 			const pf = portFacts.get(port);
+			if (pf) {
+				c.dir = pf.dir;
+				// Scratch result: resolveDims below reports dim errors once.
+				const scratch: CheckResult = { errors: [], warnings: [] };
+				const portDims = (dims: string | null | undefined) =>
+					dims
+						? canonicalDims(
+								foldDims(
+									rewriteDims(
+										dims,
+										ri.params,
+										(p) => p.uniq,
+										ri.leafParams,
+										scratch,
+										`${where} port "${port}"`,
+									),
+									dimVals,
+								),
+							)
+						: null;
+				c.portPacked = portDims(pf.packed);
+				c.portUnpacked = portDims(pf.unpacked);
+			}
 			if (c.open) {
 				// Explicit dangling pin: output/inout only (inputs must tie off).
 				if (pf && pf.dir !== "output" && pf.dir !== "inout") {
@@ -1882,12 +1911,17 @@ function writeRender(mod: Element, m: WriteModel): void {
 			return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
 		});
 		for (const [port, c] of sorted) {
+			const portAttrs = {
+				dir: c.dir,
+				"port-packed": c.portPacked,
+				"port-unpacked": c.portUnpacked,
+			};
 			el.appendChild(
 				c.open
-					? mk("aw-connect", { port, type: "open" })
+					? mk("aw-connect", { port, type: "open", ...portAttrs })
 					: c.isRaw
-						? mk("aw-connect", { port, to: c.to, type: "raw" })
-						: mk("aw-connect", { port, to: c.to, part: c.part }),
+						? mk("aw-connect", { port, to: c.to, type: "raw", ...portAttrs })
+						: mk("aw-connect", { port, to: c.to, part: c.part, ...portAttrs }),
 			);
 		}
 		groups["aw-insts"]!.appendChild(el);

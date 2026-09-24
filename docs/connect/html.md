@@ -331,7 +331,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 | `aw-localparam` | content 或 render 的 `aw-localparams` | 作者：`name`+`expr`；render：`name`+`value`，宜有 `folded` / `for-inst` / `for-param` |
 | `aw-port` | content 显式导出；render 导出结果 | `name`；`dir`；可选维信息；`dir="interface"` 时**必须** `interface=`，可选 `modport=` |
 | `aw-inst` | content / render `aw-insts` | `id`；`mod`；可选 `idx` |
-| `aw-connect` | template 内 / render | `port`；`to`（净网名或常量，§3.5.3）；可选 `packed`/`width`/`unpacked`/`part`/`nettype`/`type`；render 宜保留求值后的 `part` |
+| `aw-connect` | template 内 / render | `port`；`to`（净网名或常量，§3.5.3）；可选 `packed`/`width`/`unpacked`/`part`/`nettype`/`type`；render 宜保留求值后的 `part`；render 另带 `dir`、`port-packed`、`port-unpacked`（目标端口方向与本例化下的端口维度，由 elaborate 写入，供打印注释） |
 | `aw-rewrite` | 仅作者面 template 内 | `match` + `to`；可选 `flags` / `type` 与上列维/选位/`nettype`（常量时全禁，§3.5.3） |
 | `aw-signal` | 仅 `aw-render` / `aw-signals` | `name`；可选 `packed`/`unpacked`/`nettype`（`width` 仅作一维简写输入，render **应当**规范成 `packed`） |
 

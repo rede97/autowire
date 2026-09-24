@@ -47,6 +47,12 @@ export interface RenderConnect {
 	part: string;
 	/** "open" = explicit dangling pin (prints as `.port()`); else net/const. */
 	type: string;
+	/** Target port direction (input / output / inout …; "" when unknown). */
+	dir: string;
+	/** Target port packed dims for this instance ("" when scalar / unknown). */
+	portPacked: string;
+	/** Target port unpacked dims for this instance ("" when none). */
+	portUnpacked: string;
 }
 
 export interface RenderInst {
@@ -159,6 +165,9 @@ function parseMod(v: unknown, tag = "aw-mod"): RenderModule | null {
 				to: str(c["@to"]),
 				part: str(c["@part"]),
 				type: str(c["@type"]),
+				dir: str(c["@dir"]),
+				portPacked: str(c["@port-packed"]),
+				portUnpacked: str(c["@port-unpacked"]),
 			});
 		}
 		insts.push({
@@ -269,6 +278,14 @@ export interface PrintStyle {
 	 *  file's parameter overrides share one column; with instPortAlign too,
 	 *  ports and params share the same columns. */
 	instParamAlign?: boolean;
+	/** Append a `// <dir>` comment to each instance port-map row. */
+	instPortDir?: boolean;
+	/** Direction comment text: full (input/output/inout) or short (i/o/io). */
+	instPortDirFormat?: "full" | "short";
+	/** Append the target port's dims to the port-map comment, after the
+	 *  direction: packed ([31:0], [3:0][7:0]) then `;` + unpacked
+	 *  ([7:0];[0:15]); scalar / 1-bit ports show none. */
+	instPortWidth?: boolean;
 	/** Align internal signal declaration columns (nettype / packed). */
 	signalAlign?: boolean;
 }
@@ -433,7 +450,14 @@ function printInsts(m: RenderModule, style: PrintStyle): string[] {
 		inst.connects.map((c) => ({
 			port: c.port,
 			rhs: connectRhs(c, constNames),
+			dir: style.instPortDir ? dirMark(c.dir, style.instPortDirFormat) : "",
+			width: style.instPortWidth ? widthMark(c.portPacked, c.portUnpacked) : "",
 		})),
+	);
+	// With widths shown, pad directions file-wide so the width column aligns.
+	const dirPad = Math.max(
+		0,
+		...rows.flat().map((r) => (r.width ? r.dir.length : 0)),
 	);
 	const aligned = [
 		...(style.instPortAlign
@@ -467,14 +491,37 @@ function printInsts(m: RenderModule, style: PrintStyle): string[] {
 		}
 		const conns = rows[k] ?? [];
 		for (const [i, r] of conns.entries()) {
-			lines.push(
-				`\t\t.${r.port.padEnd(portPad)}(${r.rhs.padEnd(rhsPad)})${i < conns.length - 1 ? "," : ""}`,
-			);
+			const last = i === conns.length - 1;
+			const row = `\t\t.${r.port.padEnd(portPad)}(${r.rhs.padEnd(rhsPad)})${last ? "" : ","}`;
+			const mark = r.width
+				? `${r.dir ? `${r.dir.padEnd(dirPad)} ` : ""}${r.width}`
+				: r.dir;
+			// The last row has no comma: a space keeps its comment in column.
+			lines.push(mark ? `${row}${last ? " " : ""} // ${mark}` : row);
 		}
 		lines.push("\t);");
 	}
 	if (m.insts.length > 0) lines.push("");
 	return lines;
+}
+
+const DIR_MARKS: Record<"full" | "short", Record<string, string>> = {
+	full: { input: "input", output: "output", inout: "inout" },
+	short: { input: "i", output: "o", inout: "io" },
+};
+
+/** Width comment text: packed dims, then `;` + unpacked dims when present
+ *  (the `;` marks the unpacked side, so `;[0:3]` is an array of 1-bit
+ *  elements). No dims, or a lone single-bit packed range ([n:n]), is "". */
+function widthMark(packed: string, unpacked: string): string {
+	const p = packed ? packedSv(packed) : "";
+	const bits = /^\[\s*(\d+)\s*:\s*\1\s*\]$/.test(p) ? "" : p;
+	return unpacked ? `${bits};${packedSv(unpacked)}` : bits;
+}
+
+/** Direction comment text; "" for interface / unknown directions. */
+function dirMark(dir: string, format: "full" | "short" = "full"): string {
+	return DIR_MARKS[format][dir] ?? "";
 }
 
 function connectRhs(c: RenderConnect, constNames: Set<string>): string {

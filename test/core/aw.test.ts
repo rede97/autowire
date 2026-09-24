@@ -292,8 +292,46 @@ describe("elaborate (render)", () => {
 		const c = mustQuery(doc, 'aw-render aw-connect[port="q_o"]');
 		expect(c.getAttribute("to")).toBe("bus");
 		expect(c.getAttribute("part")).toBe("15:8");
+		expect(c.getAttribute("dir")).toBe("output");
+		expect(c.getAttribute("port-packed")).toBe("[3:0]");
 		const sig = mustQuery(doc, 'aw-signals aw-signal[name="bus"]');
 		expect(sig.getAttribute("packed")).toBe("[15:0]");
+	});
+
+	test("render records per-instance port-packed / port-unpacked for multi-dim ports", () => {
+		const memLeaf = leafOf(
+			[
+				{
+					name: "mem_i",
+					dir: "input",
+					packed: "[Width-1:0]",
+					unpacked: "[0:Depth-1]",
+				},
+				{ name: "lanes_o", dir: "output", packed: "[3:0][Width-1:0]" },
+				{ name: "en_i", dir: "input" },
+			],
+			[
+				{ name: "Width", defaultText: "8" },
+				{ name: "Depth", defaultText: "16" },
+			],
+		);
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="mem"><aw-template>
+					<aw-param name="Depth" expr="4"></aw-param>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ mem: memLeaf }));
+		expect(res.errors).toEqual([]);
+		const at = (port: string, name: string) =>
+			mustQuery(doc, `aw-render aw-connect[port="${port}"]`).getAttribute(name);
+		// default Width=8; overridden Depth=4 folds into the unpacked range
+		expect(at("mem_i", "port-packed")).toBe("[7:0]");
+		expect(at("mem_i", "port-unpacked")).toBe("[0:3]");
+		expect(at("lanes_o", "port-packed")).toBe("[3:0][7:0]");
+		expect(at("lanes_o", "port-unpacked")).toBeNull();
+		expect(at("en_i", "port-packed")).toBeNull();
 	});
 
 	test("param folding (style param=localparam): constant folds; module param name stays symbolic; expression kept", () => {
@@ -362,6 +400,11 @@ describe("elaborate (render)", () => {
 		expect(res.errors).toEqual([]);
 		const sig = mustQuery(doc, 'aw-signals aw-signal[name="d"]');
 		expect(sig.getAttribute("packed")).toBe("[m__u__Width-1:0]");
+		expect(
+			mustQuery(doc, 'aw-render aw-connect[port="d_i"]').getAttribute(
+				"port-packed",
+			),
+		).toBe("[7:0]");
 	});
 	test("inline mode (default): override expression lands on the instance, dims substitute it", () => {
 		const doc = docOf(

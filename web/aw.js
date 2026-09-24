@@ -954,6 +954,13 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
     const portFacts = new Map((targetFacts?.ports ?? []).map((p) => [p.name, p]));
     for (const [port, c] of ri.connects) {
       const pf = portFacts.get(port);
+      if (pf) {
+        c.dir = pf.dir;
+        const scratch = { errors: [], warnings: [] };
+        const portDims = (dims) => dims ? canonicalDims(foldDims(rewriteDims(dims, ri.params, (p) => p.uniq, ri.leafParams, scratch, `${where} port "${port}"`), dimVals)) : null;
+        c.portPacked = portDims(pf.packed);
+        c.portUnpacked = portDims(pf.unpacked);
+      }
       if (c.open) {
         if (pf && pf.dir !== "output" && pf.dir !== "inout") {
           res.errors.push(`${where} port "${port}": open is only allowed on output/inout (got ${pf.dir}; tie inputs off with type="const")`);
@@ -1311,7 +1318,12 @@ function writeRender(mod, m) {
       return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
     });
     for (const [port, c] of sorted) {
-      el.appendChild(c.open ? mk("aw-connect", { port, type: "open" }) : c.isRaw ? mk("aw-connect", { port, to: c.to, type: "raw" }) : mk("aw-connect", { port, to: c.to, part: c.part }));
+      const portAttrs = {
+        dir: c.dir,
+        "port-packed": c.portPacked,
+        "port-unpacked": c.portUnpacked
+      };
+      el.appendChild(c.open ? mk("aw-connect", { port, type: "open", ...portAttrs }) : c.isRaw ? mk("aw-connect", { port, to: c.to, type: "raw", ...portAttrs }) : mk("aw-connect", { port, to: c.to, part: c.part, ...portAttrs }));
     }
     groups["aw-insts"].appendChild(el);
   }

@@ -53,6 +53,16 @@ export interface WorkspaceConfig {
 	 *  so the ( and ) columns align across the whole file; shares columns with
 	 *  inst_port_align when both are on. Default false. */
 	styleInstParamAlign: boolean;
+	/** [style] inst_port_dir: append a `// <dir>` comment to each instance
+	 *  port-map row. Default false. */
+	styleInstPortDir: boolean;
+	/** [style] inst_port_dir_format: "full" (input/output/inout, default) or
+	 *  "short" (i/o/io). */
+	styleInstPortDirFormat: "full" | "short";
+	/** [style] inst_port_width: append the target port width ([31:0]) to the
+	 *  port-map comment, after the direction; 1-bit ports show none.
+	 *  Default false. */
+	styleInstPortWidth: boolean;
 	/** [style] signal_align: align internal signal declaration columns
 	 *  (nettype / packed width; names left-aligned). Default false. */
 	styleSignalAlign: boolean;
@@ -268,6 +278,8 @@ export async function loadWorkspace(
 		"param_align",
 		"inst_port_align",
 		"inst_param_align",
+		"inst_port_dir",
+		"inst_port_width",
 		"signal_align",
 		"localparam_upper",
 	]) {
@@ -275,6 +287,11 @@ export async function loadWorkspace(
 		if (v !== undefined && typeof v !== "boolean")
 			throw new Error(`autowire.toml: [style] ${key} must be a boolean`);
 	}
+	const dirFormat = style.inst_port_dir_format;
+	if (dirFormat !== undefined && dirFormat !== "full" && dirFormat !== "short")
+		throw new Error(
+			`autowire.toml: [style] inst_port_dir_format must be "full" or "short"`,
+		);
 	const hdxml = isObj(doc.hdxml) ? doc.hdxml : {};
 	if (hdxml.bin !== undefined && typeof hdxml.bin !== "string")
 		throw new Error("autowire.toml: [hdxml] bin must be a string");
@@ -384,6 +401,9 @@ export async function loadWorkspace(
 		styleParamAlign: style.param_align === true,
 		styleInstPortAlign: style.inst_port_align === true,
 		styleInstParamAlign: style.inst_param_align === true,
+		styleInstPortDir: style.inst_port_dir === true,
+		styleInstPortDirFormat: dirFormat === "short" ? "short" : "full",
+		styleInstPortWidth: style.inst_port_width === true,
 		styleSignalAlign: style.signal_align === true,
 		styleLocalparamUpper: style.localparam_upper === true,
 		connectUnits,
@@ -536,6 +556,9 @@ plugins_dir = "gen/plugins"
 [style]
 # Param overrides: param_inline = true (default) writes simple overrides into
 # the instance (#(.W(8))); false folds each override into Mod__Inst__Param.
+# inst_port_dir = true appends "// input" to each instance port-map row
+# (inst_port_dir_format = "short" prints "// i" / "// o" / "// io");
+# inst_port_width = true adds the port width after it ("// input [31:0]").
 
 # Named DE units (DAG). Do not use flat [connect] html = [...].
 # [connect.sha256wb]

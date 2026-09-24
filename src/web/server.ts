@@ -240,6 +240,9 @@ async function handleApi(
 			paramAlign: ws.styleParamAlign,
 			instPortAlign: ws.styleInstPortAlign,
 			instParamAlign: ws.styleInstParamAlign,
+			instPortDir: ws.styleInstPortDir,
+			instPortDirFormat: ws.styleInstPortDirFormat,
+			instPortWidth: ws.styleInstPortWidth,
 			signalAlign: ws.styleSignalAlign,
 		});
 		return json({ files, mods: mods.map((m) => m.name) });

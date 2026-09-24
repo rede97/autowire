@@ -186,6 +186,11 @@ Shared by deps / web / cli for the RTL universe:
   [style] inst_port_align   instantiation .port ( and ) columns, file-wide (default false)
   [style] inst_param_align  instantiation .PARAM ( and ) columns, file-wide (default false);
                             with inst_port_align too, ports + params share one column pair
+  [style] inst_port_dir     append // input|output|inout to instance port-map rows (default false)
+  [style] inst_port_dir_format  "full" (input/output/inout, default) | "short" (i/o/io)
+  [style] inst_port_width   append the port width after the direction: // input [31:0];
+                            multi-dim packed as-is ([3:0][7:0]); unpacked after ';'
+                            ([7:0];[0:15], ;[0:3]); 1-bit ports show none (default false)
   [style] signal_align      internal signal columns: nettype / packed, names left-aligned (default false)
   [style] localparam_upper  uppercase generated Mod__Inst__Param names (default false)
 

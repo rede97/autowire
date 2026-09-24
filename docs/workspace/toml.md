@@ -90,6 +90,14 @@ plugins_dir = "gen/plugins"
 #   inst_param_align ——例化参数 `.NAME (value)` 的 `(` 与 `)` 列对齐，同样按整个文件统一计算。
 #   两者同时开启时，端口与参数共用同一组列宽：`(` 列取全部端口名与参数名的最大长度，
 #   `)` 列取全部连接文本与参数值的最大长度。
+#   inst_port_dir    ——例化端口行尾追加目标端口方向注释 `// input` / `// output` / `// inout`
+#                      （interface 与方向未知的端口不标；最后一行无逗号，补空格保持注释列对齐）。
+#   inst_port_dir_format = "full"（默认，input/output/inout）| "short"（i / o / io）。
+#   inst_port_width  ——在方向之后追加目标端口位宽 `// input [31:0]`（按本例化的参数覆盖代入并常量折叠；
+#                      1bit 端口不显示）。与 inst_port_dir 同开时方向按全文件最长补齐，位宽列对齐；
+#                      也可单独开启（`// [31:0]`）。
+#                      多维：packed 原样（`[3:0][7:0]`）；unpacked 用 `;` 分隔接在 packed 之后
+#                      （`wire [7:0] a [0:15]` → `[7:0];[0:15]`；1bit 元素数组 `wire f [0:3]` → `;[0:3]`）。
 #   signal_align     ——内部信号声明：nettype / 宽度分列对齐，信号名左对齐。
 # 折叠名大小写（render 层）：
 #   localparam_upper = true ——生成的 Mod__Inst__Param 名整体大写（传统习惯；默认 false）。

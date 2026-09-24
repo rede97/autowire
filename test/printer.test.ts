@@ -88,6 +88,38 @@ const MIXED = `<autowire>
   </aw-mod>
 </autowire>`;
 
+const DIRS = `<autowire>
+  <aw-mod name="d">
+    <aw-render>
+      <aw-insts>
+        <aw-inst id="u" mod="m">
+          <aw-connect port="clk" to="clk_i" dir="input"></aw-connect>
+          <aw-connect port="bus" to="bus_if" dir="interface"></aw-connect>
+          <aw-connect port="q" to="q_o" dir="output" port-packed="[31:0]"></aw-connect>
+          <aw-connect port="pad" to="pad_io" dir="inout" port-packed="[0:0]"></aw-connect>
+        </aw-inst>
+      </aw-insts>
+    </aw-render>
+  </aw-mod>
+</autowire>`;
+
+const DIMS = `<autowire>
+  <aw-mod name="dims">
+    <aw-render>
+      <aw-insts>
+        <aw-inst id="u" mod="m">
+          <aw-connect port="data" to="data_w" dir="input" port-packed="[31:0]"></aw-connect>
+          <aw-connect port="lanes" to="lanes_w" dir="output" port-packed="[3:0][7:0]"></aw-connect>
+          <aw-connect port="mem" to="mem_w" dir="input" port-packed="[7:0]" port-unpacked="[0:15]"></aw-connect>
+          <aw-connect port="flags" to="flags_w" dir="output" port-unpacked="[0:3]"></aw-connect>
+          <aw-connect port="bit" to="bit_w" dir="input" port-packed="[0:0]" port-unpacked="0:1"></aw-connect>
+          <aw-connect port="en" to="en_w" dir="input"></aw-connect>
+        </aw-inst>
+      </aw-insts>
+    </aw-render>
+  </aw-mod>
+</autowire>`;
+
 describe("printer", () => {
 	test("parseSnapshot reads all render groups", () => {
 		const mods = parseSnapshot(SNAP);
@@ -105,6 +137,9 @@ describe("printer", () => {
 			to: "arr",
 			part: "[2]",
 			type: "",
+			dir: "",
+			portPacked: "",
+			portUnpacked: "",
 		});
 		expect(m.children[0]?.name).toBe("kid");
 		expect(flattenModules(mods).map((x) => x.name)).toEqual(["top", "kid"]);
@@ -165,6 +200,70 @@ describe("printer", () => {
 		expect(sv).toContain(`.data_valid(v${" ".repeat(14)})`);
 		expect(sv).toContain(`.rst${" ".repeat(7)}(rst_n_sync_long),`);
 		expect(sv).toContain(`.q${" ".repeat(9)}(${" ".repeat(15)})`);
+	});
+
+	test("printSv instPortDir comments port-map rows with the target direction", () => {
+		const m = parseSnapshot(DIRS)[0] as RenderModule;
+		const full = printSv(m, "u1", { instPortAlign: true, instPortDir: true });
+		expect(full).toContain(".clk(clk_i ), // input\n");
+		// interface / unknown directions get no comment
+		expect(full).toContain(".bus(bus_if),\n");
+		expect(full).toContain(".q  (q_o   ), // output\n");
+		// last row: a space stands in for the comma so comments stay aligned
+		expect(full).toContain(".pad(pad_io)  // inout\n");
+		const short = printSv(m, "u1", {
+			instPortAlign: true,
+			instPortDir: true,
+			instPortDirFormat: "short",
+		});
+		expect(short).toContain(".clk(clk_i ), // i\n");
+		expect(short).toContain(".q  (q_o   ), // o\n");
+		expect(short).toContain(".pad(pad_io)  // io\n");
+		expect(printSv(m, "u1")).toContain(".clk(clk_i),\n");
+		expect(printSv(m, "u1")).not.toContain("// input");
+	});
+
+	test("printSv instPortWidth adds the port width after the direction", () => {
+		const m = parseSnapshot(DIRS)[0] as RenderModule;
+		const sv = printSv(m, "u1", {
+			instPortAlign: true,
+			instPortDir: true,
+			instPortWidth: true,
+		});
+		// directions pad to the longest ("output") so widths share a column
+		expect(sv).toContain(".q  (q_o   ), // output [31:0]\n");
+		// scalar and [0:0] ports show no width and no padding
+		expect(sv).toContain(".clk(clk_i ), // input\n");
+		expect(sv).toContain(".pad(pad_io)  // inout\n");
+		const short = printSv(m, "u1", {
+			instPortDir: true,
+			instPortDirFormat: "short",
+			instPortWidth: true,
+		});
+		expect(short).toContain(".q(q_o), // o [31:0]\n");
+		// width alone, without direction
+		const only = printSv(m, "u1", { instPortWidth: true });
+		expect(only).toContain(".q(q_o), // [31:0]\n");
+		expect(only).toContain(".clk(clk_i),\n");
+	});
+
+	test("printSv instPortWidth: multi-dim packed as-is, unpacked after ';'", () => {
+		const m = parseSnapshot(DIMS)[0] as RenderModule;
+		const sv = printSv(m, "u1", {
+			instPortDir: true,
+			instPortDirFormat: "short",
+			instPortWidth: true,
+		});
+		expect(sv).toContain(".data(data_w), // i [31:0]\n");
+		expect(sv).toContain(".lanes(lanes_w), // o [3:0][7:0]\n");
+		// wire [7:0] mem [0:15]
+		expect(sv).toContain(".mem(mem_w), // i [7:0];[0:15]\n");
+		// wire flags [0:3]: 1-bit elements, only the unpacked side
+		expect(sv).toContain(".flags(flags_w), // o ;[0:3]\n");
+		// [0:0] packed drops out; bare unpacked range gets brackets
+		expect(sv).toContain(".bit(bit_w), // i ;[0:1]\n");
+		// scalar: direction only
+		expect(sv).toContain(".en(en_w)  // i\n");
 	});
 
 	test("printSv instParamAlign aligns ( and ) of param overrides file-wide", () => {
