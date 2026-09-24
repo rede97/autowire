@@ -39,6 +39,9 @@ import {
 	smoke_w1p,
 } from "./fixtures/wb_reg_access.ts";
 
+const iverilogTest =
+	Bun.which("iverilog") && Bun.which("vvp") ? test : test.skip;
+
 describe("wishbone-regfile", () => {
 	test("layout sub_module_b packs ID cell at 0", () => {
 		const laid = layoutRegfile(sub_module_b);
@@ -266,16 +269,18 @@ describe("wishbone-regfile smoke features", () => {
 		expect(sv).toContain("for (int __i = 3; __i >= 0; __i--)");
 	});
 
-	test("W1C hardware set survives a zero-lane write", () => {
-		const dir = mkdtempSync(join(tmpdir(), "aw_regfile_w1c_"));
-		try {
-			const dut = join(dir, "smoke_w1c_regfile.sv");
-			const tb = join(dir, "tb.sv");
-			const vvp = join(dir, "tb.vvp");
-			writeFileSync(dut, emitRegfileSv(layoutRegfile(smoke_w1c)));
-			writeFileSync(
-				tb,
-				`module tb;
+	iverilogTest(
+		"W1C hardware set survives a zero-lane write",
+		() => {
+			const dir = mkdtempSync(join(tmpdir(), "aw_regfile_w1c_"));
+			try {
+				const dut = join(dir, "smoke_w1c_regfile.sv");
+				const tb = join(dir, "tb.sv");
+				const vvp = join(dir, "tb.vvp");
+				writeFileSync(dut, emitRegfileSv(layoutRegfile(smoke_w1c)));
+				writeFileSync(
+					tb,
+					`module tb;
 	logic i_clk = 1'b0;
 	logic i_rst_n = 1'b0;
 	logic smoke_w1c_i_wb_cyc = 1'b0;
@@ -309,23 +314,25 @@ describe("wishbone-regfile smoke features", () => {
 	end
 endmodule
 `,
-			);
-			const compile = Bun.spawnSync({
-				cmd: ["iverilog", "-g2012", "-o", vvp, tb, dut],
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			expect(compile.exitCode).toBe(0);
-			const sim = Bun.spawnSync({
-				cmd: ["vvp", vvp],
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			expect(sim.exitCode).toBe(0);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
+				);
+				const compile = Bun.spawnSync({
+					cmd: ["iverilog", "-g2012", "-o", vvp, tb, dut],
+					stdout: "pipe",
+					stderr: "pipe",
+				});
+				expect(compile.exitCode).toBe(0);
+				const sim = Bun.spawnSync({
+					cmd: ["vvp", vvp],
+					stdout: "pipe",
+					stderr: "pipe",
+				});
+				expect(sim.exitCode).toBe(0);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		},
+		60000,
+	);
 
 	test("C and uvm_reg exports are field layout only", () => {
 		const c = emitRegfileC(layoutRegfile(smoke_rw));
@@ -572,7 +579,9 @@ describe("wishbone-regfile demo/soc sha256", () => {
 			join(import.meta.dir, "..", "demo", "soc", "autowire.toml"),
 		);
 		expect(ws.wishboneSources.some((s) => s.id === "sha256")).toBe(true);
-		expect(ws.wishboneCExport?.endsWith("fw/gen/wishbone")).toBe(true);
+		expect(
+			ws.wishboneCExport?.replaceAll("\\", "/").endsWith("fw/gen/wishbone"),
+		).toBe(true);
 		const paths = await generateAll(ws);
 		expect(paths.filter((p) => p.endsWith("sha256_regfile.sv"))).toHaveLength(
 			1,

@@ -76,7 +76,9 @@ describe("wishbone-bus", () => {
 			join(import.meta.dir, "..", "demo", "soc", "autowire.toml"),
 		);
 		expect(ws.wishboneSources.some((s) => s.id === "soc")).toBe(true);
-		expect(ws.wishboneCExport?.endsWith("fw/gen/wishbone")).toBe(true);
+		expect(
+			ws.wishboneCExport?.replaceAll("\\", "/").endsWith("fw/gen/wishbone"),
+		).toBe(true);
 		const paths = await generateAll(ws);
 		expect(paths.some((p) => p.endsWith("soc_wb_decoder.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("soc_wb_system.sv"))).toBe(true);
