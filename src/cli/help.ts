@@ -57,6 +57,7 @@ You can do now
 Rules of engagement
   Edit this help (src/cli/help.ts) when behavior changes; format constraints live in docs/.
   Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
+  Windows: MSYS2 UCRT64 toolchain, ucrt64/bin on PATH, LF checkout (docs/dev/windows-msys2.md).
   Connect authoring (docs/connect/html.md §3.5.5): same-name → identity (omit);
     rename batch → one aw-rewrite RegExp — never list identity ports one-by-one.
 `,
@@ -397,7 +398,7 @@ autowire deps (landed)
   RtlIndex dir (with index.xml): read directly
   else RTL source dir → hdxml sidecar into .autowire/hdxml
 
-hdxml lookup: --hdxml > $HDXML_BIN > repo hdxml/target/{release,debug}/hdxml > PATH
+hdxml lookup: --hdxml > $HDXML_BIN > repo hdxml/target/{release,debug}/hdxml[.exe] > PATH
 
 Output
   summary: tool / files / modules / tops; error files in red

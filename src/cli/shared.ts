@@ -8,6 +8,8 @@ import { findWorkspace, loadWorkspace } from "../workspace.js";
 /** Repo root (this file lives in src/cli/). */
 export const REPO_ROOT = join(import.meta.dir, "..", "..");
 
+const EXE = process.platform === "win32" ? ".exe" : "";
+
 /** Resolve hdxml binary: --hdxml > toml [hdxml] bin > $HDXML_BIN > repo target/{release,debug} > PATH */
 export function findHdxml(explicit?: string, tomlBin?: string | null): string {
 	if (tomlBin && !existsSync(tomlBin)) {
@@ -18,8 +20,8 @@ export function findHdxml(explicit?: string, tomlBin?: string | null): string {
 		explicit,
 		tomlBin ?? undefined,
 		process.env.HDXML_BIN,
-		join(REPO_ROOT, "hdxml/target/release/hdxml"),
-		join(REPO_ROOT, "hdxml/target/debug/hdxml"),
+		join(REPO_ROOT, `hdxml/target/release/hdxml${EXE}`),
+		join(REPO_ROOT, `hdxml/target/debug/hdxml${EXE}`),
 	].filter((c): c is string => typeof c === "string" && c.length > 0);
 	for (const c of candidates) {
 		if (existsSync(c)) return c;

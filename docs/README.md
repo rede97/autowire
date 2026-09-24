@@ -52,6 +52,12 @@
 | [plugins/wishbone-bus.md](./plugins/wishbone-bus.md) | 块内 cfg 树（非 SoC fabric） | 草稿 |
 | [examples/regfile/](./examples/regfile/) | Wishbone regfile 作者面 TS + 生成 SV 展示 | 草稿 |
 
+## 开发环境 · [`dev/`](./dev/)
+
+| 文档 | 内容 | 状态 |
+|---|---|---|
+| [dev/windows-msys2.md](./dev/windows-msys2.md) | Windows：MSYS2 UCRT64 工具链、PATH、LF 行尾、原生 vs UCRT64 分工 | 已实现 |
+
 ## 实战与报告
 
 | 文档 | 内容 | 状态 |
