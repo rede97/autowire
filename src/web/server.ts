@@ -21,14 +21,17 @@ import {
 } from "../core/connect.ts";
 import { connectXml } from "../core/connectxml.ts";
 import {
+	assertModuleNames,
 	assertPrintable,
 	parseSnapshot,
+	type RenderModule,
 	writeSvFiles,
 } from "../core/printer.ts";
 import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex } from "../rtl/rtlindex.ts";
 import {
 	allUnits,
+	type ConnectUnit,
 	findUnit,
 	unitDumpDir,
 	type WorkspaceConfig,
@@ -46,7 +49,35 @@ function json(data: unknown, status = 200): Response {
 	return Response.json(data, { status });
 }
 
+class HttpError extends Error {
+	status: number;
+	constructor(status: number, message: string) {
+		super(message);
+		this.status = status;
+	}
+}
+
+/** Loopback-only, same-origin guard: a foreign Host (DNS rebinding) or a
+ *  cross-site Origin means another page in the user's browser is calling. */
+function originGuard(req: Request, port: number | undefined): string | null {
+	const hosts = [`127.0.0.1:${port}`, `localhost:${port}`];
+	const host = req.headers.get("host") ?? "";
+	if (!hosts.includes(host)) return `refused: unexpected Host "${host}"`;
+	const origin = req.headers.get("origin");
+	if (origin !== null && !hosts.some((h) => origin === `http://${h}`))
+		return `refused: cross-origin request from "${origin}"`;
+	return null;
+}
+
+/** JSON-only bodies: a cross-site form or text/plain POST cannot reach here
+ *  without a CORS preflight, which this server never grants. */
 async function readBody(req: Request): Promise<Record<string, unknown>> {
+	const type = (req.headers.get("content-type") ?? "").toLowerCase();
+	if (!type.startsWith("application/json"))
+		throw new HttpError(
+			415,
+			"unsupported media type: expected application/json",
+		);
 	try {
 		const body: unknown = await req.json();
 		if (typeof body === "object" && body !== null)
@@ -54,7 +85,20 @@ async function readBody(req: Request): Promise<Record<string, unknown>> {
 	} catch {
 		// fall through
 	}
-	throw new Error("bad request: expected JSON object body");
+	throw new HttpError(400, "bad request: expected JSON object body");
+}
+
+/** Author-face check for one unit (aw-content + deps), read from its html= file. */
+async function checkUnit(
+	state: WebState,
+	unit: ConnectUnit,
+): Promise<{ errors: string[]; warnings: string[] }> {
+	const { ws, leafDb } = state;
+	const { doc } = await loadUnitDoc(ws, unit);
+	const built = await buildEngineCtx(ws, unit, allUnits(ws), leafDb);
+	await built.prewarm(doc);
+	const res = awCheck(doc as never, built.ctx);
+	return { errors: [...built.errors, ...res.errors], warnings: res.warnings };
 }
 
 async function handleApi(
@@ -153,14 +197,7 @@ async function handleApi(
 		const id = typeof body.id === "string" ? body.id : "";
 		const unit = findUnit(ws, id);
 		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
-		const { doc } = await loadUnitDoc(ws, unit);
-		const built = await buildEngineCtx(ws, unit, allUnits(ws), leafDb);
-		await built.prewarm(doc);
-		const res = awCheck(doc as never, built.ctx);
-		return json({
-			errors: [...built.errors, ...res.errors],
-			warnings: res.warnings,
-		});
+		return json(await checkUnit(state, unit));
 	}
 	if (req.method === "POST" && path === "/api/dump") {
 		const body = await readBody(req);
@@ -169,14 +206,26 @@ async function handleApi(
 		if (!UNIT_ID.test(id)) return json({ error: "bad unit id" }, 400);
 		const unit = findUnit(ws, id);
 		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
+		let mods: RenderModule[];
 		try {
 			assertPrintable(html);
+			mods = parseSnapshot(html);
+			assertModuleNames(mods);
 		} catch (e) {
 			return json({ error: (e as Error).message }, 422);
 		}
-		const mods = parseSnapshot(html);
 		if (mods.length === 0)
 			return json({ error: "snapshot has no aw-mod / aw-tb-mod" }, 422);
+		const checked = await checkUnit(state, unit);
+		if (checked.errors.length > 0) {
+			return json(
+				{
+					error: `dump gate: check failed for "${id}": ${checked.errors[0]}`,
+					errors: checked.errors,
+				},
+				422,
+			);
+		}
 		if (unit.kind === "connect") {
 			await mkdir(connectDir(ws), { recursive: true });
 			await writeFile(
@@ -281,8 +330,10 @@ export async function startWeb(
 	const server = Bun.serve({
 		hostname: "127.0.0.1",
 		port,
-		async fetch(req) {
+		async fetch(req, srv) {
 			const url = new URL(req.url);
+			const refused = originGuard(req, srv.port);
+			if (refused) return json({ error: refused }, 403);
 			try {
 				if (url.pathname.startsWith("/api/"))
 					return await handleApi(state, url, req);
@@ -302,7 +353,10 @@ export async function startWeb(
 					headers: { "content-type": "text/html; charset=utf-8" },
 				});
 			} catch (e) {
-				return json({ error: (e as Error).message }, 500);
+				return json(
+					{ error: (e as Error).message },
+					e instanceof HttpError ? e.status : 500,
+				);
 			}
 		},
 	});

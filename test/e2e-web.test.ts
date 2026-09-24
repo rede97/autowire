@@ -49,7 +49,7 @@ beforeAll(async () => {
 	await rm(ws.simDir, { recursive: true, force: true });
 	base = await startWeb(ws, 0, null);
 	browser = await chromium.launch({ headless: true });
-});
+}, 30000);
 
 afterAll(async () => {
 	await browser?.close();
@@ -184,6 +184,7 @@ describe("autowire web e2e", () => {
 	test("dump gate: leftover template in render → 422; unknown snapshot → 404", async () => {
 		const bad = await fetch(`${base}api/dump`, {
 			method: "POST",
+			headers: { "content-type": "application/json" },
 			body: JSON.stringify({
 				id: "sha256wb",
 				html: "<autowire><aw-mod name='x'><aw-render><aw-templates><aw-template></aw-template></aw-templates></aw-render></aw-mod></autowire>",
@@ -200,14 +201,46 @@ describe("autowire web e2e", () => {
 		expect(badId.status).toBe(400);
 	});
 
+	test("api guard: cross-origin, non-JSON body, non-identifier module name are refused", async () => {
+		const jsonType = { "content-type": "application/json" };
+		const crossSite = await fetch(`${base}api/dump`, {
+			method: "POST",
+			headers: { ...jsonType, origin: "https://evil.example" },
+			body: JSON.stringify({ id: "sha256wb", html: "<autowire/>" }),
+		});
+		expect(crossSite.status).toBe(403);
+		const plain = await fetch(`${base}api/save`, {
+			method: "POST",
+			headers: { "content-type": "text/plain" },
+			body: JSON.stringify({ id: "sha256wb", html: "<autowire/>" }),
+		});
+		expect(plain.status).toBe(415);
+		const traversal = await fetch(`${base}api/dump`, {
+			method: "POST",
+			headers: jsonType,
+			body: JSON.stringify({
+				id: "sha256wb",
+				html: "<autowire><aw-mod name='../../escape'><aw-render></aw-render></aw-mod></autowire>",
+			}),
+		});
+		expect(traversal.status).toBe(422);
+		expect(((await traversal.json()) as { error: string }).error).toContain(
+			"not a plain SystemVerilog identifier",
+		);
+	});
+
 	test("save: [Save] drops live DOM to .autowire/save; API guards id/body", async () => {
 		const page = await browser.newPage();
 		await page.goto(`${base}?unit=sha256wb&check=1`);
 		await waitStatus(page);
 		await page.locator("#btn-save").click();
+		const saveDone = page.locator("#aw-status", { hasNotText: /^check:/ });
+		await saveDone.waitFor({ timeout: 10000 });
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain(".autowire/save/sha256wb.html");
+		expect(status.text.replaceAll("\\", "/")).toContain(
+			".autowire/save/sha256wb.html",
+		);
 		await page.close();
 		const saved = await readFile(
 			join(DEMO, ".autowire", "save", "sha256wb.html"),
@@ -247,6 +280,18 @@ describe("autowire web e2e", () => {
 		expect(status.text).toContain('snapshot for "sd_sha_ch" missing');
 		expect(await page.title()).toMatch(/\[error\]$/);
 		await page.close();
+		const gated = await fetch(`${base}api/dump`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				id: "soc_top",
+				html: "<autowire><aw-mod name='soc_top'><aw-render></aw-render></aw-mod></autowire>",
+			}),
+		});
+		expect(gated.status).toBe(422);
+		expect(((await gated.json()) as { error: string }).error).toContain(
+			'check failed for "soc_top"',
+		);
 		// restore shared state for later runs
 		const page2 = await browser.newPage();
 		await page2.goto(`${base}?unit=soc_top&dump=1`);

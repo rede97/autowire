@@ -362,6 +362,10 @@ Server persists the <id>.xml abstract-module snapshot under .autowire/connect/
 then emits SV; dump must not re-load author HTML as the netlist.
 SV import from aw-imports at module head, deduped.
 autowire checks workspace paths then writes RTL; DV checks files.
+Server re-runs check on the unit's author HTML before writing (422 on error);
+module names must be plain SV identifiers (they become file names).
+All /api/* refuse a foreign Host or cross-origin Origin; POST bodies must be
+application/json (so other pages in the browser cannot drive a write).
 Dump is not a substitute for check — content check (aw-content) before render/write.
 Dump requires render (render already required check); refuse on check or unclean-render errors.
 

@@ -27,7 +27,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 ### 2.2 aw.js（Web 前端库 / elaboration 引擎）
 
 `aw.js` + 约束 HTML，完全跑在浏览器里（Custom Elements）。
-源码是 **`src/core/aw.ts`**（TypeScript）；`web/aw.js` 由 `bun run build:web` 生成（浏览器单文件，签入；新鲜度由 `src/web-build.test.ts` 守卫，禁止手改）。服务端 check 与单测直接 import `src/core/aw.ts`（Bun 原生 TS），同一源码无分叉。
+源码是 **`src/core/aw.ts`**（TypeScript）；`web/aw.js` 由 `bun run build:web` 生成（浏览器单文件，签入；新鲜度由 `test/web-build.test.ts` 守卫，禁止手改）。服务端 check 与单测直接 import `src/core/aw.ts`（Bun 原生 TS），同一源码无分叉。
 
 **两层**（完整约束：[connect/html.md](./connect/html.md)；示例：[examples/connect/](./examples/connect/)）：
 
@@ -70,6 +70,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 
 浏览器不碰磁盘。页面或 Playwright 把渲染结果 `POST` 到同源 `/api/dump`，autowire 校验工作区路径后写 RTL。对错由 DV 测文件，不靠禁止 dump。  
 dump **应当**隐含 `check → render`（**Render 依赖 Check**，见 [workspace/web-ui.md](./workspace/web-ui.md) §3.1）；check 有 error 时 **必须**拒绝 render 与写盘。render 可印性（无残留 template/rewrite）由 dump 门禁负责，**不是** Check 按钮的职责。
+服务端 `/api/dump` 写盘前对该单元作者 HTML 重跑 check，有 error 即 422 拒绝，不依赖页面先跑过 check；快照里的模块名即 `.sv` 文件名，必须是纯 SV 标识符。所有 `/api/*` 只接受本机 `Host`、`Origin` 缺省或同源的请求，POST 必须是 `application/json`，防止用户浏览器里的其它网页借道写工作区。
 
 ### 2.6 `autowire cli`（后期）
 

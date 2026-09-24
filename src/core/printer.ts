@@ -487,6 +487,19 @@ function connectRhs(c: RenderConnect, constNames: Set<string>): string {
 		: c.to;
 }
 
+const SV_IDENT = /^[A-Za-z_][A-Za-z0-9_$]*$/;
+
+/** Module names become file names: reject anything but a plain SV identifier. */
+export function assertModuleNames(mods: RenderModule[]): void {
+	for (const m of flattenModules(mods)) {
+		if (!SV_IDENT.test(m.name)) {
+			throw new Error(
+				`dump gate: module name ${JSON.stringify(m.name)} is not a plain SystemVerilog identifier`,
+			);
+		}
+	}
+}
+
 /** Write a snapshot's modules as .sv files into outDir; returns written paths. */
 export async function writeSvFiles(
 	mods: RenderModule[],
@@ -494,6 +507,7 @@ export async function writeSvFiles(
 	unitId: string,
 	style: PrintStyle = {},
 ): Promise<string[]> {
+	assertModuleNames(mods);
 	await mkdir(outDir, { recursive: true });
 	const written: string[] = [];
 	for (const m of flattenModules(mods)) {
