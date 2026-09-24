@@ -262,9 +262,12 @@ export interface PrintStyle {
 	portAlign?: boolean;
 	/** Align module declaration parameter names (= column). */
 	paramAlign?: boolean;
-	/** Pad instantiation port names so the ( columns align. */
+	/** Pad instantiation port names and connections so every ( and ) of the
+	 *  file's port maps share one column (file-wide, not per instance). */
 	instPortAlign?: boolean;
-	/** Pad instantiation parameter names so the ( columns align. */
+	/** Pad instantiation parameter names and values so every ( and ) of the
+	 *  file's parameter overrides share one column; with instPortAlign too,
+	 *  ports and params share the same columns. */
 	instParamAlign?: boolean;
 	/** Align internal signal declaration columns (nettype / packed). */
 	signalAlign?: boolean;
@@ -324,37 +327,7 @@ export function printSv(
 			lines.push(`\t${nt.padEnd(sigTypePad)}${packCol} ${s.name}${ud};`);
 		}
 		if (sigDecls.length > 0) lines.push("");
-		const constNames = new Set([
-			...m.params.map((p) => p.name),
-			...m.localparams.map((l) => l.name),
-		]);
-		for (const inst of m.insts) {
-			if (inst.params.length > 0) {
-				const paramPad = style.instParamAlign
-					? Math.max(...inst.params.map((p) => p.name.length), 0)
-					: 0;
-				lines.push(`\t${inst.mod} #(`);
-				for (const [i, p] of inst.params.entries()) {
-					lines.push(
-						`\t\t.${paramPad ? p.name.padEnd(paramPad) : p.name}(${p.value})${i < inst.params.length - 1 ? "," : ""}`,
-					);
-				}
-				lines.push(`\t) ${inst.id} (`);
-			} else {
-				lines.push(`\t${inst.mod} ${inst.id} (`);
-			}
-			const pad = style.instPortAlign
-				? Math.max(...inst.connects.map((c) => c.port.length), 0)
-				: 0;
-			for (const [i, c] of inst.connects.entries()) {
-				const rhs = connectRhs(c, constNames);
-				lines.push(
-					`\t\t.${pad ? c.port.padEnd(pad) : c.port}(${rhs})${i < inst.connects.length - 1 ? "," : ""}`,
-				);
-			}
-			lines.push("\t);");
-		}
-		if (m.insts.length > 0) lines.push("");
+		lines.push(...printInsts(m, style));
 		for (const inc of m.bodyPostInclude ?? []) lines.push(`\`include "${inc}"`);
 		lines.push("endmodule");
 		lines.push("");
@@ -436,45 +409,72 @@ export function printSv(
 		lines.push(`\t${t.padEnd(sigTypePad)}${packCol} ${s.name}${ud};`);
 	}
 	if (printedSignals > 0) lines.push("");
-	// Constant tie-offs (docs/connect/to-rules.md): a connect whose `to`
-	// is a plain identifier names a net, UNLESS it matches a module
-	// param/localparam (constant reference); anything else is inlined as a
-	// constant expression. Part-selects exist only on nets (engine-enforced).
+	lines.push(...printInsts(m, style));
+	lines.push("endmodule");
+	lines.push("");
+	return lines.join("\n");
+}
+
+/** Instantiation blocks of one module (= one .sv file).
+ *  inst_port_align / inst_param_align pad port-map / parameter-override rows
+ *  to file-wide columns, so every `(` and `)` lines up across instances, not
+ *  just within one. With both on, ports and params share the same columns
+ *  (the longest name and the longest value over all aligned rows).
+ *  Constant tie-offs (docs/connect/to-rules.md): a connect whose `to` is a
+ *  plain identifier names a net, UNLESS it matches a module param/localparam
+ *  (constant reference); anything else is inlined as a constant expression.
+ *  Part-selects exist only on nets (engine-enforced). */
+function printInsts(m: RenderModule, style: PrintStyle): string[] {
 	const constNames = new Set([
 		...m.params.map((p) => p.name),
 		...m.localparams.map((l) => l.name),
 	]);
-	for (const inst of m.insts) {
+	const rows = m.insts.map((inst) =>
+		inst.connects.map((c) => ({
+			port: c.port,
+			rhs: connectRhs(c, constNames),
+		})),
+	);
+	const aligned = [
+		...(style.instPortAlign
+			? rows.flat().map((r) => ({ name: r.port, value: r.rhs }))
+			: []),
+		...(style.instParamAlign
+			? m.insts.flatMap((inst) =>
+					inst.params.map((p) => ({ name: p.name, value: p.value })),
+				)
+			: []),
+	];
+	const namePad = Math.max(0, ...aligned.map((c) => c.name.length));
+	const valuePad = Math.max(0, ...aligned.map((c) => c.value.length));
+	const portPad = style.instPortAlign ? namePad : 0;
+	const rhsPad = style.instPortAlign ? valuePad : 0;
+	const paramPad = style.instParamAlign ? namePad : 0;
+	const paramValuePad = style.instParamAlign ? valuePad : 0;
+	const lines: string[] = [];
+	for (const [k, inst] of m.insts.entries()) {
 		if (inst.params.length > 0) {
 			// One parameter override per line, even a single constant.
-			const paramPad = style.instParamAlign
-				? Math.max(...inst.params.map((p) => p.name.length), 0)
-				: 0;
 			lines.push(`\t${inst.mod} #(`);
 			for (const [i, p] of inst.params.entries()) {
 				lines.push(
-					`\t\t.${paramPad ? p.name.padEnd(paramPad) : p.name}(${p.value})${i < inst.params.length - 1 ? "," : ""}`,
+					`\t\t.${p.name.padEnd(paramPad)}(${p.value.padEnd(paramValuePad)})${i < inst.params.length - 1 ? "," : ""}`,
 				);
 			}
 			lines.push(`\t) ${inst.id} (`);
 		} else {
 			lines.push(`\t${inst.mod} ${inst.id} (`);
 		}
-		const pad = style.instPortAlign
-			? Math.max(...inst.connects.map((c) => c.port.length), 0)
-			: 0;
-		for (const [i, c] of inst.connects.entries()) {
-			const rhs = connectRhs(c, constNames);
+		const conns = rows[k] ?? [];
+		for (const [i, r] of conns.entries()) {
 			lines.push(
-				`\t\t.${pad ? c.port.padEnd(pad) : c.port}(${rhs})${i < inst.connects.length - 1 ? "," : ""}`,
+				`\t\t.${r.port.padEnd(portPad)}(${r.rhs.padEnd(rhsPad)})${i < conns.length - 1 ? "," : ""}`,
 			);
 		}
 		lines.push("\t);");
 	}
 	if (m.insts.length > 0) lines.push("");
-	lines.push("endmodule");
-	lines.push("");
-	return lines.join("\n");
+	return lines;
 }
 
 function connectRhs(c: RenderConnect, constNames: Set<string>): string {

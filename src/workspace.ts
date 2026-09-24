@@ -46,11 +46,12 @@ export interface WorkspaceConfig {
 	/** [style] param_align: align module declaration parameter names/=.
 	 *  Default false. */
 	styleParamAlign: boolean;
-	/** [style] inst_port_align: pad instantiation port names so the ( columns
-	 *  align. Default false. */
+	/** [style] inst_port_align: pad instantiation port names and connections so
+	 *  the ( and ) columns align across the whole file. Default false. */
 	styleInstPortAlign: boolean;
-	/** [style] inst_param_align: pad instantiation parameter names so the (
-	 *  columns align. Default false. */
+	/** [style] inst_param_align: pad instantiation parameter names and values
+	 *  so the ( and ) columns align across the whole file; shares columns with
+	 *  inst_port_align when both are on. Default false. */
 	styleInstParamAlign: boolean;
 	/** [style] signal_align: align internal signal declaration columns
 	 *  (nettype / packed width; names left-aligned). Default false. */

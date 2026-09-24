@@ -183,8 +183,9 @@ Shared by deps / web / cli for the RTL universe:
   [style] param_inline      true (default) inline simple overrides | false: fold all to Mod__Inst__Param
   [style] port_align        declaration port columns: dir / type / packed, names left-aligned (default false)
   [style] param_align       declaration parameter = column (default false)
-  [style] inst_port_align   instantiation .port ( column alignment (default false)
-  [style] inst_param_align  instantiation .PARAM ( column alignment (default false)
+  [style] inst_port_align   instantiation .port ( and ) columns, file-wide (default false)
+  [style] inst_param_align  instantiation .PARAM ( and ) columns, file-wide (default false);
+                            with inst_port_align too, ports + params share one column pair
   [style] signal_align      internal signal columns: nettype / packed, names left-aligned (default false)
   [style] localparam_upper  uppercase generated Mod__Inst__Param names (default false)
 

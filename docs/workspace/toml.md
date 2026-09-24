@@ -85,8 +85,11 @@ plugins_dir = "gen/plugins"
 # 对齐开关（除 localparam_upper 外均为打印层，不影响 render；默认全 false）：
 #   port_align       ——模块声明端口表：dir（input/output/inout）/ 类型 / 宽度分列对齐，信号名左对齐。
 #   param_align      ——模块声明 parameter 的 `=` 列对齐。
-#   inst_port_align  ——例化端口 `.name (net)` 的 `(` 列对齐。
-#   inst_param_align ——例化参数 `.NAME (value)` 的 `(` 列对齐。
+#   inst_port_align  ——例化端口 `.name (net)` 的 `(` 与 `)` 列对齐；列宽按**整个文件**（同一模块内全部例化）
+#                      的最长端口名 / 最长连接文本统一计算，不是每个例化各自对齐。
+#   inst_param_align ——例化参数 `.NAME (value)` 的 `(` 与 `)` 列对齐，同样按整个文件统一计算。
+#   两者同时开启时，端口与参数共用同一组列宽：`(` 列取全部端口名与参数名的最大长度，
+#   `)` 列取全部连接文本与参数值的最大长度。
 #   signal_align     ——内部信号声明：nettype / 宽度分列对齐，信号名左对齐。
 # 折叠名大小写（render 层）：
 #   localparam_upper = true ——生成的 Mod__Inst__Param 名整体大写（传统习惯；默认 false）。

@@ -53,6 +53,41 @@ const SNAP = `<autowire>
   </aw-mod>
 </autowire>`;
 
+const TWO_INSTS = `<autowire>
+  <aw-mod name="pair">
+    <aw-render>
+      <aw-insts>
+        <aw-inst id="u_a" mod="a">
+          <aw-connect port="clk" to="clk_i"></aw-connect>
+          <aw-connect port="data_valid" to="v"></aw-connect>
+        </aw-inst>
+        <aw-inst id="u_b" mod="b">
+          <aw-connect port="rst" to="rst_n_sync_long"></aw-connect>
+          <aw-connect port="q" type="open"></aw-connect>
+        </aw-inst>
+      </aw-insts>
+    </aw-render>
+  </aw-mod>
+</autowire>`;
+
+const MIXED = `<autowire>
+  <aw-mod name="mix">
+    <aw-render>
+      <aw-insts>
+        <aw-inst id="u_a" mod="a">
+          <aw-param name="W" value="8"></aw-param>
+          <aw-param name="DEPTH_LOG2" value="4"></aw-param>
+          <aw-connect port="clk" to="clk_i"></aw-connect>
+        </aw-inst>
+        <aw-inst id="u_b" mod="b">
+          <aw-param name="N" value="MIX_N_DEFAULT"></aw-param>
+          <aw-connect port="data_valid_in" to="v"></aw-connect>
+        </aw-inst>
+      </aw-insts>
+    </aw-render>
+  </aw-mod>
+</autowire>`;
+
 describe("printer", () => {
 	test("parseSnapshot reads all render groups", () => {
 		const mods = parseSnapshot(SNAP);
@@ -101,28 +136,66 @@ describe("printer", () => {
 		expect(sv).toContain(".dbg()");
 	});
 
-	test("printSv instPortAlign pads inst port names per instantiation", () => {
+	test("printSv instPortAlign aligns both ( and ) of inst port maps", () => {
 		const sv = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1", {
 			instPortAlign: true,
 		});
-		// longest port name in u0 is "w_in" (4): shorter names padded so ( aligns
-		expect(sv).toContain(".d   (arr[2]),");
-		expect(sv).toContain(".en  (32'h0),");
-		expect(sv).toContain(".clk (clk_i),");
-		expect(sv).toContain(".w_in(W),");
+		// longest port name is 4 ("w_in"), longest connection 10 ("{48{1'b1}}")
+		expect(sv).toContain(".d   (arr[2]    ),");
+		expect(sv).toContain(".en  (32'h0     ),");
+		expect(sv).toContain(".clk (clk_i     ),");
+		expect(sv).toContain(".w_in(W         ),");
+		expect(sv).toContain(".init({48{1'b1}}),");
+		expect(sv).toContain(".dbg (          )");
 		// default (off) keeps the compact form
 		const plain = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1");
 		expect(plain).toContain(".clk(clk_i),");
 	});
 
-	test("printSv instParamAlign pads inst parameter names", () => {
-		const sv = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1", {
+	test("printSv instPortAlign columns are shared by every instance in the file", () => {
+		const sv = printSv(parseSnapshot(TWO_INSTS)[0] as RenderModule, "u1", {
+			instPortAlign: true,
+		});
+		const conns = sv.split("\n").filter((l) => l.startsWith("\t\t."));
+		expect(conns).toHaveLength(4);
+		expect(new Set(conns.map((l) => l.indexOf("("))).size).toBe(1);
+		expect(new Set(conns.map((l) => l.lastIndexOf(")"))).size).toBe(1);
+		// u_a is padded to u_b's longer connection and vice versa
+		expect(sv).toContain(`.clk${" ".repeat(7)}(clk_i${" ".repeat(10)}),`);
+		expect(sv).toContain(`.data_valid(v${" ".repeat(14)})`);
+		expect(sv).toContain(`.rst${" ".repeat(7)}(rst_n_sync_long),`);
+		expect(sv).toContain(`.q${" ".repeat(9)}(${" ".repeat(15)})`);
+	});
+
+	test("printSv instParamAlign aligns ( and ) of param overrides file-wide", () => {
+		const sv = printSv(parseSnapshot(MIXED)[0] as RenderModule, "u1", {
 			instParamAlign: true,
 		});
-		expect(sv).toContain(".Width(top__u0__Width)");
-		// single param: padding to self is a no-op; alignment is per-instance
+		// longest param name 10 ("DEPTH_LOG2"), longest value 13 ("MIX_N_DEFAULT")
+		expect(sv).toContain(`.W${" ".repeat(9)}(8${" ".repeat(12)}),`);
+		expect(sv).toContain(`.DEPTH_LOG2(4${" ".repeat(12)})`);
+		expect(sv).toContain(`.N${" ".repeat(9)}(MIX_N_DEFAULT)`);
+		// port maps stay compact when only params align
+		expect(sv).toContain(".clk(clk_i)");
+		expect(sv).toContain(".data_valid_in(v)");
 		const plain = printSv(parseSnapshot(SNAP)[0] as RenderModule, "u1");
 		expect(plain).toContain(".Width(top__u0__Width)");
+	});
+
+	test("printSv inst port + param align share one column pair", () => {
+		const sv = printSv(parseSnapshot(MIXED)[0] as RenderModule, "u1", {
+			instPortAlign: true,
+			instParamAlign: true,
+		});
+		const rows = sv.split("\n").filter((l) => l.startsWith("\t\t."));
+		expect(rows).toHaveLength(5);
+		expect(new Set(rows.map((l) => l.indexOf("("))).size).toBe(1);
+		expect(new Set(rows.map((l) => l.lastIndexOf(")"))).size).toBe(1);
+		// name column from port "data_valid_in" (13), value column from param
+		// "MIX_N_DEFAULT" (13)
+		expect(sv).toContain(`.W${" ".repeat(12)}(8${" ".repeat(12)}),`);
+		expect(sv).toContain(`.data_valid_in(v${" ".repeat(12)})`);
+		expect(sv).toContain(`.clk${" ".repeat(10)}(clk_i${" ".repeat(8)})`);
 	});
 
 	test("printSv portAlign aligns declaration port columns", () => {
