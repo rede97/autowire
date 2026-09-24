@@ -35,54 +35,54 @@ module sha256wb (
 	wire  [31:0] hash7;
 
 	sha256_wb_regs u_regs (
-		.clk            (clk            ),
-		.rst_ni         (rst_ni         ),
-		.s_axis_tdata   (s_axis_tdata   ),
-		.s_axis_tvalid  (s_axis_tvalid  ),
-		.s_axis_tlast   (s_axis_tlast   ),
-		.i_hash_busy    (hash_busy      ),
-		.i_irq_finish   (irq_finish     ),
-		.i_hash0        (hash0          ),
-		.i_hash1        (hash1          ),
-		.i_hash2        (hash2          ),
-		.i_hash3        (hash3          ),
-		.i_hash4        (hash4          ),
-		.i_hash5        (hash5          ),
-		.i_hash6        (hash6          ),
-		.i_hash7        (hash7          ),
-		.rg_soft_reset  (rg_soft_reset  ),
-		.p_rg_done_clear(p_rg_done_clear),
-		.s_axis_tready  (s_axis_tready  ),
-		.o_dat_valid    (dat_valid      ),
-		.o_dat_lsb      (dat_lsb        ),
-		.o_core_rst_n   (core_rst_n     ),
-		.ro_busy        (ro_busy        ),
-		.ro_done        (ro_done        ),
-		.ro_hash0       (ro_hash0       ),
-		.ro_hash1       (ro_hash1       ),
-		.ro_hash2       (ro_hash2       ),
-		.ro_hash3       (ro_hash3       ),
-		.ro_hash4       (ro_hash4       ),
-		.ro_hash5       (ro_hash5       ),
-		.ro_hash6       (ro_hash6       ),
-		.ro_hash7       (ro_hash7       ),
-		.o_irq          (irq_o          )
+		.clk            (clk            ), // i
+		.rst_ni         (rst_ni         ), // i
+		.s_axis_tdata   (s_axis_tdata   ), // i [31:0]
+		.s_axis_tvalid  (s_axis_tvalid  ), // i
+		.s_axis_tlast   (s_axis_tlast   ), // i
+		.i_hash_busy    (hash_busy      ), // i
+		.i_irq_finish   (irq_finish     ), // i
+		.i_hash0        (hash0          ), // i [31:0]
+		.i_hash1        (hash1          ), // i [31:0]
+		.i_hash2        (hash2          ), // i [31:0]
+		.i_hash3        (hash3          ), // i [31:0]
+		.i_hash4        (hash4          ), // i [31:0]
+		.i_hash5        (hash5          ), // i [31:0]
+		.i_hash6        (hash6          ), // i [31:0]
+		.i_hash7        (hash7          ), // i [31:0]
+		.rg_soft_reset  (rg_soft_reset  ), // i
+		.p_rg_done_clear(p_rg_done_clear), // i
+		.s_axis_tready  (s_axis_tready  ), // o
+		.o_dat_valid    (dat_valid      ), // o
+		.o_dat_lsb      (dat_lsb        ), // o [31:0]
+		.o_core_rst_n   (core_rst_n     ), // o
+		.ro_busy        (ro_busy        ), // o
+		.ro_done        (ro_done        ), // o
+		.ro_hash0       (ro_hash0       ), // o [31:0]
+		.ro_hash1       (ro_hash1       ), // o [31:0]
+		.ro_hash2       (ro_hash2       ), // o [31:0]
+		.ro_hash3       (ro_hash3       ), // o [31:0]
+		.ro_hash4       (ro_hash4       ), // o [31:0]
+		.ro_hash5       (ro_hash5       ), // o [31:0]
+		.ro_hash6       (ro_hash6       ), // o [31:0]
+		.ro_hash7       (ro_hash7       ), // o [31:0]
+		.o_irq          (irq_o          )  // o
 	);
 	sha256 u_core (
-		.clk            (clk            ),
-		.rst_n          (core_rst_n     ),
-		.dat_vaild_i    (dat_valid      ),
-		.dat_lsb_i      (dat_lsb        ),
-		.hash0          (hash0          ),
-		.hash1          (hash1          ),
-		.hash2          (hash2          ),
-		.hash3          (hash3          ),
-		.hash4          (hash4          ),
-		.hash5          (hash5          ),
-		.hash6          (hash6          ),
-		.hash7          (hash7          ),
-		.hash_busy_o    (hash_busy      ),
-		.irq_finish     (irq_finish     )
+		.clk            (clk            ), // i
+		.rst_n          (core_rst_n     ), // i
+		.dat_vaild_i    (dat_valid      ), // i
+		.dat_lsb_i      (dat_lsb        ), // i [31:0]
+		.hash0          (hash0          ), // o [31:0]
+		.hash1          (hash1          ), // o [31:0]
+		.hash2          (hash2          ), // o [31:0]
+		.hash3          (hash3          ), // o [31:0]
+		.hash4          (hash4          ), // o [31:0]
+		.hash5          (hash5          ), // o [31:0]
+		.hash6          (hash6          ), // o [31:0]
+		.hash7          (hash7          ), // o [31:0]
+		.hash_busy_o    (hash_busy      ), // o
+		.irq_finish     (irq_finish     )  // o
 	);
 
 endmodule

@@ -53,6 +53,10 @@ port_align = true
 param_align = true
 inst_port_align = true
 inst_param_align = true
+# port-map comments: short direction + port width, e.g. // o [31:0]
+inst_port_dir = true
+inst_port_dir_format = "short"
+inst_port_width = true
 signal_align = true
 localparam_upper = true
 

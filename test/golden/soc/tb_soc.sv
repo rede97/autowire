@@ -25,37 +25,37 @@ module tb_soc;
 	logic [31:0] test_data;
 
 	soc_top u_dut (
-		.rst_ni      (rst_ni      ),
-		.clk         (clk         ),
-		.trap        (trap        ),
-		.flash_io0_di(flash_io0   ),
-		.flash_io1_di(flash_io1   ),
-		.flash_io2_di(flash_io2   ),
-		.flash_io3_di(flash_io3   ),
-		.flash_csb   (flash_csb   ),
-		.flash_clk   (flash_clk   ),
-		.flash_io0_oe(flash_io0_oe),
-		.flash_io1_oe(flash_io1_oe),
-		.flash_io2_oe(flash_io2_oe),
-		.flash_io3_oe(flash_io3_oe),
-		.flash_io0_do(flash_io0_do),
-		.flash_io1_do(flash_io1_do),
-		.flash_io2_do(flash_io2_do),
-		.flash_io3_do(flash_io3_do),
-		.ser_rx      (SER_RX_IDLE ),
-		.ser_tx      (ser_tx      ),
-		.test_valid  (test_valid  ),
-		.test_data   (test_data   ),
-		.sd0_cs_n    (            ),
-		.sd0_sck     (            ),
-		.sd0_mosi    (            ),
-		.sd0_miso    (1'b1        ),
-		.sd0_cd      (1'b1        ),
-		.sd1_cs_n    (            ),
-		.sd1_sck     (            ),
-		.sd1_mosi    (            ),
-		.sd1_miso    (1'b1        ),
-		.sd1_cd      (1'b1        )
+		.rst_ni      (rst_ni      ), // i
+		.clk         (clk         ), // i
+		.trap        (trap        ), // o
+		.flash_io0_di(flash_io0   ), // i
+		.flash_io1_di(flash_io1   ), // i
+		.flash_io2_di(flash_io2   ), // i
+		.flash_io3_di(flash_io3   ), // i
+		.flash_csb   (flash_csb   ), // o
+		.flash_clk   (flash_clk   ), // o
+		.flash_io0_oe(flash_io0_oe), // o
+		.flash_io1_oe(flash_io1_oe), // o
+		.flash_io2_oe(flash_io2_oe), // o
+		.flash_io3_oe(flash_io3_oe), // o
+		.flash_io0_do(flash_io0_do), // o
+		.flash_io1_do(flash_io1_do), // o
+		.flash_io2_do(flash_io2_do), // o
+		.flash_io3_do(flash_io3_do), // o
+		.ser_rx      (SER_RX_IDLE ), // i
+		.ser_tx      (ser_tx      ), // o
+		.test_valid  (test_valid  ), // o
+		.test_data   (test_data   ), // o [31:0]
+		.sd0_cs_n    (            ), // o
+		.sd0_sck     (            ), // o
+		.sd0_mosi    (            ), // o
+		.sd0_miso    (1'b1        ), // i
+		.sd0_cd      (1'b1        ), // i
+		.sd1_cs_n    (            ), // o
+		.sd1_sck     (            ), // o
+		.sd1_mosi    (            ), // o
+		.sd1_miso    (1'b1        ), // i
+		.sd1_cd      (1'b1        )  // i
 	);
 
 `include "tb_sim.svh"
