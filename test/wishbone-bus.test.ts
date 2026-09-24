@@ -213,6 +213,67 @@ describe("wishbone-bus", () => {
 		expect(() => Slave("s0", "t", 0, 0xff, { pipe: -1 })).toThrow(/pipe/);
 	});
 
+	test("master pipe must be 0..16 and defaults to 0", () => {
+		expect(Master("cpu", "CPU").pipe).toBe(0);
+		expect(Master("cpu", "CPU", { pipe: 3 }).pipe).toBe(3);
+		expect(() => Master("cpu", "CPU", { pipe: 17 })).toThrow(/pipe/);
+		expect(() => Master("cpu", "CPU", { pipe: -1 })).toThrow(/pipe/);
+	});
+
+	test("master PIPE sits in front of the arbiter and holds the grant", () => {
+		const def = Bus("mp", "master pipe", {
+			masters: [Master("fast", "piped", { pipe: 2 }), Master("slow", "combo")],
+			slaves: [Slave("mem", "mem", 0, 0xffff_0000, { tag: 2 })],
+			tagWidth: 2,
+		});
+		const sv = emitBusSv(def);
+		expect(sv).toContain(
+			"wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(2)) u_fast_mpipe",
+		);
+		expect(sv).not.toContain("u_slow_mpipe");
+		const inst = sv.slice(
+			sv.indexOf("u_fast_mpipe"),
+			sv.indexOf("Arbitration"),
+		);
+		expect(inst).toContain(".m_cyc(fast_o_wb_cyc)");
+		expect(inst).toContain(".m_tga(fast_o_wb_tga)");
+		expect(inst).toContain(".s_cyc(m0_cyc_q)");
+		expect(inst).toContain(".s_tga(m0_tga_q)");
+		expect(inst).toContain(".m_ack(m0_pack)");
+		expect(inst).not.toContain(".m_tga(slow");
+		expect(sv).toContain("assign m_cyc = {slow_o_wb_cyc, m0_cyc_q};");
+		expect(sv).toContain("if      (m0_cyc_q)");
+		expect(sv).toContain("else if (slow_o_wb_cyc)");
+		expect(sv).toContain("({32{gsel[0]}} & m0_adr_q)");
+		expect(sv).toContain("({32{gsel[1]}} & slow_o_wb_adr)");
+		expect(sv).toContain("assign m0_rdat_q = {32{gsel[0]}} & rsp_dat;");
+		expect(sv).toContain("assign fast_i_wb_ack = m0_pack;");
+		expect(sv).toContain("assign slow_i_wb_ack = gsel[1] & rsp_ack;");
+		expect(sv).toContain("// Master fast — piped  pipe=2");
+	});
+
+	test("decoder master PIPE sits in front of decode", () => {
+		const def = Bus("dp", "decoder pipe", {
+			masters: [Master("cpu", "CPU", { pipe: 1 })],
+			slaves: [Slave("csr", "regs", 0, 0xffff_ff00)],
+		});
+		const sv = emitBusSv(def);
+		expect(sv).toContain(
+			"wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_cpu_mpipe",
+		);
+		const inst = sv.slice(
+			sv.indexOf("u_cpu_mpipe"),
+			sv.indexOf("Address decode"),
+		);
+		expect(inst).toContain(".m_cyc(m_cyc_i)");
+		expect(inst).toContain(".m_adr(m_adr_i)");
+		expect(inst).toContain(".s_cyc(m_cyc_q)");
+		expect(inst).not.toContain("m_tga");
+		expect(sv).toContain("assign g_cyc   = m_cyc_q;");
+		expect(sv).toContain("assign m_ack_o  = m_pack;");
+		expect(sv).not.toContain("assign g_cyc   = m_cyc_i;");
+	});
+
 	test("slave PIPE instantiates wb_cfg_pipe; TGA ports connected only when tagged", () => {
 		const def = Bus("piped", "pipe", {
 			masters: [Master("cpu", "CPU")],

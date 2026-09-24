@@ -5,7 +5,7 @@
 //  Desc:   SD + DMA + SHA256 channel interconnect (uplink + engine)
 //  Masters: 2 (arbiter: rb_grant_en=0 fixed / 1 round-robin)
 //  Slaves:  3 (named {slave}_i_wb_* / {slave}_o_wb_*)
-//  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read; master PIPE is parent)
+//  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read)
 //------------------------------------------------------------------------------
 //  Address map:
 //    0x00000000  size=0x00000010  mask=0xfffffff0  sd — sdspi CSR  pipe=2

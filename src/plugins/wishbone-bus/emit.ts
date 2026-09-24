@@ -2,7 +2,7 @@
 // Slave ports use leaf-centric names: `{slave}_i_wb_*` / `{slave}_o_wb_*`
 // so they identity-match wishbone-regfile. Masters stay flat m_* vectors when NM>1.
 
-import type { BusDef, WbSlave } from "./dsl.ts";
+import type { BusDef, WbMaster, WbSlave } from "./dsl.ts";
 
 function hex(n: number, width = 32): string {
 	return n.toString(16).padStart(Math.ceil(width / 4), "0");
@@ -185,10 +185,11 @@ function masterPortBlock(
 	desc: string,
 	aw: number,
 	tw: number,
+	pipe: number,
 ): string[] {
 	const adr = packedRange(aw).padEnd(7);
 	const lines = [
-		`\t// Master ${name} — ${desc}`,
+		`\t// Master ${name} — ${desc}${pipe > 0 ? `  pipe=${pipe}` : ""}`,
 		`\tinput  logic ${adr}${wb(name, "o_wb_adr")},`,
 		`\tinput  logic [31:0] ${wb(name, "o_wb_dat")},`,
 		`\tinput  logic [3:0]  ${wb(name, "o_wb_sel")},`,
@@ -241,6 +242,8 @@ function emitDecoderBody(def: BusDef): string[] {
 	const tw = def.tag_width;
 	const slaves = def.slaves;
 	const out: string[] = [];
+	const m = def.masters[0];
+	const piped = (m?.pipe ?? 0) > 0;
 	out.push(
 		`\tlogic ${packedRange(aw).padEnd(7)}g_adr;`,
 		"\tlogic [31:0] g_wdata;",
@@ -254,23 +257,51 @@ function emitDecoderBody(def: BusDef): string[] {
 		"\tlogic        g_stb;",
 		"\tlogic        g_we;",
 		"",
-		"\tassign g_adr   = m_adr_i;",
-		"\tassign g_wdata = m_dat_i;",
-		"\tassign g_sel   = m_sel_i;",
 	);
-	if (tw > 0) {
-		out.push("\tassign g_tga   = m_tga_i;");
+	if (piped && m) {
+		out.push(...emitMasterPipe(m, 0, aw, tw, "m", "m_adr_i"));
+		out.push(
+			"\tassign g_adr   = m_adr_q;",
+			"\tassign g_wdata = m_wdat_q;",
+			"\tassign g_sel   = m_sel_q;",
+		);
+		if (tw > 0) out.push("\tassign g_tga   = m_tga_q;");
+		out.push(
+			"\tassign g_cyc   = m_cyc_q;",
+			"\tassign g_stb   = m_stb_q;",
+			"\tassign g_we    = m_we_q;",
+			"",
+		);
+	} else {
+		out.push(
+			"\tassign g_adr   = m_adr_i;",
+			"\tassign g_wdata = m_dat_i;",
+			"\tassign g_sel   = m_sel_i;",
+		);
+		if (tw > 0) {
+			out.push("\tassign g_tga   = m_tga_i;");
+		}
+		out.push(
+			"\tassign g_cyc   = m_cyc_i;",
+			"\tassign g_stb   = m_stb_i;",
+			"\tassign g_we    = m_we_i;",
+			"",
+		);
 	}
-	out.push(
-		"\tassign g_cyc   = m_cyc_i;",
-		"\tassign g_stb   = m_stb_i;",
-		"\tassign g_we    = m_we_i;",
-		"",
-	);
 	out.push(...emitDecodeAndSlaves(def, "g_"));
 	out.push("", "\tlogic [31:0] rsp_dat;", "\tlogic        rsp_ack;", "");
 	out.push(...emitResponseMux(slaves, "rsp_dat", "rsp_ack", "g_stb"));
-	out.push("\tassign m_dat_o = rsp_dat;", "\tassign m_ack_o = rsp_ack;", "");
+	if (piped) {
+		out.push(
+			"\tassign m_rdat_q = rsp_dat;",
+			"\tassign m_ack_q  = rsp_ack;",
+			"\tassign m_dat_o  = m_prdat;",
+			"\tassign m_ack_o  = m_pack;",
+			"",
+		);
+	} else {
+		out.push("\tassign m_dat_o = rsp_dat;", "\tassign m_ack_o = rsp_ack;", "");
+	}
 	return out;
 }
 
@@ -288,6 +319,19 @@ function emitInterconnectBody(def: BusDef): string[] {
 	const shiftFills: string[] = [];
 	for (let s = 1; s < nm; s <<= 1) {
 		shiftFills.push(`\t\trr_mask = rr_mask | (rr_mask >> ${s});`);
+	}
+	const piped = masters.some((m) => (m.pipe ?? 0) > 0);
+	if (piped) {
+		out.push(
+			"\t//------------------------------------------------------------------------------",
+			"\t//  Master pipes (posted write / blocking read), in front of the arbiter",
+			"\t//  The arbiter requests and holds its grant from each pipe's s_cyc",
+			"\t//------------------------------------------------------------------------------",
+		);
+		for (const m of masters) {
+			out.push(...emitMasterPipe(m, m.i, aw, tw));
+		}
+		out.push("");
 	}
 	out.push(
 		"\t//------------------------------------------------------------------------------",
@@ -308,22 +352,27 @@ function emitInterconnectBody(def: BusDef): string[] {
 		`\tlogic ${pk} m_we;`,
 		"",
 	);
-	// Slot vectors (bit i = masters[i]); vector channels mux by name below.
-	for (const [sig, stem] of [
-		["m_cyc", "o_wb_cyc"],
-		["m_stb", "o_wb_stb"],
-		["m_we ", "o_wb_we"],
+	// Slot vectors (bit i = masters[i]); a piped master contributes its pipe s_*.
+	const reqBit = (
+		m: (typeof masters)[number],
+		q: string,
+		port: string,
+	): string => ((m.pipe ?? 0) > 0 ? `m${m.i}_${q}_q` : wb(m.name, port));
+	for (const [sig, q, port] of [
+		["m_cyc", "cyc", "o_wb_cyc"],
+		["m_stb", "stb", "o_wb_stb"],
+		["m_we ", "we", "o_wb_we"],
 	] as const) {
-		const msbFirst = [...masters].reverse().map((m) => wb(m.name, stem));
+		const msbFirst = [...masters].reverse().map((m) => reqBit(m, q, port));
 		out.push(`\tassign ${sig} = {${msbFirst.join(", ")}};`);
 	}
 	const condPad = Math.max(
-		...masters.map((m) => `(${wb(m.name, "o_wb_cyc")})`.length),
+		...masters.map((m) => `(${reqBit(m, "cyc", "o_wb_cyc")})`.length),
 	);
 	out.push("", "\talways_comb begin");
 	for (const m of masters) {
 		const kw = m.i === 0 ? "if      " : "else if ";
-		const cond = `(${wb(m.name, "o_wb_cyc")})`.padEnd(condPad);
+		const cond = `(${reqBit(m, "cyc", "o_wb_cyc")})`.padEnd(condPad);
 		out.push(`\t\t${kw}${cond} prio_gnt = ${onehot(m.i)};`);
 	}
 	out.push(
@@ -385,17 +434,22 @@ function emitInterconnectBody(def: BusDef): string[] {
 		"",
 	);
 
-	const muxVec = (lhs: string, stem: string, width: number) =>
+	const muxSrc = (
+		m: (typeof masters)[number],
+		q: string,
+		port: string,
+	): string => ((m.pipe ?? 0) > 0 ? `m${m.i}_${q}_q` : wb(m.name, port));
+	const muxVec = (lhs: string, q: string, port: string, width: number) =>
 		pushOrAssign(
 			out,
 			lhs,
-			masters.map((m) => `({${width}{gsel[${m.i}]}} & ${wb(m.name, stem)})`),
+			masters.map((m) => `({${width}{gsel[${m.i}]}} & ${muxSrc(m, q, port)})`),
 		);
-	muxVec("g_adr  ", "o_wb_adr", aw);
-	muxVec("g_wdata", "o_wb_dat", 32);
-	muxVec("g_sel  ", "o_wb_sel", 4);
+	muxVec("g_adr  ", "adr", "o_wb_adr", aw);
+	muxVec("g_wdata", "wdat", "o_wb_dat", 32);
+	muxVec("g_sel  ", "sel", "o_wb_sel", 4);
 	if (tw > 0) {
-		muxVec("g_tga  ", "o_wb_tga", tw);
+		muxVec("g_tga  ", "tga", "o_wb_tga", tw);
 	}
 	out.push(
 		`\tassign g_cyc   = |(gsel & m_cyc);`,
@@ -419,10 +473,19 @@ function emitInterconnectBody(def: BusDef): string[] {
 	for (const m of masters) {
 		const dat = wb(m.name, "i_wb_dat").padEnd(datPad);
 		const ack = wb(m.name, "i_wb_ack").padEnd(datPad);
-		out.push(
-			`\tassign ${dat} = {32{gsel[${m.i}]}} & rsp_dat;`,
-			`\tassign ${ack} = gsel[${m.i}] & rsp_ack;`,
-		);
+		if ((m.pipe ?? 0) > 0) {
+			out.push(
+				`\tassign m${m.i}_rdat_q = {32{gsel[${m.i}]}} & rsp_dat;`,
+				`\tassign m${m.i}_ack_q  = gsel[${m.i}] & rsp_ack;`,
+				`\tassign ${dat} = m${m.i}_prdat;`,
+				`\tassign ${ack} = m${m.i}_pack;`,
+			);
+		} else {
+			out.push(
+				`\tassign ${dat} = {32{gsel[${m.i}]}} & rsp_dat;`,
+				`\tassign ${ack} = gsel[${m.i}] & rsp_ack;`,
+			);
+		}
 	}
 	out.push("");
 	return out;
@@ -515,6 +578,86 @@ function emitSlaveCombo(
 		`\tassign ${port("i_wb_stb")} = ${slot} & ${gPrefix}stb;`,
 		`\tassign ${port("i_wb_we ")} = ${gPrefix}we;`,
 	);
+	return out;
+}
+
+/**
+ * `wb_cfg_pipe` between a master port and the arbiter (or, on a decoder,
+ * between the flat `m_*` port and address decode). The arbiter must request
+ * and hold its grant from the pipe `s_cyc`: a posted write drops the port
+ * `CYC` while the beat is still queued.
+ *
+ * `idx` names the queue nets `m<idx>_*`. The decoder passes `idxName = "m"`
+ * so the nets are `m_*` and the flat `m_*_i` ports feed the pipe.
+ */
+function emitMasterPipe(
+	m: WbMaster,
+	idx: number,
+	aw: number,
+	tw: number,
+	idxName?: string,
+	adrPort?: string,
+): string[] {
+	const pipe = m.pipe ?? 0;
+	const p = idxName ?? `m${idx}`;
+	const pin = (stem: string) => (idxName ? `m_${stem}` : wb(m.name, stem));
+	const out = [
+		`\tlogic ${packedRange(aw).padEnd(7)}${p}_adr_q;`,
+		`\tlogic [31:0] ${p}_wdat_q;`,
+		`\tlogic [3:0]  ${p}_sel_q;`,
+	];
+	if (tw > 0) out.push(`\tlogic ${packedRange(tw).padEnd(7)}${p}_tga_q;`);
+	out.push(
+		`\tlogic        ${p}_cyc_q;`,
+		`\tlogic        ${p}_stb_q;`,
+		`\tlogic        ${p}_we_q;`,
+		`\tlogic [31:0] ${p}_rdat_q;`,
+		`\tlogic        ${p}_ack_q;`,
+	);
+	if (pipe === 0) {
+		out.push(
+			`\tassign ${p}_adr_q  = ${adrPort ?? pin("o_wb_adr")};`,
+			`\tassign ${p}_wdat_q = ${pin(idxName ? "dat_i" : "o_wb_dat")};`,
+			`\tassign ${p}_sel_q  = ${pin(idxName ? "sel_i" : "o_wb_sel")};`,
+		);
+		if (tw > 0) {
+			out.push(
+				`\tassign ${p}_tga_q  = ${pin(idxName ? "tga_i" : "o_wb_tga")};`,
+			);
+		}
+		out.push(
+			`\tassign ${p}_cyc_q  = ${pin(idxName ? "cyc_i" : "o_wb_cyc")};`,
+			`\tassign ${p}_stb_q  = ${pin(idxName ? "stb_i" : "o_wb_stb")};`,
+			`\tassign ${p}_we_q   = ${pin(idxName ? "we_i" : "o_wb_we")};`,
+		);
+		return out;
+	}
+	out.push(
+		`\tlogic [31:0] ${p}_prdat;`,
+		`\tlogic        ${p}_pack;`,
+		`\twb_cfg_pipe #(.PIPE(${pipe}), .AW(${aw}), .TW(${tw})) u_${m.name}_mpipe (`,
+		"\t\t.clk(clk),",
+		"\t\t.rst_n(rst_n),",
+		`\t\t.m_cyc(${pin(idxName ? "cyc_i" : "o_wb_cyc")}),`,
+		`\t\t.m_stb(${pin(idxName ? "stb_i" : "o_wb_stb")}),`,
+		`\t\t.m_we(${pin(idxName ? "we_i" : "o_wb_we")}),`,
+		`\t\t.m_adr(${adrPort ?? pin("o_wb_adr")}),`,
+		`\t\t.m_dat(${pin(idxName ? "dat_i" : "o_wb_dat")}),`,
+		`\t\t.m_sel(${pin(idxName ? "sel_i" : "o_wb_sel")}),`,
+	);
+	if (tw > 0) out.push(`\t\t.m_tga(${pin(idxName ? "tga_i" : "o_wb_tga")}),`);
+	out.push(
+		`\t\t.m_ack(${p}_pack),`,
+		`\t\t.m_rdat(${p}_prdat),`,
+		`\t\t.s_cyc(${p}_cyc_q),`,
+		`\t\t.s_stb(${p}_stb_q),`,
+		`\t\t.s_we(${p}_we_q),`,
+		`\t\t.s_adr(${p}_adr_q),`,
+		`\t\t.s_dat(${p}_wdat_q),`,
+		`\t\t.s_sel(${p}_sel_q),`,
+	);
+	if (tw > 0) out.push(`\t\t.s_tga(${p}_tga_q),`);
+	out.push(`\t\t.s_ack(${p}_ack_q),`, `\t\t.s_rdat(${p}_rdat_q)`, "\t);");
 	return out;
 }
 
@@ -616,7 +759,12 @@ export function emitBusSv(def: BusDef): string {
 	}
 	if (def.slaves.some((s) => (s.pipe ?? 0) > 0)) {
 		lines.push(
-			"//  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read; master PIPE is parent)",
+			"//  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read)",
+		);
+	}
+	if (def.masters.some((m) => (m.pipe ?? 0) > 0)) {
+		lines.push(
+			"//  Master PIPE: wb_cfg_pipe in front of the arbiter (s_cyc holds the grant)",
 		);
 	}
 	lines.push(
@@ -662,7 +810,7 @@ export function emitBusSv(def: BusDef): string {
 		portBlocks.push(block);
 	} else {
 		for (const m of def.masters) {
-			portBlocks.push(masterPortBlock(m.name, m.desc, aw, tw));
+			portBlocks.push(masterPortBlock(m.name, m.desc, aw, tw, m.pipe ?? 0));
 		}
 	}
 	for (const s of def.slaves) {

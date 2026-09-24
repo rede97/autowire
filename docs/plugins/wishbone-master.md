@@ -159,7 +159,7 @@ Bus("soc_wb", "SoC cfg", {
 - fabric 复位中：APB / 异步 WB / JTAG 全部立即报错不挂死；复位释放后恢复。
 - 四个 master 并发经仲裁写不同窗口后逐字校验。
 
-demo/soc 接入（JTAG）：`sot/wb_bus_soc.ts` 加 `Master("dbg", …, { jtag: true })`；`rtl/demo_tap.v` 为 **DFT 占位 TAP**（IDCODE / BYPASS / USER=1000 → `dbg_sel`），顶层引出 `jtag_*`，`dbg_en` 绑 1。外部 JTAG 冒烟与 CPU 固件并发（共享 soc_wb 仲裁）：
+demo/soc 接入（JTAG）：`sot/wb_bus_soc.ts` 加 `Master("dbg", …, { jtag: true, pipe: 2 })`（fabric 侧、CDC 之后 2 级 posted 写 pipe）；`rtl/demo_tap.v` 为 **DFT 占位 TAP**（IDCODE / BYPASS / USER=1000 → `dbg_sel`），顶层引出 `jtag_*`，`dbg_en` 绑 1。外部 JTAG 冒烟与 CPU 固件并发（共享 soc_wb 仲裁）：
 
 - `sim/verilator/run.sh`（默认 / `--regfile` / `--sd`）：C++ host `sim/verilator/jtag_host.h` 驱动 `jtag_*`。
 - `sim/verilator/run.sh --tb-mod`：aw-tb-mod dump 的 `tb_soc`（`--binary --timing`），SV host `sim/tb_jtag.svh`。

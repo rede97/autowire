@@ -41,7 +41,7 @@ function mb(tagWidth?: number) {
 
 describe("wishbone master bridges", () => {
 	test("Master options: defaults and validation", () => {
-		expect(Master("cpu", "x")).toEqual({ name: "cpu", desc: "x" });
+		expect(Master("cpu", "x")).toEqual({ name: "cpu", desc: "x", pipe: 0 });
 		expect(isBridgedMaster(Master("cpu", "x"))).toBe(false);
 		const j = Master("dbg", "x", { jtag: true });
 		expect(j).toMatchObject({ bridge: "jtag", cdc: true, idle: 16 });

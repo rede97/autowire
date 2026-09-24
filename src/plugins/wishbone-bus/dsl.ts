@@ -8,8 +8,7 @@ export type SlaveOpts = {
 	readonly tag?: number;
 	/**
 	 * Posted-write / blocking-read register stages inserted on this slave
-	 * port (0 = combinational). Master-side pipe is not configured here —
-	 * it comes from the parent fabric that drives this bus's master ports.
+	 * port (0 = combinational).
 	 */
 	readonly pipe?: number;
 };
@@ -109,6 +108,13 @@ export type JtagMasterOpts = {
 };
 
 export type MasterOpts = {
+	/**
+	 * Posted-write / blocking-read stages on this master's fabric port
+	 * (0 = combinational). Sits in front of the arbiter: the arbiter requests
+	 * and holds the grant from the pipe's `s_cyc`, so a posted write stays
+	 * owned until it drains. On a decoder the same pipe sits in front of decode.
+	 */
+	readonly pipe?: number;
 	/** Master runs in its own clock: insert `wb_cdc` into the fabric `clk`. */
 	readonly cdc?: boolean;
 	/** Source-clock cycles before `wb_cdc` aborts with ERR (0 = off). */
@@ -128,6 +134,8 @@ export type WbMaster = {
 	readonly timeout?: number;
 	readonly pprot?: { readonly value: number; readonly mask: number };
 	readonly idle?: number;
+	/** Fabric-side pipe stages (0 = combinational). */
+	readonly pipe: number;
 };
 
 export function masterBridge(m: WbMaster): WbMasterBridge {
@@ -451,6 +459,10 @@ export function Master(
 		);
 	}
 	const cdc = bridge === "jtag" || opts.cdc === true;
+	const pipe = opts.pipe ?? 0;
+	if (!Number.isInteger(pipe) || pipe < 0 || pipe > 16) {
+		throw new Error(`wishbone-bus: master ${name} pipe must be 0..16`);
+	}
 	const timeout = opts.timeout ?? 0;
 	if (!Number.isInteger(timeout) || timeout < 0 || timeout > 0xffff) {
 		throw new Error(`wishbone-bus: master ${name} timeout must be 0..65535`);
@@ -458,8 +470,8 @@ export function Master(
 	if (timeout > 0 && !cdc) {
 		throw new Error(`wishbone-bus: master ${name} timeout needs cdc`);
 	}
-	if (bridge === "wb" && !cdc) return { name, desc };
-	const m: WbMaster = { name, desc, bridge, cdc, timeout };
+	if (bridge === "wb" && !cdc) return { name, desc, pipe };
+	const m: WbMaster = { name, desc, bridge, cdc, timeout, pipe };
 	if (bridge === "apb") {
 		const p = opts.apb === true ? undefined : opts.apb?.pprot;
 		if (p === undefined) return m;

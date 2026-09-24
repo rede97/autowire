@@ -62,7 +62,7 @@
 
 ## 3. 长路径 pipe（写 posted / 读阻塞）
 
-Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generate` 写出通用模 [`wb_cfg_pipe`](./rtl/wb_cfg_pipe_template.sv) → `plugins_dir/wishbone/wb_cfg_pipe.sv`，每口 PIPE>0 例化一次。connect **不必**例化 `wb_cfg_pipe`。
+Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上：`plugin generate` 写出通用模 [`wb_cfg_pipe`](./rtl/wb_cfg_pipe_template.sv) → `plugins_dir/wishbone/wb_cfg_pipe.sv`，每口 PIPE>0 例化一次。connect **不必**例化 `wb_cfg_pipe`。
 
 ### 3.1 谁配置
 
@@ -72,7 +72,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generat
 | **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（原始 match mask）；**不**做对齐/重叠检查；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
 | **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（叶子 + `Size(layout span)`，可 `size=` 覆盖且必须盖住 span） |
 | **SlaveBus** | `SlaveBus(BusDef, base, { id?, pipe?, tag?, size?, desc?, uplink? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模 **必须** 有 `Master("uplink")`（或 `uplink=`）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`，子地址是窗相对的 |
-| **Master** | **本模块不配**。上一级 fabric 已在其 slave 口（即本模块 master 的对端）插入 pipe |
+| **Master** | `Master(name, desc, { pipe: N })`；`N=0`（缺省）= 组合直通；`N>0`（1..16）= 在 **仲裁之前**（decoder 则在译码之前）插入 `wb_cfg_pipe`。仲裁请求与 grant 保持看 pipe 的 `s_cyc`，posted 写撤掉端口 `CYC` 后总线仍归该 master，直到队列排空。与父级 `SlaveBus` 的 slave pipe 是两级，互不替代 |
 
 第五参仍可写数字：`Slave(..., 2)` = `tag=2`（兼容）；pipe 必须走 options 对象。
 
@@ -94,7 +94,8 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**上：`plugin generat
 - 写从末级卸载：`we & !next.stb`（叶 ACK 使 tap `.stb=0`）。**禁止**把写 ACK 放到返回路径。  
 - Classic 主机在 ACK 拍仍持 STB：空级不回灌完成中的读（`prev.stb && (we || !ack) && !self.ack`）。  
 - 因此注册级 `ack <= next.ack` 即可，不必再 `& !we`（叶口已拦截）。  
-- 叶口 `CYC` = **pipe 占用**，不是 master 当前 CYC（posted 后 master 可撤 CYC）。  
+- 叶口 `CYC` = **pipe 占用**，不是 master 当前 CYC（posted 后 master 可撤 CYC）。master 口同理：仲裁 **必须**看 pipe `s_cyc` 而不是端口 `CYC`。  
+- master pipe 的 `TW` = bus `tag_width`（fabric 入口尚未按 slave 截断）；`TW=0` 时例化省略 `m_tga` / `s_tga`。 
 - TGA：`wb_cfg_pipe` **始终**带 `m_tga`/`s_tga`；`TW>0` 时入口 `{tga, window_adr}`，出口再解。`TW=0` 时例化省略这两口（`TW=0` 打包路径不读 `m_tga`）。  
 - `PIPE=0`：跳过 pipe，组合直通（与今日行为相同）。  
 - 生成 RTL：一份 `wb_cfg_pipe`（参数 `PIPE`/`AW`/`TW`）；级间 `for (genvar …)` 交给综合器展开。Icarus 不能对结构体数组做 `q[i].field`：级寄存整拍 `q[i] <= nxtq`；入口旁路 `pipe_q1 = q[1]`；叶口 `pipe_h = q[PIPE]` 再拆字段。comb 口 `pipe_m`/`pipe_s` 与 FF 数组拆开。  

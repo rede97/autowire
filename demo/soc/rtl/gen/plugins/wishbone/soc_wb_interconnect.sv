@@ -6,7 +6,8 @@
 //  Masters: 2 (arbiter: rb_grant_en=0 fixed / 1 round-robin)
 //  Slaves:  8 (named {slave}_i_wb_* / {slave}_o_wb_*)
 //  Tag:     TGA 2 bit (forwarded, not interpreted)
-//  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read; master PIPE is parent)
+//  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read)
+//  Master PIPE: wb_cfg_pipe in front of the arbiter (s_cyc holds the grant)
 //------------------------------------------------------------------------------
 //  Address map:
 //    0x00000000  size=0x00010000  mask=0xffff0000  sram — 64 KiB SRAM  pipe=2
@@ -33,7 +34,7 @@ module soc_wb_interconnect (
 	input  logic        cpu_o_wb_we,
 	output logic [31:0] cpu_i_wb_dat,
 	output logic        cpu_i_wb_ack,
-	// Master dbg — External JTAG smoke (TDR behind demo_tap USER),
+	// Master dbg — External JTAG smoke (TDR behind demo_tap USER)  pipe=2,
 	input  logic [31:0] dbg_o_wb_adr,
 	input  logic [31:0] dbg_o_wb_dat,
 	input  logic [3:0]  dbg_o_wb_sel,
@@ -127,6 +128,60 @@ module soc_wb_interconnect (
 );
 
 	//------------------------------------------------------------------------------
+	//  Master pipes (posted write / blocking read), in front of the arbiter
+	//  The arbiter requests and holds its grant from each pipe's s_cyc
+	//------------------------------------------------------------------------------
+	logic [31:0] m0_adr_q;
+	logic [31:0] m0_wdat_q;
+	logic [3:0]  m0_sel_q;
+	logic [1:0]  m0_tga_q;
+	logic        m0_cyc_q;
+	logic        m0_stb_q;
+	logic        m0_we_q;
+	logic [31:0] m0_rdat_q;
+	logic        m0_ack_q;
+	assign m0_adr_q  = cpu_o_wb_adr;
+	assign m0_wdat_q = cpu_o_wb_dat;
+	assign m0_sel_q  = cpu_o_wb_sel;
+	assign m0_tga_q  = cpu_o_wb_tga;
+	assign m0_cyc_q  = cpu_o_wb_cyc;
+	assign m0_stb_q  = cpu_o_wb_stb;
+	assign m0_we_q   = cpu_o_wb_we;
+	logic [31:0] m1_adr_q;
+	logic [31:0] m1_wdat_q;
+	logic [3:0]  m1_sel_q;
+	logic [1:0]  m1_tga_q;
+	logic        m1_cyc_q;
+	logic        m1_stb_q;
+	logic        m1_we_q;
+	logic [31:0] m1_rdat_q;
+	logic        m1_ack_q;
+	logic [31:0] m1_prdat;
+	logic        m1_pack;
+	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(2)) u_dbg_mpipe (
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(dbg_o_wb_cyc),
+		.m_stb(dbg_o_wb_stb),
+		.m_we(dbg_o_wb_we),
+		.m_adr(dbg_o_wb_adr),
+		.m_dat(dbg_o_wb_dat),
+		.m_sel(dbg_o_wb_sel),
+		.m_tga(dbg_o_wb_tga),
+		.m_ack(m1_pack),
+		.m_rdat(m1_prdat),
+		.s_cyc(m1_cyc_q),
+		.s_stb(m1_stb_q),
+		.s_we(m1_we_q),
+		.s_adr(m1_adr_q),
+		.s_dat(m1_wdat_q),
+		.s_sel(m1_sel_q),
+		.s_tga(m1_tga_q),
+		.s_ack(m1_ack_q),
+		.s_rdat(m1_rdat_q)
+	);
+
+	//------------------------------------------------------------------------------
 	//  Arbitration: locked while grant holds CYC
 	//  rb_grant_en=0: lowest master index wins (fixed)
 	//  rb_grant_en=1: round-robin — next requester after last_gnt, wrap to lowest
@@ -143,13 +198,13 @@ module soc_wb_interconnect (
 	logic [1:0] m_stb;
 	logic [1:0] m_we;
 
-	assign m_cyc = {dbg_o_wb_cyc, cpu_o_wb_cyc};
-	assign m_stb = {dbg_o_wb_stb, cpu_o_wb_stb};
-	assign m_we  = {dbg_o_wb_we, cpu_o_wb_we};
+	assign m_cyc = {m1_cyc_q, cpu_o_wb_cyc};
+	assign m_stb = {m1_stb_q, cpu_o_wb_stb};
+	assign m_we  = {m1_we_q, cpu_o_wb_we};
 
 	always_comb begin
 		if      (cpu_o_wb_cyc) prio_gnt = 2'b01;
-		else if (dbg_o_wb_cyc) prio_gnt = 2'b10;
+		else if (m1_cyc_q)     prio_gnt = 2'b10;
 		else                   prio_gnt = 2'b00;
 	end
 
@@ -195,13 +250,13 @@ module soc_wb_interconnect (
 	logic        g_we;
 
 	assign g_adr   = ({32{gsel[0]}} & cpu_o_wb_adr)
-	               | ({32{gsel[1]}} & dbg_o_wb_adr);
+	               | ({32{gsel[1]}} & m1_adr_q);
 	assign g_wdata = ({32{gsel[0]}} & cpu_o_wb_dat)
-	               | ({32{gsel[1]}} & dbg_o_wb_dat);
+	               | ({32{gsel[1]}} & m1_wdat_q);
 	assign g_sel   = ({4{gsel[0]}} & cpu_o_wb_sel)
-	               | ({4{gsel[1]}} & dbg_o_wb_sel);
+	               | ({4{gsel[1]}} & m1_sel_q);
 	assign g_tga   = ({2{gsel[0]}} & cpu_o_wb_tga)
-	               | ({2{gsel[1]}} & dbg_o_wb_tga);
+	               | ({2{gsel[1]}} & m1_tga_q);
 	assign g_cyc   = |(gsel & m_cyc);
 	assign g_stb   = |(gsel & m_stb);
 	assign g_we    = |(gsel & m_we);
@@ -477,7 +532,9 @@ module soc_wb_interconnect (
 	//------------------------------------------------------------------------------
 	assign cpu_i_wb_dat = {32{gsel[0]}} & rsp_dat;
 	assign cpu_i_wb_ack = gsel[0] & rsp_ack;
-	assign dbg_i_wb_dat = {32{gsel[1]}} & rsp_dat;
-	assign dbg_i_wb_ack = gsel[1] & rsp_ack;
+	assign m1_rdat_q = {32{gsel[1]}} & rsp_dat;
+	assign m1_ack_q  = gsel[1] & rsp_ack;
+	assign dbg_i_wb_dat = m1_prdat;
+	assign dbg_i_wb_ack = m1_pack;
 
 endmodule

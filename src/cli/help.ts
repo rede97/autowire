@@ -140,7 +140,9 @@ Parallel (does not block connect)
     slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
     blocking read; PIPE=0 combo; TGA ports always on the module, omitted at
     instance when Slave has no tag);
-    master PIPE is parent-defined, not on this bus;
+    master PIPE: Master(..., { pipe: N }) default 0; N>0 inserts wb_cfg_pipe
+    in front of the arbiter (decoder: in front of decode); the arbiter holds
+    the grant from the pipe s_cyc so a posted write keeps the bus until it drains;
     decode: localparam SLOT_<SLAVE> indexes slot_sel (no bare slot_sel[6]);
     SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? }): string window by
     span; decode mask = pow2 ceil(Size); (base & mask) === base;

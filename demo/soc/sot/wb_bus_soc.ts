@@ -25,6 +25,7 @@ export const soc_wb = Bus(
 			Master("cpu", "picorv32_wb"),
 			Master("dbg", "External JTAG smoke (TDR behind demo_tap USER)", {
 				jtag: true,
+				pipe: 2,
 			}),
 		],
 		// Mixed slave PIPE depths (0/1/2/3/4) — cascade windows plus local pipes.
