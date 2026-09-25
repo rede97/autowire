@@ -2,6 +2,7 @@
 // One RTL leaf (sha256_regfile); channel bus SlaveRegfile(sha256, 0x40)
 // hangs it once per sd_sha instance (HTML sd_sha_ch ×2). Glue stays in
 // rtl/sha256_wb_regs.v + sha256wb. Generate → sha256_regfile.sv + sha256.h
+// Long delivery text is .note() (Excel only). desc stays a one-line summary.
 
 export {
 	Access,
@@ -23,16 +24,17 @@ import {
 	RegfileDefault,
 } from "../../../src/plugins/wishbone-regfile/dsl.ts";
 
-/**
- * Register map (byte ADR):
- *   0x00 CTRL  bit0 soft_reset(RW) bit1 done_clear(W1P)
- *              bit8 busy(RO) bit9 done(RO sticky, HW-set in glue)
- *   0x04..0x20 HASH0..HASH7 (RO)
- */
 export const sha256 = Regfile(
 	"sha256",
 	"SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane",
-	RegfileDefault.align(4).addrWidth(32),
+	RegfileDefault.align(4)
+		.addrWidth(32)
+		.note(`
+			CTRL is the only SW/HW handshake cell. Glue holds the core in reset
+			while soft_reset stays 1; software must write 0 before the next message.
+			HASH0..7 are digest words. Each 32-bit word is byte-reversed versus
+			the on-wire SHA-256 digest.
+		`),
 	[
 		Cell(
 			"CTRL",
@@ -41,13 +43,22 @@ export const sha256 = Regfile(
 			[
 				Field("soft_reset", Access.RW, 1, "Soft reset hash core")
 					.offset(0)
-					.reset(0),
+					.reset(0)
+					.note(`
+						Write 1 to reset the core. Glue holds reset while this bit stays 1.
+						Software must write 0 before starting the next message.
+					`),
 				Field(
 					"done_clear",
 					Access.W1P,
 					1,
 					"Write 1 → pulse; glue clears sticky done",
-				).offset(1),
+				)
+					.offset(1)
+					.note(`
+						Pulse only. The stored bit reads back 0.
+						Glue clears sticky done on this write; it does not touch HASH*.
+					`),
 				Field("busy", Access.RO, 1, "Hash core busy").offset(8),
 				Field("done", Access.RO, 1, "Sticky done (from glue)").offset(9),
 			],

@@ -8,7 +8,8 @@
 // - block wide fields auto-split; sideband outputs auto-concat to full width; bytes_align ×4
 // - Field / Cell / Block / Regfile: desc is required (maintainability)
 // - opts: cascading XxxDefault.align(...).offset(...) (immutable)
-// - Field: fluent .offset() / .reset() only (no per-field shadow)
+// - Field: fluent .offset() / .reset() / .note() (no per-field shadow)
+// - .note() is Excel-only (cell comment, or NOTES sheet for the regfile); not RTL/C/uvm
 // - Field.reset: number | Record<copyIndex, number> (per-shadow-copy defaults)
 // - Shadow only on Cell (+ Block.shadow as default for child cells); one cell → one shadow
 // - Shadow(name, copies, tagBits).remaps({ from: bitmask }).innerShadowMux(bool); Access has RC, no W1S
@@ -148,6 +149,27 @@ function requireFieldReset(value: FieldReset): FieldReset {
 	return out;
 }
 
+/** Drop a blank template-literal frame and the shared indent. Empty → undefined. */
+export function normalizeNote(text: string): string | undefined {
+	const lines = text.replace(/\r\n/g, "\n").split("\n");
+	while (lines.length > 0 && lines[0]?.trim() === "") lines.shift();
+	while (lines.length > 0 && lines[lines.length - 1]?.trim() === "") {
+		lines.pop();
+	}
+	if (lines.length === 0) return undefined;
+	let min = Number.POSITIVE_INFINITY;
+	for (const line of lines) {
+		if (line.trim() === "") continue;
+		const indent = /^[ \t]*/.exec(line);
+		min = Math.min(min, indent ? indent[0].length : 0);
+	}
+	if (!Number.isFinite(min)) min = 0;
+	const out = lines
+		.map((line) => (line.trim() === "" ? "" : line.slice(min)))
+		.join("\n");
+	return out.length > 0 ? out : undefined;
+}
+
 export interface RegField {
 	readonly name: string;
 	readonly access: Access;
@@ -155,6 +177,8 @@ export interface RegField {
 	readonly desc: string;
 	readonly offset?: number;
 	readonly reset?: FieldReset;
+	/** Excel cell comment only. Not emitted to RTL, C, or uvm_reg. */
+	readonly note?: string;
 }
 
 export interface RegCell {
@@ -248,6 +272,8 @@ export interface RegfileOpts {
 	readonly read_write_block?: boolean;
 	/** Table-level shadow library (omit when none). */
 	readonly shadows?: readonly RegShadow[];
+	/** Excel NOTES sheet only. Not emitted to RTL, C, or uvm_reg. */
+	readonly note?: string;
 }
 
 export interface RegfileDef {
@@ -258,6 +284,8 @@ export interface RegfileDef {
 	readonly bytes_align?: BytesAlign;
 	readonly read_write_block: boolean;
 	readonly shadows: readonly RegShadow[];
+	/** Excel NOTES sheet only. Not emitted to RTL, C, or uvm_reg. */
+	readonly note?: string;
 	readonly body: readonly (RegBlock | RegCell)[];
 }
 
@@ -407,6 +435,7 @@ export class RegfileOptsElem {
 	readonly #bytes_align?: BytesAlign;
 	readonly #read_write_block?: boolean;
 	readonly #shadows?: readonly RegShadow[];
+	readonly #note?: string;
 
 	private constructor(
 		sheet?: string,
@@ -414,12 +443,14 @@ export class RegfileOptsElem {
 		bytes_align?: BytesAlign,
 		read_write_block?: boolean,
 		shadows?: readonly RegShadow[],
+		note?: string,
 	) {
 		this.#sheet = sheet;
 		this.#addr_width = addr_width;
 		this.#bytes_align = bytes_align;
 		this.#read_write_block = read_write_block;
 		this.#shadows = shadows;
+		this.#note = note;
 	}
 
 	static empty(): RegfileOptsElem {
@@ -433,6 +464,7 @@ export class RegfileOptsElem {
 			requireBytesAlign(bytes_align),
 			this.#read_write_block,
 			this.#shadows,
+			this.#note,
 		);
 	}
 
@@ -443,6 +475,7 @@ export class RegfileOptsElem {
 			this.#bytes_align,
 			this.#read_write_block,
 			this.#shadows,
+			this.#note,
 		);
 	}
 
@@ -453,6 +486,7 @@ export class RegfileOptsElem {
 			this.#bytes_align,
 			this.#read_write_block,
 			this.#shadows,
+			this.#note,
 		);
 	}
 
@@ -467,6 +501,19 @@ export class RegfileOptsElem {
 			this.#bytes_align,
 			enabled,
 			this.#shadows,
+			this.#note,
+		);
+	}
+
+	/** Long delivery note. Excel NOTES sheet only; desc stays the one-line summary. */
+	note(text: string): RegfileOptsElem {
+		return new RegfileOptsElem(
+			this.#sheet,
+			this.#addr_width,
+			this.#bytes_align,
+			this.#read_write_block,
+			this.#shadows,
+			normalizeNote(text),
 		);
 	}
 
@@ -477,6 +524,7 @@ export class RegfileOptsElem {
 			this.#bytes_align,
 			this.#read_write_block,
 			shadows.map((s) => s.toShadow()),
+			this.#note,
 		);
 	}
 
@@ -494,6 +542,7 @@ export class RegfileOptsElem {
 				? { read_write_block: this.#read_write_block }
 				: {}),
 			...(this.#shadows !== undefined ? { shadows: this.#shadows } : {}),
+			...(this.#note !== undefined ? { note: this.#note } : {}),
 		};
 	}
 }
@@ -512,6 +561,7 @@ export class FieldElem {
 	readonly desc: string;
 	#offset?: number;
 	#reset?: FieldReset;
+	#note?: string;
 
 	constructor(name: string, access: Access, width: number, desc: string) {
 		this.name = name;
@@ -541,6 +591,12 @@ export class FieldElem {
 		return this;
 	}
 
+	/** Excel comment on this field's Description cell. Not emitted to RTL/C/uvm. */
+	note(text: string): this {
+		this.#note = normalizeNote(text);
+		return this;
+	}
+
 	toField(): RegField {
 		return {
 			name: this.name,
@@ -549,6 +605,7 @@ export class FieldElem {
 			desc: this.desc,
 			...(this.#offset !== undefined ? { offset: this.#offset } : {}),
 			...(this.#reset !== undefined ? { reset: this.#reset } : {}),
+			...(this.#note !== undefined ? { note: this.#note } : {}),
 		};
 	}
 }
@@ -675,6 +732,7 @@ export function Regfile(
 		desc,
 		addr_width: o.addr_width,
 		read_write_block: o.read_write_block ?? false,
+		...(o.note !== undefined ? { note: o.note } : {}),
 		...(o.sheet !== undefined ? { sheet: o.sheet } : {}),
 		...(o.bytes_align !== undefined ? { bytes_align: o.bytes_align } : {}),
 		shadows: o.shadows ?? [],

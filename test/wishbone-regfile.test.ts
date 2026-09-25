@@ -546,6 +546,39 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		expect(ctrl?.fields.map((f) => f.bit_offset)).toEqual([0, 1, 8, 9]);
 	});
 
+	test("note is Excel-only: same Description cell, not RTL or C", () => {
+		const noteOf = (cell: { note?: unknown }): string => {
+			const note = cell.note;
+			if (!note) return "";
+			if (typeof note === "string") return note;
+			if (typeof note === "object" && note && "texts" in note) {
+				return (note as { texts: { text: string }[] }).texts
+					.map((t) => t.text)
+					.join("");
+			}
+			return "";
+		};
+		const laid = layoutRegfile(sha256);
+		const wb = buildRegfileWorkbook([laid]);
+		expect(wb.getWorksheet("NOTES")).toBeUndefined();
+		const ws = wb.getWorksheet("sha256");
+		const headerNote = noteOf(ws?.getRow(1).getCell(8) ?? {});
+		expect(headerNote.startsWith(`${sha256.desc}\n`)).toBe(true);
+		expect(headerNote).toContain("byte-reversed");
+		let soft = "";
+		ws?.eachRow((row) => {
+			if (row.getCell(7).value === "soft_reset")
+				soft = String(row.getCell(8).value);
+		});
+		expect(soft.startsWith("Soft reset hash core\n")).toBe(true);
+		expect(soft).toContain("Write 1 to reset the core.");
+		const sv = emitRegfileSv(laid);
+		const c = emitRegfileC(laid);
+		expect(sv).not.toContain("byte-reversed");
+		expect(c).not.toContain("byte-reversed");
+		expect(sv).not.toContain("Write 1 to reset the core");
+	});
+
 	test("sha256 C/UVM types follow the single table name", () => {
 		const c = emitRegfileC(layoutRegfile(sha256));
 		expect(c).toContain("union SHA256_CTRL");

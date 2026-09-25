@@ -90,6 +90,12 @@ function hexAddr(offset: number, addrWidth: number): string {
 	return offset.toString(16).padStart(digits, "0");
 }
 
+/** Description cell: one-line desc, then note on the following lines. Same cell. */
+function descWithNote(desc: string, note: string | undefined): string {
+	if (!note) return desc;
+	return `${desc}\n${note}`;
+}
+
 function styleRange(
 	ws: ExcelJS.Worksheet,
 	row: number,
@@ -149,7 +155,12 @@ function appendCellBlock(
 			{ formula: `CONCATENATE(${e}${r},"'h",${j}${r})` },
 			bit.access,
 			bit.name,
-			bit.reserved ? bit.name.toUpperCase() : bit.desc,
+			bit.reserved
+				? bit.name.toUpperCase()
+				: descWithNote(
+						bit.desc,
+						cell.fields.find((f) => f.field.name === bit.name)?.field.note,
+					),
 			bit.reset,
 			{ formula: `LOWER(DEC2HEX((${i}${r})))` },
 			{ formula: `${i}${r}*(2^${b}${r})` },
@@ -175,6 +186,12 @@ function addSheet(wb: ExcelJS.Workbook, laid: LaidRegfile): void {
 		cell.fill = HEADER_FILL;
 		cell.border = THIN as ExcelJS.Borders;
 		cell.alignment = HEADER_ALIGN;
+	}
+	if (laid.def.note) {
+		ws.getRow(1).getCell(COL.desc).note = descWithNote(
+			laid.def.desc,
+			laid.def.note,
+		);
 	}
 	const dataWidth = (4.0 * CELL_BITS) / 8;
 	ws.getColumn(COL.defaultVal).width = dataWidth;
@@ -218,12 +235,9 @@ function addBusMapSheet(wb: ExcelJS.Workbook, def: BusDef): void {
 	const hangs = mapHangsDeep(def);
 	if (hangs.length === 0) return;
 	const name = busMapSheetName(def);
-	if (wb.getWorksheet(name)) {
-		throw new Error(`wishbone: Excel sheet "${name}" already exists`);
-	}
 	const ws = wb.addWorksheet(name);
 	ws.addRow([...MAP_HEADER]);
-	ws.getRow(1).height = 30;
+	ws.getRow(1).height = 20;
 	for (let col = 1; col <= MAP_HEADER.length; col++) {
 		const cell = ws.getCell(1, col);
 		cell.font = HEADER_FONT;
@@ -237,7 +251,6 @@ function addBusMapSheet(wb: ExcelJS.Workbook, def: BusDef): void {
 	ws.getColumn(11).width = 40;
 	for (const slave of hangs) {
 		const rf = slave.regfile;
-		if (!rf) continue;
 		const laid = layoutRegfile(rf);
 		const sheet = effectiveSheet(rf);
 		for (const cell of laid.cells) {

@@ -134,6 +134,7 @@ function splitWideField(
 					width: w,
 					desc: `${f.desc}${loc}`,
 					reset: f.reset,
+					...(f.note !== undefined ? { note: f.note } : {}),
 				},
 			],
 		});

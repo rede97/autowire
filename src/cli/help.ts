@@ -93,8 +93,10 @@ Parallel (does not block connect)
     draft API + samples: docs/examples/regfile/regfile.ts;
     toml [wishbone.<source>] ts= (one file may export either or both; optional exports=);
     [plugins.wishbone] packed software (SoT exports only; no reverse to TS):
-    export= Excel (field sheets + MAP_<bus> address map; trunk columns; leaf offset;
-    no empty A / ADDRWIDTH), c= C dir (layout .h + <bus>_map.h + wishbone.h umbrella),
+    export= Excel (field sheets + MAP_<bus> address map;
+    field .note() continues that Description cell after a newline;
+    regfile .note() is the header Description comment;
+    trunk columns; leaf offset; no empty A / ADDRWIDTH), c= C dir (layout .h + <bus>_map.h + wishbone.h umbrella),
     uvm= uvm_reg dir (ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv; not .ralf);
     git-tracked showcase fw/gen/wishbone (do not delete);
     generate: listed + attached-leaf SV, then fabric/wrapper; RTL → plugins_dir/wishbone/;

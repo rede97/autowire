@@ -95,7 +95,8 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 | `remaps` | `to` = 物理 copy **bitmask**（bit k → copy k）；单 copy：`1<<k`；广播全 N 份：`(1<<N)-1`（例 4 copy → `0b1111` / from=3 → `3: 0b1111`） |
 | `inner_shadow_mux` | **`true`（缺省）**：叶子内对适用 Access 做 shadow mux；**`false`**：旁路按 copy 数组导出（如 RWW）。**对 RO 无意义**（RO in 恒 per-copy；读用译码 bitmask，多 bit 则或）；RWE 数据口形不随开关变 |
 | `bytes_align` | **必须**为 4 的倍数（`*.align()` / `byteAlign()` 内校验） |
-| `desc` | Field / Cell / Block / Regfile **必须**提供（可维护性） |
+| `desc` | Field / Cell / Block / Regfile **必须**提供（可维护性）；**一行摘要**，进 RTL / C / uvm_reg / Excel Description |
+| `note` | 可选。`Field(...).note(\`...\`)`：Excel 该字段 Description **同一单元格**，`desc` 之后换行接正文。`RegfileDefault.note(\`...\`)`：表头 Description 的批注（不能插数据行，否则位宽公式错位）。模板字符串会去掉共同缩进。**只进 Excel**，禁止进 RTL / C / uvm_reg |
 | 数据通路 | Wishbone **`DAT_*` 固定 32 bit**；**`SEL` 固定 4**；**`ADR` = 字节地址**；一 cell = 一字 = 4 字节；**禁止** `data_width` |
 | `addr_width` | Regfile opts **必须** `addrWidth(...)`（无缺省） |
 | Excel / C / uvm_reg 表名 | `RegfileDef.sheet`；缺省 / 空 = `name`；多硬件例化可共享 |
@@ -525,7 +526,7 @@ wishbone generate（同一插件；RegfileDef / BusDef 类型分立）
 
 | 产物 | toml | 落盘 | 本插件写出 | **不**在本插件 |
 |---|---|---|---|---|
-| Excel | `export=` **文件** | 每表一 sheet | 对照主干 `gen_excel_doc.py`：**cell 黄行 + field 行（MSB 在上）+ reserved 灰行**；公式算位宽 / `'h` / `DEC2HEX` / 加权复位和。列：Sub-Addr（叶子 byte offset，无 `0x`）/ Start Bit / End Bit / Bit Width / Default Value / R/W Property / Name / Description / Reset Dec / Hex / Sum / SHADOW（仅 cell 行填 `shadow` 名）。**删**主干空列 A、`Selection ADDRWIDTH`（恒空；窗宽/TGA 归 bus）。复位只写 copy 0。**禁止**墙钟/用户名 | 窗基址、TGA/`tagBits`、`remaps`、物理 copy 展开 |
+| Excel | `export=` **文件** | 每表一 sheet | 对照主干 `gen_excel_doc.py`：**cell 黄行 + field 行（MSB 在上）+ reserved 灰行**；公式算位宽 / `'h` / `DEC2HEX` / 加权复位和。列：Sub-Addr（叶子 byte offset，无 `0x`）/ Start Bit / End Bit / Bit Width / Default Value / R/W Property / Name / Description / Reset Dec / Hex / Sum / SHADOW（仅 cell 行填 `shadow` 名）。**删**主干空列 A、`Selection ADDRWIDTH`（恒空；窗宽/TGA 归 bus）。复位只写 copy 0。字段 `note` 写在同一 Description 单元格：第一行仍是 `desc`，换行后是正文。表级 `note` 挂在表头 Description 批注（插数据行会错开位宽公式）。**禁止**墙钟/用户名；**禁止**把 `note` 写进 RTL / C / uvm_reg | 窗基址、TGA/`tagBits`、`remaps`、物理 copy 展开 |
 | C | `c=` **目录** | `<sheet>.h`（空 = `name`；同 sheet 只写一份） | 对照主干 `gen_chead.py` 的 **cell 形**：每 cell `struct …_BITS` 位域 + `union { volatile uint32_t all; … bit; }`。LSB=0 与 Field bit `offset` 一致。shadow 只写注释。头稳定（plugin id + 表名），**禁止**墙钟/用户名 | `OFFSET_*` / 带 padding 的整表 overlay / 窗基址 / TGA |
 | UVM | `uvm=` **目录** | `ral_<SHEET>.sv` | 对照主干 `gen_ralf.py` 的 **cell 级结果**：`class ral_reg_<table>_<cell> extends uvm_reg` + `uvm_reg_field`（width / lsb / access / reset）。**禁止** `.ralf` 文本。shadow 只写注释 | `ral_block_*` 的 `default_map.add_reg(offset)`、窗基址、TGA；block 组装归 bus |
 
