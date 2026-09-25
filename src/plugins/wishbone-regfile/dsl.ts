@@ -812,10 +812,7 @@ class ShadowDomainBuilder implements ShadowDomainDef {
 	}
 }
 
-function parseTagBits(
-	name: string,
-	bits: string,
-): { hi: number; lo: number } {
+function parseTagBits(name: string, bits: string): { hi: number; lo: number } {
 	const m = /^(\d+)\s*:\s*(\d+)$/.exec(bits.trim());
 	if (!m) throw new Error(`shadow "${name}" tag_bits "${bits}" must be hi:lo`);
 	const hi = Number(m[1]);
@@ -836,9 +833,9 @@ export function isShadowDomain(v: unknown): v is ShadowDomainDef {
 export function shadowOf(domain: ShadowDomainDef): ShadowElem {
 	const hi = domain.tag_width - 1;
 	const shadow = new ShadowElem(domain.name, domain.copies, `${hi}:0`);
-	return (domain.remapMap ? shadow.remaps(domain.remapMap) : shadow).innerShadowMux(
-		domain.innerShadowMux,
-	);
+	return (
+		domain.remapMap ? shadow.remaps(domain.remapMap) : shadow
+	).innerShadowMux(domain.innerShadowMux);
 }
 
 // ---------------------------------------------------------------------------

@@ -439,8 +439,7 @@ export function collectPorts(laid: LaidRegfile): PortDecl[] {
 				seenShadowSel.add(c.shadow);
 				const s = shadowByName(shadows, c.shadow);
 				const w = Math.max(1, Math.ceil(Math.log2(s.copies)));
-				const tag =
-					s.tag_bits !== undefined ? `, TGA ${s.tag_bits}` : "";
+				const tag = s.tag_bits !== undefined ? `, TGA ${s.tag_bits}` : "";
 				const selComment = `Address-tag select: ${c.shadow} (${s.copies} copies${tag})`;
 				let comment = selComment;
 				if (!sidebandBanner) {

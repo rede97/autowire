@@ -202,7 +202,12 @@ describe("wishbone-regfile smoke features", () => {
 		{ def: smoke_w1c, must: ["c_rg_sticky"] },
 		{
 			def: smoke_shadow,
-			must: ["smoke_shadow_i_wb_tga_bank", "o_bank_sel", "i_bank_mux_sel", "rg_cfg_q[i_bank_mux_sel]"],
+			must: [
+				"smoke_shadow_i_wb_tga_bank",
+				"o_bank_sel",
+				"i_bank_mux_sel",
+				"rg_cfg_q[i_bank_mux_sel]",
+			],
 		},
 		{ def: smoke_block_wide, must: ["rg_key_0", "rg_key_1", "rg_key_2"] },
 	];

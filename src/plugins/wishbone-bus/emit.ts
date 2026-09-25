@@ -194,7 +194,7 @@ function slavePortBlock(s: WbSlave, aw: number, def: BusDef): string[] {
 		`\toutput logic ${adr}${wb(n, "i_wb_adr")},`,
 		`\toutput logic [31:0] ${wb(n, "i_wb_dat")},`,
 		`\toutput logic [3:0]  ${wb(n, "i_wb_sel")},`,
-			...slaveTagPorts(s, def).map(
+		...slaveTagPorts(s, def).map(
 			(p) => `\toutput logic ${p.packed.padEnd(7)}${p.name},`,
 		),
 	];
@@ -629,11 +629,11 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 	for (let i = 0; i < ns; i++) {
 		const s = slaves[i];
 		if (s === undefined) continue;
-	if ((s.pipe ?? 0) > 0) {
-		out.push(...emitSlavePipe(s, aw, gPrefix, adr, def));
-	} else {
-		out.push(...emitSlaveCombo(s, aw, gPrefix, namePad, slotPad, adr, def));
-	}
+		if ((s.pipe ?? 0) > 0) {
+			out.push(...emitSlavePipe(s, aw, gPrefix, adr, def));
+		} else {
+			out.push(...emitSlaveCombo(s, aw, gPrefix, namePad, slotPad, adr, def));
+		}
 		if (i < ns - 1) out.push("");
 	}
 	return out;
@@ -945,9 +945,7 @@ export function emitBusSv(def: BusDef): string {
 		portBlocks.push(block);
 	} else {
 		for (const m of def.masters) {
-			portBlocks.push(
-				masterPortBlock(m.name, m.desc, aw, m.pipe ?? 0, def),
-			);
+			portBlocks.push(masterPortBlock(m.name, m.desc, aw, m.pipe ?? 0, def));
 		}
 	}
 	for (const s of def.slaves) {

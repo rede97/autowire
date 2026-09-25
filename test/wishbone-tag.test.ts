@@ -14,8 +14,8 @@ import {
 	TagFromPin,
 } from "../src/plugins/wishbone-bus/dsl.ts";
 import { emitBusSv } from "../src/plugins/wishbone-bus/emit.ts";
-import { ShadowDomain } from "../src/plugins/wishbone-regfile/dsl.ts";
 import { tagPlan } from "../src/plugins/wishbone-bus/tag.ts";
+import { ShadowDomain } from "../src/plugins/wishbone-regfile/dsl.ts";
 
 // Contract: docs/plugins/wishbone-bus.md 2.1 (tag domain: share / source / strip).
 

@@ -810,6 +810,7 @@ function anonymousTag(
 			name: "tag",
 			copies: 1 << width,
 			tag_width: width,
+			innerShadowMux: true,
 		},
 		"uplink",
 	);

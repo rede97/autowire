@@ -69,8 +69,10 @@ test("each slice prints independently", () => {
 	expect(renderHelp("dump")).toContain("/api/dump");
 	expect(renderHelp("dump")).toContain("aw-render");
 	expect(renderHelp("dump")).toContain("not a substitute for check");
-	expect(renderHelp("cli")).toContain("do not build now");
-	expect(renderHelp("cli")).toContain("--check");
+	expect(renderHelp("cli")).toContain("autowire render");
+	expect(renderHelp("cli")).toContain("happy-dom");
+	expect(renderHelp("cli")).toContain("write .sv");
+	expect(renderHelp("cli")).toContain("No browser is required");
 	expect(renderHelp("deps")).toContain("RtlIndex");
 	expect(renderHelp("dont")).toContain("blur tools vs MCP");
 	expect(renderHelp("dont")).toContain("Workspace MCP");

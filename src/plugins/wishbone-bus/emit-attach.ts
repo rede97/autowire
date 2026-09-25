@@ -3,7 +3,12 @@
 
 import { collectPorts, type PortDecl } from "../wishbone-regfile/emit.ts";
 import { layoutRegfile } from "../wishbone-regfile/layout.ts";
-import { type BusDef, UPLINK_MASTER, type WbSlave } from "./dsl.ts";
+import {
+	type BusDef,
+	domainWidth,
+	UPLINK_MASTER,
+	type WbSlave,
+} from "./dsl.ts";
 import {
 	busModuleKind,
 	busModuleName,
@@ -20,7 +25,6 @@ import {
 	masterFacePorts,
 	masterSummary,
 } from "./emit-master.ts";
-import { domainWidth } from "./dsl.ts";
 import { tagPlan, tagPort } from "./tag.ts";
 
 function hex(n: number): string {

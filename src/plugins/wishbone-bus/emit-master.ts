@@ -5,12 +5,13 @@
 
 import {
 	type BusDef,
+	domainWidth,
 	isBridgedMaster,
 	masterBridge,
+	tagDomainsWidth,
 	type WbMaster,
 } from "./dsl.ts";
 import { busModuleKind, busSystemModuleName, type FabricPort } from "./emit.ts";
-import { domainWidth, tagDomainsWidth } from "./dsl.ts";
 import { packedTagExpr, tagPlan, tagPort } from "./tag.ts";
 
 export const MASTER_MODULES = [
