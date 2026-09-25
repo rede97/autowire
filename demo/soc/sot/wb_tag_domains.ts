@@ -6,6 +6,6 @@ import { ShadowDomain } from "../../../src/plugins/wishbone-regfile/dsl.ts";
 export const bank = ShadowDomain(
 	"bank",
 	4,
-	"1:0",
+	2,
 	"Demo SoC shadow bank selection",
 );

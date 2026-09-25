@@ -4,7 +4,7 @@
 //  Module: smoke_regfile
 //  Desc:   SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)
 //  Addr width: 32
-//  Cells: 13
+//  Cells: 14
 //  read_write_block: true
 //------------------------------------------------------------------------------
 //  Address map:
@@ -16,7 +16,8 @@
 //    0x00000014  CMD       — W1P pulse
 //    0x00000018  IRQ       — W1C sticky
 //    0x0000001c  BANK      — Shadowed RW  shadow=bank
-//    0x0000002c  BANKSEL   — Shadow bank select (drives fabric TGA)
+//    0x0000002c  BANKSEL   — Saved working bank
+//    0x00000034  ACTIVE    — Muxed working cfg
 //    0x00000030  FABRIC    — Wishbone interconnect fabric controls
 //    0x00000020  key_key_0 — 96-bit key (key[31:0] of [95:0])
 //    0x00000024  key_key_1 — 96-bit key (key[63:32] of [95:0])
@@ -41,8 +42,8 @@ module smoke_regfile (
 	input  logic [31:0] smoke_i_wb_dat,
 	// Wishbone byte select
 	input  logic [3:0]  smoke_i_wb_sel,
-	// Wishbone TGA (shadow / user tag)
-	input  logic [1:0]  smoke_i_wb_tga,
+	// Shadow domain bank (4 copies)
+	input  logic [1:0]  smoke_i_wb_tga_bank,
 	// Wishbone ACK
 	output logic        smoke_o_wb_ack,
 	// Wishbone read data
@@ -84,10 +85,14 @@ module smoke_regfile (
 	input  logic        c_rg_sticky_set,
 	// RW register out: cfg — Per-bank cfg
 	output logic [7:0]  rg_cfg,
-	// Shadow bank select: bank (4 copies, TGA 1:0)
+	// Address-tag select: bank (4 copies, TGA 1:0)
 	output logic [1:0]  o_bank_sel,
-	// RW register out: bank_sel — Shadow bank for WB accesses
+	// Sideband mux select: bank (not the address tag)
+	input  logic [1:0]  i_bank_mux_sel,
+	// RW register out: bank_sel — Working bank
 	output logic [1:0]  rg_bank_sel,
+	// RO status in: value — Working copy of BANK.cfg
+	input  logic [7:0]  ro_value,
 	// RW register out: rb_grant_en — Arbiter: 0=fixed prio, 1=round-robin
 	output logic        rg_rb_grant_en,
 	// RW register out: key_0 — 96-bit key (key[31:0] of [95:0])
@@ -132,6 +137,9 @@ module smoke_regfile (
 	logic        addr_hit_2c;
 	logic        wr_sel_2c;
 	logic        rd_sel_2c;
+	logic        addr_hit_34;
+	logic        wr_sel_34;
+	logic        rd_sel_34;
 	logic        addr_hit_30;
 	logic        wr_sel_30;
 	logic        rd_sel_30;
@@ -191,9 +199,12 @@ module smoke_regfile (
 	//   shadow=bank
 	//   [7:0]    RW   cfg         — Per-bank cfg
 	assign addr_hit_1c = (smoke_i_wb_adr[31:2] == 30'd7);
-	// Addr: 0x0000002c  RegCell: BANKSEL   — Shadow bank select (drives fabric TGA)
-	//   [1:0]    RW   bank_sel    — Shadow bank for WB accesses
+	// Addr: 0x0000002c  RegCell: BANKSEL   — Saved working bank
+	//   [1:0]    RW   bank_sel    — Working bank
 	assign addr_hit_2c = (smoke_i_wb_adr[31:2] == 30'd11);
+	// Addr: 0x00000034  RegCell: ACTIVE    — Muxed working cfg
+	//   [7:0]    RO   value       — Working copy of BANK.cfg
+	assign addr_hit_34 = (smoke_i_wb_adr[31:2] == 30'd13);
 	// Addr: 0x00000030  RegCell: FABRIC    — Wishbone interconnect fabric controls
 	//   [0]      RW   rb_grant_en — Arbiter: 0=fixed prio, 1=round-robin
 	assign addr_hit_30 = (smoke_i_wb_adr[31:2] == 30'd12);
@@ -217,6 +228,7 @@ module smoke_regfile (
 		addr_hit_18,
 		addr_hit_1c,
 		addr_hit_2c,
+		addr_hit_34,
 		addr_hit_30,
 		addr_hit_20,
 		addr_hit_24,
@@ -243,6 +255,8 @@ module smoke_regfile (
 	assign rd_sel_1c = rd_fire && addr_hit_1c;
 	assign wr_sel_2c = wr_fire && addr_hit_2c;
 	assign rd_sel_2c = rd_fire && addr_hit_2c;
+	assign wr_sel_34 = wr_fire && addr_hit_34;
+	assign rd_sel_34 = rd_fire && addr_hit_34;
 	assign wr_sel_30 = wr_fire && addr_hit_30;
 	assign rd_sel_30 = rd_fire && addr_hit_30;
 	assign wr_sel_20 = wr_fire && addr_hit_20;
@@ -256,7 +270,7 @@ module smoke_regfile (
 	//  3. Shadow tag decode (TGA → one-hot mask / bin sel)
 	//------------------------------------------------------------------------------
 
-	assign raw_bank = smoke_i_wb_tga[1:0];
+	assign raw_bank = smoke_i_wb_tga_bank;
 	always_comb begin
 		mask_bank = 4'h0;
 		mask_bank = 4'd1 << raw_bank;
@@ -387,10 +401,10 @@ module smoke_regfile (
 			end
 		end
 	end
-	assign rg_cfg = rg_cfg_q[o_bank_sel];
+	assign rg_cfg = rg_cfg_q[i_bank_mux_sel];
 
-	// Addr: 0x0000002c  RegCell: BANKSEL   — Shadow bank select (drives fabric TGA)
-	//   [1:0]    RW   bank_sel    — Shadow bank for WB accesses
+	// Addr: 0x0000002c  RegCell: BANKSEL   — Saved working bank
+	//   [1:0]    RW   bank_sel    — Working bank
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			rg_bank_sel_q <= 2'h0;
@@ -401,6 +415,9 @@ module smoke_regfile (
 		end
 	end
 	assign rg_bank_sel = rg_bank_sel_q;
+
+	// Addr: 0x00000034  RegCell: ACTIVE    — Muxed working cfg
+	//   [7:0]    RO   value       — Working copy of BANK.cfg
 
 	// Addr: 0x00000030  RegCell: FABRIC    — Wishbone interconnect fabric controls
 	//   [0]      RW   rb_grant_en — Arbiter: 0=fixed prio, 1=round-robin
@@ -537,8 +554,13 @@ module smoke_regfile (
 			end
 			// BANKSEL @ 0x0000002c
 			rd_sel_2c: begin
-				// RW  [1:0]   bank_sel    — Shadow bank for WB accesses
+				// RW  [1:0]   bank_sel    — Working bank
 				rd_data[1:0] = rg_bank_sel_q;
+			end
+			// ACTIVE @ 0x00000034
+			rd_sel_34: begin
+				// RO  [7:0]   value       — Working copy of BANK.cfg
+				rd_data[7:0] = ro_value;
 			end
 			// FABRIC @ 0x00000030
 			rd_sel_30: begin

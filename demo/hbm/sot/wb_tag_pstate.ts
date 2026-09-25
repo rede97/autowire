@@ -7,6 +7,6 @@ import { ShadowDomain } from "../../../src/plugins/wishbone-regfile/dsl.ts";
 export const pstate = ShadowDomain(
 	"pstate",
 	4,
-	"1:0",
+	2,
 	"Power state: frequency point / operating mode bank",
 );

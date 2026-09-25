@@ -169,7 +169,7 @@ class ral_reg_smoke_BANK extends uvm_reg;
 	`uvm_object_utils(ral_reg_smoke_BANK)
 endclass : ral_reg_smoke_BANK
 
-// Cell BANKSEL — Shadow bank select (drives fabric TGA)
+// Cell BANKSEL — Saved working bank
 class ral_reg_smoke_BANKSEL extends uvm_reg;
 	rand uvm_reg_field bank_sel  ; // bit [1:0]
 	     uvm_reg_field reserved_2; // bit [31:2]
@@ -187,6 +187,25 @@ class ral_reg_smoke_BANKSEL extends uvm_reg;
 
 	`uvm_object_utils(ral_reg_smoke_BANKSEL)
 endclass : ral_reg_smoke_BANKSEL
+
+// Cell ACTIVE — Muxed working cfg
+class ral_reg_smoke_ACTIVE extends uvm_reg;
+	     uvm_reg_field value     ; // bit [7:0]
+	     uvm_reg_field reserved_8; // bit [31:8]
+
+	function new(string name = "ral_reg_smoke_ACTIVE");
+		super.new(name, 32, build_coverage(UVM_NO_COVERAGE));
+	endfunction: new
+
+	virtual function void build();
+		this.value = uvm_reg_field::type_id::create("value",, get_full_name());
+		this.value.configure(this, 8, 0, "RO", 0, 8'h0, 1, 0, 0);
+		this.reserved_8 = uvm_reg_field::type_id::create("reserved_8",, get_full_name());
+		this.reserved_8.configure(this, 24, 8, "RO", 0, 24'h0, 1, 0, 0);
+	endfunction: build
+
+	`uvm_object_utils(ral_reg_smoke_ACTIVE)
+endclass : ral_reg_smoke_ACTIVE
 
 // Cell FABRIC — Wishbone interconnect fabric controls
 class ral_reg_smoke_FABRIC extends uvm_reg;

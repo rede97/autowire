@@ -22,7 +22,7 @@ module sd_sha_interconnect (
 	input  logic [31:0] uplink_o_wb_adr,
 	input  logic [31:0] uplink_o_wb_dat,
 	input  logic [3:0]  uplink_o_wb_sel,
-	input  logic [1:0]  uplink_o_wb_tga,
+	input  logic [1:0]  uplink_o_wb_tga_bank,
 	input  logic        uplink_o_wb_cyc,
 	input  logic        uplink_o_wb_stb,
 	input  logic        uplink_o_wb_we,
@@ -32,7 +32,7 @@ module sd_sha_interconnect (
 	input  logic [31:0] eng_o_wb_adr,
 	input  logic [31:0] eng_o_wb_dat,
 	input  logic [3:0]  eng_o_wb_sel,
-	input  logic [1:0]  eng_o_wb_tga,
+	input  logic [1:0]  eng_o_wb_tga_bank,
 	input  logic        eng_o_wb_cyc,
 	input  logic        eng_o_wb_stb,
 	input  logic        eng_o_wb_we,
@@ -133,7 +133,8 @@ module sd_sha_interconnect (
 	logic [31:0] g_adr;
 	logic [31:0] g_wdata;
 	logic [3:0]  g_sel;
-	logic [1:0]  g_tga;
+	logic [1:0]  g_up_bank;
+	logic [1:0]  g_tga_bank;
 	logic        g_cyc;
 	logic        g_stb;
 	logic        g_we;
@@ -144,8 +145,9 @@ module sd_sha_interconnect (
 	               | ({32{gsel[1]}} & eng_o_wb_dat);
 	assign g_sel   = ({4{gsel[0]}} & uplink_o_wb_sel)
 	               | ({4{gsel[1]}} & eng_o_wb_sel);
-	assign g_tga   = ({2{gsel[0]}} & uplink_o_wb_tga)
-	               | ({2{gsel[1]}} & eng_o_wb_tga);
+	assign g_up_bank = ({2{gsel[0]}} & uplink_o_wb_tga_bank)
+	                 | ({2{gsel[1]}} & eng_o_wb_tga_bank);
+	assign g_tga_bank = g_up_bank;
 	assign g_cyc   = |(gsel & m_cyc);
 	assign g_stb   = |(gsel & m_stb);
 	assign g_we    = |(gsel & m_we);

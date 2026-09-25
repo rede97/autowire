@@ -5,7 +5,7 @@
 //  Desc:   Demo SoC Wishbone interconnect (CPU + JTAG) cascaded into two sd_sha channels
 //  Masters: 2 (arbiter: rb_grant_en=0 fixed / 1 round-robin)
 //  Slaves:  8 (named {slave}_i_wb_* / {slave}_o_wb_*)
-//  Tag:     TGA 2 bit (produced here: bank<-pin)
+//  Tag:     TGA 2 bit (produced here: bank<-addr)
 //  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read)
 //  Master PIPE: wb_cfg_pipe in front of the arbiter (s_cyc holds the grant)
 //------------------------------------------------------------------------------
@@ -17,14 +17,13 @@
 //    0x02000010  size=0x00000004  mask=0xfffffffc  testout — test output  pipe=1
 //    0x03000000  size=0x00001000  mask=0xfffff000  ch0 — SD + DMA + SHA256 channel interconnect (uplink + engine)  pipe=2
 //    0x03001000  size=0x00001000  mask=0xfffff000  ch1 — SD + DMA + SHA256 channel interconnect (uplink + engine)  pipe=4
-//    0x03006000  size=0x00000034  mask=0xffffffc0  smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)  pipe=3
+//    0x03006000  size=0x00000038  mask=0xffffffc0  smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)  pipe=3
 //------------------------------------------------------------------------------
 
 module soc_wb_interconnect (
 	input  logic        clk,
 	input  logic        rst_n,
 	input  logic        rb_grant_en,
-	input  logic [1:0] bank_tag_i,
 	// Master cpu — picorv32_wb,
 	input  logic [31:0] cpu_o_wb_adr,
 	input  logic [31:0] cpu_o_wb_dat,
@@ -98,7 +97,7 @@ module soc_wb_interconnect (
 	output logic [31:0] ch0_i_wb_adr,
 	output logic [31:0] ch0_i_wb_dat,
 	output logic [3:0]  ch0_i_wb_sel,
-	output logic [1:0]  ch0_i_wb_tga,
+	output logic [1:0]  ch0_i_wb_tga_bank,
 	output logic        ch0_i_wb_cyc,
 	output logic        ch0_i_wb_stb,
 	output logic        ch0_i_wb_we,
@@ -109,18 +108,18 @@ module soc_wb_interconnect (
 	output logic [31:0] ch1_i_wb_adr,
 	output logic [31:0] ch1_i_wb_dat,
 	output logic [3:0]  ch1_i_wb_sel,
-	output logic [1:0]  ch1_i_wb_tga,
+	output logic [1:0]  ch1_i_wb_tga_bank,
 	output logic        ch1_i_wb_cyc,
 	output logic        ch1_i_wb_stb,
 	output logic        ch1_i_wb_we,
 	input  logic [31:0] ch1_o_wb_dat,
 	input  logic        ch1_o_wb_ack,
 	// Slave smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide),
-	//   base=0x03006000  size=0x00000034  mask=0xffffffc0  pipe=3,
+	//   base=0x03006000  size=0x00000038  mask=0xffffffc0  pipe=3,
 	output logic [31:0] smoke_i_wb_adr,
 	output logic [31:0] smoke_i_wb_dat,
 	output logic [3:0]  smoke_i_wb_sel,
-	output logic [1:0]  smoke_i_wb_tga,
+	output logic [1:0]  smoke_i_wb_tga_bank,
 	output logic        smoke_i_wb_cyc,
 	output logic        smoke_i_wb_stb,
 	output logic        smoke_i_wb_we,
@@ -240,7 +239,7 @@ module soc_wb_interconnect (
 	logic [31:0] g_adr;
 	logic [31:0] g_wdata;
 	logic [3:0]  g_sel;
-	logic [1:0]  g_tga;
+	logic [1:0]  g_tga_bank;
 	logic        g_cyc;
 	logic        g_stb;
 	logic        g_we;
@@ -251,10 +250,14 @@ module soc_wb_interconnect (
 	               | ({32{gsel[1]}} & m1_wdat_q);
 	assign g_sel   = ({4{gsel[0]}} & cpu_o_wb_sel)
 	               | ({4{gsel[1]}} & m1_sel_q);
-	assign g_tga   = bank_tag_i;
+	assign g_tga_bank = g_adr[28:27];
 	assign g_cyc   = |(gsel & m_cyc);
 	assign g_stb   = |(gsel & m_stb);
 	assign g_we    = |(gsel & m_we);
+
+	logic [31:0] g_adr_dec;
+	// Tag address bits are not part of slave addressing (wishbone-bus.md 2.1)
+	assign g_adr_dec = g_adr & ~32'h18000000;
 
 	//------------------------------------------------------------------------------
 	//  Address decode: lowest matching slave wins (mutually exclusive)
@@ -273,35 +276,35 @@ module soc_wb_interconnect (
 	always_comb begin
 		slot_sel = 8'b0;
 		unmapped = 1'b1;
-		if ((g_adr & 32'hffffffc0) == 32'h03006000) begin
+		if ((g_adr_dec & 32'hffffffc0) == 32'h03006000) begin
 			slot_sel = 8'd1 << SLOT_SMOKE;
 			unmapped = 1'b0;
 		end
-		if ((g_adr & 32'hfffff000) == 32'h03001000) begin
+		if ((g_adr_dec & 32'hfffff000) == 32'h03001000) begin
 			slot_sel = 8'd1 << SLOT_CH1;
 			unmapped = 1'b0;
 		end
-		if ((g_adr & 32'hfffff000) == 32'h03000000) begin
+		if ((g_adr_dec & 32'hfffff000) == 32'h03000000) begin
 			slot_sel = 8'd1 << SLOT_CH0;
 			unmapped = 1'b0;
 		end
-		if ((g_adr & 32'hfffffffc) == 32'h02000010) begin
+		if ((g_adr_dec & 32'hfffffffc) == 32'h02000010) begin
 			slot_sel = 8'd1 << SLOT_TESTOUT;
 			unmapped = 1'b0;
 		end
-		if ((g_adr & 32'hfffffff8) == 32'h02000004) begin
+		if ((g_adr_dec & 32'hfffffff8) == 32'h02000004) begin
 			slot_sel = 8'd1 << SLOT_UART;
 			unmapped = 1'b0;
 		end
-		if ((g_adr & 32'hfffffffc) == 32'h02000000) begin
+		if ((g_adr_dec & 32'hfffffffc) == 32'h02000000) begin
 			slot_sel = 8'd1 << SLOT_FLASH_CFG;
 			unmapped = 1'b0;
 		end
-		if ((g_adr & 32'hff000000) == 32'h01000000) begin
+		if ((g_adr_dec & 32'hff000000) == 32'h01000000) begin
 			slot_sel = 8'd1 << SLOT_FLASH_XIP;
 			unmapped = 1'b0;
 		end
-		if ((g_adr & 32'hffff0000) == 32'h00000000) begin
+		if ((g_adr_dec & 32'hffff0000) == 32'h00000000) begin
 			slot_sel = 8'd1 << SLOT_SRAM;
 			unmapped = 1'b0;
 		end
@@ -321,7 +324,7 @@ module soc_wb_interconnect (
 		.m_cyc(slot_sel[SLOT_SRAM] & g_cyc),
 		.m_stb(slot_sel[SLOT_SRAM] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_SRAM] ? g_adr & ~32'hffff0000 : 32'd0),
+		.m_adr(slot_sel[SLOT_SRAM] ? g_adr_dec & ~32'hffff0000 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(sram_pipe_ack),
@@ -347,7 +350,7 @@ module soc_wb_interconnect (
 		.m_cyc(slot_sel[SLOT_FLASH_XIP] & g_cyc),
 		.m_stb(slot_sel[SLOT_FLASH_XIP] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_FLASH_XIP] ? g_adr & ~32'hff000000 : 32'd0),
+		.m_adr(slot_sel[SLOT_FLASH_XIP] ? g_adr_dec & ~32'hff000000 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(flash_xip_pipe_ack),
@@ -362,7 +365,7 @@ module soc_wb_interconnect (
 		.s_rdat(flash_xip_o_wb_dat)
 	);
 
-	assign flash_cfg_i_wb_adr = slot_sel[SLOT_FLASH_CFG] ? g_adr & ~32'hfffffffc : 32'd0;
+	assign flash_cfg_i_wb_adr = slot_sel[SLOT_FLASH_CFG] ? g_adr_dec & ~32'hfffffffc : 32'd0;
 	assign flash_cfg_i_wb_dat = g_wdata;
 	assign flash_cfg_i_wb_sel = g_sel;
 	assign flash_cfg_i_wb_cyc = slot_sel[SLOT_FLASH_CFG] & g_cyc;
@@ -380,7 +383,7 @@ module soc_wb_interconnect (
 		.m_cyc(slot_sel[SLOT_UART] & g_cyc),
 		.m_stb(slot_sel[SLOT_UART] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_UART] ? g_adr & ~32'hfffffff8 : 32'd0),
+		.m_adr(slot_sel[SLOT_UART] ? g_adr_dec & ~32'hfffffff8 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(uart_pipe_ack),
@@ -406,7 +409,7 @@ module soc_wb_interconnect (
 		.m_cyc(slot_sel[SLOT_TESTOUT] & g_cyc),
 		.m_stb(slot_sel[SLOT_TESTOUT] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_TESTOUT] ? g_adr & ~32'hfffffffc : 32'd0),
+		.m_adr(slot_sel[SLOT_TESTOUT] ? g_adr_dec & ~32'hfffffffc : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(testout_pipe_ack),
@@ -432,10 +435,10 @@ module soc_wb_interconnect (
 		.m_cyc(slot_sel[SLOT_CH0] & g_cyc),
 		.m_stb(slot_sel[SLOT_CH0] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_CH0] ? g_adr & ~32'hfffff000 : 32'd0),
+		.m_adr(slot_sel[SLOT_CH0] ? g_adr_dec & ~32'hfffff000 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
-		.m_tga(g_tga[1:0]),
+		.m_tga(g_tga_bank),
 		.m_ack(ch0_pipe_ack),
 		.m_rdat(ch0_pipe_rdat),
 		.s_cyc(ch0_i_wb_cyc),
@@ -444,7 +447,7 @@ module soc_wb_interconnect (
 		.s_adr(ch0_i_wb_adr),
 		.s_dat(ch0_i_wb_dat),
 		.s_sel(ch0_i_wb_sel),
-		.s_tga(ch0_i_wb_tga),
+		.s_tga(ch0_i_wb_tga_bank),
 		.s_ack(ch0_o_wb_ack),
 		.s_rdat(ch0_o_wb_dat)
 	);
@@ -460,10 +463,10 @@ module soc_wb_interconnect (
 		.m_cyc(slot_sel[SLOT_CH1] & g_cyc),
 		.m_stb(slot_sel[SLOT_CH1] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_CH1] ? g_adr & ~32'hfffff000 : 32'd0),
+		.m_adr(slot_sel[SLOT_CH1] ? g_adr_dec & ~32'hfffff000 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
-		.m_tga(g_tga[1:0]),
+		.m_tga(g_tga_bank),
 		.m_ack(ch1_pipe_ack),
 		.m_rdat(ch1_pipe_rdat),
 		.s_cyc(ch1_i_wb_cyc),
@@ -472,7 +475,7 @@ module soc_wb_interconnect (
 		.s_adr(ch1_i_wb_adr),
 		.s_dat(ch1_i_wb_dat),
 		.s_sel(ch1_i_wb_sel),
-		.s_tga(ch1_i_wb_tga),
+		.s_tga(ch1_i_wb_tga_bank),
 		.s_ack(ch1_o_wb_ack),
 		.s_rdat(ch1_o_wb_dat)
 	);
@@ -488,10 +491,10 @@ module soc_wb_interconnect (
 		.m_cyc(slot_sel[SLOT_SMOKE] & g_cyc),
 		.m_stb(slot_sel[SLOT_SMOKE] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_SMOKE] ? g_adr & ~32'hffffffc0 : 32'd0),
+		.m_adr(slot_sel[SLOT_SMOKE] ? g_adr_dec & ~32'hffffffc0 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
-		.m_tga(g_tga[1:0]),
+		.m_tga(g_tga_bank),
 		.m_ack(smoke_pipe_ack),
 		.m_rdat(smoke_pipe_rdat),
 		.s_cyc(smoke_i_wb_cyc),
@@ -500,7 +503,7 @@ module soc_wb_interconnect (
 		.s_adr(smoke_i_wb_adr),
 		.s_dat(smoke_i_wb_dat),
 		.s_sel(smoke_i_wb_sel),
-		.s_tga(smoke_i_wb_tga),
+		.s_tga(smoke_i_wb_tga_bank),
 		.s_ack(smoke_o_wb_ack),
 		.s_rdat(smoke_o_wb_dat)
 	);

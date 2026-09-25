@@ -111,6 +111,19 @@ export const hbm_ch = Bus("hbm_ch", "aword + 2x dword", {
 5. **`SlaveBus` 的 tag 由子总线推导**：父级 **不应当**手写 `tag:`（今天 `SlaveBus` 把 `opts.tag` 原样交给 `SlaveRegion`，16 次例化就有 16 次填错机会）。声明不一致 → 报错。
 6. 透传层 **不解释**位语义（与规则 5 一致）；`wb_cfg_pipe` 的 `{m_tga, m_adr}` 打包路径不变。
 7. `TagFromAddr` 与 `TagFromPin` / `TagFromReg` **禁止**同时作用于同一域（与规则 1 同源）。
+`ShadowDomain(...).remap({ [tga]: oneHotMask })` 是该域的 TGA→one-hot 规则。regfile 只写 `.shadow(domain)`，默认使用这份映射；未列出的 TGA 保持恒等映射。表级不得再写另一套 remap。`bank`、`pstate`、`pll_pstate` 这类正交维度属于不同层级：父 decoder 消费自己的域后，子 decoder 只看见剩余的那个域。两个域同时出现在同一张寄存器上是不合理设计。
+
+正交维度用地址层级拆开，不在叶子里做笛卡尔 shadow：
+
+| 场景 | 正确拆法 | 禁止 |
+|---|---|---|
+| 时序 A 只随 bank0/bank1 变化 | bank decoder 下挂一份 A；A 不声明 shadow | 给 A 同时声明 bank 与 pstate |
+| 时序 B 只随 pstate0–3 变化 | pstate decoder 下挂一份 B | 把 bank 也带进 B |
+| 时序 C 同时随 bank 与 pstate 变化 | 先按 rank/bank 拆成独立 region，每个 region 内再按 pstate 复制 | 一个 cell 同时挂 `bank` 与 `pstate` 两套 shadow |
+
+例如 LPDDR：父 decoder 用 `TagFromAddr(bank, ...)` 译出 rank/bank region；每个 region 是一个子 decoder，只声明 `tags: [pstate]`。C 的寄存器位于子 decoder，因此只看见 pstate。父层的 bank 已经变成“访问哪一个 region”，子层不能再看见 bank TGA。
+
+多个具名 TGA 端口仍可用，但只表示**同一层级中互不交叉的独立域**。它们映射到不同的 `*_tga_<domain>`，不组成一个寄存器的二维 shadow。`pll_pstate` 理论上只出现在它自己的子 decoder；channel 的 `pstate` decoder 看不到它，PHY 的 `pll_pstate` decoder 也看不到 channel pstate。
 
 ## 3. 长路径 pipe（写 posted / 读阻塞）
 

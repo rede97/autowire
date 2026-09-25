@@ -3,7 +3,8 @@
 // smoke_wb.v — sideband glue for smoke_regfile (no Wishbone).
 // CSR leaf lives on soc_top next to the interconnect; this module only
 // drives RO/RWW/RWE sidebands (counter + 4-deep FIFO loopback).
-// Fabric TGA no longer routes here: cpu_o_wb_tga = rg_bank_sel at soc_top.
+// Fabric TGA no longer routes here. BANKSEL drives i_bank_mux_sel, and the
+// muxed rg_cfg loops back into ro_value at soc_top.
 
 `timescale 1ns / 1ps
 `default_nettype none

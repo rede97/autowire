@@ -13,7 +13,7 @@ import {
 	SlaveBus,
 	SlaveRegfile,
 	SlaveRegion,
-	TagFromPin,
+	TagFromAddr,
 } from "../../../src/plugins/wishbone-bus/dsl.ts";
 import { sd_sha } from "./wb_bus_sd_sha.ts";
 import { smoke } from "./wb_reg_smoke.ts";
@@ -30,7 +30,7 @@ export const soc_wb = Bus(
 				pipe: 2,
 			}),
 		],
-		tags: [TagFromPin(bank)],
+		tags: [TagFromAddr(bank, "28:27")],
 		// Mixed slave PIPE depths (0/1/2/3/4) — cascade windows plus local pipes.
 		slaves: [
 			SlaveRegion("sram", "64 KiB SRAM", 0x0000_0000, Size(0x1_0000), {

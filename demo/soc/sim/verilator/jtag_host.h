@@ -3,7 +3,9 @@
 // the CPU firmware runs, so both masters share the soc_wb arbiter.
 // Sequence: IDCODE after TLR, IR capture, BYPASS 1-bit delay, then the USER
 // TDR (wb_jtag_tdr behind demo_tap) reads the smoke ID and writes + reads
-// back an SRAM word the firmware does not use.
+// back an SRAM word the firmware does not use. After the firmware has passed,
+// banks() writes every address-aliased BANK.cfg and reads ACTIVE, which is
+// the copy selected by BANKSEL (i_bank_mux_sel), not the access tag.
 //
 // USER DR (66 bit, LSB first): shift {op[1:0], adr[31:0], dat[31:0]},
 // capture {st[1:0], adr, rdat}; op 1 read / 2 write; st 0 ok / 1 busy / 2 err.
@@ -20,6 +22,10 @@ template <class Top> class JtagHost {
 	static constexpr uint32_t SMOKE_ID = 0x0001a55au;
 	static constexpr uint32_t SRAM_ADR = 0x00008000u;
 	static constexpr uint32_t SRAM_DAT = 0xc0de7a90u;
+	static constexpr uint32_t SMOKE_BASE = 0x03006000u;
+	static constexpr uint32_t BANK_OFF = 0x1cu;
+	static constexpr uint32_t BANKSEL_OFF = 0x2cu;
+	static constexpr uint32_t ACTIVE_OFF = 0x34u;
 
 	/* half_period advances the simulation by one TCK half period. */
 	JtagHost(Top *top, std::function<void()> half_period)
@@ -65,6 +71,46 @@ template <class Top> class JtagHost {
 		printf("JTAG SMOKE PASS: IDCODE %08x, BYPASS, smoke ID %08x, "
 		       "SRAM[%08x] = %08x\n",
 		       IDCODE, SMOKE_ID, SRAM_ADR, rd);
+		fflush(stdout);
+		return true;
+	}
+
+	/* Address aliases select the accessed bank. ACTIVE reads rg_cfg, which
+	   follows BANKSEL rather than the alias used for this transaction. */
+	bool banks()
+	{
+		uint32_t rd = 0;
+		uint32_t sel = 0;
+		if (!wb(OP_READ, SMOKE_BASE + BANKSEL_OFF, 0, sel, "BANKSEL"))
+			return false;
+		sel &= 3u;
+		for (uint32_t i = 0; i < 4; i++) {
+			char what[32];
+			snprintf(what, sizeof what, "bank %u write", i);
+			if (!wb(OP_WRITE, SMOKE_BASE + BANK_OFF + (i << 27), 0xa0u + i, rd, what))
+				return false;
+		}
+		if (!wb(OP_READ, SMOKE_BASE + BANKSEL_OFF, 0, rd, "BANKSEL unchanged") ||
+		    !expect("BANKSEL unchanged", rd & 3u, sel))
+			return false;
+		for (uint32_t i = 0; i < 4; i++) {
+			char what[32];
+			snprintf(what, sizeof what, "bank %u read", i);
+			if (!wb(OP_READ, SMOKE_BASE + BANK_OFF + (i << 27), 0, rd, what) ||
+			    !expect(what, rd & 0xffu, 0xa0u + i))
+				return false;
+		}
+		/* Alias 1 must not change the copy selected by the saved BANKSEL. */
+		if (!wb(OP_READ, SMOKE_BASE + ACTIVE_OFF + (1u << 27), 0, rd, "ACTIVE") ||
+		    !expect("ACTIVE via bank 1", rd & 0xffu, 0xa0u + sel))
+			return false;
+		if (!wb(OP_WRITE, SMOKE_BASE + BANKSEL_OFF, 3u, rd, "BANKSEL write"))
+			return false;
+		if (!wb(OP_READ, SMOKE_BASE + ACTIVE_OFF, 0, rd, "ACTIVE after sel") ||
+		    !expect("ACTIVE via bank 0", rd & 0xffu, 0xa3u))
+			return false;
+
+		printf("JTAG BANK PASS: aliases 0-3, ACTIVE follows BANKSEL\n");
 		fflush(stdout);
 		return true;
 	}

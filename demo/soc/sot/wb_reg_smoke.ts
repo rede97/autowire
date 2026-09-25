@@ -81,8 +81,11 @@ export const smoke = Regfile(
 				}),
 			],
 		),
-		Cell("BANKSEL", "Shadow bank select (drives fabric TGA)", CellDefault.offset(0x02c), [
-			Field("bank_sel", Access.RW, 2, "Shadow bank for WB accesses").reset(0),
+		Cell("BANKSEL", "Saved working bank", CellDefault.offset(0x02c), [
+			Field("bank_sel", Access.RW, 2, "Working bank").reset(0),
+		]),
+		Cell("ACTIVE", "Muxed working cfg", CellDefault.offset(0x034), [
+			Field("value", Access.RO, 8, "Working copy of BANK.cfg"),
 		]),
 		Cell("FABRIC", "Wishbone interconnect fabric controls", CellDefault.offset(0x030), [
 			Field("rb_grant_en", Access.RW, 1, "Arbiter: 0=fixed prio, 1=round-robin").reset(0),

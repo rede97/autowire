@@ -14,6 +14,7 @@ import {
 	TagFromPin,
 } from "../src/plugins/wishbone-bus/dsl.ts";
 import { emitBusSv } from "../src/plugins/wishbone-bus/emit.ts";
+import { ShadowDomain } from "../src/plugins/wishbone-regfile/dsl.ts";
 import { tagPlan } from "../src/plugins/wishbone-bus/tag.ts";
 
 // Contract: docs/plugins/wishbone-bus.md 2.1 (tag domain: share / source / strip).
@@ -25,32 +26,40 @@ describe("wishbone tag domains", () => {
 			expect(def.shadows).toHaveLength(1);
 			expect(def.shadows[0]?.name).toBe("pstate");
 			expect(def.shadows[0]?.copies).toBe(pstate.copies);
-			expect(def.shadows[0]?.tag_bits).toBe(pstate.tag_bits);
+			expect(def.shadows[0]?.tag_width).toBe(pstate.tag_width);
 		}
+	});
+
+	test("domain remap is shared by every regfile", () => {
+		const domain = ShadowDomain("pstate", 4, 2).remap({ 3: 0b1111 });
+		expect(domain.remapMap?.[3]).toBe(0b1111);
+		expect(() => ShadowDomain("pstate", 4, 2).remap({ 4: 0b0001 })).toThrow(
+			/exceeds width/,
+		);
 	});
 
 	test("producing level: tag comes from ADR and leaves the master face bare", () => {
 		const plan = tagPlan(hbm);
 		expect(plan.width).toBe(2);
 		expect(plan.addrMask).toBe(0x0060_0000);
-		expect(plan.masterWidth).toBe(0);
+		expect(plan.inherited).toHaveLength(0);
 		const sv = emitBusSv(hbm);
-		expect(sv).toContain("assign g_tga   = g_adr[22:21];");
+		expect(sv).toContain("assign g_tga_pstate = m_adr_i[22:21];");
 		expect(sv).toContain("assign g_adr_dec = g_adr & ~32'h00600000;");
 		// Tag bits are stripped before compare and before forwarding.
 		expect(sv).toContain("if ((g_adr_dec & 32'hfffff000) == 32'h00000000)");
 		expect(sv).toContain("ch0_i_wb_adr  = slot_sel[SLOT_CH0]  ? g_adr_dec");
-		expect(sv).not.toContain("m_tga_i");
+		expect(sv).not.toContain("m_tga_pstate");
 	});
 
 	test("pass-through level inherits the tag and never re-derives it", () => {
 		const plan = tagPlan(hbm_ch);
-		expect(plan.masterWidth).toBe(2);
+		expect(plan.inherited).toHaveLength(1);
 		expect(plan.addrMask).toBe(0);
 		const sv = emitBusSv(hbm_ch);
-		expect(sv).toContain("assign g_tga   = m_tga_i;");
+		expect(sv).toContain("assign g_tga_pstate = g_up_pstate;");
 		expect(sv).not.toContain("g_adr_dec");
-		expect(sv).toContain("assign aword_i_wb_tga  = g_tga[1:0];");
+		expect(sv).toContain("assign aword_i_wb_tga_pstate");
 	});
 
 	test("SlaveBus tag is derived from the child, and a wrong one is rejected", () => {
@@ -104,7 +113,7 @@ describe("wishbone tag domains", () => {
 		});
 		const sv = emitBusSv(pinned);
 		expect(sv).toContain("pstate_tag_i");
-		expect(sv).toContain("assign g_tga   = pstate_tag_i;");
-		expect(sv).not.toContain("m_tga_i");
+		expect(sv).toContain("assign g_tga_pstate = pstate_tag_i;");
+		expect(sv).not.toContain("m_tga_pstate");
 	});
 });

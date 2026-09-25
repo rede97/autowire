@@ -239,29 +239,7 @@ function layoutBlock(
 }
 
 function tgaWidth(shadows: readonly RegShadow[]): number {
-	let max = 0;
-	for (const s of shadows) {
-		const m = /^(\d+)\s*:\s*(\d+)$/.exec(s.tag_bits.trim());
-		if (!m) {
-			throw new Error(
-				`shadow "${s.name}" tag_bits "${s.tag_bits}" must be hi:lo`,
-			);
-		}
-		const hi = Number(m[1]);
-		const lo = Number(m[2]);
-		if (hi < lo) {
-			throw new Error(`shadow "${s.name}" tag_bits hi < lo`);
-		}
-		const width = hi - lo + 1;
-		const need = s.copies <= 1 ? 0 : Math.ceil(Math.log2(s.copies));
-		if (need > 0 && width !== need) {
-			throw new Error(
-				`shadow "${s.name}" tag_bits width ${width} != ceil(log2(${s.copies}))=${need}`,
-			);
-		}
-		max = Math.max(max, hi + 1);
-	}
-	return max;
+	return shadows.reduce((sum, s) => sum + s.tag_width, 0);
 }
 
 function assertShadowRefs(def: RegfileDef, cells: readonly LaidCell[]): void {

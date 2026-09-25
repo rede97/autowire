@@ -15,7 +15,7 @@
 // - Shadow(name, copies, tagBits).remaps({ from: bitmask }).innerShadowMux(bool); Access has RC, no W1S
 // - tagBits is required (always owns a wb_tga slice; width must match ceil(log2(copies)))
 // - remaps to = physical-copy bitmask (e.g. 0b0100 → copy2; 0b1111 → broadcast all 4)
-// - Shadow.inner_shadow_mux default true: external sel muxes bank inside; false: export all copy sidebands
+// - Shadow.inner_shadow_mux default true: i_<domain>_mux_sel muxes sidebands; false: export all copies
 //   (RWE: post-decode sel as-is; RO: shadow via bus tag, ignores inner_shadow_mux)
 
 export enum Access {
@@ -246,11 +246,18 @@ function requireRemapMap(map: ShadowRemapMap, copies: number): ShadowRemapMap {
 export interface RegShadow {
 	readonly name: string;
 	readonly copies: number;
-	readonly tag_bits: string;
+	/** Width of this domain's own TGA port. Domains are never packed together. */
+	readonly tag_width: number;
+	/**
+	 * Legacy global slice (`"hi:lo"`). Equal-width domains must not share one
+	 * vector; new code uses `tag_width` and a named `*_tga_<domain>` port.
+	 */
+	readonly tag_bits?: string;
 	readonly remaps?: ShadowRemapMap;
 	/**
-	 * When true (default): external sel picks one bank inside the leaf;
-	 * applicable Access sidebands target the active copy only.
+	 * When true (default): `i_<domain>_mux_sel` picks one copy for applicable
+	 * Access sidebands. `o_<domain>_sel` stays the address-tag decode and is
+	 * not that mux.
 	 * When false: export per-copy sidebands (e.g. RWW `_strb`/`_hwdata` as arrays).
 	 *
 	 * Access.RO: ignored — RO inputs are always per-copy arrays; bus read ORs
@@ -692,7 +699,7 @@ export class ShadowElem {
 	}
 
 	/**
-	 * Default true: leaf muxes applicable Access sidebands to the active bank.
+	 * Default true: `i_<domain>_mux_sel` muxes applicable Access sidebands.
 	 * False: export per-copy sidebands (RWW `_strb`/`_hwdata` as arrays, one lane per copy).
 	 * Access.RO: ignored (per-copy inputs; bus read ORs bitmask-selected copies).
 	 * Access.RWE: does not change data-port shape (post-decode sel still exported as-is).
@@ -703,9 +710,11 @@ export class ShadowElem {
 	}
 
 	toShadow(): RegShadow {
+		const { hi, lo } = parseTagBits(this.name, this.tag_bits);
 		return {
 			name: this.name,
 			copies: this.copies,
+			tag_width: hi - lo + 1,
 			tag_bits: this.tag_bits,
 			inner_shadow_mux: this.#inner_shadow_mux,
 			...(this.#remaps !== undefined ? { remaps: this.#remaps } : {}),
@@ -732,25 +741,87 @@ export interface ShadowDomainDef {
 	readonly kind: "wishbone-shadow-domain";
 	readonly name: string;
 	readonly copies: number;
-	readonly tag_bits: string;
+	/** Width of this domain only. Parallel domains do not share bit positions. */
+	readonly tag_width: number;
+	/** TGA value → physical-copy bitmask. Omitted values use identity. */
+	readonly remapMap?: ShadowRemapMap;
+	readonly innerShadowMux: boolean;
 	readonly desc?: string;
 }
 
 export function ShadowDomain(
 	name: string,
 	copies: number,
-	tagBits: string,
+	width: number,
 	desc?: string,
-): ShadowDomainDef {
-	// Reuse ShadowElem validation so a domain and a local Shadow cannot diverge.
-	const checked = new ShadowElem(name, copies, tagBits).toShadow();
-	return {
-		kind: "wishbone-shadow-domain",
-		name: checked.name,
-		copies: checked.copies,
-		tag_bits: checked.tag_bits,
-		...(desc !== undefined ? { desc } : {}),
-	};
+): ShadowDomainBuilder {
+	if (!Number.isInteger(copies) || copies < 1) {
+		throw new Error(`shadow domain "${name}" copies must be >= 1`);
+	}
+	const need = copies <= 1 ? 0 : Math.ceil(Math.log2(copies));
+	if (!Number.isInteger(width) || width < 1 || (need > 0 && width !== need)) {
+		throw new Error(
+			`shadow domain "${name}" width ${width} != ceil(log2(${copies}))=${need}`,
+		);
+	}
+	return new ShadowDomainBuilder(name, copies, width, desc);
+}
+
+/** TGA→one-hot mapping shared by every regfile that imports the domain. */
+class ShadowDomainBuilder implements ShadowDomainDef {
+	readonly kind = "wishbone-shadow-domain" as const;
+
+	constructor(
+		readonly name: string,
+		readonly copies: number,
+		readonly tag_width: number,
+		readonly desc?: string,
+		readonly remapMap?: ShadowRemapMap,
+		readonly innerShadowMux = true,
+	) {}
+
+	withInnerShadowMux(enabled: boolean): ShadowDomainDef {
+		return new ShadowDomainBuilder(
+			this.name,
+			this.copies,
+			this.tag_width,
+			this.desc,
+			this.remapMap,
+			enabled,
+		);
+	}
+
+	/** Domain-wide mapping. Unlisted TGA values keep `1 << tga`. */
+	remap(map: ShadowRemapMap): ShadowDomainDef {
+		const checked = requireRemapMap(map, this.copies);
+		const space = (1 << this.tag_width) - 1;
+		for (const key of Object.keys(checked)) {
+			if (Number(key) > space) {
+				throw new Error(
+					`shadow domain "${this.name}" remap TGA ${key} exceeds width ${this.tag_width}`,
+				);
+			}
+		}
+		return new ShadowDomainBuilder(
+			this.name,
+			this.copies,
+			this.tag_width,
+			this.desc,
+			checked,
+		);
+	}
+}
+
+function parseTagBits(
+	name: string,
+	bits: string,
+): { hi: number; lo: number } {
+	const m = /^(\d+)\s*:\s*(\d+)$/.exec(bits.trim());
+	if (!m) throw new Error(`shadow "${name}" tag_bits "${bits}" must be hi:lo`);
+	const hi = Number(m[1]);
+	const lo = Number(m[2]);
+	if (hi < lo) throw new Error(`shadow "${name}" tag_bits hi < lo`);
+	return { hi, lo };
 }
 
 export function isShadowDomain(v: unknown): v is ShadowDomainDef {
@@ -761,9 +832,13 @@ export function isShadowDomain(v: unknown): v is ShadowDomainDef {
 	);
 }
 
-/** Domain → local ShadowElem so `.remaps()` / `.innerShadowMux()` still apply. */
+/** Domain → local ShadowElem. The domain remap is authoritative. */
 export function shadowOf(domain: ShadowDomainDef): ShadowElem {
-	return new ShadowElem(domain.name, domain.copies, domain.tag_bits);
+	const hi = domain.tag_width - 1;
+	const shadow = new ShadowElem(domain.name, domain.copies, `${hi}:0`);
+	return (domain.remapMap ? shadow.remaps(domain.remapMap) : shadow).innerShadowMux(
+		domain.innerShadowMux,
+	);
 }
 
 // ---------------------------------------------------------------------------

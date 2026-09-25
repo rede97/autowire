@@ -109,10 +109,9 @@ describe("wishbone-bus", () => {
 		});
 		expect(def.tag_width).toBe(2);
 		const sv = emitBusSv(def);
-		expect(sv).toContain("m_tga_i");
-		expect(sv).toContain("s0_i_wb_tga");
-		expect(sv).toContain("g_tga   = m_tga_i");
-		expect(sv).toContain("= g_tga[1:0]");
+		expect(sv).toContain("m_tga_tag");
+		expect(sv).toContain("s0_i_wb_tga_tag");
+		expect(sv).toContain("g_tga_tag = g_up_tag");
 	});
 
 	test("TGA interconnect uses named master ports", () => {
@@ -125,10 +124,10 @@ describe("wishbone-bus", () => {
 		});
 		expect(def.tag_width).toBe(2);
 		const sv = emitBusSv(def);
-		expect(sv).toContain("m0_o_wb_tga");
-		expect(sv).toContain("m1_o_wb_tga");
-		expect(sv).toContain("({2{gsel[1]}} & m1_o_wb_tga)");
-		expect(sv).not.toContain("s0_i_wb_tga");
+		expect(sv).toContain("m0_o_wb_tga_tag");
+		expect(sv).toContain("m1_o_wb_tga_tag");
+		expect(sv).toContain("({2{gsel[1]}} & m1_o_wb_tga_tag)");
+		expect(sv).not.toContain("s0_i_wb_tga_tag");
 	});
 
 	test("tag-free bus emits no tga anywhere", () => {
@@ -154,11 +153,12 @@ describe("wishbone-bus", () => {
 	test("demo interconnect produces smoke TGA and forwards it", () => {
 		const sv = emitBusSv(soc_wb);
 		expect(soc_wb.tag_width).toBe(2);
-		expect(sv).toContain("bank_tag_i");
+		expect(sv).toContain("assign g_tga_bank = g_adr[28:27];");
+		expect(sv).not.toContain("bank_tag_i");
 		expect(sv).not.toContain("cpu_o_wb_tga");
 		expect(sv).not.toContain("dbg_o_wb_tga");
-		expect(sv).toContain("g_tga[1:0]");
-		expect(sv).not.toContain("sram_i_wb_tga");
+		expect(sv).toContain("g_tga_bank");
+		expect(sv).not.toContain("sram_i_wb_tga_bank");
 		expect(sv).toContain("localparam int unsigned SLOT_SRAM");
 		expect(sv).toContain("localparam int unsigned SLOT_CH1");
 		expect(sv).toContain("slot_sel = 8'd1 << SLOT_CH1;");
@@ -189,8 +189,8 @@ describe("wishbone-bus", () => {
 		expect(sramInst).not.toContain("m_tga");
 		expect(sramInst).not.toContain("s_tga");
 		const smokeInst = sv.slice(sv.indexOf("u_smoke_pipe"));
-		expect(smokeInst).toContain(".m_tga(g_tga[1:0])");
-		expect(smokeInst).toContain(".s_tga(smoke_i_wb_tga)");
+		expect(smokeInst).toContain(".m_tga(g_tga_bank)");
+		expect(smokeInst).toContain(".s_tga(smoke_i_wb_tga_bank)");
 	});
 
 	test("arbiter priority: lowest master index wins (multi-hot regression)", () => {
@@ -237,7 +237,7 @@ describe("wishbone-bus", () => {
 			sv.indexOf("Arbitration"),
 		);
 		expect(inst).toContain(".m_cyc(fast_o_wb_cyc)");
-		expect(inst).toContain(".m_tga(fast_o_wb_tga)");
+		expect(inst).toContain(".m_tga(fast_o_wb_tga_tag)");
 		expect(inst).toContain(".s_cyc(m0_cyc_q)");
 		expect(inst).toContain(".s_tga(m0_tga_q)");
 		expect(inst).toContain(".m_ack(m0_pack)");
@@ -285,8 +285,8 @@ describe("wishbone-bus", () => {
 		});
 		const sv = emitBusSv(def);
 		expect(sv).toContain("wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(2)) u_far_pipe");
-		expect(sv).toContain(".m_tga(g_tga[1:0])");
-		expect(sv).toContain(".s_tga(far_i_wb_tga)");
+		expect(sv).toContain(".m_tga(g_tga_tag)");
+		expect(sv).toContain(".s_tga(far_i_wb_tga_tag)");
 		expect(sv).toContain(".m_ack(far_pipe_ack)");
 		expect(sv).toContain(".m_rdat(far_pipe_rdat)");
 		expect(sv).not.toContain("near_pipe");

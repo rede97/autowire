@@ -93,7 +93,7 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 | `read_write_block` | Regfile opts：`.readWriteBlock(true\|false)`；**缺省 `false`**（非阻塞）；`true` 时命中 **RWE** 的 WB 事务可被外部窗（如 FIFO）挡住 ACK |
 | Shadow | `Shadow(name, copies, tagBits).remaps({ from: bitmask }).innerShadowMux(bool)`；**`tagBits` 强制**；**`innerShadowMux` 缺省 `true`**；**无** `ShadowBroadcast` |
 | `remaps` | `to` = 物理 copy **bitmask**（bit k → copy k）；单 copy：`1<<k`；广播全 N 份：`(1<<N)-1`（例 4 copy → `0b1111` / from=3 → `3: 0b1111`） |
-| `inner_shadow_mux` | **`true`（缺省）**：叶子内对适用 Access 做 shadow mux；**`false`**：旁路按 copy 数组导出（如 RWW）。**对 RO 无意义**（RO in 恒 per-copy；读用译码 bitmask，多 bit 则或）；RWE 数据口形不随开关变 |
+| `inner_shadow_mux` | **`true`（缺省）**：`i_<domain>_mux_sel` 在叶子内选旁路；`o_<domain>_sel` **只**是地址 tag 译码。**`false`**：旁路按 copy 数组导出（如 RWW）。**对 RO 无意义**（RO in 恒 per-copy；读用译码 bitmask，多 bit 则或）；RWE 数据口形不随开关变 |
 | `bytes_align` | **必须**为 4 的倍数（`*.align()` / `byteAlign()` 内校验） |
 | `desc` | Field / Cell / Block / Regfile **必须**提供（可维护性）；**一行摘要**，进 RTL / C / uvm_reg / Excel Description |
 | `note` | 可选。`Field(...).note(\`...\`)`：Excel 该字段 Description **同一单元格**，`desc` 之后换行接正文。`RegfileDefault.note(\`...\`)`：表头 Description 的批注（不能插数据行，否则位宽公式错位）。模板字符串会去掉共同缩进。**只进 Excel**，禁止进 RTL / C / uvm_reg |
@@ -379,9 +379,11 @@ effective_<s>_sel = wb_tga[tag-bits]   // tagBits 强制；无 local_sel / 无 t
 - 总线侧：[`wishbone-bus.md`](./wishbone-bus.md) 对启用了 tag 的路径 **必须**透传 TGA；互联 **不解释**位语义。  
 - **C 头 / `uvm_reg`（软件导出）**：只体现 **字段 layout**；shadow **仅注释**（名 / copies）。**禁止**写 `tagBits`、`remaps`、物理 copy 展开、cell 地址或整表 overlay。窗基址、cell 编排、TGA 选 bank **由 bus 组装**（见 [`wishbone-bus.md`](./wishbone-bus.md)）。RTL 叶子仍按本节切 `wb_tga`。  
 - v1 **只开 `wb_tga`**，不开 `tgc`/`tgd` 作 shadow 索引。  
-- 硬件若要「跨当前 pstate 改下一 bank」：走 **`inner_shadow_mux=false`** 的旁路数组 / RWE 自理，**不**另开本地 sel 接管。
+- 硬件若要「跨当前 pstate 改下一 bank」：走 **`inner_shadow_mux=false`** 的旁路数组 / RWE 自理。功能旁路的当前选择是 **`i_<domain>_mux_sel`**，**不是** `o_<domain>_sel`。
 
 **域上移（提案，待裁定）**：`Shadow(name, copies, tagBits)` 写在本表内 ⇒ 多表共用同一域（HBM：16 channel × `aword`/`dword*`）要抄 N 份，跨表位置同义性无人校验。提案把域拆成独立共享导出 `ShadowDomain(name, copies, width)`，本表只写 `.shadow(domain)` + per-copy `reset`；`tagBits` 与「值从哪来」移交总线 `tags`（裸=透传 / `TagFromAddr` / `TagFromPin` / `TagFromReg`）。完整规则见 [`wishbone-bus.md`](./wishbone-bus.md) §2.1。落地前本节仍为现行契约。
+
+**TGA→one-hot 映射属于域。** `ShadowDomain(...).remap({ [tga]: mask })` 是唯一定义；未列出的 TGA 保持 `1 << tga`。所有引用该域的 regfile 默认继承，禁止再在表级改写。mask 为零、超过 `copies` 或 TGA 超出域宽度，在域构造期报错。 同一 regfile 的不同 cell 可以分别使用相互独立的域，但一个 cell 禁止同时挂 `bank` 与 `pstate`。需要 bank × pstate 覆盖时，由父 decoder 按 bank 拆 region，子 decoder 内的寄存器只按 pstate 复制；子层看不见父层 TGA。详见 [`wishbone-bus.md`](./wishbone-bus.md) §2.1 规则 8。
 
 #### 多 shadow + `wb_tga` 切片
 
@@ -423,8 +425,8 @@ RegfileDefault.addrWidth(8).shadows(
 
 | `inner_shadow_mux` | 行为（适用 Access） |
 |---|---|
-| **`true`（缺省）** | `wb_tga` 译码后的有效 sel 在叶子内选 bank；旁路只对应当前选中 copy。 |
-| **`false`** | 各物理 copy 旁路**按数组导出**（一 lane / copy）；总线读/写仍用 `wb_tga` 译码选通当前可见 bank。 |
+| **`true`（缺省）** | 外部 `i_<domain>_mux_sel` 在叶子内选旁路；旁路只对应该输入选中的 copy。`o_<domain>_sel` 只报告本次地址 tag，**禁止**拿它做这个 mux。 |
+| **`false`** | 各物理 copy 旁路**按数组导出**（一 lane / copy）；总线读/写仍用 `wb_tga` 译码选通当前可见 bank。不产生 `i_<domain>_mux_sel`。 |
 
 **适用 / 不适用**
 
@@ -465,9 +467,9 @@ effective_sel = wb_tga[tag-bits]
     →  lookup remaps[from] → bitmask of physical copies
          · 整组 remaps 省略 → identity：`1 << from`
          · 有 remaps 且 from 未列出 → **空操作**（无 copy）；**ACK 仍正常**（已裁定）
-    →  RW*/W1*/RWW：按 inner_shadow_mux 做字段旁路选通或按 copy 数组导出
+    →  RW*/W1*/RWW：按 inner_shadow_mux，用 i_<domain>_mux_sel 做字段旁路选通，或按 copy 数组导出
     →  RO：功能 in 为 per-copy 数组；读 = bitmask 选中 copy **按位或**（空操作时读数据为 0）；无视 inner_shadow_mux
-    →  RWE：译码后 sel **原样**旁路给外部窗（外部自理 bank）；空操作时旁路不点火，ACK 仍正常
+    →  RWE：译码后 o_<domain>_sel **原样**旁路给外部窗（外部自理 bank）；空操作时旁路不点火，ACK 仍正常
 ```
 
 - 可多条 remap；同一 `from` **禁止**重复。  
@@ -475,7 +477,7 @@ effective_sel = wb_tga[tag-bits]
 - **写**遇多 bit mask：打到所有置位 copy（广播写）。  
 - **读**遇多 bit mask：选中 copy 的读数据 **按位或**到一起。  
 - **未命中**：**禁止**拖 ACK / 报总线 error 来堵死；与 `read_write_block` 无关——这是译码空槽，不是 RWE 背压。
-- **scalar sel 裁定**：`o_<shadow>_sel` 与内选（`inner_shadow_mux=true`）旁路在多 bit mask 时取 **最低置位 copy**（first-set priority，generate 必须稳定实现）；读路径仍按上一条 **按位或**。广播写后各 copy 相等时二者一致；需要广播语义的消费者用 per-copy 数组旁路（`inner_shadow_mux=false`），**禁止**把 scalar sel 当广播掩码用。
+- **scalar sel 裁定**：`o_<domain>_sel` 只编码本次地址 tag（多 bit mask 取最低置位）。`inner_shadow_mux=true` 的旁路改由外部 `i_<domain>_mux_sel` 选择，二者禁止短接，除非集成方确实要让功能输出跟随本次访问。读路径仍按上一条 **按位或**。需要同时看见每一份的消费者用 per-copy 数组旁路（`inner_shadow_mux=false`），**禁止**把 `o_<domain>_sel` 当广播掩码用。
 
 #### 与旧「A/B 互斥」的关系
 

@@ -158,6 +158,8 @@ int main(int argc, char **argv)
 
 	while (!fw_pass)
 		step();
+	if (use_jtag && !jtag.banks())
+		return 1;
 	printf("SMOKE PASS: verilator soc%s (test_count=%d)\n",
 	       use_jtag ? " + external JTAG" : "", test_count);
 	return 0;

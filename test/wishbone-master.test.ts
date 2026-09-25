@@ -108,11 +108,11 @@ describe("wishbone master bridges", () => {
 
 	test("TGA: async WB forwards tag; bridges tie it to zero", () => {
 		const sv = emitBusSystemSv(mb(4)) ?? "";
-		expect(sv).toContain("input  logic [3:0]  wbx_o_wb_tga");
-		expect(sv).toMatch(/\.s_tga\s*\(wbx_o_wb_tga\)/);
+		expect(sv).toContain("input  logic [3:0]  wbx_o_wb_tga_tag");
+		expect(sv).toContain(".s_tga  (wbx_o_wb_tga_tag),");
 		expect(sv).toMatch(/\.s_tga\s*\(4'd0\)/);
 		expect(sv).toMatch(/\.m_tga\s*\(host_fab_tga\)/);
-		expect(sv).toContain(".host_o_wb_tga(host_fab_tga),");
+		expect(sv).toContain(".host_o_wb_tga_tag(host_fab_tga),");
 	});
 
 	test("APB without cdc runs on fabric clk and ties ERR", () => {

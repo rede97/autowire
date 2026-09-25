@@ -6,7 +6,7 @@ module sd_sha_ch (
 	input  logic [31:0] i_wb_adr,
 	input  logic [31:0] i_wb_dat,
 	input  logic [3:0]  i_wb_sel,
-	input  logic [1:0]  i_wb_tga,
+	input  logic [1:0]  i_wb_tga_bank,
 	input  logic        i_wb_cyc,
 	input  logic        i_wb_stb,
 	input  logic        i_wb_we,
@@ -65,122 +65,122 @@ module sd_sha_ch (
 	wire         axis_tlast;
 
 	sd_sha_system u_ic (
-		.clk            (clk             ), // i
-		.rst_n          (rst_n           ), // i
-		.rb_grant_en    (rb_grant_en     ), // i
-		.eng_o_wb_adr   (eng_o_wb_adr    ), // i [31:0]
-		.eng_o_wb_dat   (eng_o_wb_dat    ), // i [31:0]
-		.eng_o_wb_sel   (eng_o_wb_sel    ), // i [3:0]
-		.eng_o_wb_tga   (2'd0            ), // i [1:0]
-		.eng_o_wb_cyc   (eng_o_wb_cyc    ), // i
-		.eng_o_wb_stb   (eng_o_wb_stb    ), // i
-		.eng_o_wb_we    (eng_o_wb_we     ), // i
-		.sd_o_wb_dat    (sd_o_wb_dat     ), // i [31:0]
-		.sd_o_wb_ack    (sd_o_wb_ack     ), // i
-		.dma_o_wb_dat   (dma_o_wb_dat    ), // i [31:0]
-		.dma_o_wb_ack   (dma_o_wb_ack    ), // i
-		.i_wb_adr       (i_wb_adr        ), // i [31:0]
-		.i_wb_dat       (i_wb_dat        ), // i [31:0]
-		.i_wb_sel       (i_wb_sel        ), // i [3:0]
-		.i_wb_tga       (i_wb_tga        ), // i [1:0]
-		.i_wb_cyc       (i_wb_cyc        ), // i
-		.i_wb_stb       (i_wb_stb        ), // i
-		.i_wb_we        (i_wb_we         ), // i
-		.ro_busy        (ro_busy         ), // i
-		.ro_done        (ro_done         ), // i
-		.ro_hash0       (ro_hash0        ), // i [31:0]
-		.ro_hash1       (ro_hash1        ), // i [31:0]
-		.ro_hash2       (ro_hash2        ), // i [31:0]
-		.ro_hash3       (ro_hash3        ), // i [31:0]
-		.ro_hash4       (ro_hash4        ), // i [31:0]
-		.ro_hash5       (ro_hash5        ), // i [31:0]
-		.ro_hash6       (ro_hash6        ), // i [31:0]
-		.ro_hash7       (ro_hash7        ), // i [31:0]
-		.eng_i_wb_dat   (eng_i_wb_dat    ), // o [31:0]
-		.eng_i_wb_ack   (eng_i_wb_ack    ), // o
-		.sd_i_wb_adr    (sd_i_wb_adr     ), // o [31:0]
-		.sd_i_wb_dat    (sd_i_wb_dat     ), // o [31:0]
-		.sd_i_wb_sel    (sd_i_wb_sel     ), // o [3:0]
-		.sd_i_wb_cyc    (sd_i_wb_cyc     ), // o
-		.sd_i_wb_stb    (sd_i_wb_stb     ), // o
-		.sd_i_wb_we     (sd_i_wb_we      ), // o
-		.dma_i_wb_adr   (dma_i_wb_adr    ), // o [31:0]
-		.dma_i_wb_dat   (dma_i_wb_dat    ), // o [31:0]
-		.dma_i_wb_sel   (dma_i_wb_sel    ), // o [3:0]
-		.dma_i_wb_cyc   (dma_i_wb_cyc    ), // o
-		.dma_i_wb_stb   (dma_i_wb_stb    ), // o
-		.dma_i_wb_we    (dma_i_wb_we     ), // o
-		.o_wb_dat       (o_wb_dat        ), // o [31:0]
-		.o_wb_ack       (o_wb_ack        ), // o
-		.rg_soft_reset  (rg_soft_reset   ), // o
-		.p_rg_done_clear(p_rg_done_clear )  // o
+		.clk              (clk             ), // i
+		.rst_n            (rst_n           ), // i
+		.rb_grant_en      (rb_grant_en     ), // i
+		.eng_o_wb_adr     (eng_o_wb_adr    ), // i [31:0]
+		.eng_o_wb_dat     (eng_o_wb_dat    ), // i [31:0]
+		.eng_o_wb_sel     (eng_o_wb_sel    ), // i [3:0]
+		.eng_o_wb_tga_bank(2'd0            ), // i [1:0]
+		.eng_o_wb_cyc     (eng_o_wb_cyc    ), // i
+		.eng_o_wb_stb     (eng_o_wb_stb    ), // i
+		.eng_o_wb_we      (eng_o_wb_we     ), // i
+		.sd_o_wb_dat      (sd_o_wb_dat     ), // i [31:0]
+		.sd_o_wb_ack      (sd_o_wb_ack     ), // i
+		.dma_o_wb_dat     (dma_o_wb_dat    ), // i [31:0]
+		.dma_o_wb_ack     (dma_o_wb_ack    ), // i
+		.i_wb_adr         (i_wb_adr        ), // i [31:0]
+		.i_wb_dat         (i_wb_dat        ), // i [31:0]
+		.i_wb_sel         (i_wb_sel        ), // i [3:0]
+		.i_wb_tga_bank    (i_wb_tga_bank   ), // i [1:0]
+		.i_wb_cyc         (i_wb_cyc        ), // i
+		.i_wb_stb         (i_wb_stb        ), // i
+		.i_wb_we          (i_wb_we         ), // i
+		.ro_busy          (ro_busy         ), // i
+		.ro_done          (ro_done         ), // i
+		.ro_hash0         (ro_hash0        ), // i [31:0]
+		.ro_hash1         (ro_hash1        ), // i [31:0]
+		.ro_hash2         (ro_hash2        ), // i [31:0]
+		.ro_hash3         (ro_hash3        ), // i [31:0]
+		.ro_hash4         (ro_hash4        ), // i [31:0]
+		.ro_hash5         (ro_hash5        ), // i [31:0]
+		.ro_hash6         (ro_hash6        ), // i [31:0]
+		.ro_hash7         (ro_hash7        ), // i [31:0]
+		.eng_i_wb_dat     (eng_i_wb_dat    ), // o [31:0]
+		.eng_i_wb_ack     (eng_i_wb_ack    ), // o
+		.sd_i_wb_adr      (sd_i_wb_adr     ), // o [31:0]
+		.sd_i_wb_dat      (sd_i_wb_dat     ), // o [31:0]
+		.sd_i_wb_sel      (sd_i_wb_sel     ), // o [3:0]
+		.sd_i_wb_cyc      (sd_i_wb_cyc     ), // o
+		.sd_i_wb_stb      (sd_i_wb_stb     ), // o
+		.sd_i_wb_we       (sd_i_wb_we      ), // o
+		.dma_i_wb_adr     (dma_i_wb_adr    ), // o [31:0]
+		.dma_i_wb_dat     (dma_i_wb_dat    ), // o [31:0]
+		.dma_i_wb_sel     (dma_i_wb_sel    ), // o [3:0]
+		.dma_i_wb_cyc     (dma_i_wb_cyc    ), // o
+		.dma_i_wb_stb     (dma_i_wb_stb    ), // o
+		.dma_i_wb_we      (dma_i_wb_we     ), // o
+		.o_wb_dat         (o_wb_dat        ), // o [31:0]
+		.o_wb_ack         (o_wb_ack        ), // o
+		.rg_soft_reset    (rg_soft_reset   ), // o
+		.p_rg_done_clear  (p_rg_done_clear )  // o
 	);
 	sdspi u_sd (
-		.i_clk          (clk             ), // i
-		.i_sd_reset     (rst             ), // i
-		.i_wb_cyc       (sd_i_wb_cyc     ), // i
-		.i_wb_stb       (sd_i_wb_stb     ), // i
-		.i_wb_we        (sd_i_wb_we      ), // i
-		.i_wb_addr      (sd_i_wb_adr[3:2]), // i [1:0]
-		.i_wb_data      (sd_i_wb_dat     ), // i [(32   // }}})-1:0]
-		.i_wb_sel       (sd_i_wb_sel     ), // i [(32   // }}})/8-1:0]
-		.i_miso         (i_miso          ), // i
-		.i_card_detect  (i_cd            ), // i
-		.i_bus_grant    (1'b1            ), // i
-		.o_wb_stall     (                ), // o
-		.o_wb_ack       (sd_o_wb_ack     ), // o
-		.o_wb_data      (sd_o_wb_dat     ), // o [(32   // }}})-1:0]
-		.o_cs_n         (o_cs_n          ), // o
-		.o_sck          (o_sck           ), // o
-		.o_mosi         (o_mosi          ), // o
-		.o_int          (o_sd_irq        ), // o
-		.o_debug        (                )  // o [(32   // }}})-1:0]
+		.i_clk            (clk             ), // i
+		.i_sd_reset       (rst             ), // i
+		.i_wb_cyc         (sd_i_wb_cyc     ), // i
+		.i_wb_stb         (sd_i_wb_stb     ), // i
+		.i_wb_we          (sd_i_wb_we      ), // i
+		.i_wb_addr        (sd_i_wb_adr[3:2]), // i [1:0]
+		.i_wb_data        (sd_i_wb_dat     ), // i [(32   // }}})-1:0]
+		.i_wb_sel         (sd_i_wb_sel     ), // i [(32   // }}})/8-1:0]
+		.i_miso           (i_miso          ), // i
+		.i_card_detect    (i_cd            ), // i
+		.i_bus_grant      (1'b1            ), // i
+		.o_wb_stall       (                ), // o
+		.o_wb_ack         (sd_o_wb_ack     ), // o
+		.o_wb_data        (sd_o_wb_dat     ), // o [(32   // }}})-1:0]
+		.o_cs_n           (o_cs_n          ), // o
+		.o_sck            (o_sck           ), // o
+		.o_mosi           (o_mosi          ), // o
+		.o_int            (o_sd_irq        ), // o
+		.o_debug          (                )  // o [(32   // }}})-1:0]
 	);
 	sd_rd_dma u_eng (
-		.clk            (clk             ), // i
-		.rst_n          (rst_ni          ), // i
-		.i_wb_cyc       (dma_i_wb_cyc    ), // i
-		.i_wb_stb       (dma_i_wb_stb    ), // i
-		.i_wb_we        (dma_i_wb_we     ), // i
-		.i_wb_adr       (dma_i_wb_adr    ), // i [31:0]
-		.i_wb_dat       (dma_i_wb_dat    ), // i [31:0]
-		.i_wb_sel       (dma_i_wb_sel    ), // i [3:0]
-		.wbm_ack_i      (eng_i_wb_ack    ), // i
-		.wbm_dat_i      (eng_i_wb_dat    ), // i [31:0]
-		.m_axis_tready  (axis_tready     ), // i
-		.o_wb_ack       (dma_o_wb_ack    ), // o
-		.o_wb_dat       (dma_o_wb_dat    ), // o [31:0]
-		.wbm_cyc_o      (eng_o_wb_cyc    ), // o
-		.wbm_stb_o      (eng_o_wb_stb    ), // o
-		.wbm_we_o       (eng_o_wb_we     ), // o
-		.wbm_adr_o      (eng_o_wb_adr    ), // o [31:0]
-		.wbm_dat_o      (eng_o_wb_dat    ), // o [31:0]
-		.wbm_sel_o      (eng_o_wb_sel    ), // o [3:0]
-		.m_axis_tdata   (axis_tdata      ), // o [31:0]
-		.m_axis_tvalid  (axis_tvalid     ), // o
-		.m_axis_tlast   (axis_tlast      ), // o
-		.o_irq          (o_dma_irq       )  // o
+		.clk              (clk             ), // i
+		.rst_n            (rst_ni          ), // i
+		.i_wb_cyc         (dma_i_wb_cyc    ), // i
+		.i_wb_stb         (dma_i_wb_stb    ), // i
+		.i_wb_we          (dma_i_wb_we     ), // i
+		.i_wb_adr         (dma_i_wb_adr    ), // i [31:0]
+		.i_wb_dat         (dma_i_wb_dat    ), // i [31:0]
+		.i_wb_sel         (dma_i_wb_sel    ), // i [3:0]
+		.wbm_ack_i        (eng_i_wb_ack    ), // i
+		.wbm_dat_i        (eng_i_wb_dat    ), // i [31:0]
+		.m_axis_tready    (axis_tready     ), // i
+		.o_wb_ack         (dma_o_wb_ack    ), // o
+		.o_wb_dat         (dma_o_wb_dat    ), // o [31:0]
+		.wbm_cyc_o        (eng_o_wb_cyc    ), // o
+		.wbm_stb_o        (eng_o_wb_stb    ), // o
+		.wbm_we_o         (eng_o_wb_we     ), // o
+		.wbm_adr_o        (eng_o_wb_adr    ), // o [31:0]
+		.wbm_dat_o        (eng_o_wb_dat    ), // o [31:0]
+		.wbm_sel_o        (eng_o_wb_sel    ), // o [3:0]
+		.m_axis_tdata     (axis_tdata      ), // o [31:0]
+		.m_axis_tvalid    (axis_tvalid     ), // o
+		.m_axis_tlast     (axis_tlast      ), // o
+		.o_irq            (o_dma_irq       )  // o
 	);
 	sha256wb u_sha (
-		.irq_o          (o_sha_irq       ), // o
-		.clk            (clk             ), // i
-		.rst_ni         (rst_ni          ), // i
-		.s_axis_tdata   (axis_tdata      ), // i [31:0]
-		.s_axis_tvalid  (axis_tvalid     ), // i
-		.s_axis_tlast   (axis_tlast      ), // i
-		.rg_soft_reset  (rg_soft_reset   ), // i
-		.p_rg_done_clear(p_rg_done_clear ), // i
-		.s_axis_tready  (axis_tready     ), // o
-		.ro_busy        (ro_busy         ), // o
-		.ro_done        (ro_done         ), // o
-		.ro_hash0       (ro_hash0        ), // o [31:0]
-		.ro_hash1       (ro_hash1        ), // o [31:0]
-		.ro_hash2       (ro_hash2        ), // o [31:0]
-		.ro_hash3       (ro_hash3        ), // o [31:0]
-		.ro_hash4       (ro_hash4        ), // o [31:0]
-		.ro_hash5       (ro_hash5        ), // o [31:0]
-		.ro_hash6       (ro_hash6        ), // o [31:0]
-		.ro_hash7       (ro_hash7        )  // o [31:0]
+		.irq_o            (o_sha_irq       ), // o
+		.clk              (clk             ), // i
+		.rst_ni           (rst_ni          ), // i
+		.s_axis_tdata     (axis_tdata      ), // i [31:0]
+		.s_axis_tvalid    (axis_tvalid     ), // i
+		.s_axis_tlast     (axis_tlast      ), // i
+		.rg_soft_reset    (rg_soft_reset   ), // i
+		.p_rg_done_clear  (p_rg_done_clear ), // i
+		.s_axis_tready    (axis_tready     ), // o
+		.ro_busy          (ro_busy         ), // o
+		.ro_done          (ro_done         ), // o
+		.ro_hash0         (ro_hash0        ), // o [31:0]
+		.ro_hash1         (ro_hash1        ), // o [31:0]
+		.ro_hash2         (ro_hash2        ), // o [31:0]
+		.ro_hash3         (ro_hash3        ), // o [31:0]
+		.ro_hash4         (ro_hash4        ), // o [31:0]
+		.ro_hash5         (ro_hash5        ), // o [31:0]
+		.ro_hash6         (ro_hash6        ), // o [31:0]
+		.ro_hash7         (ro_hash7        )  // o [31:0]
 	);
 
 endmodule

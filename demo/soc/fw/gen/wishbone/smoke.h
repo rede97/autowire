@@ -106,16 +106,28 @@ union SMOKE_BANK {
 	struct SMOKE_BANK_BITS bit;
 };
 
-/* Cell BANKSEL — Shadow bank select (drives fabric TGA)
+/* Cell BANKSEL — Saved working bank
 */
 struct SMOKE_BANKSEL_BITS {
-	volatile uint32_t BANK_SEL   :  2; /* bit [1:0] Shadow bank for WB accesses */
+	volatile uint32_t BANK_SEL   :  2; /* bit [1:0] Working bank */
 	volatile uint32_t RESERVED_2 : 30; /* bit [31:2] reserved */
 };
 
 union SMOKE_BANKSEL {
 	volatile uint32_t all;
 	struct SMOKE_BANKSEL_BITS bit;
+};
+
+/* Cell ACTIVE — Muxed working cfg
+*/
+struct SMOKE_ACTIVE_BITS {
+	volatile uint32_t VALUE      :  8; /* bit [7:0] Working copy of BANK.cfg */
+	volatile uint32_t RESERVED_8 : 24; /* bit [31:8] reserved */
+};
+
+union SMOKE_ACTIVE {
+	volatile uint32_t all;
+	struct SMOKE_ACTIVE_BITS bit;
 };
 
 /* Cell FABRIC — Wishbone interconnect fabric controls

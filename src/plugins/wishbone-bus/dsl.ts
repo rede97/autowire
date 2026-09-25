@@ -101,6 +101,16 @@ export function tagAddrMask(tags: readonly WbTagSource[]): number {
 	return mask >>> 0;
 }
 
+/** Width of one domain's own named TGA port. */
+export function domainWidth(domain: ShadowDomainDef): number {
+	return domain.tag_width;
+}
+
+/** Packed width of a path: sum of its domains, in declaration order. */
+export function tagDomainsWidth(tags: readonly WbTagSource[]): number {
+	return tags.reduce((sum, t) => sum + domainWidth(t.domain), 0);
+}
+
 export type SlaveOpts = {
 	/** TGA width (bits) forwarded to this slave; omitted/0 = no TGA port. */
 	readonly tag?: number;
@@ -728,20 +738,12 @@ export function Bus(
 		seen.add(s.name);
 	}
 	assertNoRegionOverlap(name, slaves, addr_width);
-	const tags = normalizeTags(name, opts.tags ?? []);
-	const tagTop = Math.max(
-		0,
-		...tags.map((t) => parseBits(t.domain.name, t.domain.tag_bits).hi + 1),
-	);
-	const tag_width =
-		opts.tagWidth ?? Math.max(tagTop, ...slaves.map((s) => s.tag ?? 0));
+	const declared = normalizeTags(name, opts.tags ?? []);
+	const anonymous = anonymousTag(slaves, declared);
+	const tags = anonymous ? [...declared, anonymous] : declared;
+	const tag_width = opts.tagWidth ?? tagDomainsWidth(tags);
 	if (!Number.isInteger(tag_width) || tag_width < 0) {
 		throw new Error(`wishbone-bus: tag_width must be an integer >= 0`);
-	}
-	if (tagTop > tag_width) {
-		throw new Error(
-			`wishbone-bus: bus ${name} tag domains need ${tagTop} bits but tag_width is ${tag_width}`,
-		);
 	}
 	assertTagAddrFree(name, tags, slaves);
 	for (const s of slaves) {
@@ -793,6 +795,24 @@ function normalizeTags(
 		out.push(src);
 	}
 	return out;
+}
+
+/** A numeric Slave tag with no declared domains is one anonymous pass-through. */
+function anonymousTag(
+	slaves: readonly WbSlave[],
+	declared: readonly WbTagSource[],
+): WbTagSource | undefined {
+	const width = Math.max(0, ...slaves.map((s) => s.tag ?? 0));
+	if (width === 0 || declared.length > 0) return undefined;
+	return tagSource(
+		{
+			kind: "wishbone-shadow-domain",
+			name: "tag",
+			copies: 1 << width,
+			tag_width: width,
+		},
+		"uplink",
+	);
 }
 
 /**

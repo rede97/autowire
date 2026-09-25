@@ -125,7 +125,8 @@ Parallel (does not block connect)
     WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
     SEL byte-masked writes (RW/RWW RMW, W1C/W1P masked); RWE ext_<field>_wstrb;
     W1C c_rg_<field>_set hw set (set wins); RWW same-cycle SW > HW;
-    RWE o_<shadow>_sel (lowest set bit) + optional ext_<field>_ready;
+    RWE o_<domain>_sel (lowest set bit, address tag only) + i_<domain>_mux_sel
+    (inner_shadow_mux sideband index; not o_<domain>_sel) + optional ext_<field>_ready;
     tag domains (docs/plugins/wishbone-bus.md 2.1; PROPOSAL, not landed):
       hoist ShadowDomain(name, copies, width) to its own shared export;
       Bus tags= declares TGA order + source — bare name = pass through from

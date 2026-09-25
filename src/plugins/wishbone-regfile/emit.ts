@@ -279,13 +279,15 @@ export function collectPorts(laid: LaidRegfile): PortDecl[] {
 			comment: wbPortComment("i_wb_sel"),
 		},
 	];
-	if (tga_width > 0) {
-		ports.push({
-			dir: "input",
-			packed: packedRange(tga_width),
-			name: wb("i_wb_tga"),
-			comment: wbPortComment("i_wb_tga"),
-		});
+	if (shadows.length > 0) {
+		for (const s of shadows) {
+			ports.push({
+				dir: "input",
+				packed: packedRange(s.tag_width),
+				name: wb(`i_wb_tga_${s.name}`),
+				comment: `Shadow domain ${s.name} (${s.copies} copies)`,
+			});
+		}
 	}
 	ports.push(
 		{
@@ -437,7 +439,9 @@ export function collectPorts(laid: LaidRegfile): PortDecl[] {
 				seenShadowSel.add(c.shadow);
 				const s = shadowByName(shadows, c.shadow);
 				const w = Math.max(1, Math.ceil(Math.log2(s.copies)));
-				const selComment = `Shadow bank select: ${c.shadow} (${s.copies} copies, TGA ${s.tag_bits})`;
+				const tag =
+					s.tag_bits !== undefined ? `, TGA ${s.tag_bits}` : "";
+				const selComment = `Address-tag select: ${c.shadow} (${s.copies} copies${tag})`;
 				let comment = selComment;
 				if (!sidebandBanner) {
 					sidebandBanner = true;
@@ -449,6 +453,14 @@ export function collectPorts(laid: LaidRegfile): PortDecl[] {
 					name: `o_${c.shadow}_sel`,
 					comment,
 				});
+				if (s.inner_shadow_mux) {
+					ports.push({
+						dir: "input",
+						packed: packedRange(w),
+						name: `i_${c.shadow}_mux_sel`,
+						comment: `Sideband mux select: ${c.shadow} (not the address tag)`,
+					});
+				}
 			}
 		}
 	}
@@ -482,7 +494,6 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	const i_wb_adr = wb("i_wb_adr");
 	const i_wb_dat = wb("i_wb_dat");
 	const i_wb_sel = wb("i_wb_sel");
-	const i_wb_tga = wb("i_wb_tga");
 	const o_wb_ack = wb("o_wb_ack");
 	const o_wb_dat = wb("o_wb_dat");
 
@@ -499,9 +510,7 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	}
 
 	for (const s of shadows) {
-		const { hi, lo } = parseTag(s.tag_bits);
-		const iw = hi - lo + 1;
-		sigs.push({ packed: packedRange(iw), name: `raw_${s.name}` });
+		sigs.push({ packed: packedRange(s.tag_width), name: `raw_${s.name}` });
 		sigs.push({ packed: packedRange(s.copies), name: `mask_${s.name}` });
 	}
 
@@ -608,13 +617,12 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	}
 
 	for (const s of shadows) {
-		const { hi, lo } = parseTag(s.tag_bits);
 		const mw = s.copies;
 		const hasRemaps =
 			Boolean(s.remaps) && Object.keys(s.remaps ?? {}).length > 0;
 		// Power-of-two copies + no remaps: every raw tag hits exactly one copy.
 		const missReachable = hasRemaps || (mw & (mw - 1)) !== 0;
-		out.push(`\tassign raw_${s.name} = ${i_wb_tga}${bitRange(hi, lo)};`);
+		out.push(`\tassign raw_${s.name} = ${wb(`i_wb_tga_${s.name}`)};`);
 		out.push("\talways_comb begin");
 		out.push(`\t\tmask_${s.name} = ${mw}'h0;`);
 		if (!hasRemaps) {
@@ -831,7 +839,7 @@ function emitCellStorage(
 	const lhsBase = (lf: LaidField): string => `${sidebandStem(lf.field)}_q`;
 	const lhsAt = (lf: LaidField, copy: number | null): string =>
 		copy === null ? lhsBase(lf) : `${lhsBase(lf)}[${copy}]`;
-	const oSel = sh ? `o_${sh.name}_sel` : "";
+	const iMux = sh ? `i_${sh.name}_mux_sel` : "";
 
 	// Guarded assign rows: [guard | null, lhs, rhs]; guards get their own line.
 	type Row = { guard: string | null; lhs: string; rhs: string };
@@ -876,7 +884,7 @@ function emitCellStorage(
 			} else {
 				hw.push({
 					guard: `${stem}_strb`,
-					lhs: sh ? `${lhsBase(lf)}[${oSel}]` : lhsAt(lf, null),
+					lhs: sh ? `${lhsBase(lf)}[${iMux}]` : lhsAt(lf, null),
 					rhs: `${stem}_hwdata`,
 				});
 			}
@@ -891,7 +899,7 @@ function emitCellStorage(
 					});
 				}
 			} else {
-				const lhs = sh ? `${lhsBase(lf)}[${oSel}]` : lhsAt(lf, null);
+				const lhs = sh ? `${lhsBase(lf)}[${iMux}]` : lhsAt(lf, null);
 				hw.push({
 					guard: `|${stem}_set`,
 					lhs,
@@ -920,7 +928,7 @@ function emitCellStorage(
 						copy === null
 							? `${stem}_set${sel}`
 							: muxed
-								? `((o_${sh?.name ?? ""}_sel == ${sw}'d${copy}) ? ${stem}_set${sel} : ${w}'h0)`
+								? `((${iMux} == ${sw}'d${copy}) ? ${stem}_set${sel} : ${w}'h0)`
 								: `${stem}_set[${copy}]${sel}`;
 					const w1c = (copy: number | null): Row => {
 						const lhs = `${lhsAt(lf, copy)}${sel}`;
@@ -987,7 +995,7 @@ function emitCellStorage(
 		const stem = sidebandStem(lf.field);
 		out.push(
 			muxed
-				? `\tassign ${stem} = ${stem}_q[${oSel}];`
+				? `\tassign ${stem} = ${stem}_q[${iMux}];`
 				: `\tassign ${stem} = ${stem}_q;`,
 		);
 	}

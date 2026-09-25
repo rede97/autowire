@@ -2,9 +2,9 @@
 // Slave ports use leaf-centric names: `{slave}_i_wb_*` / `{slave}_o_wb_*`
 // so they identity-match wishbone-regfile. Masters stay flat m_* vectors when NM>1.
 
-import type { BusDef, WbMaster, WbSlave } from "./dsl.ts";
-import { parseBits } from "./dsl.ts";
-import { tagPinPort, tagPlan, tagValueExpr } from "./tag.ts";
+import type { BusDef, WbMaster, WbSlave, WbTagSource } from "./dsl.ts";
+import { domainWidth, tagDomainsWidth } from "./dsl.ts";
+import { packedTagExpr, tagPinPort, tagPlan, tagPort } from "./tag.ts";
 
 function hex(n: number, width = 32): string {
 	return n.toString(16).padStart(Math.ceil(width / 4), "0");
@@ -48,9 +48,37 @@ export type FabricPort = {
 	readonly comment?: string;
 };
 
-function slaveWbPorts(s: WbSlave, aw: number): FabricPort[] {
+function slaveTagPorts(s: WbSlave, def: BusDef): FabricPort[] {
+	if (s.regfile) {
+		return s.regfile.shadows.map((shadow) => ({
+			dir: "output" as const,
+			packed: packedRange(shadow.tag_width),
+			name: tagPort(wb(s.name, "i_wb"), shadow.name),
+		}));
+	}
+	if (s.bus) {
+		return s.bus.tags
+			.filter((t) => t.source === "uplink")
+			.map((t) => ({
+				dir: "output" as const,
+				packed: packedRange(domainWidth(t.domain)),
+				name: tagPort(wb(s.name, "i_wb"), t.domain.name),
+			}));
+	}
+	const width = s.tag ?? 0;
+	return width > 0
+		? [
+				{
+					dir: "output",
+					packed: packedRange(width),
+					name: tagPort(wb(s.name, "i_wb"), "tag"),
+				},
+			]
+		: [];
+}
+
+function slaveWbPorts(s: WbSlave, aw: number, def: BusDef): FabricPort[] {
 	const n = s.name;
-	const st = s.tag ?? 0;
 	const ports: FabricPort[] = [
 		{
 			dir: "output",
@@ -60,14 +88,8 @@ function slaveWbPorts(s: WbSlave, aw: number): FabricPort[] {
 		},
 		{ dir: "output", packed: "[31:0]", name: wb(n, "i_wb_dat") },
 		{ dir: "output", packed: "[3:0]", name: wb(n, "i_wb_sel") },
+		...slaveTagPorts(s, def),
 	];
-	if (st > 0) {
-		ports.push({
-			dir: "output",
-			packed: packedRange(st),
-			name: wb(n, "i_wb_tga"),
-		});
-	}
 	ports.push(
 		{ dir: "output", packed: "", name: wb(n, "i_wb_cyc") },
 		{ dir: "output", packed: "", name: wb(n, "i_wb_stb") },
@@ -79,10 +101,10 @@ function slaveWbPorts(s: WbSlave, aw: number): FabricPort[] {
 }
 
 function masterWbPorts(
+	def: BusDef,
 	name: string,
 	desc: string,
 	aw: number,
-	tw: number,
 ): FabricPort[] {
 	const ports: FabricPort[] = [
 		{
@@ -93,14 +115,12 @@ function masterWbPorts(
 		},
 		{ dir: "input", packed: "[31:0]", name: wb(name, "o_wb_dat") },
 		{ dir: "input", packed: "[3:0]", name: wb(name, "o_wb_sel") },
+		...tagPlan(def).inherited.map((t) => ({
+			dir: "input" as const,
+			packed: packedRange(domainWidth(t.domain)),
+			name: tagPort(wb(name, "o_wb"), t.domain.name),
+		})),
 	];
-	if (tw > 0) {
-		ports.push({
-			dir: "input",
-			packed: packedRange(tw),
-			name: wb(name, "o_wb_tga"),
-		});
-	}
 	ports.push(
 		{ dir: "input", packed: "", name: wb(name, "o_wb_cyc") },
 		{ dir: "input", packed: "", name: wb(name, "o_wb_stb") },
@@ -126,11 +146,7 @@ export function listFabricPorts(def: BusDef): FabricPort[] {
 	for (const p of plan.pins) {
 		ports.push({
 			dir: "input",
-			packed: packedRange(
-				parseBits(p.domain.name, p.domain.tag_bits).hi -
-					parseBits(p.domain.name, p.domain.tag_bits).lo +
-					1,
-			),
+			packed: packedRange(domainWidth(p.domain)),
 			name: tagPinPort(p.domain.name),
 			comment: `Tag domain ${p.domain.name} — produced here (TagFromPin)`,
 		});
@@ -145,14 +161,12 @@ export function listFabricPorts(def: BusDef): FabricPort[] {
 			},
 			{ dir: "input", packed: "[31:0]", name: "m_dat_i" },
 			{ dir: "input", packed: "[3:0]", name: "m_sel_i" },
+			...plan.inherited.map((t) => ({
+				dir: "input" as const,
+				packed: packedRange(domainWidth(t.domain)),
+				name: tagPort("m", t.domain.name),
+			})),
 		);
-		if (plan.masterWidth > 0) {
-			ports.push({
-				dir: "input",
-				packed: packedRange(plan.masterWidth),
-				name: "m_tga_i",
-			});
-		}
 		ports.push(
 			{ dir: "input", packed: "", name: "m_cyc_i" },
 			{ dir: "input", packed: "", name: "m_stb_i" },
@@ -162,31 +176,28 @@ export function listFabricPorts(def: BusDef): FabricPort[] {
 		);
 	} else {
 		for (const m of def.masters) {
-			ports.push(...masterWbPorts(m.name, m.desc, aw, plan.masterWidth));
+			ports.push(...masterWbPorts(def, m.name, m.desc, aw));
 		}
 	}
 	for (const s of def.slaves) {
-		ports.push(...slaveWbPorts(s, aw));
+		ports.push(...slaveWbPorts(s, aw, def));
 	}
 	return ports;
 }
 
-function slavePortBlock(s: WbSlave, aw: number): string[] {
+function slavePortBlock(s: WbSlave, aw: number, def: BusDef): string[] {
 	const n = s.name;
 	const adr = packedRange(aw).padEnd(7);
-	const st = s.tag ?? 0;
 	const lines = [
 		`\t// Slave ${n} — ${s.desc}`,
 		`\t//   base=0x${hex(s.base)}${s.size !== undefined ? `  size=0x${hex(s.size)}` : ""}  mask=0x${hex(s.mask)}${s.pipe > 0 ? `  pipe=${s.pipe}` : ""}`,
 		`\toutput logic ${adr}${wb(n, "i_wb_adr")},`,
 		`\toutput logic [31:0] ${wb(n, "i_wb_dat")},`,
 		`\toutput logic [3:0]  ${wb(n, "i_wb_sel")},`,
+			...slaveTagPorts(s, def).map(
+			(p) => `\toutput logic ${p.packed.padEnd(7)}${p.name},`,
+		),
 	];
-	if (st > 0) {
-		lines.push(
-			`\toutput logic ${packedRange(st).padEnd(7)}${wb(n, "i_wb_tga")},`,
-		);
-	}
 	lines.push(
 		`\toutput logic ${"".padEnd(7)}${wb(n, "i_wb_cyc")},`,
 		`\toutput logic ${"".padEnd(7)}${wb(n, "i_wb_stb")},`,
@@ -202,8 +213,8 @@ function masterPortBlock(
 	name: string,
 	desc: string,
 	aw: number,
-	tw: number,
 	pipe: number,
+	def: BusDef,
 ): string[] {
 	const adr = packedRange(aw).padEnd(7);
 	const lines = [
@@ -211,12 +222,11 @@ function masterPortBlock(
 		`\tinput  logic ${adr}${wb(name, "o_wb_adr")},`,
 		`\tinput  logic [31:0] ${wb(name, "o_wb_dat")},`,
 		`\tinput  logic [3:0]  ${wb(name, "o_wb_sel")},`,
+		...tagPlan(def).inherited.map(
+			(t) =>
+				`\tinput  logic ${packedRange(domainWidth(t.domain)).padEnd(7)}${tagPort(wb(name, "o_wb"), t.domain.name)},`,
+		),
 	];
-	if (tw > 0) {
-		lines.push(
-			`\tinput  logic ${packedRange(tw).padEnd(7)}${wb(name, "o_wb_tga")},`,
-		);
-	}
 	lines.push(
 		`\tinput  logic ${"".padEnd(7)}${wb(name, "o_wb_cyc")},`,
 		`\tinput  logic ${"".padEnd(7)}${wb(name, "o_wb_stb")},`,
@@ -276,32 +286,36 @@ function decAdr(def: BusDef, gPrefix: string): string {
 	return tagPlan(def).addrMask === 0 ? `${gPrefix}adr` : `${gPrefix}adr_dec`;
 }
 
-/** `g_tga` driver: local slices (ADR / pin / regbit) over the master face. */
-function emitTagDrive(
-	def: BusDef,
-	gPrefix: string,
-	masterExpr: string,
-): string[] {
-	const plan = tagPlan(def);
-	if (plan.width === 0) return [];
-	const expr = tagValueExpr(def, plan, `${gPrefix}adr`, masterExpr);
-	return [`\tassign ${gPrefix}tga   = ${expr};`];
+/** `g_tga_<domain>` driver for every domain on this fabric. */
+function emitTagDrive(def: BusDef, gPrefix: string, adrExpr: string): string[] {
+	return def.tags.map((t) => {
+		const src =
+			t.source === "uplink"
+				? `${gPrefix}up_${t.domain.name}`
+				: t.source === "pin"
+					? tagPinPort(t.domain.name)
+					: t.source === "addr" && t.addr_bits
+						? `${adrExpr}[${t.addr_bits.replace(/\s/g, "")}]`
+						: (t.reg_field ?? `${domainWidth(t.domain)}'d0`);
+		return `\tassign ${gPrefix}tga_${t.domain.name} = ${src};`;
+	});
+}
+
+function tagValue(gPrefix: string, tag: WbTagSource): string {
+	return `${gPrefix}tga_${tag.domain.name}`;
 }
 
 function emitDecoderBody(def: BusDef): string[] {
 	const aw = def.addr_width;
-	const tw = def.tag_width;
+	const tw = tagDomainsWidth(def.tags);
 	const slaves = def.slaves;
 	const out: string[] = [];
-	const m = def.masters[0];
-	const piped = (m?.pipe ?? 0) > 0;
-	out.push(
-		`\tlogic ${packedRange(aw).padEnd(7)}g_adr;`,
-		"\tlogic [31:0] g_wdata;",
-		"\tlogic [3:0]  g_sel;",
-	);
 	if (tw > 0) {
-		out.push(`\tlogic ${packedRange(tw).padEnd(7)}g_tga;`);
+		for (const t of def.tags) {
+			out.push(
+				`\tlogic ${packedRange(domainWidth(t.domain)).padEnd(7)}${`g_tga_${t.domain.name}`};`,
+			);
+		}
 	}
 	out.push(
 		"\tlogic        g_cyc;",
@@ -309,16 +323,18 @@ function emitDecoderBody(def: BusDef): string[] {
 		"\tlogic        g_we;",
 		"",
 	);
+	const m = def.masters[0];
+	const piped = (m?.pipe ?? 0) > 0;
 	if (piped && m) {
 		out.push(
-			...emitMasterPipe(m, 0, aw, tagPlan(def).masterWidth, "m", "m_adr_i"),
+			...emitMasterPipe(m, 0, aw, tagPlan(def).inherited, "m", "m_adr_i"),
 		);
 		out.push(
 			"\tassign g_adr   = m_adr_q;",
 			"\tassign g_wdata = m_wdat_q;",
 			"\tassign g_sel   = m_sel_q;",
 		);
-		out.push(...emitTagDrive(def, "g_", "m_tga_q"));
+		out.push(...emitTagDrive(def, "g_", "m_adr_q"));
 		out.push(
 			"\tassign g_cyc   = m_cyc_q;",
 			"\tassign g_stb   = m_stb_q;",
@@ -331,7 +347,7 @@ function emitDecoderBody(def: BusDef): string[] {
 			"\tassign g_wdata = m_dat_i;",
 			"\tassign g_sel   = m_sel_i;",
 		);
-		out.push(...emitTagDrive(def, "g_", "m_tga_i"));
+		out.push(...emitTagDrive(def, "g_", "m_adr_i"));
 		out.push(
 			"\tassign g_cyc   = m_cyc_i;",
 			"\tassign g_stb   = m_stb_i;",
@@ -374,7 +390,7 @@ function emitInterconnectBody(def: BusDef): string[] {
 	}
 	const piped = masters.some((m) => (m.pipe ?? 0) > 0);
 	if (piped) {
-		const masterTw = tagPlan(def).masterWidth;
+		const inherited = tagPlan(def).inherited;
 		out.push(
 			"\t//------------------------------------------------------------------------------",
 			"\t//  Master pipes (posted write / blocking read), in front of the arbiter",
@@ -382,7 +398,7 @@ function emitInterconnectBody(def: BusDef): string[] {
 			"\t//------------------------------------------------------------------------------",
 		);
 		for (const m of masters) {
-			out.push(...emitMasterPipe(m, m.i, aw, masterTw));
+			out.push(...emitMasterPipe(m, m.i, aw, inherited));
 		}
 		out.push("");
 	}
@@ -478,12 +494,15 @@ function emitInterconnectBody(def: BusDef): string[] {
 		"\tlogic [3:0]  g_sel;",
 	);
 	const plan = tagPlan(def);
-	const localTags = def.tags.some((t) => t.source !== "uplink");
-	if (tw > 0) {
-		out.push(`\tlogic ${packedRange(tw).padEnd(7)}g_tga;`);
-		if (localTags && plan.masterWidth > 0) {
-			out.push(`\tlogic ${packedRange(plan.masterWidth).padEnd(7)}g_tga_up;`);
-		}
+	for (const t of plan.inherited) {
+		out.push(
+			`\tlogic ${packedRange(domainWidth(t.domain)).padEnd(7)}g_up_${t.domain.name};`,
+		);
+	}
+	for (const t of def.tags) {
+		out.push(
+			`\tlogic ${packedRange(domainWidth(t.domain)).padEnd(7)}g_tga_${t.domain.name};`,
+		);
 	}
 	out.push(
 		"\tlogic        g_cyc;",
@@ -506,16 +525,15 @@ function emitInterconnectBody(def: BusDef): string[] {
 	muxVec("g_adr  ", "adr", "o_wb_adr", aw);
 	muxVec("g_wdata", "wdat", "o_wb_dat", 32);
 	muxVec("g_sel  ", "sel", "o_wb_sel", 4);
-	if (tw > 0) {
-		if (!localTags) {
-			muxVec("g_tga  ", "tga", "o_wb_tga", tw);
-		} else if (plan.masterWidth > 0) {
-			muxVec("g_tga_up", "tga", "o_wb_tga", plan.masterWidth);
-			out.push(...emitTagDrive(def, "g_", "g_tga_up"));
-		} else {
-			out.push(...emitTagDrive(def, "g_", ""));
-		}
+	for (const t of plan.inherited) {
+		muxVec(
+			`g_up_${t.domain.name}`,
+			`tga_${t.domain.name}`,
+			tagPort("o_wb", t.domain.name),
+			domainWidth(t.domain),
+		);
 	}
+	out.push(...emitTagDrive(def, "g_", "g_adr"));
 	out.push(
 		`\tassign g_cyc   = |(gsel & m_cyc);`,
 		`\tassign g_stb   = |(gsel & m_stb);`,
@@ -611,11 +629,11 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 	for (let i = 0; i < ns; i++) {
 		const s = slaves[i];
 		if (s === undefined) continue;
-		if ((s.pipe ?? 0) > 0) {
-			out.push(...emitSlavePipe(s, aw, gPrefix, adr));
-		} else {
-			out.push(...emitSlaveCombo(s, aw, gPrefix, namePad, slotPad, adr));
-		}
+	if ((s.pipe ?? 0) > 0) {
+		out.push(...emitSlavePipe(s, aw, gPrefix, adr, def));
+	} else {
+		out.push(...emitSlaveCombo(s, aw, gPrefix, namePad, slotPad, adr, def));
+	}
 		if (i < ns - 1) out.push("");
 	}
 	return out;
@@ -628,6 +646,7 @@ function emitSlaveCombo(
 	namePad: number,
 	slotPad: number,
 	adr: string,
+	def: BusDef,
 ): string[] {
 	const n = s.name;
 	const port = (stem: string) => wb(n, stem).padEnd(namePad);
@@ -637,9 +656,9 @@ function emitSlaveCombo(
 		`\tassign ${port("i_wb_dat")} = ${gPrefix}wdata;`,
 		`\tassign ${port("i_wb_sel")} = ${gPrefix}sel;`,
 	];
-	const st = s.tag ?? 0;
-	if (st > 0) {
-		out.push(`\tassign ${port("i_wb_tga")} = ${gPrefix}tga[${st - 1}:0];`);
+	for (const p of slaveTagPorts(s, def)) {
+		const domain = p.name.slice(p.name.lastIndexOf("_tga_") + 5);
+		out.push(`\tassign ${p.name.padEnd(namePad)} = ${gPrefix}tga_${domain};`);
 	}
 	out.push(
 		`\tassign ${port("i_wb_cyc")} = ${slot} & ${gPrefix}cyc;`,
@@ -659,22 +678,25 @@ function emitSlaveCombo(
  * so the nets are `m_*` and the flat `m_*_i` ports feed the pipe.
  */
 function emitMasterPipe(
-	m: WbMaster,
+	m: WbMaster & { i?: number },
 	idx: number,
 	aw: number,
-	tw: number,
+	tags: readonly WbTagSource[],
 	idxName?: string,
 	adrPort?: string,
 ): string[] {
-	const pipe = m.pipe ?? 0;
 	const p = idxName ?? `m${idx}`;
-	const pin = (stem: string) => (idxName ? `m_${stem}` : wb(m.name, stem));
-	const out = [
+	const pin = (stem: string) =>
+		idxName ? `${idxName}_${stem}` : wb(m.name, stem);
+	const tw = tagDomainsWidth(tags);
+	const out: string[] = [
 		`\tlogic ${packedRange(aw).padEnd(7)}${p}_adr_q;`,
 		`\tlogic [31:0] ${p}_wdat_q;`,
 		`\tlogic [3:0]  ${p}_sel_q;`,
 	];
-	if (tw > 0) out.push(`\tlogic ${packedRange(tw).padEnd(7)}${p}_tga_q;`);
+	if (tw > 0) {
+		out.push(`\tlogic ${packedRange(tw).padEnd(7)}${p}_tga_q;`);
+	}
 	out.push(
 		`\tlogic        ${p}_cyc_q;`,
 		`\tlogic        ${p}_stb_q;`,
@@ -682,7 +704,7 @@ function emitMasterPipe(
 		`\tlogic [31:0] ${p}_rdat_q;`,
 		`\tlogic        ${p}_ack_q;`,
 	);
-	if (pipe === 0) {
+	if ((m.pipe ?? 0) === 0) {
 		out.push(
 			`\tassign ${p}_adr_q  = ${adrPort ?? pin("o_wb_adr")};`,
 			`\tassign ${p}_wdat_q = ${pin(idxName ? "dat_i" : "o_wb_dat")};`,
@@ -690,7 +712,9 @@ function emitMasterPipe(
 		);
 		if (tw > 0) {
 			out.push(
-				`\tassign ${p}_tga_q  = ${pin(idxName ? "tga_i" : "o_wb_tga")};`,
+				`\tassign ${p}_tga_q  = ${packedTagExpr(tags, (t) =>
+					tagPort(pin("o_wb"), t.domain.name),
+				)};`,
 			);
 		}
 		out.push(
@@ -703,7 +727,7 @@ function emitMasterPipe(
 	out.push(
 		`\tlogic [31:0] ${p}_prdat;`,
 		`\tlogic        ${p}_pack;`,
-		`\twb_cfg_pipe #(.PIPE(${pipe}), .AW(${aw}), .TW(${tw})) u_${m.name}_mpipe (`,
+		`\twb_cfg_pipe #(.PIPE(${m.pipe ?? 0}), .AW(${aw}), .TW(${tw})) u_${m.name}_mpipe (`,
 		"\t\t.clk(clk),",
 		"\t\t.rst_n(rst_n),",
 		`\t\t.m_cyc(${pin(idxName ? "cyc_i" : "o_wb_cyc")}),`,
@@ -713,7 +737,11 @@ function emitMasterPipe(
 		`\t\t.m_dat(${pin(idxName ? "dat_i" : "o_wb_dat")}),`,
 		`\t\t.m_sel(${pin(idxName ? "sel_i" : "o_wb_sel")}),`,
 	);
-	if (tw > 0) out.push(`\t\t.m_tga(${pin(idxName ? "tga_i" : "o_wb_tga")}),`);
+	if (tw > 0) {
+		out.push(
+			`\t\t.m_tga(${packedTagExpr(tags, (t) => tagPort(pin("o_wb"), t.domain.name))}),`,
+		);
+	}
 	out.push(
 		`\t\t.m_ack(${p}_pack),`,
 		`\t\t.m_rdat(${p}_prdat),`,
@@ -735,10 +763,16 @@ function emitSlavePipe(
 	aw: number,
 	gPrefix: string,
 	adr: string,
+	def: BusDef,
 ): string[] {
 	const n = s.name;
 	const pipe = s.pipe;
-	const st = s.tag ?? 0;
+	const tags = slaveTagPorts(s, def);
+	const st = tagDomainsWidth(
+		def.tags.filter((t) =>
+			tags.some((p) => p.name.endsWith(`_tga_${t.domain.name}`)),
+		),
+	);
 	const slot = slotSel(n);
 	const winAdr = `${slot} ? ${adr} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0`;
 	const ack = `${n}_pipe_ack`;
@@ -760,7 +794,14 @@ function emitSlavePipe(
 		`\t\t.m_sel(${gPrefix}sel),`,
 	];
 	if (st > 0) {
-		out.push(`\t\t.m_tga(${gPrefix}tga[${st - 1}:0]),`);
+		out.push(
+			`\t\t.m_tga(${packedTagExpr(
+				def.tags.filter((t) =>
+					tags.some((p) => p.name.endsWith(`_tga_${t.domain.name}`)),
+				),
+				(t) => tagValue(gPrefix, t),
+			)}),`,
+		);
 	}
 	out.push(
 		`\t\t.m_ack(${ack}),`,
@@ -773,7 +814,14 @@ function emitSlavePipe(
 		`\t\t.s_sel(${wb(n, "i_wb_sel")}),`,
 	);
 	if (st > 0) {
-		out.push(`\t\t.s_tga(${wb(n, "i_wb_tga")}),`);
+		out.push(
+			`\t\t.s_tga(${packedTagExpr(
+				def.tags.filter((t) =>
+					tags.some((p) => p.name.endsWith(`_tga_${t.domain.name}`)),
+				),
+				(t) => tagPort(wb(n, "i_wb"), t.domain.name),
+			)}),`,
+		);
 	}
 	out.push(
 		`\t\t.s_ack(${wb(n, "o_wb_ack")}),`,
@@ -870,24 +918,23 @@ export function emitBusSv(def: BusDef): string {
 	const plan = tagPlan(def);
 	if (plan.pins.length > 0) {
 		portBlocks.push(
-			plan.pins.map((p) => {
-				const { hi, lo } = parseBits(p.domain.name, p.domain.tag_bits);
-				const pr = packedRange(hi - lo + 1);
-				return `\tinput  logic ${pr ? `${pr} ` : ""}${tagPinPort(p.domain.name)}`;
-			}),
+			plan.pins.map(
+				(p) =>
+					`\tinput  logic ${packedRange(domainWidth(p.domain))} ${tagPinPort(p.domain.name)}`,
+			),
 		);
 	}
 	if (kind === "decoder") {
-		const tr = packedRange(plan.masterWidth);
 		const block = [
 			"\t// Single master (flat; decoder mode)",
 			`\tinput  logic ${packedRange(aw) ? `${packedRange(aw)} ` : ""}m_adr_i`,
 			"\tinput  logic [31:0] m_dat_i",
 			"\tinput  logic [3:0]  m_sel_i",
+			...plan.inherited.map(
+				(t) =>
+					`\tinput  logic ${packedRange(domainWidth(t.domain))} ${tagPort("m", t.domain.name)}`,
+			),
 		];
-		if (plan.masterWidth > 0) {
-			block.push(`\tinput  logic ${tr ? `${tr} ` : ""}m_tga_i`);
-		}
 		block.push(
 			"\tinput  logic        m_cyc_i",
 			"\tinput  logic        m_stb_i",
@@ -899,12 +946,12 @@ export function emitBusSv(def: BusDef): string {
 	} else {
 		for (const m of def.masters) {
 			portBlocks.push(
-				masterPortBlock(m.name, m.desc, aw, plan.masterWidth, m.pipe ?? 0),
+				masterPortBlock(m.name, m.desc, aw, m.pipe ?? 0, def),
 			);
 		}
 	}
 	for (const s of def.slaves) {
-		portBlocks.push(slavePortBlock(s, aw));
+		portBlocks.push(slavePortBlock(s, aw, def));
 	}
 	lines.push(...formatAlignedPorts(portBlocks));
 	lines.push(");", "");

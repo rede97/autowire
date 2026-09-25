@@ -55,6 +55,7 @@ int main(void)
 	union SMOKE_IRQ irq;
 	union SMOKE_BANK bank;
 	union SMOKE_BANKSEL banksel;
+	union SMOKE_ACTIVE active;
 	union SMOKE_FABRIC fabric;
 	union SMOKE_KEY_KEY_0 key0;
 	union SMOKE_KEY_KEY_1 key1;
@@ -146,33 +147,24 @@ int main(void)
 	irq.all = smoke_rd(SMOKE_OFF_IRQ);
 	expect_eq(irq.bit.STICKY, 0u);
 
-	/* Shadow banks: bank_sel CSR drives fabric TGA; per-copy reset defaults */
-	bank.all = 0;
-	bank.bit.CFG = 0x55u;
-	smoke_wr(SMOKE_OFF_BANK, bank.all);
-	bank.all = smoke_rd(SMOKE_OFF_BANK);
-	expect_eq(bank.bit.CFG, 0x55u);
-	banksel.all = 0;
-	banksel.bit.BANK_SEL = 1;
-	smoke_wr(SMOKE_OFF_BANKSEL, banksel.all);
-	bank.all = smoke_rd(SMOKE_OFF_BANK);
-	expect_eq(bank.bit.CFG, 0x20u); /* copy1 reset default */
-	bank.bit.CFG = 0xaau;
-	smoke_wr(SMOKE_OFF_BANK, bank.all);
-	bank.all = smoke_rd(SMOKE_OFF_BANK);
-	expect_eq(bank.bit.CFG, 0xaau); /* bank1 readback */
-	banksel.bit.BANK_SEL = 3;
-	smoke_wr(SMOKE_OFF_BANKSEL, banksel.all);
-	bank.all = smoke_rd(SMOKE_OFF_BANK);
-	expect_eq(bank.bit.CFG, 0x40u); /* copy3 reset default */
+	/* Address aliases access banks. BANKSEL drives the working-copy mux. */
+	for (i = 0; i < 4; i++) {
+		bank.all = 0;
+		bank.bit.CFG = 0x50u + i;
+		smoke_wr(SMOKE_OFF_BANK + (i << 27), bank.all);
+	}
+	banksel.all = smoke_rd(SMOKE_OFF_BANKSEL);
+	expect_eq(banksel.bit.BANK_SEL, 0u);
+	active.all = smoke_rd(SMOKE_OFF_ACTIVE);
+	expect_eq(active.bit.VALUE, 0x50u);
+	for (i = 0; i < 4; i++) {
+		bank.all = smoke_rd(SMOKE_OFF_BANK + (i << 27));
+		expect_eq(bank.bit.CFG, 0x50u + i);
+	}
 	banksel.bit.BANK_SEL = 2;
 	smoke_wr(SMOKE_OFF_BANKSEL, banksel.all);
-	bank.all = smoke_rd(SMOKE_OFF_BANK);
-	expect_eq(bank.bit.CFG, 0x30u); /* copy2 untouched */
-	banksel.bit.BANK_SEL = 0;
-	smoke_wr(SMOKE_OFF_BANKSEL, banksel.all);
-	bank.all = smoke_rd(SMOKE_OFF_BANK);
-	expect_eq(bank.bit.CFG, 0x55u); /* bank0 intact */
+	active.all = smoke_rd(SMOKE_OFF_ACTIVE + (1u << 27));
+	expect_eq(active.bit.VALUE, 0x52u);
 
 	/* Wide key auto-split */
 	key0.all = 0;

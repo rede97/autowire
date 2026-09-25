@@ -20,7 +20,8 @@ import {
 	masterFacePorts,
 	masterSummary,
 } from "./emit-master.ts";
-import { tagPlan } from "./tag.ts";
+import { domainWidth } from "./dsl.ts";
+import { tagPlan, tagPort } from "./tag.ts";
 
 function hex(n: number): string {
 	return n.toString(16).padStart(8, "0");
@@ -89,8 +90,7 @@ function cascadeWrapperPorts(def: BusDef): Array<{
 	comment?: string;
 }> {
 	const aw = def.addr_width;
-	// Uplink face carries only what the parent still passes down.
-	const tw = tagPlan(def).masterWidth;
+	const inherited = tagPlan(def).inherited;
 	const ports: Array<{
 		dir: "input" | "output";
 		packed: string;
@@ -105,14 +105,12 @@ function cascadeWrapperPorts(def: BusDef): Array<{
 		},
 		{ dir: "input", packed: "[31:0]", name: "i_wb_dat" },
 		{ dir: "input", packed: "[3:0]", name: "i_wb_sel" },
+		...inherited.map((t) => ({
+			dir: "input" as const,
+			packed: packedRange(domainWidth(t.domain)),
+			name: tagPort("i_wb", t.domain.name),
+		})),
 	];
-	if (tw > 0) {
-		ports.push({
-			dir: "input",
-			packed: packedRange(tw),
-			name: "i_wb_tga",
-		});
-	}
 	ports.push(
 		{ dir: "input", packed: "", name: "i_wb_cyc" },
 		{ dir: "input", packed: "", name: "i_wb_stb" },

@@ -8,8 +8,8 @@
   Top fabric is a CPU + JTAG interconnect cascaded into two channel
   interconnects (one sd_sha BusDef, two SlaveBus hangs). Channel DMA cannot
   reach SRAM/flash.
-  TGA: fabric 2-bit (smoke shadow bank); soc_wb produces bank_tag_i from
-  the smoke rg_bank_sel CSR. CPU and JTAG master faces do not carry TGA.
+  TGA: ADR[28:27] selects the accessed bank. BANKSEL drives i_bank_mux_sel,
+  which picks the working copy of rg_cfg. The muxed rg_cfg loops back to ro_value.
   Arbiters (top + channels): rb_grant_en = smoke rg_rb_grant_en (FABRIC @ 0x030, reset 0).
   JTAG: jtag_* pins → u_tap (demo_tap, DFT placeholder TAP) → USER IR selects
   the dbg TDR inside soc_wb_system (wb_jtag_tdr + wb_cdc); dbg_en tied 1.
@@ -100,11 +100,12 @@
               <aw-template>
                 <aw-connect port="rst_n" to="rst_ni"></aw-connect>
                 <aw-connect port="rb_grant_en" to="rg_rb_grant_en"></aw-connect>
-                <aw-connect port="bank_tag_i" to="rg_bank_sel"></aw-connect>
+                <aw-connect port="i_bank_mux_sel" to="rg_bank_sel"></aw-connect>
+                <aw-connect port="ro_value" to="rg_cfg"></aw-connect>
                 <aw-connect port="dbg_en" to="1'b1" type="const"></aw-connect>
                 <aw-connect port="c_rg_sticky_set" to="p_rg_go"></aw-connect>
                 <aw-rewrite
-                  match="^(rg_enable|rg_mode|rg_capture|c_rg_sticky|rg_cfg|o_bank_sel|rg_key_\d)$"
+                  match="^(rg_enable|rg_mode|rg_capture|c_rg_sticky|o_bank_sel|rg_key_\d)$"
                   type="open"
                 ></aw-rewrite>
               </aw-template>

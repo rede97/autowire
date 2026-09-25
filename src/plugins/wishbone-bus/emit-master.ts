@@ -10,7 +10,8 @@ import {
 	type WbMaster,
 } from "./dsl.ts";
 import { busModuleKind, busSystemModuleName, type FabricPort } from "./emit.ts";
-import { tagPlan } from "./tag.ts";
+import { domainWidth, tagDomainsWidth } from "./dsl.ts";
+import { packedTagExpr, tagPlan, tagPort } from "./tag.ts";
 
 export const MASTER_MODULES = [
 	"wb_sync_cell",
@@ -46,7 +47,7 @@ const IC_ROLES: Record<string, Role> = {
 	o_wb_adr: "adr",
 	o_wb_dat: "wdat",
 	o_wb_sel: "sel",
-	o_wb_tga: "tga",
+	o_wb_tga_tag: "tga",
 	o_wb_cyc: "cyc",
 	o_wb_stb: "stb",
 	o_wb_we: "we",
@@ -111,7 +112,7 @@ export function bridgedFabricNet(
 	return hit ? fab(hit.m, hit.role) : undefined;
 }
 
-function wbFacePorts(m: WbMaster, aw: number, tw: number): FabricPort[] {
+function wbFacePorts(def: BusDef, m: WbMaster, aw: number): FabricPort[] {
 	const n = m.name;
 	const ports: FabricPort[] = [
 		{ dir: "input", packed: "", name: `${n}_clk` },
@@ -119,14 +120,12 @@ function wbFacePorts(m: WbMaster, aw: number, tw: number): FabricPort[] {
 		{ dir: "input", packed: packedRange(aw), name: `${n}_o_wb_adr` },
 		{ dir: "input", packed: "[31:0]", name: `${n}_o_wb_dat` },
 		{ dir: "input", packed: "[3:0]", name: `${n}_o_wb_sel` },
+		...tagPlan(def).inherited.map((t) => ({
+			dir: "input" as const,
+			packed: packedRange(domainWidth(t.domain)),
+			name: tagPort(`${n}_o_wb`, t.domain.name),
+		})),
 	];
-	if (tw > 0) {
-		ports.push({
-			dir: "input",
-			packed: packedRange(tw),
-			name: `${n}_o_wb_tga`,
-		});
-	}
 	ports.push(
 		{ dir: "input", packed: "", name: `${n}_o_wb_cyc` },
 		{ dir: "input", packed: "", name: `${n}_o_wb_stb` },
@@ -198,7 +197,7 @@ export function masterFacePorts(def: BusDef): FabricPort[] {
 				? apbFacePorts(m, def.addr_width)
 				: b === "jtag"
 					? jtagFacePorts(m)
-					: wbFacePorts(m, def.addr_width, tagPlan(def).masterWidth);
+					: wbFacePorts(def, m, def.addr_width);
 		const [first, ...rest] = ports;
 		if (!first) continue;
 		out.push({ ...first, comment: faceComment(m) }, ...rest);
@@ -331,7 +330,7 @@ function emitWbMaster(m: WbMaster, aw: number, tw: number): string[] {
 			err: `${n}_i_wb_err`,
 			rdat: `${n}_i_wb_dat`,
 		},
-		tw > 0 ? `${n}_o_wb_tga` : undefined,
+		tw > 0 ? tagPort(`${n}_o_wb`, "tag") : undefined,
 	);
 }
 
@@ -424,7 +423,7 @@ function emitJtagMaster(m: WbMaster, aw: number, tw: number): string[] {
 /** Internal nets + bridge / CDC instances for every bridged master. */
 export function emitMasterBlocks(def: BusDef): string[] {
 	const aw = def.addr_width;
-	const tw = tagPlan(def).masterWidth;
+	const tw = tagDomainsWidth(tagPlan(def).inherited);
 	const out: string[] = [];
 	for (const m of bridgedMasters(def)) {
 		const b = masterBridge(m);
