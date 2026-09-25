@@ -1,0 +1,188 @@
+// happy-dom connect render. Same pipeline as the web page:
+// module scripts → before-instances → check → elaborate → before-dump.
+// then the same snapshot → .sv write as POST /api/dump. No browser.
+
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { Window } from "happy-dom";
+import type { LeafDb } from "../rtl/leaf.ts";
+import {
+	allUnits,
+	type ConnectUnit,
+	unitDumpDir,
+	type WorkspaceConfig,
+} from "../workspace.ts";
+import {
+	beginUnitHooks,
+	check,
+	clearUnitHooks,
+	elaborate,
+	endUnitHooks,
+	installGlobal,
+	runBeforeDump,
+	runBeforeInstances,
+	serializeSnapshot,
+} from "./aw.ts";
+import { buildEngineCtx, connectDir, type WrapperFacts } from "./connect.ts";
+import { connectXml, parseConnectXml } from "./connectxml.ts";
+import {
+	assertModuleNames,
+	assertPrintable,
+	parseSnapshot,
+	writeSvFiles,
+} from "./printer.ts";
+
+export interface RenderedUnit {
+	id: string;
+	snapshot: string;
+	warnings: string[];
+	files: string[];
+}
+
+interface ScriptHost extends Window {}
+
+/** Execute author module scripts while this unit owns the hook registry. */
+async function runModuleScripts(
+	win: ScriptHost,
+	unitId: string,
+): Promise<void> {
+	const scripts = [
+		...new Set(win.document.querySelectorAll('script[type="module"]')),
+	];
+	clearUnitHooks(unitId);
+	beginUnitHooks(unitId);
+	try {
+		for (const script of scripts) {
+			const AsyncFunction = Object.getPrototypeOf(async () => {})
+				.constructor as new (
+				...args: string[]
+			) => (...values: unknown[]) => Promise<void>;
+			const fn = new AsyncFunction(
+				"window",
+				"document",
+				"aw",
+				script.textContent ?? "",
+			);
+			await fn(win, win.document, (win as unknown as { aw: unknown }).aw);
+		}
+	} finally {
+		endUnitHooks();
+	}
+}
+
+function sessionFacts(dep: string, snapshot: string): WrapperFacts[] {
+	return parseConnectXml(connectXml(dep, parseSnapshot(snapshot))).map((m) => ({
+		name: m.name,
+		params: m.params,
+		ports: m.ports.map((p) => ({
+			name: p.name,
+			dir: p.dir,
+			packed: p.packed,
+			unpacked: p.unpacked,
+		})),
+		imports: m.imports,
+	}));
+}
+
+/**
+ * Render one unit in happy-dom. A dep rendered in this session overrides its
+ * on-disk snapshot, matching the web page.
+ */
+export async function renderUnit(
+	ws: WorkspaceConfig,
+	unit: ConnectUnit,
+	leafDb: LeafDb,
+	session: Map<string, RenderedUnit>,
+): Promise<RenderedUnit> {
+	const html = await readFile(resolve(ws.root, unit.html), "utf8");
+	const win = new Window({ url: "http://127.0.0.1/" }) as ScriptHost;
+	try {
+		installGlobal(win as never);
+		win.document.write(html);
+		if (!win.document.querySelector("autowire"))
+			throw new Error(`unit "${unit.id}": author HTML has no <autowire> root`);
+		await runModuleScripts(win, unit.id);
+		const doc = win.document;
+		runBeforeInstances(doc as never, unit.id);
+
+		const built = await buildEngineCtx(ws, unit, allUnits(ws), leafDb);
+		const sessionFactsByMod = new Map<string, WrapperFacts>();
+		for (const dep of unit.deps) {
+			const live = session.get(dep);
+			if (!live) continue;
+			for (const fact of sessionFacts(dep, live.snapshot))
+				sessionFactsByMod.set(fact.name, fact);
+		}
+		const errors = built.errors.filter(
+			(error) => ![...session.keys()].some((id) => error.includes(`"${id}"`)),
+		);
+		const ctx = {
+			...built.ctx,
+			wrapper: (mod: string) =>
+				sessionFactsByMod.get(mod) ?? built.ctx.wrapper(mod),
+		};
+		await built.prewarm(doc as never).catch((error: unknown) => {
+			if (
+				error instanceof Error &&
+				"code" in error &&
+				(error as NodeJS.ErrnoException).code === "ENOENT"
+			)
+				return;
+			throw error;
+		});
+		const checked = check(doc as never, ctx);
+		const allErrors = [...errors, ...checked.errors];
+		if (allErrors.length > 0)
+			throw new Error(`render check failed for "${unit.id}": ${allErrors[0]}`);
+		const rendered = elaborate(doc as never, ctx);
+		if (rendered.errors.length > 0)
+			throw new Error(`render failed for "${unit.id}": ${rendered.errors[0]}`);
+		runBeforeDump(doc as never, unit.id);
+		const snapshot = serializeSnapshot(doc as never);
+		const files = await writeSnapshot(ws, unit, snapshot);
+		return {
+			id: unit.id,
+			snapshot,
+			warnings: [...checked.warnings, ...rendered.warnings],
+			files,
+		};
+	} finally {
+		await win.happyDOM.close();
+	}
+}
+
+/** Same write as POST /api/dump: connect XML snapshot, then .sv files. */
+async function writeSnapshot(
+	ws: WorkspaceConfig,
+	unit: ConnectUnit,
+	snapshot: string,
+): Promise<string[]> {
+	assertPrintable(snapshot);
+	const mods = parseSnapshot(snapshot);
+	assertModuleNames(mods);
+	if (mods.length === 0)
+		throw new Error(`render dump: "${unit.id}" snapshot has no module`);
+	if (unit.kind === "connect") {
+		await mkdir(connectDir(ws), { recursive: true });
+		await writeFile(
+			join(connectDir(ws), `${unit.id}.xml`),
+			`${connectXml(unit.id, mods)}\n`,
+			"utf8",
+		);
+	}
+	return writeSvFiles(
+		mods,
+		resolve(ws.root, unitDumpDir(ws, unit.kind)),
+		unit.id,
+		{
+			portAlign: ws.stylePortAlign,
+			paramAlign: ws.styleParamAlign,
+			instPortAlign: ws.styleInstPortAlign,
+			instParamAlign: ws.styleInstParamAlign,
+			instPortDir: ws.styleInstPortDir,
+			instPortDirFormat: ws.styleInstPortDirFormat,
+			instPortWidth: ws.styleInstPortWidth,
+			signalAlign: ws.styleSignalAlign,
+		},
+	);
+}

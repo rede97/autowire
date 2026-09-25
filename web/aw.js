@@ -1335,8 +1335,11 @@ function escapeXml(s) {
 function serializeEl(el, indent, out) {
   const tag = (el.tagName ?? "").toLowerCase();
   const attrs = [];
-  for (const a of el.attributes ?? [])
+  for (const a of el.attributes ?? []) {
+    if (a.name === "aria-label")
+      continue;
     attrs.push([a.name, a.value]);
+  }
   attrs.sort((x, y) => x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0);
   const pad = "  ".repeat(indent);
   const kids = [...el.children ?? []];

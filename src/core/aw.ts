@@ -1947,7 +1947,11 @@ function escapeXml(s: string): string {
 function serializeEl(el: Element, indent: number, out: string[]): void {
 	const tag = (el.tagName ?? "").toLowerCase();
 	const attrs: [string, string][] = [];
-	for (const a of el.attributes ?? []) attrs.push([a.name, a.value]);
+	for (const a of el.attributes ?? []) {
+		// Playwright-only label. Not part of the netlist.
+		if (a.name === "aria-label") continue;
+		attrs.push([a.name, a.value]);
+	}
 	attrs.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
 	const pad = "  ".repeat(indent);
 	const kids = [...(el.children ?? [])];

@@ -28,7 +28,8 @@ What it is
   Connectivity is one HTML + <script>. After the browser runs the script, the live DOM is the netlist.
   Hand the render result to autowire; it writes RTL, then DV.
   Early path: aw.js + local web page; debug via Playwright MCP (browser, isolated).
-  Later: headless cli, locked by Web / Playwright goldens.
+  Settled path: autowire render — happy-dom runs the same HTML + module scripts,
+  then the same check → elaborate → before-dump pipeline. Playwright stays for debug.
   MCP vs tools: tools own generate/check/render/dump; MCPs must not be a live netlist engine.
   Two MCP paths (docs/mcp/): Playwright = runtime debug; Workspace = author HTML + RtlIndex
   (edit/search/analysis) — not landed; generating still requires explicit Web tool path.
@@ -52,7 +53,8 @@ You can do now
      search; does not elaborate; call web for check/render/dump when results are needed.
   3. Run check on aw-content (legality + deps) separately from render/dump; dump should refuse unclean check.
   4. Dump via same-origin POST /api/dump (reads aw-render); browser must not write the workspace.
-  5. Do not build cli before Web cases and goldens exist.
+  5. autowire render [unit] when the design is settled and a browser is not needed.
+     Same module scripts and aw-render as web. It does not write .sv; dump does.
 
 Rules of engagement
   Edit this help (src/cli/help.ts) when behavior changes; format constraints live in docs/.
@@ -77,9 +79,9 @@ Landed
   Playwright cases/golden   src/e2e-web.test.ts + test/golden/*.sv (headless Chromium)
   Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
   aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; dump → sim_dir
+  autowire render [unit]    happy-dom: scripts → elaborate → write .sv (no browser)
 
 Not landed
-  autowire cli              build only after Web cases/goldens prove stable
   Workspace MCP             author HTML node edit + RtlIndex search (docs/mcp/workspace.md)
 
 Parallel (does not block connect)
@@ -404,16 +406,17 @@ Do not treat hand-rolled fake-dump scripts as the official path.
 `,
 
 	cli: `\
-autowire cli (later; do not build now)
+autowire render (landed; happy-dom, no browser)
 
-  autowire cli phy.html --check
-  autowire cli phy.html --dump gen/
+  autowire render [unit]
 
-Build only after Web / Playwright tests and goldens are stable.
-Same aw.js extract logic (in-process or headless browser).
---check validates only; --dump writes RTL and should imply --check.
-cli must pass existing Web tests (same HTML → same RTL).
-Building cli before tests is not allowed.
+Runs the same pipeline as the web page for a settled design:
+  HTML module scripts (aw.on) → before-instances → check → elaborate
+  → before-dump → write .sv (same files as POST /api/dump).
+
+Module scripts must be type="module" and use only DOM / aw.*.
+happy-dom and Chromium must produce the same snapshot for the same HTML.
+Playwright remains the debug path. No browser is required to write RTL.
 `,
 
 	deps: `\
@@ -473,7 +476,7 @@ function commandIndex(): string {
 		"  web [unit]                local connect page → help web | check | dump",
 		"  check [unit]              validate HTML + deps (no write) → help check",
 		"  plugin generate [id]      type-A generate → plugins_dir   → help status",
-		"  cli …                     headless later (not landed)    → help cli",
+		"  render [unit]              happy-dom render → .sv (no browser) → help cli",
 		"",
 		"Also: help status | connect | dont",
 		"Docs: docs/   (format constraints; keep in sync with help)",
@@ -495,7 +498,7 @@ function topicsIndex(): string {
 		"  web        local page",
 		"  check      validate HTML + deps",
 		"  dump       write-back RTL",
-		"  cli        later headless",
+		"  cli        happy-dom render",
 		"  deps       dependency tree",
 		"  dont       forbidden items",
 		"",

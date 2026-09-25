@@ -87,6 +87,7 @@
 - golden 比对 render，不比对脚本源。  
 - **禁止**在 golden / dump 前用脚本改 render 来「对齐」期望。  
 - 插件：类型 A generate 在流水线外；类型 B expand 见 [`../plugins/README.md`](../plugins/README.md)。
+- `autowire render` 用 happy-dom 执行本节脚本并走同一流水线，快照必须与 Chromium 一致，然后按 dump 规则写 `.sv`。不需要浏览器。
 
 ## 6. 裁定（随 aw.js 落地）
 

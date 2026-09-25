@@ -1,6 +1,6 @@
 # 工作区配置 `autowire.toml`（实现约束）
 
-> 状态：**已实现**（`init` / `analysis` / `web` / `check` / `/api/dump`；`cli` 未落地）。  
+> 状态：**已实现**（`init` / `analysis` / `web` / `check` / `render` / `/api/dump`）。`render` 用 happy-dom 执行脚本、elaborate，并写出与 dump 相同的 `.sv`。  
 > **产出三分目录 + `[sim.<id>]`**：文档已定（§4.0 / §4.1.1）；实现仍兼容旧 `[dump] dir`——迁移未完成前以代码为准，改实现时同步 help。  
 > 摘要切片：`bun index.ts help workspace`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  

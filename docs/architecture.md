@@ -72,16 +72,15 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 dump **应当**隐含 `check → render`（**Render 依赖 Check**，见 [workspace/web-ui.md](./workspace/web-ui.md) §3.1）；check 有 error 时 **必须**拒绝 render 与写盘。render 可印性（无残留 template/rewrite）由 dump 门禁负责，**不是** Check 按钮的职责。
 服务端 `/api/dump` 写盘前对该单元作者 HTML 重跑 check，有 error 即 422 拒绝，不依赖页面先跑过 check；快照里的模块名即 `.sv` 文件名，必须是纯 SV 标识符。所有 `/api/*` 只接受本机 `Host`、`Origin` 缺省或同源的请求，POST 必须是 `application/json`，防止用户浏览器里的其它网页借道写工作区。
 
-### 2.6 `autowire cli`（后期）
+### 2.6 `autowire render`（happy-dom，已实现）
 
-等 Web 测试用例和 golden 稳定，再做完全无头 CLI（同一套抽取逻辑，进程内或无头浏览器）：
+项目主体敲定、不需要浏览器调试时，用 happy-dom 跑和页面相同的流水线：
 
 ```text
-autowire cli phy.html --check
-autowire cli phy.html --dump gen/
+autowire render [unit]
 ```
 
-`deps` 等 RtlIndex 查询可另挂在 cli 上，与连接渲染分开。`--dump` **应当**隐含 `--check`。
+顺序与页面一致：执行作者 HTML 的 `<script type="module">`（`aw.on`）→ `before-instances` → check → elaborate → `before-dump` → 写 `.sv` 与 connect XML。写盘规则与 `POST /api/dump` 相同，不经过浏览器。同一份 HTML 在 happy-dom 与 Chromium 中的快照必须一致。Playwright 继续负责调试。
 
 ## 3. Agent MCP：工具边界与双途径
 
@@ -89,7 +88,7 @@ autowire cli phy.html --dump gen/
 
 | 途径 | 场景 | 状态 |
 |---|---|---|
-| **工具** | analysis / check / render / dump / 插件 generate | 连接核心已落地（cli 除外） |
+| **工具** | analysis / check / render / dump / 插件 generate | 已落地；`render` 为 happy-dom，dump 仍是唯一写 RTL 路径 |
 | **A. Playwright MCP** | 隔离调试：活 DOM，不另做连线 outline MCP | 已落地（`.mcp.json`） |
 | **B. 工作区 MCP** | 作者 HTML 节点 Edit；RtlIndex 检索；analysis/reload | 草稿，见 [`mcp/workspace.md`](./mcp/workspace.md) |
 
