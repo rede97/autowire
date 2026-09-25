@@ -57,8 +57,60 @@
 3. **禁止** v1 端点使用 Pipelined `STALL`。  
 4. **禁止**再引入第二套 cfg 内核信号名。  
 5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
-6. **TGA 建模（已裁定）**：`Bus(..., { tagWidth? })` = fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）；`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
+6. **TGA 建模（已裁定）**：`Bus(..., { tagWidth? })` = fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）；`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。**tag 的分配 / 来源 / 跨表共享见 §2.1（提案）。**
 7. **Decode 槽位名**：生成 `localparam SLOT_<SLAVE>`（slave 名大写，从 0 起）；`slot_sel` 下标与 one-hot 赋值 **必须**用该名（`slot_sel[SLOT_SD1]`、`slot_sel = NS'd1 << SLOT_SD1`），**禁止**裸十进制下标。
+
+### 2.1 Tag 域：分配 / 来源 / 透传（提案，待裁定）
+
+> 状态：**提案**，未实现。落地前 §2 规则 6 的 `tagWidth` + 「各 slave `tag` 取最大」仍是现行行为。
+
+现状的问题：`Shadow(name, copies, tagBits)` 写在 `RegfileDef` 里。多个表共用同一 shadow（HBM：16 channel × `aword`/`dword*`）时要抄 N 份，且每份各自声明 `"1:0"`——跨表位置是否同义 **无人校验**（今天只校验 `Slave.tag === 叶子 tga_width`）。
+
+拆成三层，各管一件事：
+
+| 层 | 归属 | 管什么 |
+|---|---|---|
+| **`ShadowDomain(name, copies, width)`** | 独立 `.ts` 共享导出（与 `RegfileDef` / `BusDef` 同级，互相 import） | 域的**唯一定义**：名字、拷贝数、位宽 |
+| **`Bus(..., { tags })`** | fabric | 该总线 TGA 的**拼接顺序**与每个域的**来源** |
+| **Cell `.shadow(domain)`** | regfile 叶子 | 哪些 cell 被复制；**per-copy `reset`**（如各 pstate 的频点）仍留在各表 |
+
+域定义只有一处，`copies` / 位宽不再在每张表里重复；叶子只声明「我被这个域复制」。
+
+**来源写法**：`tags` 数组里 —— **裸写域名 = 透传（从 uplink 继承）**，**套 `TagFrom*` = 在本层产生**。
+
+| 写法 | 语义 |
+|---|---|
+| `pstate` | 透传：本层不产生；值来自 `Master("uplink")`（或普通 master 口）的 TGA |
+| `TagFromAddr(pstate, "22:21")` | 从本层 `ADR` 切片产生 |
+| `TagFromPin(pstate)` | 本层出一个输入口（如全局 pstate 控制器）产生 |
+| `TagFromReg(pstate, cell.field)` | 由本 fabric 内挂接 regfile 的某个 regbit 产生（省掉「出叶子→绕总线→回来」） |
+
+两层 decoder 的差异是**推导出来的**，不必手写（HBM：channel 层产生、channel 内层透传）：
+
+```ts
+// level 1: channel decoder —— 从地址产生
+export const hbm = Bus("hbm", "HBM channel decoder", {
+  tags: [TagFromAddr(pstate, "22:21")],
+  slaves: [SlaveBus(hbm_ch, 0x0000_0000, { id: "ch0", size: Size(0x1000) }) /* ...ch15 */],
+})
+
+// level 2: channel 内部 —— 透传
+export const hbm_ch = Bus("hbm_ch", "aword + 2x dword", {
+  tags: [pstate],
+  masters: [Master("uplink", "from channel decoder")],
+  slaves: [SlaveRegfile(aword, 0x000), SlaveRegfile(dword0, 0x100), SlaveRegfile(dword1, 0x200)],
+})
+```
+
+规则：
+
+1. **单一来源**：同一域在一条 uplink 路径上 **必须**只被产生一次；子总线对已由父级产生的域再写 `TagFrom*` → **报错**。
+2. **`TagFromAddr` 必须剥位**：这些 ADR 位 **不参与** slave 译码——比较与转发（今天的 `adr & ~mask`）都先抹掉，于是**一条**窗口声明覆盖全部 `2^w` 个别名地址，**禁止**为每个 tag 值各写一个 slave。
+3. **`TagFromAddr` 撑开地址空间**：`[22:21]` ⇒ 别名步长 `0x20_0000`、共 4 份、整条总线译码空间到 `0x80_0000`。软件视角 = 「切 pstate 后按原地址访问」。
+4. **位不许重叠**：tag 位与**任何** slave 窗口（含 `SlaveBus` 的 channel 窗）重叠 → `Bus()` 构造期 **报错**，不得留到仿真。
+5. **`SlaveBus` 的 tag 由子总线推导**：父级 **不应当**手写 `tag:`（今天 `SlaveBus` 把 `opts.tag` 原样交给 `SlaveRegion`，16 次例化就有 16 次填错机会）。声明不一致 → 报错。
+6. 透传层 **不解释**位语义（与规则 5 一致）；`wb_cfg_pipe` 的 `{m_tga, m_adr}` 打包路径不变。
+7. `TagFromAddr` 与 `TagFromPin` / `TagFromReg` **禁止**同时作用于同一域（与规则 1 同源）。
 
 ## 3. 长路径 pipe（写 posted / 读阻塞）
 
@@ -197,6 +249,7 @@ uvm = "dv/ral"           # ral_block_<name>.sv
 4. 固件窗 + DMA：块周期连续写是否进 v2。  
 5. 默认 slave `pipe`（现缺省 0；作者按口配置）。  
 6. SlaveBus downlink（子 DMA 打回父级窗口）— v1 **不**自动生成。  
+7. **Tag 域三条（§2.1 提案）**：shadow 域上移为独立共享导出、`tags` 的来源声明（裸=透传 / `TagFrom*`=本层产生）、`SlaveBus` tag 由子总线推导。
 
 **已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。  
 **已裁定软件图 / 挂接**：`SlaveRegfile(RegfileDef, …)` + Type-A wrapper + bus C overlay / `uvm_reg_block`（见 §6）。  

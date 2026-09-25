@@ -251,6 +251,7 @@ function addBusMapSheet(wb: ExcelJS.Workbook, def: BusDef): void {
 	ws.getColumn(11).width = 40;
 	for (const slave of hangs) {
 		const rf = slave.regfile;
+		if (!rf) continue;
 		const laid = layoutRegfile(rf);
 		const sheet = effectiveSheet(rf);
 		for (const cell of laid.cells) {

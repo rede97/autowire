@@ -37,6 +37,26 @@
 7. **RISC-V 前缀**：固件脚本默认探测含 `riscv32-unknown-elf-`，装 UCRT64 包后无需 `CROSS=`。
 8. **写代码 / 测试时的路径纪律**：比较路径前先把 `\` 归一为 `/`（或用 `node:path` 的 `basename` / `join`）；toml 与文档里的路径写 `/`；需要外部工具的用例用 `Bun.which` 探测，缺失时 `test.skip`，不要报红。
 
+### 2.1 Git Bash 与 MSYS2 UCRT64 不是同一个环境
+
+这是两个容易混淆、但不能互换的工具环境：
+
+- **Git Bash**：通常来自 `C:\Program Files\Git\bin\bash.exe`，用于 Git for Windows 的 shell 体验；它不是 MSYS2 UCRT64 终端。
+- **MSYS2 UCRT64**：使用 MSYS2 的 shell，运行时应有 `MSYSTEM=UCRT64`；UCRT64 工具从 `/ucrt64/bin` 提供，MSYS2 公共工具（例如 `make`）可能从 `/usr/bin` 提供。
+
+因此：
+
+1. 运行 `demo/soc` 的 bash smoke 时，必须确认是在真正的 **MSYS2 UCRT64** shell 中；仅调用 Git Bash，或只把 `C:\msys64\ucrt64\bin` 拼到 Git Bash 的 PATH，不能证明 MSYS2 环境可用。
+2. 在 MSYS2 UCRT64 shell 中，应分别检查：
+
+   ```bash
+   printf 'MSYSTEM=%s\n' "$MSYSTEM"
+   command -v make       # 可能是 /usr/bin/make
+   command -v verilator  # 应来自 /ucrt64/bin
+   ```
+
+3. 不要因为 `make` 不在 `/ucrt64/bin` 就判断 MSYS2 缺少 make；先检查 `/usr/bin/make`。反过来，也不要用 Git Bash 找到的 `make` / `bash` 结果代替 MSYS2 UCRT64 自检。
+
 ## 3. 安装清单
 
 ```bash

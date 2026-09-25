@@ -6,6 +6,7 @@ module sd_sha_ch (
 	input  logic [31:0] i_wb_adr,
 	input  logic [31:0] i_wb_dat,
 	input  logic [3:0]  i_wb_sel,
+	input  logic [1:0]  i_wb_tga,
 	input  logic        i_wb_cyc,
 	input  logic        i_wb_stb,
 	input  logic        i_wb_we,
@@ -70,6 +71,7 @@ module sd_sha_ch (
 		.eng_o_wb_adr   (eng_o_wb_adr    ), // i [31:0]
 		.eng_o_wb_dat   (eng_o_wb_dat    ), // i [31:0]
 		.eng_o_wb_sel   (eng_o_wb_sel    ), // i [3:0]
+		.eng_o_wb_tga   (2'd0            ), // i [1:0]
 		.eng_o_wb_cyc   (eng_o_wb_cyc    ), // i
 		.eng_o_wb_stb   (eng_o_wb_stb    ), // i
 		.eng_o_wb_we    (eng_o_wb_we     ), // i
@@ -80,6 +82,7 @@ module sd_sha_ch (
 		.i_wb_adr       (i_wb_adr        ), // i [31:0]
 		.i_wb_dat       (i_wb_dat        ), // i [31:0]
 		.i_wb_sel       (i_wb_sel        ), // i [3:0]
+		.i_wb_tga       (i_wb_tga        ), // i [1:0]
 		.i_wb_cyc       (i_wb_cyc        ), // i
 		.i_wb_stb       (i_wb_stb        ), // i
 		.i_wb_we        (i_wb_we         ), // i

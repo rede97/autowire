@@ -10,6 +10,7 @@ import {
 	type WbMaster,
 } from "./dsl.ts";
 import { busModuleKind, busSystemModuleName, type FabricPort } from "./emit.ts";
+import { tagPlan } from "./tag.ts";
 
 export const MASTER_MODULES = [
 	"wb_sync_cell",
@@ -197,7 +198,7 @@ export function masterFacePorts(def: BusDef): FabricPort[] {
 				? apbFacePorts(m, def.addr_width)
 				: b === "jtag"
 					? jtagFacePorts(m)
-					: wbFacePorts(m, def.addr_width, def.tag_width);
+					: wbFacePorts(m, def.addr_width, tagPlan(def).masterWidth);
 		const [first, ...rest] = ports;
 		if (!first) continue;
 		out.push({ ...first, comment: faceComment(m) }, ...rest);
@@ -423,7 +424,7 @@ function emitJtagMaster(m: WbMaster, aw: number, tw: number): string[] {
 /** Internal nets + bridge / CDC instances for every bridged master. */
 export function emitMasterBlocks(def: BusDef): string[] {
 	const aw = def.addr_width;
-	const tw = def.tag_width;
+	const tw = tagPlan(def).masterWidth;
 	const out: string[] = [];
 	for (const m of bridgedMasters(def)) {
 		const b = masterBridge(m);

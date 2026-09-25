@@ -20,6 +20,7 @@ import {
 	masterFacePorts,
 	masterSummary,
 } from "./emit-master.ts";
+import { tagPlan } from "./tag.ts";
 
 function hex(n: number): string {
 	return n.toString(16).padStart(8, "0");
@@ -88,7 +89,8 @@ function cascadeWrapperPorts(def: BusDef): Array<{
 	comment?: string;
 }> {
 	const aw = def.addr_width;
-	const tw = def.tag_width;
+	// Uplink face carries only what the parent still passes down.
+	const tw = tagPlan(def).masterWidth;
 	const ports: Array<{
 		dir: "input" | "output";
 		packed: string;

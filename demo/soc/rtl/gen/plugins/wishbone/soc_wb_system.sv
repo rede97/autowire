@@ -15,11 +15,12 @@ module soc_wb_system (
 	input  logic        clk,
 	input  logic        rst_n,
 	input  logic        rb_grant_en,
+	// Tag domain bank — produced here (TagFromPin)
+	input  logic [1:0]  bank_tag_i,
 	// Master cpu — picorv32_wb
 	input  logic [31:0] cpu_o_wb_adr,
 	input  logic [31:0] cpu_o_wb_dat,
 	input  logic [3:0]  cpu_o_wb_sel,
-	input  logic [1:0]  cpu_o_wb_tga,
 	input  logic        cpu_o_wb_cyc,
 	input  logic        cpu_o_wb_stb,
 	input  logic        cpu_o_wb_we,
@@ -74,6 +75,7 @@ module soc_wb_system (
 	output logic [31:0] ch0_i_wb_adr,
 	output logic [31:0] ch0_i_wb_dat,
 	output logic [3:0]  ch0_i_wb_sel,
+	output logic [1:0]  ch0_i_wb_tga,
 	output logic        ch0_i_wb_cyc,
 	output logic        ch0_i_wb_stb,
 	output logic        ch0_i_wb_we,
@@ -83,6 +85,7 @@ module soc_wb_system (
 	output logic [31:0] ch1_i_wb_adr,
 	output logic [31:0] ch1_i_wb_dat,
 	output logic [3:0]  ch1_i_wb_sel,
+	output logic [1:0]  ch1_i_wb_tga,
 	output logic        ch1_i_wb_cyc,
 	output logic        ch1_i_wb_stb,
 	output logic        ch1_i_wb_we,
@@ -167,7 +170,6 @@ module soc_wb_system (
 	logic [31:0] dbg_fab_adr;
 	logic [31:0] dbg_fab_wdat;
 	logic [3:0]  dbg_fab_sel;
-	logic [1:0]  dbg_fab_tga;
 	logic        dbg_fab_cyc;
 	logic        dbg_fab_stb;
 	logic        dbg_fab_we;
@@ -204,7 +206,7 @@ module soc_wb_system (
 		.wb_rdat   (dbg_src_rdat)
 	);
 
-	wb_cdc #(.AW(32), .TW(2), .TIMEOUT(0)) u_dbg_cdc (
+	wb_cdc #(.AW(32), .TW(0), .TIMEOUT(0)) u_dbg_cdc (
 		.s_clk  (dbg_tck),
 		.s_rst_n(dbg_trst_n),
 		.s_cyc  (dbg_src_cyc),
@@ -213,7 +215,6 @@ module soc_wb_system (
 		.s_adr  (dbg_src_adr),
 		.s_dat  (dbg_src_wdat),
 		.s_sel  (dbg_src_sel),
-		.s_tga  (2'd0),
 		.s_ack  (dbg_src_ack),
 		.s_err  (dbg_src_err),
 		.s_rdat (dbg_src_rdat),
@@ -225,7 +226,6 @@ module soc_wb_system (
 		.m_adr  (dbg_fab_adr),
 		.m_dat  (dbg_fab_wdat),
 		.m_sel  (dbg_fab_sel),
-		.m_tga  (dbg_fab_tga),
 		.m_ack  (dbg_fab_ack),
 		.m_rdat (dbg_fab_rdat)
 	);
@@ -234,10 +234,10 @@ module soc_wb_system (
 		.clk               (clk),
 		.rst_n             (rst_n),
 		.rb_grant_en       (rb_grant_en),
+		.bank_tag_i        (bank_tag_i),
 		.cpu_o_wb_adr      (cpu_o_wb_adr),
 		.cpu_o_wb_dat      (cpu_o_wb_dat),
 		.cpu_o_wb_sel      (cpu_o_wb_sel),
-		.cpu_o_wb_tga      (cpu_o_wb_tga),
 		.cpu_o_wb_cyc      (cpu_o_wb_cyc),
 		.cpu_o_wb_stb      (cpu_o_wb_stb),
 		.cpu_o_wb_we       (cpu_o_wb_we),
@@ -246,7 +246,6 @@ module soc_wb_system (
 		.dbg_o_wb_adr      (dbg_fab_adr),
 		.dbg_o_wb_dat      (dbg_fab_wdat),
 		.dbg_o_wb_sel      (dbg_fab_sel),
-		.dbg_o_wb_tga      (dbg_fab_tga),
 		.dbg_o_wb_cyc      (dbg_fab_cyc),
 		.dbg_o_wb_stb      (dbg_fab_stb),
 		.dbg_o_wb_we       (dbg_fab_we),
@@ -295,6 +294,7 @@ module soc_wb_system (
 		.ch0_i_wb_adr      (ch0_i_wb_adr),
 		.ch0_i_wb_dat      (ch0_i_wb_dat),
 		.ch0_i_wb_sel      (ch0_i_wb_sel),
+		.ch0_i_wb_tga      (ch0_i_wb_tga),
 		.ch0_i_wb_cyc      (ch0_i_wb_cyc),
 		.ch0_i_wb_stb      (ch0_i_wb_stb),
 		.ch0_i_wb_we       (ch0_i_wb_we),
@@ -303,6 +303,7 @@ module soc_wb_system (
 		.ch1_i_wb_adr      (ch1_i_wb_adr),
 		.ch1_i_wb_dat      (ch1_i_wb_dat),
 		.ch1_i_wb_sel      (ch1_i_wb_sel),
+		.ch1_i_wb_tga      (ch1_i_wb_tga),
 		.ch1_i_wb_cyc      (ch1_i_wb_cyc),
 		.ch1_i_wb_stb      (ch1_i_wb_stb),
 		.ch1_i_wb_we       (ch1_i_wb_we),

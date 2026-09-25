@@ -1,0 +1,24 @@
+# autowire workspace: HBM-style two-level Wishbone fabric (bus generator only).
+# No hand-written RTL and no connect HTML — this demo exercises the bus plugin:
+#   level 1  hbm      channel decoder; produces the pstate tag from ADR[22:21]
+#   level 2  hbm_ch   aword + dword0 + dword1; passes the tag through
+# Run from this directory: bun ../../index.ts plugin generate wishbone
+
+[dump]
+plugins_dir = "rtl/gen/plugins"
+
+# Packed software exports (not SoT)
+[plugins.wishbone]
+c = "fw/gen/wishbone"
+export = "fw/gen/wishbone/wishbone.xlsx"
+uvm = "dv/ral"
+
+# Author SoT
+[wishbone.aword]
+ts = "sot/wb_reg_aword.ts"
+
+[wishbone.dword]
+ts = "sot/wb_reg_dword.ts"
+
+[wishbone.hbm]
+ts = "sot/wb_bus_hbm.ts"

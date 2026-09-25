@@ -110,12 +110,14 @@ module soc_top (
 	logic [31:0] ch0_i_wb_adr;
 	logic [31:0] ch0_i_wb_dat;
 	logic [3:0]  ch0_i_wb_sel;
+	logic [1:0]  ch0_i_wb_tga;
 	logic        ch0_i_wb_cyc;
 	logic        ch0_i_wb_stb;
 	logic        ch0_i_wb_we;
 	logic [31:0] ch1_i_wb_adr;
 	logic [31:0] ch1_i_wb_dat;
 	logic [3:0]  ch1_i_wb_sel;
+	logic [1:0]  ch1_i_wb_tga;
 	logic        ch1_i_wb_cyc;
 	logic        ch1_i_wb_stb;
 	logic        ch1_i_wb_we;
@@ -173,10 +175,10 @@ module soc_top (
 		.clk               (clk               ), // i
 		.rst_n             (rst_ni            ), // i
 		.rb_grant_en       (rg_rb_grant_en    ), // i
+		.bank_tag_i        (rg_bank_sel       ), // i [1:0]
 		.cpu_o_wb_adr      (cpu_o_wb_adr      ), // i [31:0]
 		.cpu_o_wb_dat      (cpu_o_wb_dat      ), // i [31:0]
 		.cpu_o_wb_sel      (cpu_o_wb_sel      ), // i [3:0]
-		.cpu_o_wb_tga      (rg_bank_sel       ), // i [1:0]
 		.cpu_o_wb_cyc      (cpu_o_wb_cyc      ), // i
 		.cpu_o_wb_stb      (cpu_o_wb_stb      ), // i
 		.cpu_o_wb_we       (cpu_o_wb_we       ), // i
@@ -244,12 +246,14 @@ module soc_top (
 		.ch0_i_wb_adr      (ch0_i_wb_adr      ), // o [31:0]
 		.ch0_i_wb_dat      (ch0_i_wb_dat      ), // o [31:0]
 		.ch0_i_wb_sel      (ch0_i_wb_sel      ), // o [3:0]
+		.ch0_i_wb_tga      (ch0_i_wb_tga      ), // o [1:0]
 		.ch0_i_wb_cyc      (ch0_i_wb_cyc      ), // o
 		.ch0_i_wb_stb      (ch0_i_wb_stb      ), // o
 		.ch0_i_wb_we       (ch0_i_wb_we       ), // o
 		.ch1_i_wb_adr      (ch1_i_wb_adr      ), // o [31:0]
 		.ch1_i_wb_dat      (ch1_i_wb_dat      ), // o [31:0]
 		.ch1_i_wb_sel      (ch1_i_wb_sel      ), // o [3:0]
+		.ch1_i_wb_tga      (ch1_i_wb_tga      ), // o [1:0]
 		.ch1_i_wb_cyc      (ch1_i_wb_cyc      ), // o
 		.ch1_i_wb_stb      (ch1_i_wb_stb      ), // o
 		.ch1_i_wb_we       (ch1_i_wb_we       ), // o
@@ -371,6 +375,7 @@ module soc_top (
 		.i_wb_adr          (ch0_i_wb_adr      ), // i [31:0]
 		.i_wb_dat          (ch0_i_wb_dat      ), // i [31:0]
 		.i_wb_sel          (ch0_i_wb_sel      ), // i [3:0]
+		.i_wb_tga          (ch0_i_wb_tga      ), // i [1:0]
 		.i_wb_cyc          (ch0_i_wb_cyc      ), // i
 		.i_wb_stb          (ch0_i_wb_stb      ), // i
 		.i_wb_we           (ch0_i_wb_we       ), // i
@@ -394,6 +399,7 @@ module soc_top (
 		.i_wb_adr          (ch1_i_wb_adr      ), // i [31:0]
 		.i_wb_dat          (ch1_i_wb_dat      ), // i [31:0]
 		.i_wb_sel          (ch1_i_wb_sel      ), // i [3:0]
+		.i_wb_tga          (ch1_i_wb_tga      ), // i [1:0]
 		.i_wb_cyc          (ch1_i_wb_cyc      ), // i
 		.i_wb_stb          (ch1_i_wb_stb      ), // i
 		.i_wb_we           (ch1_i_wb_we       ), // i

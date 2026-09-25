@@ -126,6 +126,13 @@ Parallel (does not block connect)
     SEL byte-masked writes (RW/RWW RMW, W1C/W1P masked); RWE ext_<field>_wstrb;
     W1C c_rg_<field>_set hw set (set wins); RWW same-cycle SW > HW;
     RWE o_<shadow>_sel (lowest set bit) + optional ext_<field>_ready;
+    tag domains (docs/plugins/wishbone-bus.md 2.1; PROPOSAL, not landed):
+      hoist ShadowDomain(name, copies, width) to its own shared export;
+      Bus tags= declares TGA order + source — bare name = pass through from
+      uplink, TagFromAddr/TagFromPin/TagFromReg = produced at this level;
+      one source per domain per path; TagFromAddr bits are stripped from slave
+      decode (one window covers all aliases) and must not overlap any window;
+      SlaveBus tag derives from the child bus, never hand-written;
     Access RC = ReadConst (reset= baked readback);
     wide-field split: comments/desc name[hi:lo] of [W-1:0] (index 0 = LSB);
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;

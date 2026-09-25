@@ -151,11 +151,12 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("[15:0] m_adr_i");
 	});
 
-	test("demo interconnect muxes master TGA and forwards smoke TGA", () => {
+	test("demo interconnect produces smoke TGA and forwards it", () => {
 		const sv = emitBusSv(soc_wb);
 		expect(soc_wb.tag_width).toBe(2);
-		expect(sv).toContain("cpu_o_wb_tga");
-		expect(sv).toContain("dbg_o_wb_tga");
+		expect(sv).toContain("bank_tag_i");
+		expect(sv).not.toContain("cpu_o_wb_tga");
+		expect(sv).not.toContain("dbg_o_wb_tga");
 		expect(sv).toContain("g_tga[1:0]");
 		expect(sv).not.toContain("sram_i_wb_tga");
 		expect(sv).toContain("localparam int unsigned SLOT_SRAM");

@@ -354,8 +354,12 @@ export class CellOptsElem {
 	}
 
 	/** Shadow for this entire cell (all packed fields share it). */
-	shadow(name: string): CellOptsElem {
-		return new CellOptsElem(this.#offset, this.#bits_align, name);
+	shadow(name: string | ShadowDomainDef): CellOptsElem {
+		return new CellOptsElem(
+			this.#offset,
+			this.#bits_align,
+			isShadowDomain(name) ? name.name : name,
+		);
 	}
 
 	toOpts(): {
@@ -517,13 +521,15 @@ export class RegfileOptsElem {
 		);
 	}
 
-	shadows(...shadows: ShadowElem[]): RegfileOptsElem {
+	shadows(...shadows: (ShadowElem | ShadowDomainDef)[]): RegfileOptsElem {
 		return new RegfileOptsElem(
 			this.#sheet,
 			this.#addr_width,
 			this.#bytes_align,
 			this.#read_write_block,
-			shadows.map((s) => s.toShadow()),
+			shadows.map((s) =>
+				isShadowDomain(s) ? shadowOf(s).toShadow() : s.toShadow(),
+			),
 			this.#note,
 		);
 	}
@@ -714,6 +720,50 @@ export function Shadow(
 	tagBits: string,
 ): ShadowElem {
 	return new ShadowElem(name, copies, tagBits);
+}
+
+/**
+ * Shared shadow domain (contract: docs/plugins/wishbone-bus.md 2.1).
+ * Declared once in its own module and imported by every RegfileDef that
+ * replicates on it, plus the BusDef that carries its TGA slice. Replaces
+ * copy/pasting `Shadow(name, copies, tagBits)` into each table.
+ */
+export interface ShadowDomainDef {
+	readonly kind: "wishbone-shadow-domain";
+	readonly name: string;
+	readonly copies: number;
+	readonly tag_bits: string;
+	readonly desc?: string;
+}
+
+export function ShadowDomain(
+	name: string,
+	copies: number,
+	tagBits: string,
+	desc?: string,
+): ShadowDomainDef {
+	// Reuse ShadowElem validation so a domain and a local Shadow cannot diverge.
+	const checked = new ShadowElem(name, copies, tagBits).toShadow();
+	return {
+		kind: "wishbone-shadow-domain",
+		name: checked.name,
+		copies: checked.copies,
+		tag_bits: checked.tag_bits,
+		...(desc !== undefined ? { desc } : {}),
+	};
+}
+
+export function isShadowDomain(v: unknown): v is ShadowDomainDef {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		(v as ShadowDomainDef).kind === "wishbone-shadow-domain"
+	);
+}
+
+/** Domain → local ShadowElem so `.remaps()` / `.innerShadowMux()` still apply. */
+export function shadowOf(domain: ShadowDomainDef): ShadowElem {
+	return new ShadowElem(domain.name, domain.copies, domain.tag_bits);
 }
 
 // ---------------------------------------------------------------------------

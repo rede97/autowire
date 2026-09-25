@@ -13,6 +13,7 @@ import {
 	UPLINK_MASTER,
 } from "../../../src/plugins/wishbone-bus/dsl.ts";
 import { sha256 } from "./wb_reg_sha256.ts";
+import { bank } from "./wb_tag_domains.ts";
 
 export const sd_sha = Bus(
 	"sd_sha",
@@ -22,6 +23,7 @@ export const sd_sha = Bus(
 			Master(UPLINK_MASTER, "Parent decoder cascade"),
 			Master("eng", "sd_rd_dma engine"),
 		],
+		tags: [bank],
 		slaves: [
 			SlaveRegion("sd", "sdspi CSR", 0x0, Size(16), { pipe: 2 }),
 			SlaveRegion("dma", "sd_rd_dma CSR", 0x10, Size(16), { pipe: 3 }),

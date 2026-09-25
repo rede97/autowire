@@ -381,6 +381,8 @@ effective_<s>_sel = wb_tga[tag-bits]   // tagBits 强制；无 local_sel / 无 t
 - v1 **只开 `wb_tga`**，不开 `tgc`/`tgd` 作 shadow 索引。  
 - 硬件若要「跨当前 pstate 改下一 bank」：走 **`inner_shadow_mux=false`** 的旁路数组 / RWE 自理，**不**另开本地 sel 接管。
 
+**域上移（提案，待裁定）**：`Shadow(name, copies, tagBits)` 写在本表内 ⇒ 多表共用同一域（HBM：16 channel × `aword`/`dword*`）要抄 N 份，跨表位置同义性无人校验。提案把域拆成独立共享导出 `ShadowDomain(name, copies, width)`，本表只写 `.shadow(domain)` + per-copy `reset`；`tagBits` 与「值从哪来」移交总线 `tags`（裸=透传 / `TagFromAddr` / `TagFromPin` / `TagFromReg`）。完整规则见 [`wishbone-bus.md`](./wishbone-bus.md) §2.1。落地前本节仍为现行契约。
+
 #### 多 shadow + `wb_tga` 切片
 
 ```text

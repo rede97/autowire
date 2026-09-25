@@ -1,7 +1,105 @@
 // Wishbone-bus authoring DSL (SoT). Contract: docs/plugins/wishbone-bus.md.
 
-import { isRegfileDef, type RegfileDef } from "../wishbone-regfile/dsl.ts";
+import {
+	isRegfileDef,
+	isShadowDomain,
+	type RegfileDef,
+	type ShadowDomainDef,
+} from "../wishbone-regfile/dsl.ts";
 import { layoutByteSpan, layoutRegfile } from "../wishbone-regfile/layout.ts";
+
+/**
+ * Where a tag domain's TGA value is produced (contract: wishbone-bus.md 2.1).
+ * `uplink` = pass through from a master port; the others are produced here.
+ */
+export type WbTagSourceKind = "uplink" | "addr" | "pin" | "reg";
+
+export type WbTagSource = {
+	readonly kind: "wishbone-tag-source";
+	readonly domain: ShadowDomainDef;
+	readonly source: WbTagSourceKind;
+	/** `addr` only: ADR slice "hi:lo" carved out of this level's address. */
+	readonly addr_bits?: string;
+	/** `reg` only: regbit that drives the tag (`<field>` of an attached leaf). */
+	readonly reg_field?: string;
+};
+
+function tagSource(
+	domain: ShadowDomainDef,
+	source: WbTagSourceKind,
+	extra: { addr_bits?: string; reg_field?: string } = {},
+): WbTagSource {
+	if (!isShadowDomain(domain)) {
+		throw new Error(
+			"wishbone-bus: tag source needs a ShadowDomain(...) as its first arg",
+		);
+	}
+	return {
+		kind: "wishbone-tag-source",
+		domain,
+		source,
+		...(extra.addr_bits !== undefined ? { addr_bits: extra.addr_bits } : {}),
+		...(extra.reg_field !== undefined ? { reg_field: extra.reg_field } : {}),
+	};
+}
+
+export function isTagSource(v: unknown): v is WbTagSource {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		(v as WbTagSource).kind === "wishbone-tag-source"
+	);
+}
+
+/** Produced here from an ADR slice; those bits are stripped from slave decode. */
+export function TagFromAddr(
+	domain: ShadowDomainDef,
+	addrBits: string,
+): WbTagSource {
+	parseBits(`tag domain ${domain.name}`, addrBits);
+	return tagSource(domain, "addr", { addr_bits: addrBits });
+}
+
+/** Produced here from a fabric input port (e.g. a global pstate controller). */
+export function TagFromPin(domain: ShadowDomainDef): WbTagSource {
+	return tagSource(domain, "pin");
+}
+
+/** Produced here from a regbit of an attached leaf (no round trip through the bus). */
+export function TagFromReg(
+	domain: ShadowDomainDef,
+	regField: string,
+): WbTagSource {
+	return tagSource(domain, "reg", { reg_field: regField });
+}
+
+/** "hi:lo" → numeric bounds; also used to validate ShadowDomain slices. */
+export function parseBits(
+	what: string,
+	bits: string,
+): { hi: number; lo: number } {
+	const m = /^(\d+)\s*:\s*(\d+)$/.exec(bits.trim());
+	if (!m) {
+		throw new Error(`wishbone-bus: ${what} bits "${bits}" must be hi:lo`);
+	}
+	const hi = Number(m[1]);
+	const lo = Number(m[2]);
+	if (hi < lo) {
+		throw new Error(`wishbone-bus: ${what} bits "${bits}" has hi < lo`);
+	}
+	return { hi, lo };
+}
+
+/** Mask of the ADR bits a `TagFromAddr` source carves out. */
+export function tagAddrMask(tags: readonly WbTagSource[]): number {
+	let mask = 0;
+	for (const t of tags) {
+		if (t.source !== "addr" || t.addr_bits === undefined) continue;
+		const { hi, lo } = parseBits(`tag domain ${t.domain.name}`, t.addr_bits);
+		for (let b = lo; b <= hi; b++) mask |= 1 << b;
+	}
+	return mask >>> 0;
+}
 
 export type SlaveOpts = {
 	/** TGA width (bits) forwarded to this slave; omitted/0 = no TGA port. */
@@ -158,6 +256,8 @@ export type BusDef = {
 	readonly addr_width: number;
 	/** Fabric TGA width in bits (0 = no TGA anywhere). */
 	readonly tag_width: number;
+	/** Tag domains carried on this fabric, low slice first (wishbone-bus.md 2.1). */
+	readonly tags: readonly WbTagSource[];
 };
 
 export function isBusDef(v: unknown): v is BusDef {
@@ -402,8 +502,14 @@ export function SlaveBus(
 		);
 	}
 	const name = opts?.id ?? child.name;
+	// Tag width is a property of the child fabric, not a per-hang hand-off.
+	if (opts?.tag !== undefined && opts.tag !== child.tag_width) {
+		throw new Error(
+			`wishbone-bus: SlaveBus(${name}) tag ${opts.tag} != child "${child.name}" tag_width ${child.tag_width}`,
+		);
+	}
 	const region = SlaveRegion(name, opts?.desc ?? child.desc, base, size, {
-		tag: opts?.tag,
+		tag: child.tag_width > 0 ? child.tag_width : opts?.tag,
 		pipe: opts?.pipe,
 	});
 	const win = windowBytes(region.mask, 32);
@@ -588,6 +694,8 @@ export function Bus(
 		slaves: readonly WbSlave[];
 		addrWidth?: number;
 		tagWidth?: number;
+		/** Tag domains, low slice first. Bare domain = pass through from uplink. */
+		tags?: readonly (ShadowDomainDef | WbTagSource)[];
 	},
 ): BusDef {
 	requireIdent("bus", name);
@@ -620,11 +728,22 @@ export function Bus(
 		seen.add(s.name);
 	}
 	assertNoRegionOverlap(name, slaves, addr_width);
+	const tags = normalizeTags(name, opts.tags ?? []);
+	const tagTop = Math.max(
+		0,
+		...tags.map((t) => parseBits(t.domain.name, t.domain.tag_bits).hi + 1),
+	);
 	const tag_width =
-		opts.tagWidth ?? Math.max(0, ...slaves.map((s) => s.tag ?? 0));
+		opts.tagWidth ?? Math.max(tagTop, ...slaves.map((s) => s.tag ?? 0));
 	if (!Number.isInteger(tag_width) || tag_width < 0) {
 		throw new Error(`wishbone-bus: tag_width must be an integer >= 0`);
 	}
+	if (tagTop > tag_width) {
+		throw new Error(
+			`wishbone-bus: bus ${name} tag domains need ${tagTop} bits but tag_width is ${tag_width}`,
+		);
+	}
+	assertTagAddrFree(name, tags, slaves);
 	for (const s of slaves) {
 		if ((s.tag ?? 0) > tag_width) {
 			throw new Error(
@@ -640,7 +759,86 @@ export function Bus(
 		slaves,
 		addr_width,
 		tag_width,
+		tags,
 	};
 	assertAcyclicBus(def, []);
+	assertTagSingleSource(def, new Map());
 	return def;
+}
+
+/** Bare domain → pass-through source; reject duplicate domains on one bus. */
+function normalizeTags(
+	bus: string,
+	tags: readonly (ShadowDomainDef | WbTagSource)[],
+): WbTagSource[] {
+	const out: WbTagSource[] = [];
+	const seen = new Set<string>();
+	for (const t of tags) {
+		const src = isTagSource(t)
+			? t
+			: isShadowDomain(t)
+				? tagSource(t, "uplink")
+				: null;
+		if (!src) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} tags entry must be a ShadowDomain or TagFrom*(...)`,
+			);
+		}
+		if (seen.has(src.domain.name)) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} declares tag domain "${src.domain.name}" twice`,
+			);
+		}
+		seen.add(src.domain.name);
+		out.push(src);
+	}
+	return out;
+}
+
+/**
+ * `TagFromAddr` bits are stripped from decode, so they must not be a window
+ * offset bit of any slave (mask==0 region) nor set in any base.
+ */
+function assertTagAddrFree(
+	bus: string,
+	tags: readonly WbTagSource[],
+	slaves: readonly WbSlave[],
+): void {
+	const mask = tagAddrMask(tags);
+	if (mask === 0) return;
+	const hex = (n: number) => `0x${n.toString(16)}`;
+	for (const s of slaves) {
+		const inside = (mask & ~s.mask) >>> 0;
+		if (inside !== 0) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} tag address bits ${hex(inside)} fall inside slave "${s.name}" window (mask ${hex(s.mask)})`,
+			);
+		}
+		if ((s.base & mask) >>> 0) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} slave "${s.name}" base ${hex(s.base)} sets tag address bits ${hex(mask)}`,
+			);
+		}
+	}
+}
+
+/** A domain may be produced at most once along an uplink path. */
+function assertTagSingleSource(
+	def: BusDef,
+	produced: Map<string, string>,
+): void {
+	const here = new Map(produced);
+	for (const t of def.tags) {
+		if (t.source === "uplink") continue;
+		const owner = here.get(t.domain.name);
+		if (owner !== undefined) {
+			throw new Error(
+				`wishbone-bus: tag domain "${t.domain.name}" is produced by bus "${owner}" and again by "${def.name}"`,
+			);
+		}
+		here.set(t.domain.name, def.name);
+	}
+	for (const s of def.slaves) {
+		if (s.bus) assertTagSingleSource(s.bus, here);
+	}
 }

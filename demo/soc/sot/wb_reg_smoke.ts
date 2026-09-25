@@ -15,8 +15,8 @@ export {
 	Field,
 	Regfile,
 	RegfileDefault,
-	Shadow,
 } from "../../../src/plugins/wishbone-regfile/dsl.ts";
+import { bank } from "./wb_tag_domains.ts";
 
 import {
 	Access,
@@ -28,7 +28,6 @@ import {
 	Field,
 	Regfile,
 	RegfileDefault,
-	Shadow,
 } from "../../../src/plugins/wishbone-regfile/dsl.ts";
 
 /** On-bus map @ 0x0300_6000 (byte ADR). Sidebands tied in connect HTML. */
@@ -38,7 +37,7 @@ export const smoke = Regfile(
 	RegfileDefault.align(4)
 		.addrWidth(32)
 		.readWriteBlock(true)
-		.shadows(Shadow("bank", 4, "1:0")),
+		.shadows(bank),
 	[
 		Cell("ID", "RC identity", CellDefault.offset(0x000), [
 			Field("magic", Access.RC, 16, "Magic").reset(0xa55a),
@@ -72,7 +71,7 @@ export const smoke = Regfile(
 		Cell(
 			"BANK",
 			"Shadowed RW",
-			CellDefault.offset(0x01c).align(BitsAlign.Align8).shadow("bank"),
+			CellDefault.offset(0x01c).align(BitsAlign.Align8).shadow(bank),
 			[
 				Field("cfg", Access.RW, 8, "Per-bank cfg").reset({
 					0: 0x10,
