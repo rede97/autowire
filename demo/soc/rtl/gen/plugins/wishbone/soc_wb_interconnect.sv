@@ -520,14 +520,14 @@ module soc_wb_interconnect (
 	               | ({32{slot_sel[SLOT_CH1]}} & ch1_pipe_rdat)
 	               | ({32{slot_sel[SLOT_SMOKE]}} & smoke_pipe_rdat);
 	assign rsp_ack = (unmapped & g_stb)
-	               | (sram_pipe_ack)
-	               | (flash_xip_pipe_ack)
+	               | (slot_sel[SLOT_SRAM] & sram_pipe_ack)
+	               | (slot_sel[SLOT_FLASH_XIP] & flash_xip_pipe_ack)
 	               | (slot_sel[SLOT_FLASH_CFG] & flash_cfg_o_wb_ack)
-	               | (uart_pipe_ack)
-	               | (testout_pipe_ack)
-	               | (ch0_pipe_ack)
-	               | (ch1_pipe_ack)
-	               | (smoke_pipe_ack);
+	               | (slot_sel[SLOT_UART] & uart_pipe_ack)
+	               | (slot_sel[SLOT_TESTOUT] & testout_pipe_ack)
+	               | (slot_sel[SLOT_CH0] & ch0_pipe_ack)
+	               | (slot_sel[SLOT_CH1] & ch1_pipe_ack)
+	               | (slot_sel[SLOT_SMOKE] & smoke_pipe_ack);
 
 	//------------------------------------------------------------------------------
 	//  Master response: only the granted slot sees DAT/ACK

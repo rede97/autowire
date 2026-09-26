@@ -166,8 +166,12 @@ Parallel (does not block connect)
     in front of the arbiter (decoder: in front of decode); the arbiter holds
     the grant from the pipe s_cyc so a posted write keeps the bus until it drains;
     decode: localparam SLOT_<SLAVE> indexes slot_sel (no bare slot_sel[6]);
-    SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? }): string window by
-    span; decode mask = pow2 ceil(Size); (base & mask) === base;
+    SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag?, broadcast?,
+    broadcastBy? }): string window by span; broadcast emits broadcast_<name> and
+    has no WB data port; broadcast and broadcastBy are mutually exclusive;
+    broadcastBy ORs that strobe into a region on WE only;
+    subscribers of one broadcast must share pipe depth;
+    raw Slave cannot broadcast; ACK waits for every selected subscriber;
     Slave(name, desc, base, mask, ...) is a raw port (no overlap check);
     SlaveRegfile is SlaveRegion sugar: Size(layout span) + leaf; optional size=;
     SlaveBus is SlaveRegion sugar: Size(child span) + child BusDef; optional size=;

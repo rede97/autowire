@@ -133,8 +133,8 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 
 | 侧 | 配置 |
 |---|---|
-| **SlaveRegion** | `SlaveRegion(name, desc, base, Size(bytes), { pipe: N, tag? })` 字符串窗口按 **字节跨度**；底层 mask = span 向上取 2 的幂；`(base & mask) === base`；**参与**区间重叠检查 |
-| **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（原始 match mask）；**不**做对齐/重叠检查；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
+| **SlaveRegion** | `SlaveRegion(name, desc, base, Size(bytes), { pipe: N, tag?, broadcast?, broadcastBy? })` 字符串窗口按 **字节跨度**；底层 mask = span 向上取 2 的幂；`(base & mask) === base`；**参与**区间重叠检查。`broadcast` / `broadcastBy` 见 §4.1 |
+| **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（原始 match mask）；**不**做对齐/重叠检查；**禁止** `broadcast` / `broadcastBy`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
 | **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（叶子 + `Size(layout span)`，可 `size=` 覆盖且必须盖住 span） |
 | **SlaveBus** | `SlaveBus(BusDef, base, { id?, pipe?, tag?, size?, desc?, uplink? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模 **必须** 有 `Master("uplink")`（或 `uplink=`）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`，子地址是窗相对的 |
 | **Master** | `Master(name, desc, { pipe: N })`；`N=0`（缺省）= 组合直通；`N>0`（1..16）= 在 **仲裁之前**（decoder 则在译码之前）插入 `wb_cfg_pipe`。仲裁请求与 grant 保持看 pipe 的 `s_cyc`，posted 写撤掉端口 `CYC` 后总线仍归该 master，直到队列排空。与父级 `SlaveBus` 的 slave pipe 是两级，互不替代 |
@@ -181,10 +181,37 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 | 适用 | IP 内 cfg、稀流量 | 少数 master **并发**打不相交窗口且 N 很小 |
 | 与旧 Python | 同构 | 新路径，慎用 |
 
-- Decoder：地址窗 + 可选 broadcast；下行仍是 WB（`STB` 扇出，`ACK`/`DAT` 回并）。  
+- Decoder：地址窗 + 可选 §4.1 写广播；下行仍是 WB（`STB` 扇出，`ACK`/`DAT` 回并）。  
 - Arbiter：多 WB master；口 `rb_grant_en`：**0** = 固定优先级（最低 master 下标胜）；**1** = round-robin（上次 grant 之后的下一个请求者，绕回最低下标）。事务中 `CYC` 锁定 grant。demo/soc：`smoke` `FABRIC.rb_grant_en`（复位 0）驱动 **每个 channel** `rb_grant_en`；`basic_smoke` 写该 CSR，SD→SHA DMA 在 `--sd`。  
 - Bridge：仅边界协议转换（如 `apb2wb`）；**禁止**让 APB 成为 decoder/regfile 原生口。CDC / APB / JTAG master 见 [`wishbone-master.md`](./wishbone-master.md)：先转 WB，再在 arbiter 前做 `wb_cdc`，全部在 `<bus>_system` 内。  
 - 即便将来提供 `topology = crossbar`，slave 侧 **仍必须**有地址窗/选通；matrix **不能**取消译码职责。
+
+### 4.1 Region 写广播（LP6 `BroadcastAddr`）
+
+一个 `SlaveRegion` 可以声明广播名。它只是地址窗口，命中后产生一位 `broadcast_<name>`，**不**生成 `{name}_i_wb_*` / `{name}_o_wb_*` 数据口。其它 region 用 `broadcastBy` 订阅这个名字。
+
+```ts
+SlaveRegion("ch_bcast", "broadcast all channels", 0x1_0000, Size(0x1000), {
+  broadcast: "ch_all",
+})
+SlaveBus(hbm_ch, i * 0x1000, {
+  id: `ch${i}`,
+  size: Size(0x1000),
+  broadcastBy: "ch_all",
+})
+```
+
+规则：
+
+1. **只限 region，且二选一。** `broadcast` 与 `broadcastBy` 只允许 `SlaveRegion`，以及它的语法糖 `SlaveBus` / `SlaveRegfile`。同一个窗口不能既产生广播又订阅广播；同时写两个字段 → 构造期报错。raw `Slave` 写了任一字段 → `Bus()` 构造期报错。
+2. **广播窗不是数据 slave。** 它参与地址重叠检查，但不例化 pipe，也不占用 `slot_sel`。命中条件是 `WE &&` 地址落在该窗。
+3. **订阅者选择。** 订阅窗口的选通 = 地址落在自己的窗口，或 `WE && broadcast_<name>`。广播事务把广播窗内的相对地址原样送给每一个订阅者；窗口大小应当与订阅者一致。
+4. **名字必须存在。** `broadcastBy` 引用的名字必须由本层某个 `broadcast` 声明。未声明 → 构造期报错。一个名字可以有多个订阅者；一个 region 可以订阅多个名字。
+5. **只广播写。** 读广播地址不扇出，按未映射处理并立即 ACK，读数据为 0。禁止把多路 `DAT` 或在一起。
+6. **ACK 合流，且 pipe 等长。** 写广播的 ACK = 所有被选中的订阅者 ACK 相与。同一广播名的订阅者必须是等长副本：`pipe` 相同，窗口大小应当相同。`pipe` 不同 → `Bus()` 构造期报错。深度不一致时，浅副本的 ACK 先返回并撤掉，深副本的 pipe ACK 还没到，与门对不齐。有 pipe 时等的是 pipe 入口 ACK，不是组合译码。
+7. **与 tag 的顺序。** `TagFromAddr` 先剥离，再做广播译码。因此一次广播只进入当前 tag 别名，不跨 pstate。
+
+HBM：父层 16 个 channel 订阅 `ch_all`（`pipe` 都是 0），`center common` 不订阅。每个 channel 内 `dword0/dword1` 以相同 `pipe` 订阅 `dword_all`，`aword` 不订阅。
 
 ## 5. IP 内 vs SoC interconnect
 

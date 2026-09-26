@@ -391,6 +391,40 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(twice.slaves.map((s) => s.name)).toEqual(["sha256_0", "sha256_1"]);
 	});
 
+	test("broadcast and broadcastBy are mutually exclusive", () => {
+		expect(() =>
+			SlaveRegion("both", "source and subscriber", 0, Size(0x100), {
+				broadcast: "all",
+				broadcastBy: ["all"],
+			}),
+		).toThrow(/both broadcast and broadcastBy/);
+		expect(() =>
+			SlaveRegfile(smoke, 0, {
+				id: "both",
+				broadcast: "all",
+				broadcastBy: ["all"],
+			}),
+		).toThrow(/both broadcast and broadcastBy/);
+	});
+
+	test("broadcast subscribers must share pipe depth", () => {
+		expect(() =>
+			Bus("skew", "unequal pipes", {
+				masters: [Master("cfg", "cfg")],
+				slaves: [
+					SlaveRegion("a", "a", 0x000, Size(0x100), { broadcastBy: ["all"] }),
+					SlaveRegion("b", "b", 0x100, Size(0x100), {
+						pipe: 1,
+						broadcastBy: ["all"],
+					}),
+					SlaveRegion("bcast", "bcast", 0x200, Size(0x100), {
+						broadcast: "all",
+					}),
+				],
+			}),
+		).toThrow(/share pipe depth/);
+	});
+
 	test("Bus checks region overlap; raw Slave(mask) is unchecked", () => {
 		expect(() =>
 			Bus("hit", "overlap", {

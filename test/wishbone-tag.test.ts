@@ -48,7 +48,9 @@ describe("wishbone tag domains", () => {
 		expect(sv).toContain("assign g_adr_dec = g_adr & ~32'h00600000;");
 		// Tag bits are stripped before compare and before forwarding.
 		expect(sv).toContain("if ((g_adr_dec & 32'hfffff000) == 32'h00000000)");
-		expect(sv).toContain("ch0_i_wb_adr  = slot_sel[SLOT_CH0]  ? g_adr_dec");
+		expect(sv).toContain(
+			"ch0_i_wb_adr  = (slot_sel[SLOT_CH0] || broadcast_ch_all)",
+		);
 		expect(sv).not.toContain("m_tga_pstate");
 	});
 
@@ -115,5 +117,41 @@ describe("wishbone tag domains", () => {
 		expect(sv).toContain("pstate_tag_i");
 		expect(sv).toContain("assign g_tga_pstate = pstate_tag_i;");
 		expect(sv).not.toContain("m_tga_pstate");
+	});
+
+	test("HBM region broadcast fans a write out and has no data port", () => {
+		expect(hbm.slaves.find((s) => s.name === "ch_bcast")?.broadcast).toBe(
+			"ch_all",
+		);
+		expect(hbm.slaves.find((s) => s.name === "ch0")?.broadcastBy).toEqual([
+			"ch_all",
+		]);
+		expect(
+			hbm_ch.slaves.find((s) => s.name === "aword")?.broadcastBy,
+		).toBeUndefined();
+		const parent = emitBusSv(hbm);
+		const child = emitBusSv(hbm_ch);
+		expect(parent).toContain("assign broadcast_ch_all = g_we");
+		expect(parent).toContain(
+			"ch15_i_wb_cyc = (slot_sel[SLOT_CH15] || broadcast_ch_all)",
+		);
+		expect(parent).toContain("broadcast_ch_all & ch0_o_wb_ack & ch1_o_wb_ack");
+		expect(parent).toContain(
+			"(({32{slot_sel[SLOT_CH0]}} & g_adr_dec) | ({32{broadcast_ch_all}} & (g_adr_dec - 32'h00010000))) & ~32'hfffff000",
+		);
+		expect(parent).not.toContain("ch_bcast_i_wb_");
+		expect(parent).not.toContain("ch_bcast_o_wb_");
+		expect(parent).not.toContain("SLOT_CH_BCAST");
+		expect(child).toContain("assign broadcast_dword_all = g_we");
+		expect(child).toContain(
+			"dword0_i_wb_cyc = (slot_sel[SLOT_DWORD0] || broadcast_dword_all)",
+		);
+		expect(child).toContain("aword_i_wb_cyc  = slot_sel[SLOT_AWORD]");
+		expect(child).toContain(
+			"(({32{slot_sel[SLOT_DWORD0]}} & g_adr) | ({32{broadcast_dword_all}} & (g_adr - 32'h00000300))) & ~32'hffffff00",
+		);
+		expect(child).not.toContain("dword_bcast_i_wb_");
+		expect(child).not.toContain("dword_bcast_o_wb_");
+		expect(child).not.toContain("SLOT_DWORD_BCAST");
 	});
 });

@@ -18,7 +18,11 @@ function packedRange(width: number): string {
 	return width > 1 ? `[${width - 1}:0]` : "";
 }
 
-/** Decode-slot localparam: `SLOT_SD1` → `slot_sel[SLOT_SD1]`. */
+/** Data slaves. A broadcast window produces a strobe and has no WB port. */
+function dataSlaves(def: BusDef): WbSlave[] {
+	return def.slaves.filter((s) => !s.broadcast);
+}
+
 function slotLp(name: string): string {
 	return `SLOT_${name.toUpperCase()}`;
 }
@@ -179,7 +183,7 @@ export function listFabricPorts(def: BusDef): FabricPort[] {
 			ports.push(...masterWbPorts(def, m.name, m.desc, aw));
 		}
 	}
-	for (const s of def.slaves) {
+	for (const s of dataSlaves(def)) {
 		ports.push(...slaveWbPorts(s, aw, def));
 	}
 	return ports;
@@ -308,7 +312,7 @@ function tagValue(gPrefix: string, tag: WbTagSource): string {
 function emitDecoderBody(def: BusDef): string[] {
 	const aw = def.addr_width;
 	const tw = tagDomainsWidth(def.tags);
-	const slaves = def.slaves;
+	const slaves = dataSlaves(def);
 	const out: string[] = [];
 	if (tw > 0) {
 		for (const t of def.tags) {
@@ -376,8 +380,7 @@ function emitDecoderBody(def: BusDef): string[] {
 function emitInterconnectBody(def: BusDef): string[] {
 	const nm = def.masters.length;
 	const aw = def.addr_width;
-	const tw = def.tag_width;
-	const slaves = def.slaves;
+	const slaves = dataSlaves(def);
 	const out: string[] = [];
 	const masters = def.masters.map((m, i) => ({ ...m, i }));
 	const onehot = (i: number) =>
@@ -576,7 +579,7 @@ function emitInterconnectBody(def: BusDef): string[] {
 }
 
 function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
-	const slaves = def.slaves;
+	const slaves = dataSlaves(def);
 	const ns = slaves.length;
 	const aw = def.addr_width;
 	const adr = decAdr(def, gPrefix);
@@ -614,6 +617,15 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 		);
 	}
 	out.push("\tend", "");
+	for (const s of def.slaves) {
+		if (!s.broadcast) continue;
+		out.push(
+			`\t// Broadcast ${s.broadcast}: write-only strobe, no WB data port`,
+			`\tlogic broadcast_${s.broadcast};`,
+			`\tassign broadcast_${s.broadcast} = ${gPrefix}we && (${adr} & ${aw}'h${hex(s.mask, aw)}) == ${aw}'h${hex(s.base, aw)};`,
+			"",
+		);
+	}
 
 	out.push(
 		"\t//------------------------------------------------------------------------------",
@@ -651,8 +663,30 @@ function emitSlaveCombo(
 	const n = s.name;
 	const port = (stem: string) => wb(n, stem).padEnd(namePad);
 	const slot = slotSel(n).padEnd(slotPad);
+	const bcast = (s.broadcastBy ?? []).filter((name) =>
+		def.slaves.some((src) => src.broadcast === name),
+	);
+	const hit =
+		bcast.length > 0
+			? `(${slot.trim()} || ${bcast.map((name) => `broadcast_${name}`).join(" || ")})`
+			: slot.trim();
+	const offset =
+		bcast.length === 0
+			? adr
+			: [
+					`({${aw}{${slot.trim()}}} & ${adr})`,
+					...bcast.map((name) => {
+						const src = def.slaves.find((item) => item.broadcast === name);
+						return src
+							? `({${aw}{broadcast_${name}}} & (${adr} - ${aw}'h${hex(src.base, aw)}))`
+							: "";
+					}),
+				]
+					.filter((term) => term !== "")
+					.join(" | ");
+	const masked = bcast.length === 0 ? offset : ["(", offset, ")"].join("");
 	const out = [
-		`\tassign ${port("i_wb_adr")} = ${slot} ? ${adr} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0;`,
+		`\tassign ${port("i_wb_adr")} = ${hit} ? ${masked} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0;`,
 		`\tassign ${port("i_wb_dat")} = ${gPrefix}wdata;`,
 		`\tassign ${port("i_wb_sel")} = ${gPrefix}sel;`,
 	];
@@ -661,8 +695,8 @@ function emitSlaveCombo(
 		out.push(`\tassign ${p.name.padEnd(namePad)} = ${gPrefix}tga_${domain};`);
 	}
 	out.push(
-		`\tassign ${port("i_wb_cyc")} = ${slot} & ${gPrefix}cyc;`,
-		`\tassign ${port("i_wb_stb")} = ${slot} & ${gPrefix}stb;`,
+		`\tassign ${port("i_wb_cyc")} = ${hit} & ${gPrefix}cyc;`,
+		`\tassign ${port("i_wb_stb")} = ${hit} & ${gPrefix}stb;`,
 		`\tassign ${port("i_wb_we ")} = ${gPrefix}we;`,
 	);
 	return out;
@@ -774,7 +808,29 @@ function emitSlavePipe(
 		),
 	);
 	const slot = slotSel(n);
-	const winAdr = `${slot} ? ${adr} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0`;
+	const bcast = (s.broadcastBy ?? []).filter((name) =>
+		def.slaves.some((src) => src.broadcast === name),
+	);
+	const hit =
+		bcast.length > 0
+			? `(${slot} || ${bcast.map((name) => `broadcast_${name}`).join(" || ")})`
+			: slot;
+	const offset =
+		bcast.length === 0
+			? adr
+			: [
+					`({${aw}{${slot}}} & ${adr})`,
+					...bcast.map((name) => {
+						const src = def.slaves.find((item) => item.broadcast === name);
+						return src
+							? `({${aw}{broadcast_${name}}} & (${adr} - ${aw}'h${hex(src.base, aw)}))`
+							: "";
+					}),
+				]
+					.filter((term) => term !== "")
+					.join(" | ");
+	const masked = bcast.length === 0 ? offset : ["(", offset, ")"].join("");
+	const winAdr = `${hit} ? ${masked} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0`;
 	const ack = `${n}_pipe_ack`;
 	const rdat = `${n}_pipe_rdat`;
 	const out: string[] = [
@@ -786,8 +842,8 @@ function emitSlavePipe(
 		`\twb_cfg_pipe #(.PIPE(${pipe}), .AW(${aw}), .TW(${st})) u_${n}_pipe (`,
 		"\t\t.clk(clk),",
 		"\t\t.rst_n(rst_n),",
-		`\t\t.m_cyc(${slot} & ${gPrefix}cyc),`,
-		`\t\t.m_stb(${slot} & ${gPrefix}stb),`,
+		`\t\t.m_cyc(${hit} & ${gPrefix}cyc),`,
+		`\t\t.m_stb(${hit} & ${gPrefix}stb),`,
 		`\t\t.m_we(${gPrefix}we),`,
 		`\t\t.m_adr(${winAdr}),`,
 		`\t\t.m_dat(${gPrefix}wdata),`,
@@ -848,11 +904,26 @@ function emitResponseMux(
 				: `({32{${slotSel(s.name)}}} & ${wb(s.name, "o_wb_dat")})`,
 		),
 	);
+	const groups = new Map<string, WbSlave[]>();
+	for (const s of slaves) {
+		for (const name of s.broadcastBy ?? []) {
+			const list = groups.get(name) ?? [];
+			list.push(s);
+			groups.set(name, list);
+		}
+	}
+	const broadcastAcks = [...groups.entries()].map(([name, members]) => {
+		const terms = members.map((s) =>
+			(s.pipe ?? 0) > 0 ? `${s.name}_pipe_ack` : wb(s.name, "o_wb_ack"),
+		);
+		return `(broadcast_${name} & ${terms.join(" & ")})`;
+	});
 	pushOrAssign(out, ack, [
 		`(unmapped & ${stb})`,
+		...broadcastAcks,
 		...slaves.map((s) =>
 			(s.pipe ?? 0) > 0
-				? `(${s.name}_pipe_ack)`
+				? `(${slotSel(s.name)} & ${s.name}_pipe_ack)`
 				: `(${slotSel(s.name)} & ${wb(s.name, "o_wb_ack")})`,
 		),
 	]);
@@ -873,7 +944,7 @@ export function emitBusSv(def: BusDef): string {
 		`//  Module: ${mod}`,
 		`//  Desc:   ${def.desc}`,
 		`//  Masters: ${nm} (${kind === "decoder" ? "decoder-only; no arbiter" : "arbiter: rb_grant_en=0 fixed / 1 round-robin"})`,
-		`//  Slaves:  ${def.slaves.length} (named {slave}_i_wb_* / {slave}_o_wb_*)`,
+		`//  Slaves:  ${dataSlaves(def).length} (named {slave}_i_wb_* / {slave}_o_wb_*)`,
 	);
 	if (tw > 0) {
 		const src = def.tags
@@ -948,7 +1019,7 @@ export function emitBusSv(def: BusDef): string {
 			portBlocks.push(masterPortBlock(m.name, m.desc, aw, m.pipe ?? 0, def));
 		}
 	}
-	for (const s of def.slaves) {
+	for (const s of dataSlaves(def)) {
 		portBlocks.push(slavePortBlock(s, aw, def));
 	}
 	lines.push(...formatAlignedPorts(portBlocks));

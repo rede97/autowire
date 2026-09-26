@@ -14,6 +14,7 @@ import {
 	Size,
 	SlaveBus,
 	SlaveRegfile,
+	SlaveRegion,
 	TagFromAddr,
 } from "../../../src/plugins/wishbone-bus/dsl.ts";
 import { aword } from "./wb_reg_aword.ts";
@@ -29,8 +30,19 @@ export const hbm_ch = Bus("hbm_ch", "HBM channel: aword + 2x dword", {
 	masters: [Master("uplink", "From the channel decoder")],
 	slaves: [
 		SlaveRegfile(aword, 0x000, { size: Size(0x100) }),
-		SlaveRegfile(dword, 0x100, { id: "dword0", size: Size(0x100) }),
-		SlaveRegfile(dword, 0x200, { id: "dword1", size: Size(0x100), pipe: 1 }),
+		SlaveRegfile(dword, 0x100, {
+			id: "dword0",
+			size: Size(0x100),
+			broadcastBy: ["dword_all"],
+		}),
+		SlaveRegfile(dword, 0x200, {
+			id: "dword1",
+			size: Size(0x100),
+			broadcastBy: ["dword_all"],
+		}),
+		SlaveRegion("dword_bcast", "broadcast dword0 and dword1", 0x300, Size(0x100), {
+			broadcast: "dword_all",
+		}),
 	],
 });
 
@@ -43,6 +55,11 @@ export const hbm = Bus("hbm", "HBM channel decoder (16 channels)", {
 			id: `ch${i}`,
 			size: Size(CH_SIZE),
 			desc: `HBM channel ${i}`,
+			broadcastBy: ["ch_all"],
+		}),
+	).concat(
+		SlaveRegion("ch_bcast", "broadcast all 16 channels", CH_COUNT * CH_SIZE, Size(CH_SIZE), {
+			broadcast: "ch_all",
 		}),
 	),
 });

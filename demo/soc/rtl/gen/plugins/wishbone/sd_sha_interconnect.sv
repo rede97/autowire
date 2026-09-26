@@ -266,9 +266,9 @@ module sd_sha_interconnect (
 	               | ({32{slot_sel[SLOT_DMA]}} & dma_pipe_rdat)
 	               | ({32{slot_sel[SLOT_SHA256]}} & sha256_pipe_rdat);
 	assign rsp_ack = (unmapped & g_stb)
-	               | (sd_pipe_ack)
-	               | (dma_pipe_ack)
-	               | (sha256_pipe_ack);
+	               | (slot_sel[SLOT_SD] & sd_pipe_ack)
+	               | (slot_sel[SLOT_DMA] & dma_pipe_ack)
+	               | (slot_sel[SLOT_SHA256] & sha256_pipe_ack);
 
 	//------------------------------------------------------------------------------
 	//  Master response: only the granted slot sees DAT/ACK

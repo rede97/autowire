@@ -119,6 +119,16 @@ export type SlaveOpts = {
 	 * port (0 = combinational).
 	 */
 	readonly pipe?: number;
+	/**
+	 * Name of a write-broadcast strobe this region produces. The window has
+	 * no Wishbone data port. Mutually exclusive with `broadcastBy`.
+	 */
+	readonly broadcast?: string;
+	/**
+	 * Broadcast names that select this region on a write, besides its own window.
+	 * Mutually exclusive with `broadcast`.
+	 */
+	readonly broadcastBy?: readonly string[];
 };
 
 /** Extra options when `SlaveRegfile` attaches a `RegfileDef`. */
@@ -178,6 +188,10 @@ export type WbSlave = {
 	/** Mask was derived from layout span or `Size`; Bus may re-derive with `addr_width`. */
 	readonly mask_auto?: boolean;
 	readonly window: SlaveWindow;
+	/** Write-broadcast strobe produced by this window. No WB data port. */
+	readonly broadcast?: string;
+	/** Broadcast strobes that also select this region while WE is set. */
+	readonly broadcastBy?: readonly string[];
 };
 
 /** Author-facing window span (bytes). Decode still uses a 2^N match mask. */
@@ -282,7 +296,12 @@ export function isBusDef(v: unknown): v is BusDef {
 function parseSlaveOpts(
 	name: string,
 	tagOrOpts?: number | SlaveOpts,
-): { tag?: number; pipe: number } {
+): {
+	tag?: number;
+	pipe: number;
+	broadcast?: string;
+	broadcastBy?: readonly string[];
+} {
 	const opts: SlaveOpts =
 		tagOrOpts === undefined
 			? {}
@@ -297,7 +316,21 @@ function parseSlaveOpts(
 	if (!Number.isInteger(pipe) || pipe < 0 || pipe > 16) {
 		throw new Error(`wishbone-bus: slave ${name} pipe must be 0..16`);
 	}
-	return { ...(tag ? { tag } : {}), pipe };
+	const broadcast = opts.broadcast;
+	if (broadcast !== undefined) requireIdent("broadcast", broadcast);
+	const broadcastBy = opts.broadcastBy;
+	for (const by of broadcastBy ?? []) requireIdent("broadcastBy", by);
+	if (broadcast && broadcastBy && broadcastBy.length > 0) {
+		throw new Error(
+			`wishbone-bus: slave ${name} cannot declare both broadcast and broadcastBy`,
+		);
+	}
+	return {
+		...(tag ? { tag } : {}),
+		pipe,
+		...(broadcast ? { broadcast } : {}),
+		...(broadcastBy && broadcastBy.length > 0 ? { broadcastBy } : {}),
+	};
 }
 
 function requireIdent(kind: string, name: string): void {
@@ -370,6 +403,8 @@ function attachRegfile(
 	const region = SlaveRegion(name, opts.desc ?? regfile.desc, base, size, {
 		tag: tga > 0 ? tga : opts.tag,
 		pipe: opts.pipe,
+		broadcast: opts.broadcast,
+		broadcastBy: opts.broadcastBy,
 	});
 	return { ...region, regfile };
 }
@@ -388,7 +423,12 @@ export function Slave(
 	if (!Number.isInteger(mask) || mask < 0) {
 		throw new Error(`wishbone-bus: slave ${name} mask must be >= 0`);
 	}
-	const { tag, pipe } = parseSlaveOpts(name, tagOrOpts);
+	const { tag, pipe, broadcast, broadcastBy } = parseSlaveOpts(name, tagOrOpts);
+	if (broadcast || broadcastBy) {
+		throw new Error(
+			`wishbone-bus: raw Slave ${name} cannot declare broadcast or broadcastBy`,
+		);
+	}
 	return {
 		name,
 		desc,
@@ -420,7 +460,7 @@ export function SlaveRegion(
 	if (!Number.isInteger(base) || base < 0) {
 		throw new Error(`wishbone-bus: slave ${name} base must be >= 0`);
 	}
-	const { tag, pipe } = parseSlaveOpts(name, tagOrOpts);
+	const { tag, pipe, broadcast, broadcastBy } = parseSlaveOpts(name, tagOrOpts);
 	const mask = deriveWindowMask(size.bytes, 32);
 	if ((base & mask) >>> 0 !== base >>> 0) {
 		throw new Error(
@@ -437,6 +477,8 @@ export function SlaveRegion(
 		mask_auto: true,
 		window: "region",
 		...(tag ? { tag } : {}),
+		...(broadcast ? { broadcast } : {}),
+		...(broadcastBy ? { broadcastBy } : {}),
 	};
 }
 
@@ -521,6 +563,8 @@ export function SlaveBus(
 	const region = SlaveRegion(name, opts?.desc ?? child.desc, base, size, {
 		tag: child.tag_width > 0 ? child.tag_width : opts?.tag,
 		pipe: opts?.pipe,
+		broadcast: opts?.broadcast,
+		broadcastBy: opts?.broadcastBy,
 	});
 	const win = windowBytes(region.mask, 32);
 	if (win < span) {
@@ -676,6 +720,56 @@ export function regionWindowsOverlap(a: WbSlave, b: WbSlave): boolean {
 	);
 }
 
+function assertBroadcasts(bus: string, slaves: readonly WbSlave[]): void {
+	const declared = new Set<string>();
+	for (const s of slaves) {
+		if (!s.broadcast) continue;
+		if (s.window !== "region") {
+			throw new Error(
+				`wishbone-bus: bus ${bus} raw slave "${s.name}" cannot declare broadcast`,
+			);
+		}
+		if (declared.has(s.broadcast)) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} duplicate broadcast "${s.broadcast}"`,
+			);
+		}
+		declared.add(s.broadcast);
+	}
+	for (const s of slaves) {
+		for (const by of s.broadcastBy ?? []) {
+			if (s.window !== "region" || s.broadcast) {
+				throw new Error(
+					`wishbone-bus: bus ${bus} slave "${s.name}" cannot subscribe to broadcast "${by}"`,
+				);
+			}
+			if (!declared.has(by)) {
+				throw new Error(
+					`wishbone-bus: bus ${bus} slave "${s.name}" broadcastBy "${by}" is not declared`,
+				);
+			}
+		}
+	}
+	const groups = new Map<string, WbSlave[]>();
+	for (const s of slaves) {
+		for (const by of s.broadcastBy ?? []) {
+			const list = groups.get(by) ?? [];
+			list.push(s);
+			groups.set(by, list);
+		}
+	}
+	for (const [name, members] of groups) {
+		const depth = members[0]?.pipe ?? 0;
+		for (const s of members) {
+			if ((s.pipe ?? 0) !== depth) {
+				throw new Error(
+					`wishbone-bus: bus ${bus} broadcast "${name}" subscribers must share pipe depth (${s.name} pipe ${s.pipe ?? 0} != ${depth})`,
+				);
+			}
+		}
+	}
+}
+
 function assertNoRegionOverlap(
 	bus: string,
 	slaves: readonly WbSlave[],
@@ -738,6 +832,7 @@ export function Bus(
 		seen.add(s.name);
 	}
 	assertNoRegionOverlap(name, slaves, addr_width);
+	assertBroadcasts(name, slaves);
 	const declared = normalizeTags(name, opts.tags ?? []);
 	const anonymous = anonymousTag(slaves, declared);
 	const tags = anonymous ? [...declared, anonymous] : declared;
