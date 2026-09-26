@@ -91,6 +91,10 @@ test("each slice prints independently", () => {
 	expect(renderHelp("workspace")).toContain("c= C dir");
 	expect(renderHelp("dont")).toContain("C headers / uvm_reg");
 	expect(renderHelp("agent")).toContain("docs/mcp/");
+	expect(renderHelp("status")).toContain("docs/dev/release.md");
+	expect(renderHelp("status")).toContain("lightpanda");
+	expect(renderHelp("agent")).toContain("docs/dev/release.md");
+	expect(renderHelp("dont")).toContain("link lightpanda into the autowire binary");
 	expect(renderHelp("status")).toContain("Wishbone — implementing now");
 	expect(renderHelp("status")).toContain("no awx-regfile");
 	expect(renderHelp("status")).toContain("soc_wb_system");

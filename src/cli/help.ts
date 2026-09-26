@@ -60,6 +60,8 @@ Rules of engagement
   Edit this help (src/cli/help.ts) when behavior changes; format constraints live in docs/.
   Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
   Windows: MSYS2 UCRT64 toolchain, ucrt64/bin on PATH, LF checkout (docs/dev/windows-msys2.md).
+  Production package target (not landed): sibling binaries autowire + hdxml + lightpanda
+    (docs/dev/release.md). Dev/CI debug stays Playwright + Chromium.
   Connect authoring (docs/connect/html.md §3.5.5): same-name → identity (omit);
     rename batch → one aw-rewrite RegExp — never list identity ports one-by-one.
 `,
@@ -83,6 +85,14 @@ Landed
 
 Not landed
   Workspace MCP             author HTML node edit + RtlIndex search (docs/mcp/workspace.md)
+  Production package        three sibling binaries: autowire, hdxml, lightpanda
+                            (docs/dev/release.md). lightpanda is the only bundled debug
+                            browser (its mcp and serve commands). Do not ship Playwright
+                            or Chromium. Do not link lightpanda into autowire.
+                            Dev/CI goldens stay Playwright + headless Chromium.
+                            Linux x86_64, Linux aarch64, macOS (glibc on Linux).
+                            No native Windows build. Lightpanda is AGPL-3.0; pin one
+                            build; set LIGHTPANDA_DISABLE_TELEMETRY=true.
 
 Parallel (does not block connect)
   Plugin registry (docs/plugins/): type A = generate → plugins_dir → analysis/RtlIndex leaf
@@ -461,6 +471,8 @@ Do not
   treat Excel / C headers / uvm_reg as register SoT, or reverse-generate TS from them
   treat Workspace MCP html_write as elaborate (must still run web check/render/dump for netlist)
   list same-name ports one-by-one in aw-connect (identity omits them; rename → one aw-rewrite RegExp)
+  ship Playwright or Chromium in the production package (docs/dev/release.md: autowire + hdxml + lightpanda)
+  link lightpanda into the autowire binary
 `,
 };
 

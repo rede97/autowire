@@ -58,6 +58,7 @@
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [dev/windows-msys2.md](./dev/windows-msys2.md) | Windows：MSYS2 UCRT64 工具链、PATH、LF 行尾、原生 vs UCRT64 分工 | 已实现 |
+| [dev/release.md](./dev/release.md) | 生产包目标：`autowire` + `hdxml` + `lightpanda`（打包未落地） | 目标已裁定 |
 
 ## 实战与报告
 

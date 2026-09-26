@@ -80,7 +80,11 @@ dump **应当**隐含 `check → render`（**Render 依赖 Check**，见 [worksp
 autowire render [unit]
 ```
 
-顺序与页面一致：执行作者 HTML 的 `<script type="module">`（`aw.on`）→ `before-instances` → check → elaborate → `before-dump` → 写 `.sv` 与 connect XML。写盘规则与 `POST /api/dump` 相同，不经过浏览器。同一份 HTML 在 happy-dom 与 Chromium 中的快照必须一致。Playwright 继续负责调试。
+顺序与页面一致：执行作者 HTML 的 `<script type="module">`（`aw.on`）→ `before-instances` → check → elaborate → `before-dump` → 写 `.sv` 与 connect XML。写盘规则与 `POST /api/dump` 相同，不经过浏览器。同一份 HTML 在 happy-dom 与 Chromium 中的快照必须一致。开发与 CI 的调试浏览器仍是 Playwright Chromium。
+
+### 2.7 生产发布包（目标）
+
+发给用户的生产包是三颗并排二进制：`autowire`、`hdxml`、`lightpanda`。Lightpanda 是包内唯一的调试浏览器；Playwright 与 Chromium 不进包。打包脚本尚未落地，约束见 [dev/release.md](./dev/release.md)。
 
 ## 3. Agent MCP：工具边界与双途径
 
@@ -96,6 +100,8 @@ autowire render [unit]
 A 只打浏览器调试工作区；B 只改作者面/索引——出结果仍须显式走 Web 工具路径。
 
 ### 3.1 Playwright 隔离调试
+
+本节是开发与 CI 的调试路径。生产包的调试浏览器见 §2.7。
 
 全程无头 Chromium 打开 `web` 的 URL，首屏渲染完成后再让 Agent 介入（Playwright MCP：navigate / snapshot / evaluate / click）。
 

@@ -1,6 +1,7 @@
 # Windows 开发环境（MSYS2 UCRT64）
 
 > 适用：在 Windows 上开发 / 跑测试 / 跑 demo/soc。Linux 与 macOS 不受本文约束。
+> 生产发布包（`autowire` + `hdxml` + `lightpanda`）没有原生 Windows 构建，见 [release.md](./release.md)。Windows 开发不改走那一包。
 > 通用约定仍以 `bun index.ts help agent` 与 [AGENTS.md](../../AGENTS.md) 为准；本文只规定 Windows 下**工具从哪来、怎么接进 PATH、行尾怎么处理**。
 
 ## 1. 分工：Windows 原生 vs UCRT64
