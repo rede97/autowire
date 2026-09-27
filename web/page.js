@@ -577,4 +577,9 @@ async function init() {
   if (actions.select || actions.check || actions.elaborate || actions.run)
     await runChain(actions);
 }
-await init();
+try {
+  await init();
+} catch (error) {
+  setStatus("error", `init: ${error instanceof Error ? error.message : error}`);
+  throw error;
+}

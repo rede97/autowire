@@ -727,4 +727,9 @@ async function init(): Promise<void> {
 		await runChain(actions);
 }
 
-await init();
+try {
+	await init();
+} catch (error) {
+	setStatus("error", `init: ${error instanceof Error ? error.message : error}`);
+	throw error;
+}
