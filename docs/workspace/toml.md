@@ -1,6 +1,6 @@
 # 工作区配置 `autowire.toml`（实现约束）
 
-> 状态：**已实现**（`init` / `analysis` / `web` / `check` / `render` / `/api/dump`）。`render` 用 happy-dom 执行脚本、elaborate，并写出与 dump 相同的 `.sv`。  
+> 状态：**已实现**（`init` / `analysis run` / `connect web` / `connect check` / `connect run`）。`connect run` 写 `.sv`。页面不写工作区。  
 > **产出三分目录 + `[sim.<id>]`**：文档已定（§4.0 / §4.1.1）；实现仍兼容旧 `[dump] dir`——迁移未完成前以代码为准，改实现时同步 help。  
 > 摘要切片：`bun index.ts help workspace`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
@@ -178,7 +178,7 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
   - `.autowire/hdxml/` — RtlIndex  
   - `.autowire/connect/` — 各连接单元 elaborate 后的快照，**只有** `<id>.xml`（抽象模块信息：params / ports / imports；hdxml 风格规范：属性承载、方向标签名、模块字典序、无时间戳/哈希；跨单元 deps 加载与 dump 都读它）。**完整 `aw-render` 不再落盘**（无 `<id>.html`）；dump 印 SV 只认 POST 体活 DOM。**禁止** dump 直接 load 作者 HTML
   - 产物目录：`connect_dir` / `sim_dir` / `plugins_dir`（§4.0），与临时目录分开。
-  - `.autowire/save/` — 调试落盘：`POST /api/save` 把活 DOM（调试后的 `aw-content` + `aw-render`）写成 `<id>.html`；**临时产物**，不充当作者 SoT，是否合回作者 HTML 由本地决定（见 [`mcp/README.md`](../mcp/README.md) §5）
+
 
 ### 4.2 HTML / web 如何加载这两类 XML（必须）
 

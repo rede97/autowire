@@ -7,6 +7,7 @@
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [architecture.md](./architecture.md) | 组件、流水线、MCP 双途径、入口阶段 | 草稿 |
+| [cli.md](./cli.md) | 命令形状：connect 是标准；每个插件自己的 `run` | 设计，未落地 |
 
 ## 连接方言 · [`connect/`](./connect/)
 

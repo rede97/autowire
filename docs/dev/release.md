@@ -10,11 +10,11 @@
 
 | 二进制 | 职责 | 生产包 |
 |---|---|---|
-| `autowire` | CLI：`analysis` / `check` / `render` / `web` / `plugin generate`。由 `bun build --compile` 产出，happy-dom 打在里面 | 必需 |
+| `autowire` | CLI：`analysis` / `connect` / `plugin wishbone run`。由 `bun build --compile` 产出，happy-dom 打在里面 | 必需 |
 | `hdxml` | RtlIndex sidecar（Rust） | 必需 |
 | `lightpanda` | 唯一捆绑的调试浏览器。同一文件的子命令 `mcp` 与 `serve` | 调试网页时带上；生成 RTL 不需要 |
 
-`autowire render` 用包内的 happy-dom 完成脚本、check、elaborate 和写 `.sv`，不启动浏览器。
+`autowire connect run` 用包内的 happy-dom 完成脚本、check、elaborate 和写 `.sv`，不启动浏览器。
 
 ## 2. 浏览器分工
 

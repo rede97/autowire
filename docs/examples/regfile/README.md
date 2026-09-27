@@ -13,5 +13,5 @@ generate + analysis 后用 **`<aw-inst mod="…_regfile">`**（或薄 WB 包装�
 
 ```bash
 bun test test/wishbone-regfile.test.ts
-cd demo/soc && bun ../../index.ts plugin generate wishbone
+cd demo/soc && bun ../../index.ts plugin wishbone run
 ```

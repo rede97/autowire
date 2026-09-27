@@ -62,6 +62,9 @@ export class LeafDb {
 			for (const [name, src] of index.moduleSource) {
 				if (src === f.source) this.files.set(name, f.index);
 			}
+			for (const [name, src] of index.packageSource) {
+				if (src === f.source) this.files.set(name, f.index);
+			}
 		}
 		this.ready = true;
 	}

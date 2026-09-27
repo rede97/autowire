@@ -1,17 +1,17 @@
 // autowire CLI entry (bun). Commands:
 //   help [topic]  command index (default); Agent contract: help agent
 //   init          create default autowire.toml in CWD              (src/cli/analysis.ts)
-//   analysis      run hdxml analysis with args from autowire.toml  (src/cli/analysis.ts)
-//   deps <path>   RTL module dependency tree                        (src/cli/deps.ts)
-//   web [unit]    local connect page (127.0.0.1)                    (src/cli/web.ts)
-//   check [unit]  author-face connect validation (no write)         (src/cli/web.ts)
+//   analysis run      hdxml from autowire.toml                  (src/cli/analysis.ts)
+//   analysis deps     RTL module dependency tree                (src/cli/analysis.ts)
+//   connect run       happy-dom scripts, check, then write .sv  (src/cli/web.ts)
+//   connect check     author-face validation (no write)         (src/cli/web.ts)
+//   connect web       static session page                       (src/cli/web.ts)
 
 import { Command } from "commander";
 import { registerAnalysis } from "./src/cli/analysis.ts";
-import { registerDeps } from "./src/cli/deps.ts";
 import { renderHelp } from "./src/cli/help.ts";
 import { registerPlugin } from "./src/cli/plugin.ts";
-import { registerCheck, registerRender, registerWeb } from "./src/cli/web.ts";
+import { registerConnect } from "./src/cli/web.ts";
 
 const program = new Command();
 program
@@ -42,10 +42,7 @@ program
 	});
 
 registerAnalysis(program);
-registerDeps(program);
-registerWeb(program);
-registerCheck(program);
-registerRender(program);
+registerConnect(program);
 registerPlugin(program);
 
 if (process.argv.slice(2).length === 0) {

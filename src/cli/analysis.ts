@@ -1,8 +1,13 @@
-// `autowire analysis` + `autowire init` (workspace bootstrap + hdxml sidecar run).
+// `autowire init` and `autowire analysis` (docs/cli.md §3).
+// analysis run writes the RtlIndex. deps, search, and info only read it.
 
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Command } from "commander";
+import { LeafDb } from "../rtl/leaf.ts";
+import { loadRtlIndex, type RtlIndex } from "../rtl/rtlindex.ts";
+import { renderSummary, renderTrees } from "../rtl/tree.ts";
 import { DEFAULT_TOML, hdxmlArgs } from "../workspace.js";
 import { findHdxml, requireWorkspace } from "./shared.ts";
 
@@ -22,8 +27,12 @@ export function registerAnalysis(program: Command): void {
 			console.log(`created ${target}`);
 		});
 
-	program
+	const analysis = program
 		.command("analysis")
+		.description("RtlIndex: run hdxml, then query deps, names, and module info");
+
+	analysis
+		.command("run")
 		.description(
 			"Run hdxml analysis with args mapped from autowire.toml (docs/workspace/toml.md)",
 		)
@@ -37,15 +46,15 @@ export function registerAnalysis(program: Command): void {
 			"per-thread sub progress bars (current file per worker)",
 		)
 		.option(
-			"--refresh",
-			"force full re-parse (analysis is incremental by default; this rewrites the cache)",
+			"--force",
+			"rewrite the RtlIndex cache (full re-parse)",
 		)
 		.action(
 			async (opts: {
 				workspace?: string;
 				hdxml?: string;
 				subBars?: boolean;
-				refresh?: boolean;
+				force?: boolean;
 			}) => {
 				const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
 				if (
@@ -59,7 +68,7 @@ export function registerAnalysis(program: Command): void {
 				}
 				const args = hdxmlArgs(cfg);
 				if (opts.subBars) args.push("--sub-bars");
-				if (opts.refresh) args.push("--refresh");
+				if (opts.force) args.push("--refresh");
 				const proc = Bun.spawnSync({
 					cmd: [findHdxml(opts.hdxml, cfg.hdxmlBin), ...args],
 					stdout: "inherit",
@@ -72,7 +81,232 @@ export function registerAnalysis(program: Command): void {
 					process.exit(1);
 				}
 				console.error(`RtlIndex dir: ${cfg.indexDir}`);
-				if (proc.exitCode !== 0) process.exit(proc.exitCode ?? 1); // error files: index stays usable, exit code passes through (CI can gate)
+				if (proc.exitCode !== 0) process.exit(proc.exitCode ?? 1);
 			},
 		);
+
+	analysis
+		.command("deps")
+		.description("Print RTL module dependency trees from the existing RtlIndex")
+		.argument("[module]", "print only this module; omit for every tree")
+		.option("--depth <n>", "limit expand depth", (v) => Number(v))
+		.option(
+			"--workspace <path>",
+			"workspace dir or autowire.toml path (default: search upward from CWD)",
+		)
+		.action(
+			async (
+				module: string | undefined,
+				opts: { depth?: number; workspace?: string },
+			) => {
+				const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
+				const index = await readIndex(cfg.indexDir);
+				for (const line of renderSummary(index)) console.log(line);
+				for (const line of renderTrees(index, {
+					top: module,
+					depth: opts.depth,
+				}))
+					console.log(line);
+			},
+		);
+
+	analysis
+		.command("search")
+		.description("Search the RtlIndex by fuzzy name or regex. Does not write.")
+		.argument("<pattern>", "fuzzy substring, or a regex with --regex")
+		.option("--module", "search module names (default)")
+		.option("--port", "search port names")
+		.option("--package", "search package names")
+		.option("--enum", "search package localparam names (enum constants)")
+		.option("--regex", "treat pattern as a regular expression")
+		.option(
+			"--workspace <path>",
+			"workspace dir or autowire.toml path (default: search upward from CWD)",
+		)
+		.action(
+			async (
+				pattern: string,
+				opts: {
+					module?: boolean;
+					port?: boolean;
+					package?: boolean;
+					enum?: boolean;
+					regex?: boolean;
+					workspace?: string;
+				},
+			) => {
+				const kinds = [
+					opts.module ? "module" : "",
+					opts.port ? "port" : "",
+					opts.package ? "package" : "",
+					opts.enum ? "enum" : "",
+				].filter((k) => k !== "");
+				if (kinds.length > 1) {
+					console.error("analysis search: choose only one of --module --port --package --enum");
+					process.exit(1);
+				}
+				const kind = (kinds[0] ?? "module") as SearchKind;
+				const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
+				const index = await readIndex(cfg.indexDir);
+				const match = matcher(pattern, opts.regex ?? false);
+				const hits = await searchIndex(cfg.indexDir, index, kind, match);
+				if (hits.length === 0) {
+					console.error(`no ${kind} matches ${pattern}`);
+					process.exit(1);
+				}
+				for (const hit of hits) {
+					const at = hit.line ? `:${hit.line}` : "";
+					console.log(`${hit.name}\txml=${hit.xml}\trtl=${hit.rtl}${at}`);
+				}
+			},
+		);
+
+	analysis
+		.command("info")
+		.description("Print one module's params and ports from the RtlIndex")
+		.argument("<module>", "exact module name")
+		.option(
+			"--workspace <path>",
+			"workspace dir or autowire.toml path (default: search upward from CWD)",
+		)
+		.action(async (module: string, opts: { workspace?: string }) => {
+			const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
+			const index = await readIndex(cfg.indexDir);
+			if (!index.moduleSource.has(module)) {
+				console.error(
+					`module not in RtlIndex: ${module} (analysis search --module for a fuzzy name)`,
+				);
+				process.exit(1);
+			}
+			const leaf = await new LeafDb(cfg.indexDir).get(module);
+			if (!leaf) {
+				console.error(`module ${module} has no file XML in ${cfg.indexDir}`);
+				process.exit(1);
+			}
+			console.log(`module ${module}`);
+			console.log(`xml ${index.moduleIndex.get(module) ?? ""}`);
+			console.log(`rtl ${index.moduleSource.get(module) ?? ""}`);
+			console.log("params");
+			if (leaf.params.length === 0) console.log("  (none)");
+			for (const p of leaf.params) {
+				console.log(
+					`  ${p.kind} ${p.name}${p.dataType ? ` ${p.dataType}` : ""}${p.defaultText ? ` = ${p.defaultText}` : ""}`,
+				);
+			}
+			console.log("ports");
+			if (leaf.ports.length === 0) console.log("  (none)");
+			for (const p of leaf.ports) {
+				const width = [p.packed, p.unpacked].filter(Boolean).join(" ");
+				console.log(`  ${p.dir} ${p.name}${width ? ` ${width}` : ""}`);
+			}
+		});
+}
+
+async function readIndex(dir: string): Promise<RtlIndex> {
+	if (!existsSync(join(dir, "index.xml"))) {
+		console.error(`no RtlIndex at ${dir} (run: autowire analysis run)`);
+		process.exit(1);
+	}
+	return loadRtlIndex(dir);
+}
+
+type SearchKind = "module" | "port" | "package" | "enum";
+
+interface SearchHit {
+	name: string;
+	xml: string;
+	rtl: string;
+	line?: number;
+}
+
+function matcher(pattern: string, regex: boolean): (name: string) => boolean {
+	if (!regex) {
+		const needle = pattern.toLowerCase();
+		return (name) => name.toLowerCase().includes(needle);
+	}
+	let re: RegExp;
+	try {
+		re = new RegExp(pattern);
+	} catch (e) {
+		console.error(`bad regex: ${e instanceof Error ? e.message : e}`);
+		process.exit(1);
+	}
+	return (name) => re.test(name);
+}
+
+async function searchIndex(
+	dir: string,
+	index: RtlIndex,
+	kind: SearchKind,
+	match: (name: string) => boolean,
+): Promise<SearchHit[]> {
+	if (kind === "module") {
+		const hits = [...index.moduleSource.entries()]
+			.filter(([name]) => match(name))
+			.map(([name, rtl]) => ({
+				name,
+				xml: index.moduleIndex.get(name) ?? "",
+				rtl,
+			}));
+		const lines = await declarationLines(hits.map((h) => [h.name, h.rtl]));
+		return hits.map((h) => ({ ...h, line: lines.get(`${h.rtl}\0${h.name}`) }));
+	}
+	if (kind === "package") {
+		return [...index.packageSource.entries()]
+			.filter(([name]) => match(name))
+			.map(([name, rtl]) => ({
+				name,
+				xml: index.packageIndex.get(name) ?? "",
+				rtl,
+			}));
+	}
+	const db = new LeafDb(dir);
+	const hits: SearchHit[] = [];
+	const names =
+		kind === "enum" ? [...index.packageSource.keys()] : [...index.moduleSource.keys()];
+	for (const owner of names) {
+		const leaf = await db.get(owner);
+		if (!leaf) continue;
+		const xml =
+			(kind === "enum" ? index.packageIndex : index.moduleIndex).get(owner) ?? "";
+		const rtl =
+			(kind === "enum" ? index.packageSource : index.moduleSource).get(owner) ?? "";
+		const items =
+			kind === "enum"
+				? leaf.params.filter((p) => p.kind === "localparam").map((p) => p.name)
+				: leaf.ports.map((p) => p.name);
+		for (const name of items) {
+			if (match(name)) hits.push({ name: `${owner}.${name}`, xml, rtl });
+		}
+	}
+	return hits;
+}
+
+/** Line of `module <name>` in the RTL file. One read per file, so several
+ * modules declared in the same file each get their own line. */
+async function declarationLines(
+	items: readonly (readonly [string, string])[],
+): Promise<Map<string, number>> {
+	const byFile = new Map<string, string[]>();
+	for (const [name, rtl] of items) {
+		const names = byFile.get(rtl) ?? [];
+		names.push(name);
+		byFile.set(rtl, names);
+	}
+	const out = new Map<string, number>();
+	for (const [rtl, names] of byFile) {
+		let text = "";
+		try {
+			text = await readFile(rtl.replace(/^\\\\\?\\/, ""), "utf8");
+		} catch {
+			continue;
+		}
+		const lines = text.split(/\r?\n/);
+		for (const name of names) {
+			const re = new RegExp(`\\bmodule\\s+${name}\\b`);
+			const line = lines.findIndex((row) => re.test(row));
+			if (line >= 0) out.set(`${rtl}\0${name}`, line + 1);
+		}
+	}
+	return out;
 }

@@ -28,7 +28,7 @@ What it is
   Connectivity is one HTML + <script>. After the browser runs the script, the live DOM is the netlist.
   Hand the render result to autowire; it writes RTL, then DV.
   Early path: aw.js + local web page; debug via Playwright MCP (browser, isolated).
-  Settled path: autowire render — happy-dom runs the same HTML + module scripts,
+  Settled path: autowire connect run — happy-dom runs the same HTML + module scripts,
   then the same check → elaborate → before-dump pipeline. Playwright stays for debug.
   MCP vs tools: tools own generate/check/render/dump; MCPs must not be a live netlist engine.
   Two MCP paths (docs/mcp/): Playwright = runtime debug; Workspace = author HTML + RtlIndex
@@ -40,21 +40,20 @@ Pipeline
       →  HTML aw-content (+ aw-submods)
       →  check (author HTML legality + deps; no write; not aw-render)
       →  elaboration → aw-render
-      →  POST /api/dump (every related aw-render)
-      →  autowire writes .sv → DV
+      →  connect run writes .sv → DV
 
 You can do now
   1. Follow help dont; use help status for landed vs not landed.
-  2. autowire init / analysis / deps for workspace + RtlIndex.
+  2. autowire init / analysis run for workspace + RtlIndex.
   3. Author connect HTML per docs/connect/html.md.
-  4. autowire web [unit]; wait for first paint (or #aw-status when GET params auto-run).
+  4. autowire connect web [unit]; wait for first paint.
   2. Playwright MCP: navigate / snapshot / evaluate / click — inspect live DOM, not source HTML.
      Workspace MCP (docs/mcp/workspace.md, not landed): node-level author HTML edit + RtlIndex
      search; does not elaborate; call web for check/render/dump when results are needed.
   3. Run check on aw-content (legality + deps) separately from render/dump; dump should refuse unclean check.
-  4. Dump via same-origin POST /api/dump (reads aw-render); browser must not write the workspace.
-  5. autowire render [unit] when the design is settled and a browser is not needed.
-     Same module scripts and aw-render as web. It does not write .sv; dump does.
+  4. connect run writes .sv from aw-render. The browser session does not write.
+  5. autowire connect run [unit] when the design is settled and a browser is not needed.
+     Same module scripts and aw-render as the page. Unchanged files are skipped.
 
 Rules of engagement
   Edit this help (src/cli/help.ts) when behavior changes; format constraints live in docs/.
@@ -71,19 +70,24 @@ Status (code is truth; do not invent finished commands)
 
 Landed
   autowire help [topic]
-  autowire init / analysis   workspace autowire.toml → hdxml
-  autowire deps <path>      RTL module dependency tree
+  autowire init / analysis run   workspace autowire.toml → hdxml
+  autowire analysis deps    RTL module dependency tree
   hdxml sidecar             analysis → RtlIndex XML
   aw.js                     engine: src/core/aw.ts → build:web → web/aw.js (generated; guarded)
-  autowire web [unit]       local page (127.0.0.1); buttons + GET ?check/?render/?dump/?select
-  autowire check [unit]     author-face legality + deps (no write)
-  POST /api/check|/api/dump validate-only / only RTL write path; snapshots → .autowire/connect/
+  autowire connect web [unit]  static session; buttons; no workspace write
+  autowire connect check [unit] author-face legality + deps (no write)
+  autowire connect run [unit]   happy-dom: scripts → elaborate → write .sv (no browser)
   Playwright cases/golden   src/e2e-web.test.ts + test/golden/*.sv (headless Chromium)
   Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
   aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; dump → sim_dir
-  autowire render [unit]    happy-dom: scripts → elaborate → write .sv (no browser)
+  Playwright cases/golden   src/e2e-web.test.ts + test/golden/*.sv (headless Chromium)
 
 Not landed
+  Command shape (docs/cli.md): connect exposes run and check. web is a stateful
+    session; MCP steps before-instances, check, elaborate, before-dump, or run.
+    Generated source stays in the visible page. Save uses the browser. Buttons
+    remain for manual use. Web commands do not write files. analysis groups
+    run, deps, search, and info. Not landed.
   Workspace MCP             author HTML node edit + RtlIndex search (docs/mcp/workspace.md)
   Production package        three sibling binaries: autowire, hdxml, lightpanda
                             (docs/dev/release.md). lightpanda is the only bundled debug
@@ -237,15 +241,13 @@ Dirs
   .autowire/          generated temp (deletable; never hand-authored)
   .autowire/hdxml/    RtlIndex XML — web loads ONLY via GET /api/rtlindex|/api/module
   .autowire/connect/  per-unit snapshot: <id>.xml only (abstract module info,
-                      hdxml-style, no timestamps/hashes) — dump + cross-unit deps
+                      hdxml-style, no timestamps/hashes) — connect run + cross-unit deps
                       via GET /api/connect?id=; never author SoT; no html snapshot
-  .autowire/save/     debug drop: POST /api/save persists live DOM <id>.html
-                      (edited aw-content + aw-render) — temp, never author SoT
 
 Load rules (docs/workspace/toml.md §4.2 / docs/workspace/web-ui.md §5)
   leaf ports: hdxml only (missing/stale definesFp → error when needed)
   cross-unit: require dep unit snapshot under connect/ (or elaborate deps first)
-  browser never reads workspace files directly; dump never reloads author html=
+  browser never reads workspace files directly; connect run never reloads author html=
 
 Macro policy (hdxml)
   expanding: -D / [analysis.defines] NAME="v"
@@ -259,13 +261,16 @@ Boundaries
 `,
 
 	analysis: `\
-autowire init / analysis (landed)
+autowire init / analysis (docs/cli.md)
 
   autowire init
-  autowire analysis [--workspace dir|file] [--hdxml bin] [--sub-bars] [--refresh]
+  autowire analysis run [--workspace dir|file] [--hdxml bin] [--sub-bars] [--force]
+  autowire analysis deps [module] [--depth n]
+  autowire analysis search [--module|--port|--package|--enum] [--regex] <pattern>
+  autowire analysis info <module>
 
 init: create default autowire.toml in CWD (refuses to overwrite).
-analysis: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
+analysis run: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
 (docs/workspace/toml.md):
   [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames
       → -f / -s / -w / --exclude-filenames
@@ -280,10 +285,16 @@ hdxml never reads toml; autowire maps everything.
 Paths in toml are relative to the workspace root (toml location).
 No [analysis.rtl] sources configured → error.
 Error files keep the index usable; hdxml exit code is passed through.
---refresh: analysis is incremental by default — unchanged files are reused from the
-  RtlIndex dir (mtime fast path, content-hash arbiter; \`include closure tracked;
-  defines/incdirs/tool change → full re-parse). --refresh forces a full re-parse
-  and rewrites the cache.
+--force: analysis is incremental by default — unchanged files are reused from the
+  RtlIndex dir. --force maps to hdxml --refresh (full re-parse, rewrites the cache).
+
+analysis deps: print dependency trees from the existing index. Omit module for every
+  tree. It does not parse RTL; missing index → error (run analysis run first).
+analysis search: one kind at a time. Default kind is module. Pattern is a fuzzy
+  substring unless --regex. Each hit prints the name, the index XML, and the RTL file.
+  --enum searches localparam names inside packages.
+analysis info: exact module name. Prints params and ports plus the XML and RTL paths.
+  Unknown name is an error; it does not fall back to fuzzy search.
 `,
 
 	connect: `\
@@ -340,93 +351,62 @@ Elaboration: before-instances → params → on-template → identity nets → w
 `,
 
 	web: `\
-autowire web (landed)
+autowire connect web
 
-  autowire web [html]
+  autowire connect web [unit]
 
-Local HTTP page for headed browsers and headless Chromium.
-Layout / GET action contract: docs/workspace/web-ui.md.
+Static page on 127.0.0.1. The session does not write the workspace.
+Buttons: Check, Run, Save, Reset. Generated source is visible in #aw-generated.
+Save downloads that text in the browser. MCP calls window.aw.session(step):
+  before-instances, check, elaborate, before-dump, run, save, help.
+None of those steps write a file. connect run writes .sv.
 
-Page: header must expose [Render] [Check] [Dump] [Reset] for humans;
-  left = dep tree + db summary;
-  right = selected module (RtlIndex read-only; aw-render preview after render).
-  [Check] validates aw-content (author), NOT aw-render; Check has no prerequisite.
-  [Render] depends on Check (auto-runs Check first; abort render on check errors).
-  [Dump] depends on Render (thus Check); dump reads aw-render only.
-
-GET (same actions / same prereqs; docs/workspace/web-ui.md §3)
-  no action params   load only; use header buttons
-  ?check=1           validate aw-content + deps only (no render, no .sv)
-  ?render=1          check → render (render depends on check)
-  ?dump=1            check → render → dump
-  ?select=MOD&…      select then the requested actions; order: check → render → dump
-  done signal        #aw-status[data-state=done|error]
-
-Endpoints: GET /api/rtlindex, GET /api/module?name=  (.autowire/hdxml),
-  GET /api/connect?id= (.autowire/connect <id>.xml snapshots; not author HTML),
-  POST /api/check (validate only), POST /api/dump (only RTL write path; may refresh connect/),
-  POST /api/save (debug drop → .autowire/save/<id>.html; browser never writes author HTML).
-Isolation: 127.0.0.1 / localhost only. File writes only via autowire API.
-Agent workflow: help agent.
+GET (read-only)
+  /api/rtlindex, /api/module?name=, /api/author?id=, /api/connect?id=
 `,
 
 	check: `\
-autowire check (landed; separate from dump / render)
+autowire connect check
 
-  autowire check [html|workspace]
-  POST same-origin /api/check
+  autowire connect check [unit]
 
 Validate author-face connect HTML (aw-content + aw-submods) and dependency graphs.
-Does NOT inspect aw-render as SoT. Does NOT write .sv / gen/. Does NOT require render.
-Full checklist: docs/connect/check.md (what check vs elaborate vs dump own).
+Does NOT inspect aw-render as SoT. Does NOT write .sv. Does NOT require a browser.
+Full checklist: docs/connect/check.md.
 
 Must check (author-face + RtlIndex/deps context)
   dialect constraints on aw-content (docs/connect/html.md / docs/connect/rules.md)
   type=/to legality (docs/connect/to-rules.md) without needing expand results
-  [connect.<id>] toml deps: missing ref = error; unused = warn; cycle = error
-  aw-mod@deps + path-accumulated visible set (siblings do not inherit each other's deps)
+  toml deps: missing cross-unit ref = error; unknown id / cycle / self-dep = error
+  unused dep = warning (does not fail check)
 
-Not check's job (elaborate / dump still gate)
-  identity same-name wiring, short-circuit, const/open direction, dim merge
-  aw-render dumpability (no leftover template/rewrite) — dump gate after render
+Not check's job
+  printing .sv (connect run)
+  editing author HTML
 
-Web header [Check] / GET ?check=1 / POST /api/check / cli --check share the same checker.
-Render depends on Check (auto-check before elaborate). Dump depends on Render.
-Check green is not dump-ready: elaborate errors still block write-back.
-See docs/connect/check.md, docs/workspace/web-ui.md §3.1, docs/architecture.md.
+connect run depends on this check and refuses to write when it fails.
+Check green is not a substitute for reading the written RTL.
 `,
 
 	dump: `\
-Dump / write-back (landed; pairs with autowire web)
+Write-back is connect run, not a web POST.
 
-  POST same-origin /api/dump
+  autowire connect run [unit]
 
-Browser does not touch disk. Body = every related aw-mod aw-render
-(nested submods + multi-HTML units per [connect.<id>] deps): instances / aw-connect /
-export aw-port / aw-signals / aw-localparams / aw-imports — not aw-content.
-Server persists the <id>.xml abstract-module snapshot under .autowire/connect/
-then emits SV; dump must not re-load author HTML as the netlist.
-SV import from aw-imports at module head, deduped.
-autowire checks workspace paths then writes RTL; DV checks files.
-Server re-runs check on the unit's author HTML before writing (422 on error);
-module names must be plain SV identifiers (they become file names).
-All /api/* refuse a foreign Host or cross-origin Origin; POST bodies must be
-application/json (so other pages in the browser cannot drive a write).
-Dump is not a substitute for check — content check (aw-content) before render/write.
-Dump requires render (render already required check); refuse on check or unclean-render errors.
-
-web and future cli must share this write path.
-Do not treat hand-rolled fake-dump scripts as the official path.
+Reads aw-render after check and elaborate. Writes .sv and, for connect units,
+the <id>.xml snapshot. The web session does not call this and does not write.
 `,
 
 	cli: `\
-autowire render (landed; happy-dom, no browser)
+autowire connect run (happy-dom, no browser)
 
-  autowire render [unit]
+  autowire connect run [unit] [--force]
 
-Runs the same pipeline as the web page for a settled design:
+Runs the settled-design pipeline and writes .sv. Unchanged files are skipped.
+--force rewrites them. The same flag on analysis run and plugin wishbone run
+forces those outputs too.
   HTML module scripts (aw.on) → before-instances → check → elaborate
-  → before-dump → write .sv (same files as POST /api/dump).
+  → before-dump → write .sv
 
 Module scripts must be type="module" and use only DOM / aw.*.
 happy-dom and Chromium must produce the same snapshot for the same HTML.
@@ -434,23 +414,13 @@ Playwright remains the debug path. No browser is required to write RTL.
 `,
 
 	deps: `\
-autowire deps (landed)
+autowire analysis deps
 
-  bun index.ts deps <path>
-  bun index.ts deps <path> --top <name> --depth <n>
-  bun index.ts deps <rtl-dir> -I <incdir> --hdxml <bin>
+  autowire analysis deps [module] [--depth n] [--workspace dir|file]
 
-<path>
-  RtlIndex dir (with index.xml): read directly
-  else RTL source dir → hdxml sidecar into .autowire/hdxml
-
-hdxml lookup: --hdxml > $HDXML_BIN > repo hdxml/target/{release,debug}/hdxml[.exe] > PATH
-
-Output
-  summary: tool / files / modules / tops; error files in red
-  trees: top cyan, normal green, blackbox yellow, cycle red
-
-deps must not rewrite RTL; connect page reads port tables read-only.
+Reads the workspace RtlIndex. Omit module to print every dependency tree.
+A module name prints only that tree. Missing index → error; run analysis run first.
+Does not parse RTL and does not write files.
 `,
 
 	dont: `\
@@ -468,10 +438,8 @@ Do not
   put wiring into autowire.toml ([connect.<id>] allows only html= + deps= — no top, no wiring)
   patch aw-render after it is filled (lifecycle: only before-instances + on-template may write; before-dump is read-only)
   rely on document-order "forward" sibling refs inside aw-submods (use aw-mod@deps; visible set accumulates down the path)
-  treat dump as the only validation (use autowire check on aw-content + deps; dump reads aw-render)
-  require render before check (wrong direction: Render depends on Check; Check does not depend on Render)
-  skip check before render or dump (?render=1 / [Render] must auto-run Check first)
-  generate regfile/cfgbus from connect aw-submods custom tags (use: autowire plugin generate; docs/plugins/)
+  treat connect run as the only validation (use connect check on aw-content + deps)
+  generate regfile/cfgbus from connect aw-submods custom tags (use: plugin wishbone run; docs/plugins/)
   treat Excel / C headers / uvm_reg as register SoT, or reverse-generate TS from them
   treat Workspace MCP html_write as elaborate (must still run web check/render/dump for netlist)
   list same-name ports one-by-one in aw-connect (identity omits them; rename → one aw-rewrite RegExp)
@@ -487,12 +455,14 @@ function commandIndex(): string {
 		"",
 		"  help [topic]              topic reference (see help topics)",
 		"  init                      create default autowire.toml in CWD",
-		"  analysis [options]        run hdxml from autowire.toml   → help analysis | workspace",
-		"  deps <path> [options]     RTL module dependency tree     → help deps",
-		"  web [unit]                local connect page → help web | check | dump",
-		"  check [unit]              validate HTML + deps (no write) → help check",
-		"  plugin generate [id]      type-A generate → plugins_dir   → help status",
-		"  render [unit]              happy-dom render → .sv (no browser) → help cli",
+		"  analysis run              hdxml from autowire.toml       → help analysis",
+		"  analysis deps [module]    RTL dependency trees           → help deps",
+		"  analysis search <pattern> fuzzy or regex index search    → help analysis",
+		"  analysis info <module>    params and ports               → help analysis",
+		"  connect run [unit]       happy-dom check then write .sv  → help cli",
+		"  connect check [unit]     author-face rules, no write    → help check",
+		"  connect web [unit]       static session page            → help web",
+		"  plugin wishbone run      generate regfiles and buses    → help status",
 		"",
 		"Also: help status | connect | dont",
 		"Docs: docs/   (format constraints; keep in sync with help)",

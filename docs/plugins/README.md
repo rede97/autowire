@@ -57,7 +57,7 @@ toml section       可选：[plugins.wishbone] / [wishbone.<source>] …
 
 1. 未知标签且未注册 → check **报错**（勿静默忽略）。  
 2. 核心 `aw-*` **禁止**被插件覆盖。  
-3. 类型 A 的 `generate` **禁止**藏在 `/api/dump`；**应当**独立相位（如 `autowire plugin generate <id>`）；产物 **必须**进 `plugins_dir/<plugin-id>/`（[`../workspace/toml.md`](../workspace/toml.md) §4.0），**禁止**写入 `connect_dir` / `sim_dir`。  
+3. 类型 A 的 `run` **禁止**藏在 connect 页面里。命令是 `autowire plugin <id> run`。产物 **必须**进 `plugins_dir/<plugin-id>/`（[`../workspace/toml.md`](../workspace/toml.md) §4.0），**禁止**写入 `connect_dir` / `sim_dir`。  
 4. 类型 B 展开结果 **必须**再过与核心相同的 connect check（见 §6）。  
 5. 类型 A 插件自检（字段重叠、地址窗等）在 **generate** 时跑，**不是** `aw.check()` 方言清单的一部分。
 
@@ -76,7 +76,7 @@ toml section       可选：[plugins.wishbone] / [wishbone.<source>] …
 插件 **不推翻**「check ≠ elaborate、dump 只认 `aw-render`」。要扩的是**编排顺序**与注册面：
 
 ```text
-[可选] plugin generate (A)     ← 流水线外；→ plugins_dir → analysis → RtlIndex
+[可选] plugin <id> run (A)     ← 流水线外；→ plugins_dir → analysis → RtlIndex
 connect / sim 单元：
   → [B] expand 自定义标签 → 核心 aw-*
   → before-instances（脚本钩子；改作者面）
@@ -106,6 +106,6 @@ B: expand → aw-* → check → elaborate → dump
 
 1. 登记 API：`registerPlugin()` vs 目录扫描。  
 2. 前缀强制：`awx-` 固定 vs 嵌入 plugin id。  
-3. 类型 A 触点：CLI 子命令 vs web 按钮。  
+3. 类型 A 的命令形状见 [`../cli.md`](../cli.md)：每个插件自己的 `run`，不共用 connect 的执行器。  
 
 已裁定（勿再打开）：A/B 分型；口表三路并进、无插件私有接口；A 用 hdxml 增量；B 像 submods；generate ⊥ dump；expand→check→elaborate；B 钩子同步。

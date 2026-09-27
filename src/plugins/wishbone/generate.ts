@@ -26,6 +26,7 @@ import { swLayoutFingerprint } from "../wishbone-regfile/emit-sw.ts";
 import { generateDef as generateRegfileDef } from "../wishbone-regfile/generate.ts";
 import { type LaidRegfile, layoutRegfile } from "../wishbone-regfile/layout.ts";
 import { PLUGIN_ID } from "./id.ts";
+import { writeIfChanged } from "../../core/write.ts";
 
 export { PLUGIN_ID };
 
@@ -121,6 +122,7 @@ async function packSoftware(
 	ws: WorkspaceConfig,
 	excelBySheet: Map<string, LaidRegfile>,
 	buses: readonly BusDef[],
+	force = false,
 ): Promise<string[]> {
 	const paths: string[] = [];
 	const mapped = buses.filter((b) => mapHangsDeep(b).length > 0);
@@ -130,14 +132,12 @@ async function packSoftware(
 		for (const bus of mapped) {
 			const name = busMapHeaderName(bus);
 			const cPath = join(ws.wishboneCExport, name);
-			await Bun.write(cPath, emitBusMapC(bus));
-			paths.push(cPath);
+			if (await writeIfChanged(cPath, emitBusMapC(bus), force)) paths.push(cPath);
 			headers.push(name);
 		}
 		if (headers.length > 0) {
 			const uPath = join(ws.wishboneCExport, "wishbone.h");
-			await Bun.write(uPath, emitCUmbrella(headers));
-			paths.push(uPath);
+			if (await writeIfChanged(uPath, emitCUmbrella(headers), force)) paths.push(uPath);
 		}
 	}
 	if (ws.wishboneUvmExport) {
@@ -148,14 +148,12 @@ async function packSoftware(
 		for (const bus of mapped) {
 			const name = `${busRalBlockName(bus)}.sv`;
 			const uPath = join(ws.wishboneUvmExport, name);
-			await Bun.write(uPath, emitBusMapUvm(bus));
-			paths.push(uPath);
+			if (await writeIfChanged(uPath, emitBusMapUvm(bus), force)) paths.push(uPath);
 			files.push(name);
 		}
 		if (files.length > 0) {
 			const uPath = join(ws.wishboneUvmExport, "ral_wishbone.sv");
-			await Bun.write(uPath, emitUvmUmbrella(files));
-			paths.push(uPath);
+			if (await writeIfChanged(uPath, emitUvmUmbrella(files), force)) paths.push(uPath);
 		}
 	}
 	if (ws.wishboneExcelExport && (excelBySheet.size > 0 || mapped.length > 0)) {
@@ -175,6 +173,7 @@ async function emitRegfile(
 	leafNames: Map<string, string>,
 	swSheets: Map<string, string>,
 	excelBySheet: Map<string, LaidRegfile>,
+	force = false,
 ): Promise<string[]> {
 	const fp = swLayoutFingerprint(layoutRegfile(def));
 	const prev = leafNames.get(def.name);
@@ -187,14 +186,27 @@ async function emitRegfile(
 		return [];
 	}
 	leafNames.set(def.name, fp);
-	return generateRegfileDef(ws, def, swSheets, excelBySheet);
+	return generateRegfileDef(ws, def, swSheets, excelBySheet, force);
 }
 
-export async function generateAll(ws: WorkspaceConfig): Promise<string[]> {
+export async function generateAll(
+	ws: WorkspaceConfig,
+	only?: string,
+	force = false,
+): Promise<string[]> {
 	const paths: string[] = [];
+	let sources = ws.wishboneSources;
+	if (only) {
+		sources = sources.filter((s) => s.id === only);
+		if (sources.length === 0) {
+			throw new Error(
+				`wishbone: no [wishbone.${only}] in autowire.toml (have: ${ws.wishboneSources.map((s) => s.id).join(", ")})`,
+			);
+		}
+	}
 	const listedRf: RegfileDef[] = [];
 	const buses: BusDef[] = [];
-	for (const src of ws.wishboneSources) {
+	for (const src of sources) {
 		const loaded = await loadWishboneSource(src);
 		listedRf.push(...loaded.regfiles);
 		buses.push(...loaded.buses);
@@ -204,7 +216,7 @@ export async function generateAll(ws: WorkspaceConfig): Promise<string[]> {
 	const excelBySheet = new Map<string, LaidRegfile>();
 	for (const def of listedRf) {
 		paths.push(
-			...(await emitRegfile(ws, def, leafNames, swSheets, excelBySheet)),
+			...(await emitRegfile(ws, def, leafNames, swSheets, excelBySheet, force)),
 		);
 	}
 	const fabricNames = new Set<string>();
@@ -212,9 +224,10 @@ export async function generateAll(ws: WorkspaceConfig): Promise<string[]> {
 	if (allBuses.length > 0) {
 		const outDir = join(ws.pluginsDir, PLUGIN_ID);
 		await mkdir(outDir, { recursive: true });
-		paths.push(await generatePipeModule(outDir));
+		const pipe = await generatePipeModule(outDir, force);
+		if (pipe) paths.push(pipe);
 		if (allBuses.some(busNeedsMasterModules)) {
-			paths.push(...(await generateMasterModules(outDir)));
+			paths.push(...(await generateMasterModules(outDir, force)));
 		}
 	}
 	for (const def of allBuses) {
@@ -230,8 +243,8 @@ export async function generateAll(ws: WorkspaceConfig): Promise<string[]> {
 				...(await emitRegfile(ws, rf, leafNames, swSheets, excelBySheet)),
 			);
 		}
-		paths.push(...(await generateBusDef(ws, def)));
+		paths.push(...(await generateBusDef(ws, def, force)));
 	}
-	paths.push(...(await packSoftware(ws, excelBySheet, allBuses)));
+	paths.push(...(await packSoftware(ws, excelBySheet, allBuses, force)));
 	return paths;
 }

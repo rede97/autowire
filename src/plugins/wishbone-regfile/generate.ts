@@ -14,6 +14,7 @@ import {
 	swLayoutFingerprint,
 } from "./emit-sw.ts";
 import { type LaidRegfile, layoutRegfile } from "./layout.ts";
+import { writeIfChanged } from "../../core/write.ts";
 
 export { PLUGIN_ID };
 
@@ -47,14 +48,14 @@ export async function generateDef(
 	def: RegfileDef,
 	swSheets: Map<string, string> = new Map(),
 	excelBySheet: Map<string, LaidRegfile> = new Map(),
+	force = false,
 ): Promise<string[]> {
 	const laid = layoutRegfile(def);
 	const paths: string[] = [];
 	const svDir = join(ws.pluginsDir, PLUGIN_ID);
 	await mkdir(svDir, { recursive: true });
 	const svPath = join(svDir, `${def.name.toLowerCase()}_regfile.sv`);
-	await Bun.write(svPath, emitRegfileSv(laid));
-	paths.push(svPath);
+	if (await writeIfChanged(svPath, emitRegfileSv(laid), force)) paths.push(svPath);
 	const table = effectiveSheet(def);
 	const fp = swLayoutFingerprint(laid);
 	const prev = swSheets.get(table);
@@ -71,14 +72,12 @@ export async function generateDef(
 	if (ws.wishboneCExport) {
 		await mkdir(ws.wishboneCExport, { recursive: true });
 		const cPath = join(ws.wishboneCExport, `${table}.h`);
-		await Bun.write(cPath, emitRegfileC(laid));
-		paths.push(cPath);
+		if (await writeIfChanged(cPath, emitRegfileC(laid), force)) paths.push(cPath);
 	}
 	if (ws.wishboneUvmExport) {
 		await mkdir(ws.wishboneUvmExport, { recursive: true });
 		const uPath = join(ws.wishboneUvmExport, `ral_${table.toUpperCase()}.sv`);
-		await Bun.write(uPath, emitRegfileUvm(laid));
-		paths.push(uPath);
+		if (await writeIfChanged(uPath, emitRegfileUvm(laid), force)) paths.push(uPath);
 	}
 	return paths;
 }

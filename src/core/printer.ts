@@ -3,8 +3,9 @@
 // Input is the deterministic snapshot produced by web/aw.js serializeSnapshot():
 // <autowire> → aw-mod (name) → aw-render (params/imports/localparams/ports/signals/insts),
 // with nested aw-mod after the render. All data lives on attributes.
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { writeIfChanged } from "./write.ts";
 
 export interface RenderParam {
 	name: string;
@@ -553,14 +554,15 @@ export async function writeSvFiles(
 	outDir: string,
 	unitId: string,
 	style: PrintStyle = {},
+	force = false,
 ): Promise<string[]> {
 	assertModuleNames(mods);
 	await mkdir(outDir, { recursive: true });
 	const written: string[] = [];
 	for (const m of flattenModules(mods)) {
 		const path = join(outDir, `${m.name}.sv`);
-		await writeFile(path, printSv(m, unitId, style), "utf8");
-		written.push(path);
+		if (await writeIfChanged(path, printSv(m, unitId, style), force))
+			written.push(path);
 	}
 	return written;
 }

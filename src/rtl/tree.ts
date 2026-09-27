@@ -44,7 +44,7 @@ function renderInto(
 	});
 }
 
-/** Render all dependency trees of the index (one tree per top, returned line by line) */
+/** Render dependency trees. `top` selects one module anywhere in the hierarchy. */
 export function renderTrees(
 	index: RtlIndex,
 	opts: { top?: string; depth?: number } = {},
@@ -52,8 +52,9 @@ export function renderTrees(
 	const maxDepth = opts.depth ?? Number.MAX_SAFE_INTEGER;
 	let tops = index.tops;
 	if (opts.top) {
-		tops = tops.filter((t) => t.module === opts.top);
-		if (tops.length === 0) throw new Error(`top module not found: ${opts.top}`);
+		const found = findNode(index.tops, opts.top);
+		if (!found) throw new Error(`module not found: ${opts.top}`);
+		tops = [found];
 	}
 	const out: string[] = [];
 	for (const t of tops) {
@@ -63,6 +64,15 @@ export function renderTrees(
 		});
 	}
 	return out;
+}
+
+function findNode(nodes: readonly HierNode[], name: string): HierNode | undefined {
+	for (const n of nodes) {
+		if (n.module === name) return n;
+		const child = findNode(n.children, name);
+		if (child) return child;
+	}
+	return undefined;
 }
 
 /** Summary lines (file/module/top counts + error file list) */

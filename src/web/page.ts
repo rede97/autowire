@@ -75,6 +75,54 @@ const state: {
 	leafCache: new Map(),
 };
 
+function showGenerated(text: string): void {
+	const box = $("#aw-generated");
+	if (box) box.textContent = text;
+}
+
+const SESSION_HELP = [
+	"before-instances: run author scripts on the current unit",
+	"check: rule report; requires before-instances",
+	"elaborate: freeze aw-render; requires a clean check",
+	"before-dump: read-only hook; requires elaborate",
+	"run: the whole chain; same result as connect run, no file write",
+	"save: browser download of #aw-generated; no workspace path",
+].join("\n");
+
+async function sessionStep(step: string): Promise<string> {
+	const id = state.current;
+	if (!id) throw new Error("no unit selected");
+	if (step === "help") return SESSION_HELP;
+	if (step === "before-instances") {
+		await loadUnit(id);
+		showGenerated($("#aw-live").textContent ?? "");
+		return "before-instances";
+	}
+	if (step === "check") {
+		const res = await runCheck(id);
+		const text = [...res.errors, ...res.warnings].join("\n") || "check ok";
+		showGenerated(text);
+		return text;
+	}
+	if (step === "elaborate") {
+		const res = await runRender(id);
+		if (res.errors.length > 0) throw new Error(res.errors[0]);
+		showGenerated($("#aw-live").textContent ?? "");
+		return "elaborate";
+	}
+	if (step === "before-dump" || step === "run") {
+		const res = await runDump(id);
+		return res.files.join("\n");
+	}
+	if (step === "save") {
+		$("#btn-save").click();
+		return $("#aw-generated")?.textContent ?? "";
+	}
+	throw new Error(`unknown session step "${step}"`);
+}
+
+Object.assign(AW, { session: sessionStep });
+
 function setStatus(state_: Status, text: string): void {
 	statusEl.dataset.state = state_;
 	statusEl.textContent = text;
@@ -330,7 +378,6 @@ async function runRender(id: string): Promise<AwEngine.CheckResult> {
 
 async function runDump(id: string): Promise<{ files: string[] }> {
 	if (!unitOf(id)) throw new Error(`unknown unit "${id}"`);
-	// Dump collects every related unit: deps first, then this unit.
 	const chain: string[] = [];
 	const visit = (uid: string): void => {
 		if (chain.includes(uid)) return;
@@ -351,14 +398,9 @@ async function runDump(id: string): Promise<{ files: string[] }> {
 		const entry = state.docs.get(uid);
 		if (!entry) throw new Error(`unit "${uid}" not loaded`);
 		AW.runBeforeDump(entry.doc as unknown as Document, uid);
-		const html = AW.serializeSnapshot(entry.doc as unknown as Document);
-		const data = await fetchJson<{ files?: string[] }>("/api/dump", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ id: uid, html }),
-		});
-		files.push(...(data.files ?? []));
+		files.push(AW.serializeSnapshot(entry.doc as unknown as Document));
 	}
+	showGenerated(files.join("\n"));
 	return { files };
 }
 
@@ -381,7 +423,7 @@ async function runChain({
 			// dep in-session first.
 			const res = await runDump(id);
 			summary.push(
-				`check: ok; render: ok; dump: ${res.files.length} file(s) written`,
+				`check: ok; render: ok; source: ${res.files.length} snapshot(s) in view`,
 			);
 		} else {
 			if (check || render) {
@@ -604,25 +646,20 @@ async function init(): Promise<void> {
 	$("#btn-check").addEventListener("click", () => runChain({ check: true }));
 	$("#btn-render").addEventListener("click", () => runChain({ render: true }));
 	$("#btn-dump").addEventListener("click", () => runChain({ dump: true }));
-	$("#btn-save").addEventListener("click", async () => {
-		// Debug drop (docs/mcp/README.md): persist the live DOM to
-		// .autowire/save/<unit>.html; never writes the author HTML.
-		const entry = state.current ? state.docs.get(state.current) : undefined;
-		const root = entry?.container.querySelector(":scope > autowire");
-		if (!root) {
-			setStatus("error", `save: unit "${state.current}" not loaded`);
+	$("#btn-save").addEventListener("click", () => {
+		const text = $("#aw-generated")?.textContent ?? "";
+		if (!text) {
+			setStatus("error", "save: run first; nothing generated");
 			return;
 		}
-		try {
-			const res = await fetchJson<{ file: string }>("/api/save", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ id: state.current, html: root.outerHTML }),
-			});
-			setStatus("done", `saved → ${res.file}`);
-		} catch (e) {
-			setStatus("error", `save: ${(e as Error).message}`);
-		}
+		const blob = new Blob([text], { type: "text/plain" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = `${state.current ?? "autowire"}.html`;
+		a.click();
+		URL.revokeObjectURL(url);
+		setStatus("done", "save: browser download");
 	});
 	$("#btn-reset").addEventListener("click", () => resetAll());
 	$("#dep-tree").addEventListener("click", (e) => {

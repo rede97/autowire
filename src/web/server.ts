@@ -1,39 +1,21 @@
-// `autowire web [unit|html]` — local page server (127.0.0.1 only).
-// Contract: docs/workspace/web-ui.md (layout, GET actions, #aw-status), docs/workspace/toml.md §4.2.
-// The browser never touches the workspace: RtlIndex via /api/rtlindex + /api/module,
-// dep snapshots via /api/connect, the only write path is POST /api/dump.
+// `autowire connect web` — static page and read-only data (127.0.0.1 only).
+// The session does not write the workspace. connect run writes .sv.
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 // Browser assets embedded as text: same source in dev (`bun index.ts`) and in
 // the compiled binary (`bun build --compile`); web/aw.js is the built bundle.
 // @ts-expect-error Bun text import (typed via src/assets.d.ts for editors that resolve it)
 import awBundle from "../../web/aw.js" with { type: "text" };
 // @ts-expect-error Bun text import
 import pageJs from "../../web/page.js" with { type: "text" };
-import { check as awCheck } from "../core/aw.ts";
-import {
-	buildEngineCtx,
-	connectDir,
-	loadUnitDoc,
-	topoUnits,
-} from "../core/connect.ts";
-import { connectXml } from "../core/connectxml.ts";
-import {
-	assertModuleNames,
-	assertPrintable,
-	parseSnapshot,
-	type RenderModule,
-	writeSvFiles,
-} from "../core/printer.ts";
+import { connectDir, topoUnits } from "../core/connect.ts";
 import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex } from "../rtl/rtlindex.ts";
 import {
 	allUnits,
-	type ConnectUnit,
 	findUnit,
-	unitDumpDir,
 	type WorkspaceConfig,
 } from "../workspace.ts";
 
@@ -67,38 +49,6 @@ function originGuard(req: Request, port: number | undefined): string | null {
 	if (origin !== null && !hosts.some((h) => origin === `http://${h}`))
 		return `refused: cross-origin request from "${origin}"`;
 	return null;
-}
-
-/** JSON-only bodies: a cross-site form or text/plain POST cannot reach here
- *  without a CORS preflight, which this server never grants. */
-async function readBody(req: Request): Promise<Record<string, unknown>> {
-	const type = (req.headers.get("content-type") ?? "").toLowerCase();
-	if (!type.startsWith("application/json"))
-		throw new HttpError(
-			415,
-			"unsupported media type: expected application/json",
-		);
-	try {
-		const body: unknown = await req.json();
-		if (typeof body === "object" && body !== null)
-			return body as Record<string, unknown>;
-	} catch {
-		// fall through
-	}
-	throw new HttpError(400, "bad request: expected JSON object body");
-}
-
-/** Author-face check for one unit (aw-content + deps), read from its html= file. */
-async function checkUnit(
-	state: WebState,
-	unit: ConnectUnit,
-): Promise<{ errors: string[]; warnings: string[] }> {
-	const { ws, leafDb } = state;
-	const { doc } = await loadUnitDoc(ws, unit);
-	const built = await buildEngineCtx(ws, unit, allUnits(ws), leafDb);
-	await built.prewarm(doc);
-	const res = awCheck(doc as never, built.ctx);
-	return { errors: [...built.errors, ...res.errors], warnings: res.warnings };
 }
 
 async function handleApi(
@@ -175,78 +125,6 @@ async function handleApi(
 			headers: { "content-type": "application/xml; charset=utf-8" },
 		});
 	}
-	if (req.method === "POST" && path === "/api/save") {
-		// Debug drop: persist the live DOM (edited aw-content + aw-render) to
-		// .autowire/save/<id>.html. Never writes author HTML (docs/mcp/README.md).
-		const body = await readBody(req);
-		const id = typeof body.id === "string" ? body.id : "";
-		const html = typeof body.html === "string" ? body.html : "";
-		if (!UNIT_ID.test(id)) return json({ error: "bad unit id" }, 400);
-		const unit = findUnit(ws, id);
-		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
-		if (!html.includes("<autowire"))
-			return json({ error: "body html has no <autowire> root" }, 422);
-		const dir = join(ws.root, ".autowire", "save");
-		await mkdir(dir, { recursive: true });
-		const file = join(dir, `${id}.html`);
-		await writeFile(file, `${html}\n`, "utf8");
-		return json({ file });
-	}
-	if (req.method === "POST" && path === "/api/check") {
-		const body = await readBody(req);
-		const id = typeof body.id === "string" ? body.id : "";
-		const unit = findUnit(ws, id);
-		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
-		return json(await checkUnit(state, unit));
-	}
-	if (req.method === "POST" && path === "/api/dump") {
-		const body = await readBody(req);
-		const id = typeof body.id === "string" ? body.id : "";
-		const html = typeof body.html === "string" ? body.html : "";
-		if (!UNIT_ID.test(id)) return json({ error: "bad unit id" }, 400);
-		const unit = findUnit(ws, id);
-		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
-		let mods: RenderModule[];
-		try {
-			assertPrintable(html);
-			mods = parseSnapshot(html);
-			assertModuleNames(mods);
-		} catch (e) {
-			return json({ error: (e as Error).message }, 422);
-		}
-		if (mods.length === 0)
-			return json({ error: "snapshot has no aw-mod / aw-tb-mod" }, 422);
-		const checked = await checkUnit(state, unit);
-		if (checked.errors.length > 0) {
-			return json(
-				{
-					error: `dump gate: check failed for "${id}": ${checked.errors[0]}`,
-					errors: checked.errors,
-				},
-				422,
-			);
-		}
-		if (unit.kind === "connect") {
-			await mkdir(connectDir(ws), { recursive: true });
-			await writeFile(
-				join(connectDir(ws), `${id}.xml`),
-				`${connectXml(id, mods)}\n`,
-				"utf8",
-			);
-		}
-		const outDir = unitDumpDir(ws, unit.kind);
-		const files = await writeSvFiles(mods, resolve(ws.root, outDir), id, {
-			portAlign: ws.stylePortAlign,
-			paramAlign: ws.styleParamAlign,
-			instPortAlign: ws.styleInstPortAlign,
-			instParamAlign: ws.styleInstParamAlign,
-			instPortDir: ws.styleInstPortDir,
-			instPortDirFormat: ws.styleInstPortDirFormat,
-			instPortWidth: ws.styleInstPortWidth,
-			signalAlign: ws.styleSignalAlign,
-		});
-		return json({ files, mods: mods.map((m) => m.name) });
-	}
 	return json({ error: `no route ${req.method} ${path}` }, 404);
 }
 
@@ -317,6 +195,7 @@ const PAGE_HTML = `<!doctype html>
   <h2>connect DOM (live)</h2>
   <div id="aw-live"></div>
 </section>
+<pre id="aw-generated" aria-label="generated source"></pre>
 <script type="module" src="/page.js"></script>
 </body>
 </html>

@@ -33,7 +33,7 @@ autowire.toml（.f + svh/宏）
     →  hdxml → RtlIndex（只读）
     →  HTML（aw-content + aw-submods）
     →  elaboration → aw-render
-    →  POST /api/dump（读 aw-render）
+    →  connect run（读 aw-render，写 .sv）
     →  autowire 写 .sv
     →  DV
 ```

@@ -29,6 +29,12 @@ export interface RtlIndex {
 	files: FileEntry[];
 	/** Module name → source file path */
 	moduleSource: Map<string, string>;
+	/** Module name → file XML path relative to the index dir */
+	moduleIndex: Map<string, string>;
+	/** Package name → source file path */
+	packageSource: Map<string, string>;
+	/** Package name → file XML path relative to the index dir */
+	packageIndex: Map<string, string>;
 	tops: HierNode[];
 	errorFiles: FileEntry[];
 }
@@ -96,11 +102,24 @@ export async function loadRtlIndex(dir: string): Promise<RtlIndex> {
 	const sourceByIndex = new Map(files.map((f) => [f.index, f.source]));
 
 	const moduleSource = new Map<string, string>();
+	const moduleIndex = new Map<string, string>();
 	const modulesEl = isObj(root.modules) ? root.modules : undefined;
 	for (const m of arr(modulesEl?.module)) {
 		if (!isObj(m)) continue;
-		const src = sourceByIndex.get(str(m["@index"]));
+		const index = str(m["@index"]);
+		const src = sourceByIndex.get(index);
 		if (src) moduleSource.set(str(m["@name"]), src);
+		if (index) moduleIndex.set(str(m["@name"]), index);
+	}
+	const packageSource = new Map<string, string>();
+	const packageIndex = new Map<string, string>();
+	const packagesEl = isObj(root.packages) ? root.packages : undefined;
+	for (const p of arr(packagesEl?.package)) {
+		if (!isObj(p)) continue;
+		const index = str(p["@index"]);
+		const src = sourceByIndex.get(index);
+		if (src) packageSource.set(str(p["@name"]), src);
+		if (index) packageIndex.set(str(p["@name"]), index);
 	}
 
 	const hierEl = isObj(root.hierarchy) ? root.hierarchy : undefined;
@@ -115,6 +134,9 @@ export async function loadRtlIndex(dir: string): Promise<RtlIndex> {
 		defines,
 		files,
 		moduleSource,
+		moduleIndex,
+		packageSource,
+		packageIndex,
 		tops,
 		errorFiles: files.filter((f) => f.status === "error"),
 	};

@@ -2,7 +2,7 @@
 // module scripts → before-instances → check → elaborate → before-dump.
 // then the same snapshot → .sv write as POST /api/dump. No browser.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Window } from "happy-dom";
 import type { LeafDb } from "../rtl/leaf.ts";
@@ -31,6 +31,7 @@ import {
 	parseSnapshot,
 	writeSvFiles,
 } from "./printer.ts";
+import { writeIfChanged } from "./write.ts";
 
 export interface RenderedUnit {
 	id: string;
@@ -93,6 +94,7 @@ export async function renderUnit(
 	unit: ConnectUnit,
 	leafDb: LeafDb,
 	session: Map<string, RenderedUnit>,
+	force = false,
 ): Promise<RenderedUnit> {
 	const html = await readFile(resolve(ws.root, unit.html), "utf8");
 	const win = new Window({ url: "http://127.0.0.1/" }) as ScriptHost;
@@ -139,7 +141,7 @@ export async function renderUnit(
 			throw new Error(`render failed for "${unit.id}": ${rendered.errors[0]}`);
 		runBeforeDump(doc as never, unit.id);
 		const snapshot = serializeSnapshot(doc as never);
-		const files = await writeSnapshot(ws, unit, snapshot);
+		const files = await writeSnapshot(ws, unit, snapshot, force);
 		return {
 			id: unit.id,
 			snapshot,
@@ -156,6 +158,7 @@ async function writeSnapshot(
 	ws: WorkspaceConfig,
 	unit: ConnectUnit,
 	snapshot: string,
+	force = false,
 ): Promise<string[]> {
 	assertPrintable(snapshot);
 	const mods = parseSnapshot(snapshot);
@@ -164,10 +167,10 @@ async function writeSnapshot(
 		throw new Error(`render dump: "${unit.id}" snapshot has no module`);
 	if (unit.kind === "connect") {
 		await mkdir(connectDir(ws), { recursive: true });
-		await writeFile(
+		await writeIfChanged(
 			join(connectDir(ws), `${unit.id}.xml`),
 			`${connectXml(unit.id, mods)}\n`,
-			"utf8",
+			force,
 		);
 	}
 	return writeSvFiles(
@@ -184,5 +187,6 @@ async function writeSnapshot(
 			instPortWidth: ws.styleInstPortWidth,
 			signalAlign: ws.styleSignalAlign,
 		},
+		force,
 	);
 }

@@ -3,7 +3,7 @@
 > 状态：**实现中（功能裁定已齐；`help status`：Wishbone implementing now；plugin id `wishbone`）**。  
 > 块内配置互联：[`wishbone-bus.md`](./wishbone-bus.md)。插件登记：[`README.md`](./README.md)。  
 > 作者面草稿 / 示例：[`docs/examples/regfile/`](../../examples/regfile/)（`regfile.ts` SoT + `*_regfile.sv` 展示）。  
-> 正式生成：`autowire plugin generate wishbone` → `[dump] plugins_dir/wishbone/`。  
+> 正式生成：`autowire plugin wishbone run` → `[dump] plugins_dir/wishbone/`。`--only <source>` 只跑一个 `[wishbone.<source>]`。  
 > 主干对照：`master` 分支 `autowire/regtable/gen_verilog.py`、`regfile.py`、`common/verilog_model.py`。  
 > 改本文时同步 bus 文开放项（地址/`SEL`）与 `help status` Parallel。
 
@@ -582,4 +582,4 @@ wishbone generate（同一插件；RegfileDef / BusDef 类型分立）
 
 **§8 功能裁定已齐。** `help status`：Wishbone **implementing now**。作者面 API 以 [`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts) + `src/plugins/wishbone-regfile/dsl.ts` / `src/plugins/wishbone-bus/dsl.ts` 为准。
 
-CLI：`autowire plugin generate wishbone`（需 `[wishbone.<source_id>] ts=`；一文件可多叶子 / 总线）。
+CLI：`autowire plugin wishbone run`（需 `[wishbone.<source_id>] ts=`；一文件可多叶子 / 总线）。

@@ -24,7 +24,7 @@ Flash XIP reset PC = `0x0100_0000`. SRAM = `0x0000_0000`..`0x0000_FFFF`
 
 ```bash
 # from demo/soc
-bun ../../index.ts plugin generate wishbone   # SV + packed C / Excel / uvm_reg
+bun ../../index.ts plugin wishbone run   # SV + packed C / Excel / uvm_reg
 ./sim/verilator/run.sh              # basic_smoke (cascade MMIO + grant CSR)
 ./sim/verilator/run.sh --regfile    # wishbone-regfile MMIO (FIFO loopback + counters)
 ./sim/verilator/run.sh --sd         # sd_sha256 + sdspisim card image
