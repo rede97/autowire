@@ -1,19 +1,55 @@
 # Autowire
 
-接手前先跑：`bun index.ts help agent`（工作约定；不要另写项目提示词）。
+HTML plus `<script>` is the connectivity source. After the script runs, the live DOM is the netlist. `connect run` writes `.sv` from `aw-render`. The page shows the same text and does not write the workspace. Product overview: [`README.md`](README.md). Constraints: [`docs/`](docs/README.md).
 
-命令总览：`bun index.ts help`；切片：`bun index.ts help topics`。改行为时同步改 `src/cli/help.ts`。
+Start with `bun index.ts help agent`. Do not invent a command that `help status` does not list as landed. Behavior changes MUST update `src/cli/help.ts` and the matching doc.
 
-一律用 Bun（`bun` / `bun test` / `bunx`），不用 Node/npm/npx 等价物。
+## Tools
 
-格式与实现约束统一在 [`docs/`](docs/README.md)。改约束同步改对应文档与 help 摘要；**先不要实现**未在 `help status` 中开放的步骤。
+Three processes, never linked into one binary. Details: [`docs/dev/release.md`](docs/dev/release.md). The production package is not built yet.
 
-实战手册（非约束，评审中）：[`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md) —— demo/soc 集成食谱、验证纪律、MCP 调试回路、踩坑清单。
+| Tool | Owns | Does not | Help |
+|---|---|---|---|
+| autowire | Workspace CLI: analysis, connect, `plugin wishbone run`. `connect run` writes `.sv` with happy-dom, no browser | RTL parse; a bundled browser | `bun index.ts help` (index), `help topics`, `help <topic>`, `help status` (landed vs parked). Contract: [`docs/cli.md`](docs/cli.md) |
+| hdxml | Read-only RTL analysis to RtlIndex XML. No subcommands. `analysis run` maps `autowire.toml` onto its flags | Connect, print `.sv`, Wishbone | [`docs/hdxml/cli.md`](docs/hdxml/cli.md). Scoped rules: [`hdxml/AGENTS.md`](hdxml/AGENTS.md) |
+| Playwright + Chromium | Dev and CI page tests and debug (`test/e2e-web.test.ts`, `.mcp.json`) | Production package; writing `.sv` | Page contract: [`docs/workspace/web-ui.md`](docs/workspace/web-ui.md) |
+| lightpanda | Production debug browser only (`mcp`, `serve`). Same HTML as happy-dom | Dev/CI today; writing `.sv`. Do not switch `.mcp.json` to it until the package exists | [`docs/dev/release.md`](docs/dev/release.md) sections 1-2 |
 
-## 规则
+Usual path: `analysis run` (hdxml) -> `plugin wishbone run` when the TypeScript SoT changed -> `connect check` -> `connect run`. Open `connect web` and drive it with Playwright only to inspect the live page. The page does not write files.
 
-- **语言**：代码与配置中的注释、错误/提示信息一律**英文**（`docs/` 中文文档除外）。TS 侧由 `test/lang-guard.test.ts` 强制（CJK 即红）。
-- **Lint**：TS 一律过 Biome——提交前跑 `bun run lint`（`biome check .`），零 error 才可提交。
-- **Windows**：工具链统一 MSYS2 UCRT64（Bun / Biome / Playwright 保持 Windows 原生），PATH 只加 `C:\msys64\ucrt64\bin`，行尾 LF（`core.autocrlf false`）。细则见 [`docs/dev/windows-msys2.md`](docs/dev/windows-msys2.md)。
-- **生产包**（暂时不做）：目标仍是并排三颗二进制 `autowire` + `hdxml` + `lightpanda`。这个阶段不写打包脚本。开发与 CI 仍用 Playwright Chromium。细则见 [`docs/dev/release.md`](docs/dev/release.md)。
-- **`.svh` 不进 filelist**：`.f`/`.lst`/`.flst`/`.list` 里出现 `.svh` 条目，hdxml 跳过并警告，**不要**靠把 svh 写进列表来传宏。宏头文件只用 `` `include ``（源内）或 `define_headers`（独立加载）；EDA 全局宏场景用 `eda_load.f`（头部 svh）+ 共享纯源码 `rtl.f` 的降级组合。
+## Commands
+
+Use Bun only: `bun`, `bun test`, `bunx`. Do not use Node, npm, or npx equivalents.
+
+```text
+bun index.ts analysis run
+bun index.ts analysis deps|search|info
+bun index.ts connect check [unit]
+bun index.ts connect run [unit]
+bun index.ts connect web [unit]
+bun index.ts plugin wishbone run
+bun run lint
+bun run build:web
+```
+
+`connect check` reports rules and does not write. `connect run` is the only writer of `.sv` and connect snapshots. `connect web` is a static session. `plugin wishbone run` is the plugin's own run; it does not call connect. Default writes are incremental; `--force` rewrites. Wishbone Excel is always rewritten.
+
+## Sources of truth
+
+- Author HTML: `[connect.<id>]` / `[sim.<id>]` `html=` in `autowire.toml`. One toml per workspace. `deps` are direct edges only.
+- Wishbone SoT: TypeScript `Regfile(...)` / `Bus(...)`. Excel, C, and `uvm_reg` are exports, not sources.
+- Leaf ports: RtlIndex under `.autowire/hdxml/`. Do not reparse RTL in the page.
+- Printer input: `aw-render` only. Do not treat `aw-content` as the netlist.
+
+Generated and MUST NOT be hand-edited: `web/aw.js`, `web/page.js` (`bun run build:web`), `rtl/gen/`, `plugins_dir/`, and `fw/gen/`. `demo/soc/ip/sdspi` stays at upstream `dfb16c8`; its FIFO patch is applied only for a smoke and then discarded.
+
+## Constraints
+
+- Comments, errors, and CLI text MUST be English. Chinese is allowed in `docs/`. `test/lang-guard.test.ts` fails on CJK in TypeScript.
+- `bun run lint` (`biome check .` and `tsc --noEmit`) MUST be clean before a commit.
+- Windows toolchain is MSYS2 UCRT64. PATH gets `C:\msys64\ucrt64\bin` only. Git Bash is not that shell. Line endings are LF. See [`docs/dev/windows-msys2.md`](docs/dev/windows-msys2.md).
+- `.svh` MUST NOT appear in a filelist. Macros come from `` `include `` or `define_headers`.
+- The page and its GET APIs MUST NOT write the workspace. Saving is a browser download or the driver storing `#aw-generated`.
+- Do not implement parked work: the production package, HTML node-edit MCP, plugin type B, extra Wishbone policies in `docs/plugins/wishbone-bus.md` section 8, or a second `autowire.toml`. Dev and CI stay on Playwright Chromium.
+
+`hdxml/` has its own [`AGENTS.md`](hdxml/AGENTS.md). Demo smoke is `demo/soc/sim/verilator/run.sh` from `demo/soc` under UCRT64; see [`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md).
