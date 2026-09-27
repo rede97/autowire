@@ -48,6 +48,7 @@ gen/
 !demo/soc/rtl/gen/
 !demo/soc/fw/gen/
 !demo/hbm/rtl/gen/
+!demo/hbm/fw/gen/
 
 # simulation build artifacts
 obj_dir*/
