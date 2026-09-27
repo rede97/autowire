@@ -1,6 +1,6 @@
 # Wishbone 块内配置总线（bridge / arbiter / decoder）
 
-> 状态：**implementing now**（最小 decoder/interconnect + named slaves + 生成 `wb_cfg_pipe`；arb 策略后补）。不堵连接轨道。  
+> 状态：**已落地**（decoder / interconnect、named slaves、`wb_cfg_pipe`、region broadcast、`plugin wishbone run`）。§8 的开放项暂时不动，等后续需求再追加。  
 > 寄存器叶子：[`wishbone-regfile.md`](./wishbone-regfile.md)。  
 > 插件登记：[`README.md`](./README.md)。改本文时同步 `help status` / [`../architecture.md`](../architecture.md) §5。
 
@@ -57,12 +57,12 @@
 3. **禁止** v1 端点使用 Pipelined `STALL`。  
 4. **禁止**再引入第二套 cfg 内核信号名。  
 5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
-6. **TGA 建模（已裁定）**：`Bus(..., { tagWidth? })` = fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）；`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。**tag 的分配 / 来源 / 跨表共享见 §2.1（提案）。**
+6. **TGA 建模（已裁定）**：有 `tags` 时位宽由各域拼出来，见 §2.1。没有 `tags` 时，`Bus(..., { tagWidth? })` 仍是 fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）。`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
 7. **Decode 槽位名**：生成 `localparam SLOT_<SLAVE>`（slave 名大写，从 0 起）；`slot_sel` 下标与 one-hot 赋值 **必须**用该名（`slot_sel[SLOT_SD1]`、`slot_sel = NS'd1 << SLOT_SD1`），**禁止**裸十进制下标。
 
-### 2.1 Tag 域：分配 / 来源 / 透传（提案，待裁定）
+### 2.1 Tag 域：分配 / 来源 / 透传
 
-> 状态：**提案**，未实现。落地前 §2 规则 6 的 `tagWidth` + 「各 slave `tag` 取最大」仍是现行行为。
+> 状态：**已落地**（`ShadowDomain`、`tags`、`TagFromAddr` / `TagFromPin` / `TagFromReg`；`src/plugins/wishbone-bus/dsl.ts`，`test/wishbone-tag.test.ts`）。没有 `tags` 的总线仍走 §2 规则 6 的 `tagWidth`。
 
 现状的问题：`Shadow(name, copies, tagBits)` 写在 `RegfileDef` 里。多个表共用同一 shadow（HBM：16 channel × `aword`/`dword*`）时要抄 N 份，且每份各自声明 `"1:0"`——跨表位置是否同义 **无人校验**（今天只校验 `Slave.tag === 叶子 tga_width`）。
 
@@ -127,7 +127,7 @@ export const hbm_ch = Bus("hbm_ch", "aword + 2x dword", {
 
 ## 3. 长路径 pipe（写 posted / 读阻塞）
 
-Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上：`plugin generate` 写出通用模 [`wb_cfg_pipe`](./rtl/wb_cfg_pipe_template.sv) → `plugins_dir/wishbone/wb_cfg_pipe.sv`，每口 PIPE>0 例化一次。connect **不必**例化 `wb_cfg_pipe`。
+Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上：`plugin wishbone run` 写出通用模 [`wb_cfg_pipe`](./rtl/wb_cfg_pipe_template.sv) → `plugins_dir/wishbone/wb_cfg_pipe.sv`，每口 PIPE>0 例化一次。connect **不必**例化 `wb_cfg_pipe`。
 
 ### 3.1 谁配置
 
@@ -281,15 +281,16 @@ uvm = "dv/ral"           # ral_block_<name>.sv
 #           smoke FABRIC.rb_grant_en 驱动两个 channel rb_grant_en
 ```
 
-## 8. 仍开放
+## 8. 暂时不做
 
-1. Arbiter 更多默认策略（v1：`rb_grant_en` 固定 / 轮转已落地；其它策略后补）。  
-2. 是否提供 `topology = crossbar` 以及 M/N 上限。  
-3. Bridge 目录：v1 = `wb_apb2wb` + `wb_jtag_tdr`（DFT TDR）+ `wb_cdc`；其余开放项见 [`wishbone-master.md`](./wishbone-master.md) §8。  
-4. 固件窗 + DMA：块周期连续写是否进 v2。  
+下面这些等后续需求再追加，这个阶段不改生成器：
+
+1. Arbiter 更多默认策略（v1：`rb_grant_en` 固定 / 轮转已落地）。  
+2. `topology = crossbar` 以及 M/N 上限。  
+3. Bridge 目录以外的 master 形态，见 [`wishbone-master.md`](./wishbone-master.md) §8。  
+4. 固件窗 + DMA：块周期连续写。  
 5. 默认 slave `pipe`（现缺省 0；作者按口配置）。  
-6. SlaveBus downlink（子 DMA 打回父级窗口）— v1 **不**自动生成。  
-7. **Tag 域三条（§2.1 提案）**：shadow 域上移为独立共享导出、`tags` 的来源声明（裸=透传 / `TagFrom*`=本层产生）、`SlaveBus` tag 由子总线推导。
+6. SlaveBus downlink（子 DMA 打回父级窗口）。v1 **不**自动生成。
 
 **已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。  
 **已裁定软件图 / 挂接**：`SlaveRegfile(RegfileDef, …)` + Type-A wrapper + bus C overlay / `uvm_reg_block`（见 §6）。  

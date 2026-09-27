@@ -1,13 +1,13 @@
-# Web 界面与 GET 动作 API（`autowire web`）
+# Web 界面与 GET 动作（`autowire connect web`）
 
-> 状态：**已实现**（`autowire web`；引擎 `src/core/aw.ts`（打包产物 `web/aw.js`），页面控制 `src/web/page.ts`（打包产物 `web/page.js`），服务 `src/web/server.ts`）。本文约束页面布局与「GET 参数 → 自动动作」契约；组件定位见 [architecture.md](../architecture.md) §2.3–2.5；校验见 `help check`，写回见 `/api/dump`（`help dump`）。
+> 状态：**已实现**（`autowire connect web`；引擎 `src/core/aw.ts`（打包产物 `web/aw.js`），页面控制 `src/web/page.ts`（打包产物 `web/page.js`），服务 `src/web/server.ts`）。本文约束页面布局与「GET 参数 → 自动动作」契约。静态服务只读。写 `.sv` 是 `connect run`，不在页面。
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。
 
 ## 1. 页面布局
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
-│ header：工作区 / HTML 名  [Render] [Check] [Dump] [Save] [Reset] │
+│ header：工作区 / HTML 名  [Check] [Elaborate] [Run] [Save] [Reset] │
 ├────────────────────┬─────────────────────────────────────┤
 │ 左栏               │ 右栏                                │
 │ · dep tree         │ 选中模块信息（人工预览，只读）：      │
@@ -24,73 +24,71 @@
 
 - 左栏数据 **必须**只读 RtlIndex（index.xml 摘要 + 各文件 XML）；**禁止**在页面重解析 RTL。
 - 右栏默认展示 RtlIndex 事实；`aw-render` 预览只在 render 之后存在。
-- header **必须**提供人工按钮 **[Render] [Check] [Dump] [Reset]**；无 GET 时靠按钮触发（见 §2–§3）。另提供 **[Save]**：把当前单元的活 DOM（调试后的 `aw-content` + `aw-render`）经 `POST /api/save` 落到 **`.autowire/save/<id>.html`**（临时产物，**不**写回作者 HTML，是否采用由本地决定）；Save 是调试旁路，**不**进入 §3 的 GET 动作链。
+- header **必须**提供人工按钮 **[Check] [Elaborate] [Run] [Save] [Reset]**；无 GET 时靠按钮触发（见 §2–§3）。**[Save]** 下载 `#aw-generated` 里已经可见的文本，走浏览器保存，**不**向 autowire 提交路径，**不**写作者 HTML。Save **不**进入 §3 的 GET 动作链。
+- 生成源码 **必须**出现在 `#aw-generated`，供人阅读，也供浏览器驱动打印。MCP 读这块文本再自己落盘。
 - 节点 **应当**带可访问名字（docs/connect/html.md §3.8），便于 Playwright snapshot。
 
 ## 2. 两种模式
 
 | 打开方式 | 行为 | 面向 |
 |---|---|---|
-| 无 GET 动作参数 | 只加载页面与数据，**不**自动跑动作；人工点 [Render] / [Check] / [Dump] | 人工预览与手检 |
+| 无 GET 动作参数 | 只加载页面与数据，**不**自动跑动作；人工点 [Check] / [Elaborate] / [Run] | 人工预览与手检 |
 | 带 GET 动作参数 | 自动执行动作链（§3），完成后落状态（§4） | Agent（Playwright 无头） |
 
-## 3. 三个页面动作 + 前置依赖 + GET 识别
+## 3. 页面动作 + 前置依赖 + GET 识别
 
-页面上 **Render / Check / Dump** 是**三个并列动作**（外加 Reset / `select`）。按钮与 GET **必须**共用同一套 action 实现。
+页面上 **Check / Elaborate / Run** 是并列动作（外加 Reset / `select`）。按钮与 GET **必须**共用同一套 action 实现。这些动作都不写工作区。
 
 ### 3.1 前置依赖（按钮与 GET 相同）
 
 | 动作 | 作用面 | 前置 | 未满足时 |
 |---|---|---|---|
 | **Check** | **作者面 `aw-content` + `aw-submods` + toml deps**（**不是** `aw-render`） | 无 | 直接校验 |
-| **Render** | 写出 / 刷新 `aw-render` | **必须先 Check 无 error** | **自动先跑 Check**；check 有 error 则 **中止** render，**禁止**对未通过 check 的 content 出 render |
-| **Dump** | 读 **冻结的 `aw-render`** 写 RTL | **必须先有有效 render**（因而也已过 check） | **自动** `check → render`；任一步 error 则中止；另验 render 可印（无残留 template/rewrite） |
+| **Elaborate** | 写出 / 刷新 `aw-render` | **必须先 Check 无 error** | **自动先跑 Check**；check 有 error 则 **中止**，**禁止**对未通过 check 的 content 出 render |
+| **Run** | 读 **冻结的 `aw-render`**，把源码放进 `#aw-generated` | **必须先有有效 elaborate**（因而也已过 check） | **自动** `check → elaborate`；任一步 error 则中止；另验 render 可印（无残留 template/rewrite）。**不写文件** |
 
-依赖链（必须写清）：
+`window.aw.session(step)` 给 MCP 单步用，比按钮更严：`check` 要求本会话已跑 `before-instances`；`elaborate` 要求本会话 check 无 error；`before-dump` 要求本会话已 elaborate。`run` 自己走完整条链，不要求事先单步。`help` 返回这段说明。
+
+依赖链：
 
 ```text
 Check（作者面）  ←── 无前置
    ↑
-Render           ←── 依赖 Check
+Elaborate        ←── 依赖 Check
    ↑
-Dump             ←── 依赖 Render（传递依赖 Check）
+Run              ←── 依赖 Elaborate（传递依赖 Check）；只显示源码
 ```
-
-- [Check]：**不**依赖 Render / Dump；可只点 Check。  
-- [Render]：**依赖 Check**（与「Check 不依赖 Render」同时成立，方向不可反）。  
-- [Dump]：依赖 Render（及 Check）。
 
 ### 3.2 GET 参数 ↔ 按钮
 
 | GET 参数 | 值 | 对应按钮 | 动作 |
 |---|---|---|---|
 | `select` | 模块名 | （右栏选中） | 选中并展示该模块 |
-| `check` | `1` | [Check] | 校验 **aw-content** 方言 + deps；**不写** `.sv`；**不**隐含 render |
-| `render` | `1` | [Render] | elaboration；**隐含** `check=1` |
-| `dump` | `1` | [Dump] | `POST /api/dump`；**隐含** `check=1` 与 `render=1` |
+| `check` | `1` | [Check] | 校验 **aw-content** 方言 + deps；**不写** `.sv`；**不**隐含 elaborate |
+| `elaborate` | `1` | [Elaborate] | elaboration；**隐含** `check=1`。旧名 `render=1` 同等 |
+| `run` | `1` | [Run] | 把快照放进 `#aw-generated`；**隐含** `check=1` 与 `elaborate=1`。旧名 `dump=1` 同等，但仍不写盘 |
 
 **隐含示例**
 
 | 触发 | 实际执行 |
 |---|---|
 | 点 [Check] / `?check=1` | **只** check（作者面） |
-| 点 [Render] / `?render=1` | check → render（render **依赖** check） |
-| 点 [Dump] / `?dump=1` | check → render → dump |
-| `?select=MOD&check=1` | select → check（**不** render / dump） |
-| `?check=1&render=1` | check → render |
+| 点 [Elaborate] / `?elaborate=1` | check → elaborate |
+| 点 [Run] / `?run=1` | check → elaborate → 源码进 `#aw-generated` |
+| `?select=MOD&check=1` | select → check（**不** elaborate / run） |
+| `?check=1&elaborate=1` | check → elaborate |
 
-- 执行顺序 **固定**为 `select → check → render → dump`（同时请求多个时），与参数书写顺序无关。  
-- 三个动作 **可以**单独出现在 URL 里被识别。  
+- 执行顺序 **固定**为 `select → check → elaborate → run`（同时请求多个时），与参数书写顺序无关。  
 - 未知参数 **必须**忽略（向后兼容）。  
-- check 有 **error** 时 **必须**中止后续 render / dump，并落 `#aw-status[data-state=error]`；**警告**（如多余 deps）不阻止 render/dump，但 **应当**出现在状态摘要里。  
+- check 有 **error** 时 **必须**中止后续 elaborate / run，并落 `#aw-status[data-state=error]`；**警告**（如多余 deps）不阻止后续，但 **应当**出现在状态摘要里。  
 - 人工点 [Check] 结束后 **应当**在页面可见处给出通过 / 警告 / 失败摘要（可与 `#aw-status` 同源）。
 
 示例：
 
 ```text
 /path/to/page?check=1
-/path/to/page?render=1
-/path/to/page?dump=1
+/path/to/page?elaborate=1
+/path/to/page?run=1
 /path/to/page?select=phy_wrap&check=1
 ```
 
@@ -108,14 +106,13 @@ Dump             ←── 依赖 Render（传递依赖 Check）
 |---|---|---|---|
 | `/api/rtlindex` | GET | **`.autowire/hdxml/`** `index.xml` | files / modules / packages / errorFiles、definesFp、hierarchy |
 | `/api/module?name=` | GET | **`.autowire/hdxml/`** 对应模块文件 XML | params / imports / ports / instances（叶子事实） |
-| `/api/connect?id=` | GET | **`.autowire/connect/`** 该单元快照 | 已 elaborate 的 `aw-render`（跨单元 deps / 预览）；**不是**作者 HTML |
-| `/api/check` | POST | 作者 HTML +（按需）上列只读 API | 校验 **aw-content** + deps；**不写盘** |
-| `/api/dump` | POST | 活 DOM `aw-render` → 可写入 **`.autowire/connect/`** 再印 SV | 唯一 RTL 写路径 |
-| `/api/save` | POST | 活 DOM `<autowire>` 原文 → 写入 **`.autowire/save/`** `<id>.html` | 调试落盘（写临时目录）；**禁止**写作者 `html=` 路径 |
+| `/api/connect?id=` | GET | **`.autowire/connect/`** 该单元快照 | 已由 `connect run` 写出的 `aw-render`（跨单元 deps / 预览）；**不是**作者 HTML |
+| `/api/units` | GET | `autowire.toml` | 单元列表、deps、默认单元 |
+| `/api/author?id=` | GET | 作者 `html=` | 作者 HTML 原文 |
 
 加载要求（与 [`toml.md`](./toml.md) §4.2 一致）：
 
 1. 叶子端口表 **必须**来自 hdxml API；索引缺失或 `definesFp` 过期 → 需要叶子信息的动作 **报错**。  
-2. 跨 `[connect.<id>]` 引用 **必须**能加载 deps 单元在 `.autowire/connect/` 的快照（或本会话刚写出的等价物）；缺失 → **报错**。  
-3. **禁止**用 `/api/connect` 冒充作者 SoT；**禁止** dump 回读作者 `html=`。  
-4. 前端 **禁止**直接写盘；RTL 写只经 `/api/dump`。check **禁止**写 `.sv` / `gen/`。
+2. 跨 `[connect.<id>]` 引用 **必须**能加载 deps 单元在 `.autowire/connect/` 的快照（或本会话刚 elaborate 的等价物）；缺失 → **报错**。  
+3. **禁止**用 `/api/connect` 冒充作者 SoT。  
+4. 前端和这些 GET **禁止**写盘。`.sv` 只由 `connect run` 写，或由 MCP 保存 `#aw-generated`。check **禁止**写 `.sv` / `gen/`。没有 `POST /api/dump`、`POST /api/save`、`POST /api/check`。

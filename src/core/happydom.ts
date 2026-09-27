@@ -1,6 +1,6 @@
 // happy-dom connect render. Same pipeline as the web page:
-// module scripts → before-instances → check → elaborate → before-dump.
-// then the same snapshot → .sv write as POST /api/dump. No browser.
+// module scripts → before-instances → check → elaborate → before-dump,
+// then write the snapshot as .sv. The web session does not call this.
 
 import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -153,7 +153,7 @@ export async function renderUnit(
 	}
 }
 
-/** Same write as POST /api/dump: connect XML snapshot, then .sv files. */
+/** connect run write: connect XML snapshot, then .sv files. The web session does not call this. */
 async function writeSnapshot(
 	ws: WorkspaceConfig,
 	unit: ConnectUnit,

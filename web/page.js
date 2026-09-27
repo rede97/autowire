@@ -17,59 +17,96 @@ var state = {
   unitMods: new Map,
   current: null,
   docs: new Map,
-  leafCache: new Map
+  leafCache: new Map,
+  phase: new Map
 };
 function showGenerated(text) {
   const box = $("#aw-generated");
   if (box)
     box.textContent = text;
 }
+function saveGenerated() {
+  const text = $("#aw-generated")?.textContent ?? "";
+  if (!text) {
+    setStatus("error", "save: run first; nothing generated");
+    throw new Error("save: run first; nothing generated");
+  }
+  const blob = new Blob([text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${state.current ?? "autowire"}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus("done", "save: browser download");
+  return text;
+}
 var SESSION_HELP = [
   "before-instances: run author scripts on the current unit",
-  "check: rule report; requires before-instances",
-  "elaborate: freeze aw-render; requires a clean check",
-  "before-dump: read-only hook; requires elaborate",
+  "check: rule report; requires before-instances in this session",
+  "elaborate: freeze aw-render; requires a clean check in this session",
+  "before-dump: read-only hook; requires elaborate in this session",
   "run: the whole chain; same result as connect run, no file write",
-  "save: browser download of #aw-generated; no workspace path"
+  "save: return #aw-generated and start a browser download; no workspace path",
+  "none of these steps write a file"
 ].join(`
 `);
 async function sessionStep(step) {
   const id = state.current;
   if (!id)
     throw new Error("no unit selected");
+  const phase = state.phase.get(id) ?? "none";
   if (step === "help")
     return SESSION_HELP;
   if (step === "before-instances") {
     await loadUnit(id);
+    state.phase.set(id, "before-instances");
     showGenerated($("#aw-live").textContent ?? "");
     return "before-instances";
   }
   if (step === "check") {
+    if (phase === "none")
+      throw new Error('session: run "before-instances" before "check"');
     const res = await runCheck(id);
+    if (res.errors.length === 0)
+      state.phase.set(id, "check");
     const text = [...res.errors, ...res.warnings].join(`
 `) || "check ok";
     showGenerated(text);
     return text;
   }
   if (step === "elaborate") {
+    if (phase !== "check" && phase !== "elaborate" && phase !== "before-dump")
+      throw new Error('session: "elaborate" requires a clean check');
     const res = await runRender(id);
     if (res.errors.length > 0)
       throw new Error(res.errors[0]);
+    state.phase.set(id, "elaborate");
     showGenerated($("#aw-live").textContent ?? "");
     return "elaborate";
   }
-  if (step === "before-dump" || step === "run") {
-    const res = await runDump(id);
+  if (step === "before-dump") {
+    if (phase !== "elaborate" && phase !== "before-dump")
+      throw new Error('session: "before-dump" requires elaborate');
+    const res = await runBeforeDumpOnly(id);
+    state.phase.set(id, "before-dump");
+    return res.files.join(`
+`);
+  }
+  if (step === "run") {
+    const res = await runView(id);
+    state.phase.set(id, "before-dump");
     return res.files.join(`
 `);
   }
   if (step === "save") {
-    $("#btn-save").click();
-    return $("#aw-generated")?.textContent ?? "";
+    return saveGenerated();
   }
   throw new Error(`unknown session step "${step}"`);
 }
-Object.assign(AW, { session: sessionStep });
+var pageAw = window;
+if (pageAw.aw)
+  pageAw.aw.session = sessionStep;
 function setStatus(state_, text) {
   statusEl.dataset.state = state_;
   statusEl.textContent = text;
@@ -229,7 +266,7 @@ async function buildCtx(id) {
       state.leafCache.set(mod, res.ok ? await res.json() : null);
     }
   }
-  const errors = missing.map((d) => `unit "${id}" deps: snapshot for "${d}" missing (render/dump "${d}" first)`);
+  const errors = missing.map((d) => `unit "${id}" deps: snapshot for "${d}" missing (connect run "${d}" first, or Run the parent so this session elaborates it)`);
   return {
     errors,
     ctx: {
@@ -267,7 +304,7 @@ async function runRender(id) {
     entry.rendered = true;
   return res;
 }
-async function runDump(id) {
+async function runView(id) {
   if (!unitOf(id))
     throw new Error(`unknown unit "${id}"`);
   const chain = [];
@@ -299,11 +336,20 @@ async function runDump(id) {
 `));
   return { files };
 }
+async function runBeforeDumpOnly(id) {
+  const entry = state.docs.get(id);
+  if (!entry?.rendered)
+    throw new Error(`session: "${id}" is not elaborated`);
+  AW.runBeforeDump(entry.doc, id);
+  const text = AW.serializeSnapshot(entry.doc);
+  showGenerated(text);
+  return { files: [text] };
+}
 async function runChain({
   select,
   check,
-  render,
-  dump
+  elaborate,
+  run
 }) {
   setStatus("running", "running…");
   try {
@@ -313,11 +359,11 @@ async function runChain({
     if (!id)
       throw new Error("no unit selected");
     const summary = [];
-    if (dump) {
-      const res = await runDump(id);
-      summary.push(`check: ok; render: ok; source: ${res.files.length} snapshot(s) in view`);
+    if (run) {
+      const res = await runView(id);
+      summary.push(`check: ok; elaborate: ok; source: ${res.files.length} snapshot(s) in view`);
     } else {
-      if (check || render) {
+      if (check || elaborate) {
         const res = await runCheck(id);
         summary.push(res.errors.length > 0 ? `check: ${res.errors.length} error(s)` : `check: ok${res.warnings.length > 0 ? ` (${res.warnings.length} warning(s))` : ""}`);
         if (res.errors.length > 0)
@@ -325,11 +371,11 @@ async function runChain({
         if (res.warnings.length > 0)
           console.warn("[autowire check warnings]", res.warnings);
       }
-      if (render) {
+      if (elaborate) {
         const res = await runRender(id);
         if (res.errors.length > 0)
           throw new Error(res.errors[0]);
-        summary.push("render: ok");
+        summary.push("elaborate: ok");
         refreshRightIfRendered();
       }
     }
@@ -459,7 +505,9 @@ async function resetAll() {
   for (const [id] of state.docs)
     AW.clearUnitHooks(id);
   state.docs.clear();
+  state.phase.clear();
   $("#aw-live").innerHTML = "";
+  showGenerated("");
   if (!state.current)
     throw new Error("no unit selected");
   await loadUnit(state.current);
@@ -503,22 +551,12 @@ async function init() {
     await resetAll();
   });
   $("#btn-check").addEventListener("click", () => runChain({ check: true }));
-  $("#btn-render").addEventListener("click", () => runChain({ render: true }));
-  $("#btn-dump").addEventListener("click", () => runChain({ dump: true }));
+  $("#btn-elaborate").addEventListener("click", () => runChain({ elaborate: true }));
+  $("#btn-run").addEventListener("click", () => runChain({ run: true }));
   $("#btn-save").addEventListener("click", () => {
-    const text = $("#aw-generated")?.textContent ?? "";
-    if (!text) {
-      setStatus("error", "save: run first; nothing generated");
-      return;
-    }
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${state.current ?? "autowire"}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setStatus("done", "save: browser download");
+    try {
+      saveGenerated();
+    } catch {}
   });
   $("#btn-reset").addEventListener("click", () => resetAll());
   $("#dep-tree").addEventListener("click", (e) => {
@@ -533,10 +571,10 @@ async function init() {
   const actions = {
     select: params.get("select"),
     check: params.get("check") === "1",
-    render: params.get("render") === "1",
-    dump: params.get("dump") === "1"
+    elaborate: params.get("elaborate") === "1" || params.get("render") === "1",
+    run: params.get("run") === "1" || params.get("dump") === "1"
   };
-  if (actions.select || actions.check || actions.render || actions.dump)
+  if (actions.select || actions.check || actions.elaborate || actions.run)
     await runChain(actions);
 }
 await init();

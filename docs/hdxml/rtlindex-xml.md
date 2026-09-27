@@ -1,6 +1,6 @@
 # RtlIndex XML 格式约束
 
-> 状态：草案（待评审）。本文档是 hdxml（生产者）与 autowire（消费者）之间 RtlIndex 索引目录的**唯一格式契约**。
+> 状态：分析器已按本文产出 RtlIndex。本文档是 hdxml（生产者）与 autowire（消费者）之间的格式契约。格式变更仍须评审。
 > 实现参考：`docs/hdxml/module-info.md` §5（数据模型语义）；本文档只约束**格式**，不重复语义推导。
 > 关键字"必须/应当/可以"按 RFC 2119 解释。
 
@@ -270,8 +270,10 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 - `<packages>` 与全部文件 XML 中 `kind="package"` 的 `<module>` 必须一一对应（同名同文件）。
 - 任何文件存在 `<error>` ⇒ 生产者退出码 1；消费者应当把该文件的数据视为不完整。
 
-## 7. 待定项（评审决定）
+## 7. 暂时不做
 
-1. 是否引入 `rtlIndex/@format` 版本号（§1）。
-2. `source` 路径是否约束为"相对项目根"（当前为生产者收集时的路径形式，消费侧展示长路径）。
-3. `<error>` 是否需要 `stage`（`preprocess`/`parse`/`duplicate`）枚举属性。
+下面三项不改现有 XML。分析器继续按现在的路径形式和 `<error>` 文本产出。
+
+1. `rtlIndex/@format` 版本号。
+2. 把 `source` 约束成相对项目根。当前是生产者收集时的路径，消费侧展示长路径。
+3. 给 `<error>` 加 `stage`（`preprocess` / `parse` / `duplicate`）属性。

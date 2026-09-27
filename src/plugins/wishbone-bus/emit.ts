@@ -52,7 +52,7 @@ export type FabricPort = {
 	readonly comment?: string;
 };
 
-function slaveTagPorts(s: WbSlave, def: BusDef): FabricPort[] {
+function slaveTagPorts(s: WbSlave, _def: BusDef): FabricPort[] {
 	if (s.regfile) {
 		return s.regfile.shadows.map((shadow) => ({
 			dir: "output" as const,
@@ -263,7 +263,7 @@ function pushOrAssign(out: string[], lhs: string, terms: string[]): void {
 		return;
 	}
 	out.push(`\tassign ${lhs} = ${first}`);
-	const cont = "\t" + " ".repeat(`assign ${lhs} `.length);
+	const cont = `\t${" ".repeat(`assign ${lhs} `.length)}`;
 	for (const [i, t] of rest.entries()) {
 		out.push(`${cont}| ${t}${i === rest.length - 1 ? ";" : ""}`);
 	}

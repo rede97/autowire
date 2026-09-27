@@ -33,7 +33,7 @@ RtlIndex 用 `definesFp` 把宏集合绑进索引有效性（见 `rtlindex-xml.m
 
 ## 3. 查找与作用域
 
-- 从 CWD（或显式 `--workspace`）向上查找 **`autowire.toml`**，找到的最近一份生效（草稿；实现时可再定是否禁止嵌套多份）。  
+- 从 CWD（或显式 `--workspace`）向上查找 **`autowire.toml`**，找到的最近一份生效。一个工作区只放一份；嵌套多份暂时不做（§6）。  
 - 同一工作区内：`deps` / `web` / `cli` **必须**读同一份配置再谈 RtlIndex。  
 - CLI 显式参数（若有）**可以**覆盖 toml 单项；覆盖后用于 analysis 的宏集合 **必须**与写入 / 校验的 `definesFp` 一致。
 
@@ -182,20 +182,20 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 
 ### 4.2 HTML / web 如何加载这两类 XML（必须）
 
-连接页与 check / render **禁止**在浏览器里直接读盘；**必须**经 `autowire web` 同源 API，由服务端从工作区生成目录取数。
+连接页与 check / elaborate **禁止**在浏览器里直接读盘；**必须**经 `connect web` 同源只读 API，由服务端从工作区生成目录取数。这些 GET 不写文件。
 
 | 目录 | 内容 | 谁读 | 用途 | 缺失 / 过期 |
 |---|---|---|---|---|
-| **`.autowire/hdxml/`** | RtlIndex（`index.xml` + 每源文件 XML） | web → `GET /api/rtlindex`、`GET /api/module?name=` | 叶子端口/参数/层次；**只读**；**禁止**当连接 SoT | 无索引或 `definesFp` 与当前 toml 宏集合不一致 → check/render 需要叶子表时 **报错**（先 `autowire analysis`） |
-| **`.autowire/connect/`** | 各 `[connect.<id>]` 的 **elaborated 抽象模块信息快照**（按 **单元 id** 落盘 `<id>.xml`；生成物） | 多单元 elaborate / check 时加载 **deps 单元**快照；web → `GET /api/connect?id=`（只读 xml 快照） | 跨单元符号；**禁止**把作者 HTML 当 dump 输入 | 单元 A 的 `deps` 含 B，但 B 快照不存在 → elaborate/check 跨单元引用时 **报错**（先按 DAG render/写入 B） |
+| **`.autowire/hdxml/`** | RtlIndex（`index.xml` + 每源文件 XML） | web → `GET /api/rtlindex`、`GET /api/module?name=` | 叶子端口/参数/层次；**只读**；**禁止**当连接 SoT | 无索引或 `definesFp` 与当前 toml 宏集合不一致 → check/elaborate 需要叶子表时 **报错**（先 `analysis run`） |
+| **`.autowire/connect/`** | 各 `[connect.<id>]` 的 **elaborated 抽象模块信息快照**（按 **单元 id** 落盘 `<id>.xml`；`connect run` 写出） | 多单元 elaborate / check 时加载 **deps 单元**快照；web → `GET /api/connect?id=` | 跨单元符号；**禁止**把作者 HTML 当 netlist | 单元 A 的 `deps` 含 B，但 B 快照不存在 → elaborate/check 跨单元引用时 **报错**（先 `connect run` B，或在父单元的页面 Run 里先 elaborate 依赖） |
 
 补充纪律：
 
 1. **作者 HTML** 路径只来自 toml `[connect.<id>]` / `[sim.<id>]` 的 `html=`（或 `web` 打开的页）；**禁止**从 `.autowire/connect/` 当作者 SoT 打开编辑。  
 2. **叶子事实**只认 `.autowire/hdxml/`；**禁止**页面重解析 `.sv` / 旁路 RtlIndex。  
-3. **跨 `[connect.<id>]` 依赖**：先按 deps DAG 保证被依赖单元已有 connect 快照（或本会话内已 elaborate 并写入），再处理依赖方；与 toml `deps` / 并行 elaborate 一致。  
-4. **dump** 读 POST 体活 DOM 印 SV，并刷新 `.autowire/connect/<id>.xml` 快照；**禁止**再 load 作者 `html=` 当 netlist。
-5. 两目录均可删重建；删后须重新 `analysis` + 按需 render 出 connect 快照。
+3. **跨 `[connect.<id>]` 依赖**：只认 toml 里写下的直接 `deps`，不走传递闭包。先保证被依赖单元已有 connect 快照（或本会话内已 elaborate），再处理依赖方。  
+4. **`connect run`** 读 elaborate 之后的 `aw-render` 印 SV，并刷新 `.autowire/connect/<id>.xml`。页面不写这两样。**禁止**把作者 `html=` 当 netlist。
+5. 两目录均可删重建；删后须重新 `analysis run`，再按需 `connect run` 出 connect 快照。
 
 - **`.svh` 不进 filelist**（hdxml 跳过并警告）：宏头文件只有两条合法路径——源内 `` `include ``（预处理）或 `define_headers`（独立加载，等价 EDA「.f 头部 svh」的全局宏）。降级方案：EDA 侧用 `eda_load.f`（头部 svh + 共享 `rtl.f`），分析器只用纯源码 `rtl.f`，两侧行为一致。  
 ## 5. 与 elaboration 的衔接（总流水线）
@@ -204,17 +204,17 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 
 ```text
 autowire.toml（.f + svh/宏 + [connect.<id>] DAG）
-    →  hdxml → RtlIndex（叶子端口/参数声明，只读）
-    →  check（作者面 aw-content 合法性 + deps；不写盘）
-    →  按 deps 拓扑（可并行）elaborate 各连接 HTML
-    →  dump（读 POST 体 aw-render）→ .sv → DV；同时刷新 .autowire/connect/<id>.xml 快照
+    →  analysis run → RtlIndex（叶子端口/参数声明，只读）
+    →  connect check（作者面 aw-content 合法性 + deps；不写盘）
+    →  按直接 deps 拓扑 elaborate 各连接 HTML
+    →  connect run 读 aw-render → .sv → DV；同时刷新 .autowire/connect/<id>.xml
 ```
 
-细节见 [`../connect/html.md`](../connect/html.md)。
+页面会话走同一条相位，但不写 `.sv` 和快照。细节见 [`../connect/html.md`](../connect/html.md)。
 
-## 6. 开放项（实现前裁定）
+## 6. 暂时不做
 
-1. 多包/多 chip 是否允许多份 toml，还是单工作区单文件 + profile 表？  
-2. 跨单元引用是否允许 `deps` 传递闭包，还是必须显式写全直接边？（草稿默认：**仅直接 deps**）
+1. 多包/多 chip 的多份 toml，以及 profile 表。一个工作区一份 `autowire.toml`。  
+2. `deps` 传递闭包。引用必须写在直接边上。
 
-裁定后改本文 + `help workspace`，再动代码。
+这两条有需求再打开。现实现已经是一份文件、只认直接边。

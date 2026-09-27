@@ -66,7 +66,10 @@ export function renderTrees(
 	return out;
 }
 
-function findNode(nodes: readonly HierNode[], name: string): HierNode | undefined {
+function findNode(
+	nodes: readonly HierNode[],
+	name: string,
+): HierNode | undefined {
 	for (const n of nodes) {
 		if (n.module === name) return n;
 		const child = findNode(n.children, name);

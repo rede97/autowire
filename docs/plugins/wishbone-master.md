@@ -1,6 +1,6 @@
 # Wishbone Master 接口：CDC / APB / JTAG
 
-> 状态：**implementing now**（`Master(..., { apb | jtag | cdc })` + `wb_cdc` / `wb_apb2wb` / `wb_jtag_tdr` + ICL/PDL 已落地；demo/soc 尚未接入）。  
+> 状态：**已落地**（`Master(..., { apb | jtag | cdc })`、`wb_cdc` / `wb_apb2wb` / `wb_jtag_tdr`、ICL/PDL；demo/soc 已接 JTAG）。§8 暂时不动。  
 > 上位约束：[`wishbone-bus.md`](./wishbone-bus.md)（WB Classic 子集、arbiter、`<bus>_system` wrapper）。  
 > 参考主干：`master:autowire/cfgbus/cfg_apb.py`（`CfgApbBridge`）、`cfg_arbiter.py`（`CfgArbiter`）。  
 > 改本文时同步 `help status` 与 [`wishbone-bus.md`](./wishbone-bus.md) §1 / §8。
@@ -167,13 +167,14 @@ demo/soc 接入（JTAG）：`sot/wb_bus_soc.ts` 加 `Master("dbg", …, { jtag: 
 
 未做：CDC 工具签核（无开源 CDC 工具）；demo 真实 DFT TAP / SIB 替换 `demo_tap`（留给后续工程检验反馈）。
 
-## 8. 待裁定
+## 8. 暂时不做
 
-已裁定：写 **非 posted**；`wb_cdc` v1 **只做握手**；JTAG **单 DR**、地址宽 = bus `addrWidth`；输出 PDL；v1 无私有 TAP；同步单元为可替换壳（无 toml 选项）。
+已裁定且已实现：写 **非 posted**；`wb_cdc` v1 **只做握手**；JTAG **单 DR**、地址宽 = bus `addrWidth`；输出 PDL；v1 无私有 TAP；同步单元为可替换壳（无 toml 选项）。demo/soc 的 JTAG master 已接入。
 
-仍开放：
+等后续需求再追加：
 
-1. posted 写 / async FIFO 模式（多笔写吞吐）是否进 v2。
-2. CDC 约束提示（同步器清单、数据束 `set_max_delay -datapath_only`）的输出格式。
+1. posted 写 / async FIFO 模式（多笔写吞吐）。
+2. CDC 约束提示的输出格式。
 3. ICL CaptureSource 建模与 Tessent / TestMAX 方言差异。
-4. demo/soc 是否再加 APB master 作展示（JTAG 已接入，见 §7）。
+4. demo/soc 再加 APB master 作展示。
+5. 用真实 DFT TAP / SIB 替换 demo 的 `demo_tap`。CDC 工具签核不在本仓库。

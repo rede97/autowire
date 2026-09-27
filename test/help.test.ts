@@ -48,7 +48,7 @@ test("each slice prints independently", () => {
 	expect(renderHelp("dont")).toContain("autowire.toml");
 	expect(renderHelp("web")).toContain("connect web");
 	expect(renderHelp("web")).toContain("does not write");
-	expect(renderHelp("web")).toContain("Check, Run, Save, Reset");
+	expect(renderHelp("web")).toContain("Check, Elaborate, Run, Save, Reset");
 	expect(renderHelp("web")).toContain("#aw-generated");
 	expect(renderHelp("connect")).toContain("docs/connect/check.md");
 	expect(renderHelp("connect")).toContain("same-name → identity");
@@ -68,7 +68,9 @@ test("each slice prints independently", () => {
 	expect(renderHelp("deps")).toContain("RtlIndex");
 	expect(renderHelp("dont")).toContain("blur tools vs MCP");
 	expect(renderHelp("dont")).toContain("Workspace MCP");
-	expect(renderHelp("dont")).toContain("treat connect run as the only validation");
+	expect(renderHelp("dont")).toContain(
+		"treat connect run as the only validation",
+	);
 	expect(renderHelp("status")).toContain("export= Excel");
 	expect(renderHelp("status")).toContain("not .ralf");
 	expect(renderHelp("status")).toContain("wide-field split");
@@ -86,8 +88,10 @@ test("each slice prints independently", () => {
 	expect(renderHelp("status")).toContain("docs/dev/release.md");
 	expect(renderHelp("status")).toContain("lightpanda");
 	expect(renderHelp("agent")).toContain("docs/dev/release.md");
-	expect(renderHelp("dont")).toContain("link lightpanda into the autowire binary");
-	expect(renderHelp("status")).toContain("Wishbone — implementing now");
+	expect(renderHelp("dont")).toContain(
+		"link lightpanda into the autowire binary",
+	);
+	expect(renderHelp("status")).toContain("Wishbone — landed");
 	expect(renderHelp("status")).toContain("no awx-regfile");
 	expect(renderHelp("status")).toContain("soc_wb_system");
 	expect(renderHelp("status")).toContain("SlaveRegfile");
@@ -107,7 +111,7 @@ test("each slice prints independently", () => {
 	expect(renderHelp("status")).toContain("sot/wb_bus_soc.ts");
 	expect(renderHelp("status")).toContain("type A = generate");
 	expect(renderHelp("status")).toContain("no plugin-private port API");
-	expect(renderHelp("status")).toContain("Workspace MCP");
+	expect(renderHelp("status")).toContain("Workspace HTML edit");
 	expect(renderHelp("connect")).toContain("target order");
 	expect(renderHelp("connect")).toContain("docs/plugins/");
 	for (const topic of HELP_TOPICS) {

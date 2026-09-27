@@ -6,8 +6,8 @@
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [architecture.md](./architecture.md) | 组件、流水线、MCP 双途径、入口阶段 | 草稿 |
-| [cli.md](./cli.md) | 命令形状：connect 是标准；每个插件自己的 `run` | 设计，未落地 |
+| [architecture.md](./architecture.md) | 组件、流水线、MCP 双途径、入口阶段 | 已实现；生产包与类型 B 暂时不做 |
+| [cli.md](./cli.md) | 命令形状：connect 是标准；每个插件自己的 `run` | 已落地 |
 
 ## 连接方言 · [`connect/`](./connect/)
 
@@ -26,13 +26,13 @@
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [workspace/toml.md](./workspace/toml.md) | `autowire.toml`、三分产物目录、`[connect.*]` / `[sim.*]` | 已实现 |
-| [workspace/web-ui.md](./workspace/web-ui.md) | `autowire web` 布局与 GET 动作 | 已实现 |
+| [workspace/web-ui.md](./workspace/web-ui.md) | `connect web` 布局与 GET 动作；页面不写盘 | 已实现 |
 
 ## 分析 sidecar · [`hdxml/`](./hdxml/)
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [hdxml/rtlindex-xml.md](./hdxml/rtlindex-xml.md) | RtlIndex XML 契约 | 草案 |
+| [hdxml/rtlindex-xml.md](./hdxml/rtlindex-xml.md) | RtlIndex XML 契约 | 分析器已按此产出 |
 | [hdxml/module-info.md](./hdxml/module-info.md) | DesignDb / 模块信息模型 | 已实现参考 |
 | [hdxml/cli.md](./hdxml/cli.md) | hdxml `analysis` CLI | 已实现 |
 | [hdxml/testing.md](./hdxml/testing.md) | fetch/scan/smoke 与错误基线 | 已实现 |
@@ -41,32 +41,31 @@
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [mcp/](./mcp/) | 工具 vs MCP；Playwright vs 工作区 MCP | 草稿 |
-| [mcp/workspace.md](./mcp/workspace.md) | 本地 Edit / RtlIndex 检索合同 | 草稿 |
+| [mcp/](./mcp/) | 工具 vs MCP；Playwright 已落地 | 工作区节点编辑暂时不做 |
+| [mcp/workspace.md](./mcp/workspace.md) | 直接改 HTML 节点的合同 | 暂时不做；检索用 analysis 子命令 |
 
 ## 并列插件 · [`plugins/`](./plugins/)
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [plugins/](./plugins/) | 登记；A=RtlIndex 叶子 / B=像 submods；无私有口表 | 草稿（接口已裁定） |
-| [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md) | Wishbone regfile；SoT=TS `RegfileDef`；connect 用 `aw-inst`；Excel 仅文档 | 草稿 |
-| [plugins/wishbone-bus.md](./plugins/wishbone-bus.md) | 块内 cfg 树（非 SoC fabric） | 草稿 |
-| [plugins/wishbone-master.md](./plugins/wishbone-master.md) | Master 口：CDC / APB / JTAG（DFT TDR + ICL/PDL） | 草稿（implementing） |
-| [examples/regfile/](./examples/regfile/) | Wishbone regfile 作者面 TS + 生成 SV 展示 | 草稿 |
+| [plugins/](./plugins/) | 类型 A 已落地；类型 B 展开 `aw-*` 暂时不做 | 类型 A 已落地 |
+| [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md) | Wishbone regfile；SoT=TS `RegfileDef`；connect 用 `aw-inst` | 已落地 |
+| [plugins/wishbone-bus.md](./plugins/wishbone-bus.md) | 块内 cfg 树；开放项暂时不动 | 已落地 |
+| [plugins/wishbone-master.md](./plugins/wishbone-master.md) | Master 口：CDC / APB / JTAG；开放项暂时不动 | 已落地 |
+| [examples/regfile/](./examples/regfile/) | Wishbone regfile 作者面 TS + 生成 SV 展示 | 示例 |
 
 ## 开发环境 · [`dev/`](./dev/)
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [dev/windows-msys2.md](./dev/windows-msys2.md) | Windows：MSYS2 UCRT64 工具链、PATH、LF 行尾、原生 vs UCRT64 分工 | 已实现 |
-| [dev/release.md](./dev/release.md) | 生产包目标：`autowire` + `hdxml` + `lightpanda`（打包未落地） | 目标已裁定 |
+| [dev/release.md](./dev/release.md) | 生产包目标：`autowire` + `hdxml` + `lightpanda` | 暂时不做 |
 
 ## 实战与报告
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [skills/autowire-soc-integration.md](./skills/autowire-soc-integration.md) | demo/soc 集成 / 验证 / MCP 调试 | 草稿 |
-| [reports/coverage-report.md](./reports/coverage-report.md) | Web 覆盖报告（2026-09-08） | 归档 |
+| [skills/autowire-soc-integration.md](./skills/autowire-soc-integration.md) | demo/soc 集成 / 验证 / MCP 调试 | 实战手册 |
 
 ## 不做
 

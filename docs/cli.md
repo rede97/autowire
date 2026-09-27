@@ -1,6 +1,6 @@
-# 命令全景（目标，未落地）
+# 命令全景
 
-> 状态：**设计**。现网命令仍以 `bun index.ts help status` 为准。落地前不要把本文的子命令当成已经可用。
+> 状态：**已落地**。现网命令以 `bun index.ts help` 为准：`analysis`、`connect`、`plugin wishbone run`。打包脚本仍见 [dev/release.md](./dev/release.md)，不在本文。
 
 ## 1. 标准在 connect，`run` 不属于共用实现
 
@@ -66,11 +66,11 @@ before-instances → check → elaborate → before-dump
 
 CLI `analysis run`、`connect run`、`plugin wishbone run` 默认都是增量：输出字节和已有文件相同就跳过。三条命令共用 `--force`，加上之后强制重写。analysis 的 `--force` 仍然是 hdxml 的全量重解析。wishbone 的 Excel 每次都写，因为它的工作簿带生成时间，不能靠字节判断。
 
-现网名字要在落地时替换，不保留两套语义：`render` → `connect run`，`web` → `connect web`，`check` → `connect check`。不再增加 `elaborate` 或 `dump` 命令。落地前现网的写路径仍然存在；本文不表示它们已经删除。
+`connect run` 是唯一写 `.sv` 的入口。页面会话不写文件。
 
 ## 3. analysis
 
-`analysis` 不再是顶层平铺的一条命令。`init` 仍留在顶层。现网的 `autowire deps` 收到这里。
+`analysis` 是一组子命令。`init` 仍留在顶层。依赖树是 `analysis deps`，没有顶层 `deps`。
 
 ```text
 autowire analysis run
@@ -95,7 +95,7 @@ autowire analysis info <module>
 - `--package`
 - `--enum`
 
-不写种类时搜模块名。`<pattern>` 默认是模糊名称；`--regex` 时按正则。每条结果给出名字、命中的 index XML 文件，以及该定义所在的 RTL 文件。同名多处命中都列出来。
+不写种类时搜模块名。`<pattern>` 默认是模糊名称；`--regex` 时按正则。每条结果给出名字、命中的 index XML 文件，以及该定义所在的 RTL 文件。模块和 package 带声明行号；端口和 enum 带所属 module / package 的声明行号，因为索引没有成员自己的行号。同名多处命中都列出来。
 
 `info` 只接受一个准确模块名。输出该模块在 index 里的 param、port，以及对应的 XML 文件和 RTL 文件。名字不存在就报错，不退回模糊搜索。
 
@@ -122,11 +122,11 @@ import SoT
   → C / uvm_reg / Excel
 ```
 
-地址重叠、广播二选一、同一广播的 `pipe` 等长，都发生在 SoT 被 import、`Bus()` 执行的时候。这不是 connect 的 `check`。类型 A 继续禁止进 `/api/dump`。SV 仍进 `plugins_dir/<id>/`，软件路径仍由 `[plugins.wishbone]` 决定。
+地址重叠、广播二选一、同一广播的 `pipe` 等长，都发生在 SoT 被 import、`Bus()` 执行的时候。这不是 connect 的 `check`。类型 A 不进 connect 相位，也不由页面写盘。SV 仍进 `plugins_dir/<id>/`，软件路径仍由 `[plugins.wishbone]` 决定。
 
 wishbone 可以登记自己的相位和参数，例如只印 regfile、只印某条 bus。这些相位的前序由 wishbone 声明。未登记的插件 id 直接报错。`wishbone-regfile` 和 `wishbone-bus` 不再是会改道执行的别名。
 
-`run` 默认按 SoT 指纹增量。`--force` 重写所选范围。`--only <name>` 只刷新一个 `RegfileDef.name` 或 `BusDef.name`；被它挂接且指纹变了的叶子必须一起重写。
+`run` 默认按 SoT 指纹增量。`--force` 重写所选范围。`--only <name>` 只处理 toml 里的一个 `[wishbone.<name>]` 源；不是 `RegfileDef.name`。被它挂接且指纹变了的叶子必须一起重写。不写 `--only` 时处理配置里的全部 wishbone 源。
 
 ## 5. 不改的边界
 

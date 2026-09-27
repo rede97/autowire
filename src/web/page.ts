@@ -1,6 +1,7 @@
 // autowire web page controller (docs/workspace/web-ui.md). Runs in the browser only.
-// Buttons and GET params share the same action chain: select → check → render → dump.
-// Check has no prerequisite; Render depends on Check; Dump depends on Render.
+// Buttons and GET params share the same action chain: select → check → elaborate → run.
+// Check has no prerequisite. Elaborate depends on a clean check. Run implies both.
+// Nothing here writes the workspace. Save downloads #aw-generated.
 
 // The engine is served as a bundle at /aw.js (runtime URL); tsc cannot resolve
 // rooted specifiers, so we import it untyped and re-type it from the source.
@@ -41,8 +42,8 @@ interface WrapperFacts {
 interface ChainActions {
 	select?: string | null;
 	check?: boolean;
-	render?: boolean;
-	dump?: boolean;
+	elaborate?: boolean;
+	run?: boolean;
 }
 
 /** window extension: script-settle sentinel queue (loadUnit). */
@@ -65,6 +66,11 @@ const state: {
 	current: string | null; // current unit id
 	docs: Map<string, UnitEntry>;
 	leafCache: Map<string, AwEngine.ModFacts | null>;
+	/** Last successful session step for the current unit. `run` is not stored. */
+	phase: Map<
+		string,
+		"before-instances" | "check" | "elaborate" | "before-dump"
+	>;
 } = {
 	workspace: "",
 	style: { paramInline: true },
@@ -73,6 +79,7 @@ const state: {
 	current: null,
 	docs: new Map(),
 	leafCache: new Map(),
+	phase: new Map(),
 };
 
 function showGenerated(text: string): void {
@@ -80,48 +87,85 @@ function showGenerated(text: string): void {
 	if (box) box.textContent = text;
 }
 
+/** Browser download of the visible source. Does not write the workspace. */
+function saveGenerated(): string {
+	const text = $("#aw-generated")?.textContent ?? "";
+	if (!text) {
+		setStatus("error", "save: run first; nothing generated");
+		throw new Error("save: run first; nothing generated");
+	}
+	const blob = new Blob([text], { type: "text/plain" });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement("a");
+	a.href = url;
+	a.download = `${state.current ?? "autowire"}.txt`;
+	a.click();
+	URL.revokeObjectURL(url);
+	setStatus("done", "save: browser download");
+	return text;
+}
+
 const SESSION_HELP = [
 	"before-instances: run author scripts on the current unit",
-	"check: rule report; requires before-instances",
-	"elaborate: freeze aw-render; requires a clean check",
-	"before-dump: read-only hook; requires elaborate",
+	"check: rule report; requires before-instances in this session",
+	"elaborate: freeze aw-render; requires a clean check in this session",
+	"before-dump: read-only hook; requires elaborate in this session",
 	"run: the whole chain; same result as connect run, no file write",
-	"save: browser download of #aw-generated; no workspace path",
+	"save: return #aw-generated and start a browser download; no workspace path",
+	"none of these steps write a file",
 ].join("\n");
 
 async function sessionStep(step: string): Promise<string> {
 	const id = state.current;
 	if (!id) throw new Error("no unit selected");
+	const phase = state.phase.get(id) ?? "none";
 	if (step === "help") return SESSION_HELP;
 	if (step === "before-instances") {
 		await loadUnit(id);
+		state.phase.set(id, "before-instances");
 		showGenerated($("#aw-live").textContent ?? "");
 		return "before-instances";
 	}
 	if (step === "check") {
+		if (phase === "none")
+			throw new Error('session: run "before-instances" before "check"');
 		const res = await runCheck(id);
+		if (res.errors.length === 0) state.phase.set(id, "check");
 		const text = [...res.errors, ...res.warnings].join("\n") || "check ok";
 		showGenerated(text);
 		return text;
 	}
 	if (step === "elaborate") {
+		if (phase !== "check" && phase !== "elaborate" && phase !== "before-dump")
+			throw new Error('session: "elaborate" requires a clean check');
 		const res = await runRender(id);
 		if (res.errors.length > 0) throw new Error(res.errors[0]);
+		state.phase.set(id, "elaborate");
 		showGenerated($("#aw-live").textContent ?? "");
 		return "elaborate";
 	}
-	if (step === "before-dump" || step === "run") {
-		const res = await runDump(id);
+	if (step === "before-dump") {
+		if (phase !== "elaborate" && phase !== "before-dump")
+			throw new Error('session: "before-dump" requires elaborate');
+		const res = await runBeforeDumpOnly(id);
+		state.phase.set(id, "before-dump");
+		return res.files.join("\n");
+	}
+	if (step === "run") {
+		const res = await runView(id);
+		state.phase.set(id, "before-dump");
 		return res.files.join("\n");
 	}
 	if (step === "save") {
-		$("#btn-save").click();
-		return $("#aw-generated")?.textContent ?? "";
+		return saveGenerated();
 	}
 	throw new Error(`unknown session step "${step}"`);
 }
 
-Object.assign(AW, { session: sessionStep });
+const pageAw = window as unknown as {
+	aw?: { session?: (step: string) => Promise<string> };
+};
+if (pageAw.aw) pageAw.aw.session = sessionStep;
 
 function setStatus(state_: Status, text: string): void {
 	statusEl.dataset.state = state_;
@@ -329,7 +373,7 @@ async function buildCtx(
 	}
 	const errors = missing.map(
 		(d) =>
-			`unit "${id}" deps: snapshot for "${d}" missing (render/dump "${d}" first)`,
+			`unit "${id}" deps: snapshot for "${d}" missing (connect run "${d}" first, or Run the parent so this session elaborates it)`,
 	);
 	return {
 		errors,
@@ -376,7 +420,7 @@ async function runRender(id: string): Promise<AwEngine.CheckResult> {
 	return res;
 }
 
-async function runDump(id: string): Promise<{ files: string[] }> {
+async function runView(id: string): Promise<{ files: string[] }> {
 	if (!unitOf(id)) throw new Error(`unknown unit "${id}"`);
 	const chain: string[] = [];
 	const visit = (uid: string): void => {
@@ -404,12 +448,22 @@ async function runDump(id: string): Promise<{ files: string[] }> {
 	return { files };
 }
 
-/** One action chain: select → check → render → dump (docs/workspace/web-ui.md §3). */
+/** Read-only before-dump on a unit this session already elaborated. */
+async function runBeforeDumpOnly(id: string): Promise<{ files: string[] }> {
+	const entry = state.docs.get(id);
+	if (!entry?.rendered) throw new Error(`session: "${id}" is not elaborated`);
+	AW.runBeforeDump(entry.doc as unknown as Document, id);
+	const text = AW.serializeSnapshot(entry.doc as unknown as Document);
+	showGenerated(text);
+	return { files: [text] };
+}
+
+/** One action chain: select → check → elaborate → run (docs/workspace/web-ui.md §3). */
 async function runChain({
 	select,
 	check,
-	render,
-	dump,
+	elaborate,
+	run,
 }: ChainActions): Promise<void> {
 	setStatus("running", "running…");
 	try {
@@ -417,16 +471,13 @@ async function runChain({
 		const id = state.current;
 		if (!id) throw new Error("no unit selected");
 		const summary: string[] = [];
-		if (dump) {
-			// Dump implies check → render per unit in deps topo order (runDump);
-			// a missing dep snapshot is fine here because the chain renders the
-			// dep in-session first.
-			const res = await runDump(id);
+		if (run) {
+			const res = await runView(id);
 			summary.push(
-				`check: ok; render: ok; source: ${res.files.length} snapshot(s) in view`,
+				`check: ok; elaborate: ok; source: ${res.files.length} snapshot(s) in view`,
 			);
 		} else {
-			if (check || render) {
+			if (check || elaborate) {
 				const res = await runCheck(id);
 				summary.push(
 					res.errors.length > 0
@@ -437,10 +488,10 @@ async function runChain({
 				if (res.warnings.length > 0)
 					console.warn("[autowire check warnings]", res.warnings);
 			}
-			if (render) {
+			if (elaborate) {
 				const res = await runRender(id);
 				if (res.errors.length > 0) throw new Error(res.errors[0]);
-				summary.push("render: ok");
+				summary.push("elaborate: ok");
 				refreshRightIfRendered();
 			}
 		}
@@ -595,7 +646,9 @@ function refreshRightIfRendered(): void {
 async function resetAll(): Promise<void> {
 	for (const [id] of state.docs) AW.clearUnitHooks(id);
 	state.docs.clear();
+	state.phase.clear();
 	$("#aw-live").innerHTML = "";
+	showGenerated("");
 	if (!state.current) throw new Error("no unit selected");
 	await loadUnit(state.current);
 	setStatus("idle", "idle");
@@ -644,22 +697,16 @@ async function init(): Promise<void> {
 		await resetAll();
 	});
 	$("#btn-check").addEventListener("click", () => runChain({ check: true }));
-	$("#btn-render").addEventListener("click", () => runChain({ render: true }));
-	$("#btn-dump").addEventListener("click", () => runChain({ dump: true }));
+	$("#btn-elaborate").addEventListener("click", () =>
+		runChain({ elaborate: true }),
+	);
+	$("#btn-run").addEventListener("click", () => runChain({ run: true }));
 	$("#btn-save").addEventListener("click", () => {
-		const text = $("#aw-generated")?.textContent ?? "";
-		if (!text) {
-			setStatus("error", "save: run first; nothing generated");
-			return;
+		try {
+			saveGenerated();
+		} catch {
+			/* status already set */
 		}
-		const blob = new Blob([text], { type: "text/plain" });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement("a");
-		a.href = url;
-		a.download = `${state.current ?? "autowire"}.html`;
-		a.click();
-		URL.revokeObjectURL(url);
-		setStatus("done", "save: browser download");
 	});
 	$("#btn-reset").addEventListener("click", () => resetAll());
 	$("#dep-tree").addEventListener("click", (e) => {
@@ -669,14 +716,14 @@ async function init(): Promise<void> {
 	await buildLeft();
 	if (!state.current) throw new Error("no unit selected");
 	await loadUnit(state.current);
-	// GET action contract (docs/workspace/web-ui.md §3.2): fixed order select → check → render → dump.
+	// GET action contract (docs/workspace/web-ui.md §3.2): select → check → elaborate → run.
 	const actions = {
 		select: params.get("select"),
 		check: params.get("check") === "1",
-		render: params.get("render") === "1",
-		dump: params.get("dump") === "1",
+		elaborate: params.get("elaborate") === "1" || params.get("render") === "1",
+		run: params.get("run") === "1" || params.get("dump") === "1",
 	};
-	if (actions.select || actions.check || actions.render || actions.dump)
+	if (actions.select || actions.check || actions.elaborate || actions.run)
 		await runChain(actions);
 }
 

@@ -13,11 +13,7 @@ import pageJs from "../../web/page.js" with { type: "text" };
 import { connectDir, topoUnits } from "../core/connect.ts";
 import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex } from "../rtl/rtlindex.ts";
-import {
-	allUnits,
-	findUnit,
-	type WorkspaceConfig,
-} from "../workspace.ts";
+import { allUnits, findUnit, type WorkspaceConfig } from "../workspace.ts";
 
 const UNIT_ID = /^[A-Za-z0-9_-]+$/;
 
@@ -117,7 +113,7 @@ async function handleApi(
 		const file = join(connectDir(ws), `${id}.xml`);
 		if (!existsSync(file)) {
 			return json(
-				{ error: `no snapshot for unit "${id}" (render/dump it first)` },
+				{ error: `no snapshot for unit "${id}" (connect run writes it)` },
 				404,
 			);
 		}
@@ -174,9 +170,9 @@ const PAGE_HTML = `<!doctype html>
   <span id="ws-name"></span>
   <select id="unit-select" aria-label="connect unit"></select>
   <button id="btn-check" type="button">Check</button>
-  <button id="btn-render" type="button">Render</button>
-  <button id="btn-dump" type="button">Dump</button>
-  <button id="btn-save" type="button" title="Save live DOM to .autowire/save/<unit>.html (debug drop; never author HTML)">Save</button>
+  <button id="btn-elaborate" type="button">Elaborate</button>
+  <button id="btn-run" type="button">Run</button>
+  <button id="btn-save" type="button" title="Download #aw-generated in the browser. Does not write the workspace.">Save</button>
   <button id="btn-reset" type="button">Reset</button>
   <span id="aw-status" data-state="idle" role="status">idle</span>
 </header>

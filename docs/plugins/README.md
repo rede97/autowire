@@ -1,8 +1,8 @@
 # Autowire 插件与自定义标签
 
-> 状态：**草稿（接口已裁定，未落地）**。不堵连接核心轨道。  
-> Wishbone 实例：[`wishbone-regfile.md`](./wishbone-regfile.md)（叶子）、[`wishbone-bus.md`](./wishbone-bus.md)（块内配置树）、[`wishbone-master.md`](./wishbone-master.md)（master 口 CDC/APB/JTAG）。  
-> 改本文时同步 `help status` Parallel、[`../architecture.md`](../architecture.md) §5、[`../connect/lifecycle.md`](../connect/lifecycle.md)、[`../connect/check.md`](../connect/check.md)。
+> 状态：**类型 A 已落地；类型 B 暂时不做**（2026-09-27）。  
+> Wishbone 是已落地的类型 A：`plugin wishbone run`。针对 `aw-*` 的自定义标签现在没有用途，类型 B 的登记、前缀和展开先保持本文的裁定，不写代码。  
+> Wishbone 实例：[`wishbone-regfile.md`](./wishbone-regfile.md)（叶子）、[`wishbone-bus.md`](./wishbone-bus.md)（块内配置树）、[`wishbone-master.md`](./wishbone-master.md)（master 口 CDC/APB/JTAG）。
 
 关键字「必须 / 应当 / 可以」按 RFC 2119。
 
@@ -16,14 +16,14 @@
 
 ## 2. 两类插件（必须分清）
 
-| 类型 | 作用 | 进引擎的方式 | dump / 缓存 |
+| 类型 | 作用 | 进引擎的方式 | 现状 |
 |---|---|---|---|
-| **A. 生成器（Generator）** | 印独立 SV（regfile、decoder、arbiter…） | 落盘 → `analysis` → **RtlIndex 普通叶子**（`ctx.leaf`） | `plugins_dir/<plugin-id>/`；索引走 `.autowire/hdxml/`（hash 增量） |
-| **B. 展开器（Elaborate）** | 把标签**展开成核心 `aw-*`** | 与本单元 **submods 同构**：内存 `ModFacts` / `childRenders` 向上递推 | 与核心相同；跨单元仍用 `.autowire/connect/<id>.xml` |
+| **A. 生成器（Generator）** | 印独立 SV（regfile、decoder、arbiter…） | 落盘 → `analysis run` → **RtlIndex 普通叶子**（`ctx.leaf`） | **已落地**：`plugin wishbone run` → `plugins_dir/wishbone/` |
+| **B. 展开器（Elaborate）** | 把标签**展开成核心 `aw-*`** | 与本单元 **submods 同构**：内存 `ModFacts` / `childRenders` 向上递推 | **暂时不做**。当前没有要展开的 `aw-*` 插件标签 |
 
-- Wishbone regfile + 块内 cfg 树 → **类型 A**。  
-- 「一键例化标准包装并打好 template」→ **类型 B**。  
-- **禁止**混用：类型 A **禁止**不经 analysis 假装已是可例化模；类型 B **禁止**直接写 SV 绕过 dump。
+- Wishbone regfile + 块内 cfg 树 → **类型 A，已落地**。  
+- 「一键例化标准包装并打好 template」→ **类型 B，暂时不做**。  
+- **禁止**混用：类型 A **禁止**不经 analysis 假装已是可例化模；类型 B **禁止**直接写 SV 绕过 `connect run`。
 
 ## 3. 端口事实：并进现有三路（禁止第四条）
 
@@ -42,24 +42,24 @@
 3. 类型 B **不要**为展开结果另落插件 XML；本单元内存递推即可；仅当该单元 dump 后被他单元 `deps` 引用时，写现有 connect 快照。  
 4. bus 树多个生成模（arb/decoder/regfile）= 多个 **RtlIndex 叶子**，不是「插件树向上递推」的第三条链。
 
-## 4. 注册面（草案）
+## 4. 注册面
+
+类型 A 的现网入口是 `autowire plugin <id> run`，不是下面这张表的运行时注册。类型 B 的标签登记先记在这里，等有 `aw-*` 插件标签再用。
 
 ```text
-plugin id          唯一名（如 wishbone、seq-asm）
+plugin id          唯一名（如 wishbone）
 kind               generator | elaborate
-tags[]             自定义元素名（必须带插件前缀，见 §5）
-hooks              可选：expand（类型 B）/ before-instances / on-template / before-dump（只读）/
-                   generate（类型 A：写 SV）
-toml section       可选：[plugins.wishbone] / [wishbone.<source>] …
+tags[]             自定义元素名（类型 B；现在不用）
+hooks              类型 B：expand / before-instances / on-template / before-dump
+toml section       [plugins.wishbone] / [wishbone.<source>]
 ```
 
 宿主 **必须**：
 
-1. 未知标签且未注册 → check **报错**（勿静默忽略）。  
+1. 未知标签且未注册 → check **报错**（勿静默忽略）。类型 B 未登记任何标签，所以这条现在只约束核心方言。  
 2. 核心 `aw-*` **禁止**被插件覆盖。  
-3. 类型 A 的 `run` **禁止**藏在 connect 页面里。命令是 `autowire plugin <id> run`。产物 **必须**进 `plugins_dir/<plugin-id>/`（[`../workspace/toml.md`](../workspace/toml.md) §4.0），**禁止**写入 `connect_dir` / `sim_dir`。  
-4. 类型 B 展开结果 **必须**再过与核心相同的 connect check（见 §6）。  
-5. 类型 A 插件自检（字段重叠、地址窗等）在 **generate** 时跑，**不是** `aw.check()` 方言清单的一部分。
+3. 类型 A 的 `run` **禁止**藏在 connect 页面里。命令是 `autowire plugin <id> run`。产物 **必须**进 `plugins_dir/<plugin-id>/`，**禁止**写入 `connect_dir` / `sim_dir`。自检（字段重叠、地址窗）在 `run` 时发生，不是 `aw.check()`。  
+4. 类型 B 展开结果若落地，**必须**再过与核心相同的 connect check。当前不实现。
 
 ## 5. 自定义标签与 `aw-submods`
 
@@ -73,39 +73,28 @@ toml section       可选：[plugins.wishbone] / [wishbone.<source>] …
 | 寄存器 SoT | **仅** TS `Regfile(...)` 命名导出；Excel 仅文档（`plugins.wishbone.export`；`sheet` 空 = `name`）；**禁止** HTML/其它 DSL 当权威；**禁止**放进 `aw-content` |
 ## 6. 与 connect 生命周期的关系（目标编排）
 
-插件 **不推翻**「check ≠ elaborate、dump 只认 `aw-render`」。要扩的是**编排顺序**与注册面：
+插件 **不推翻**「check ≠ elaborate、`connect run` 只认 `aw-render`」。
 
 ```text
-[可选] plugin <id> run (A)     ← 流水线外；→ plugins_dir → analysis → RtlIndex
+plugin wishbone run (A)        ← 流水线外；→ plugins_dir → analysis run → RtlIndex
 connect / sim 单元：
-  → [B] expand 自定义标签 → 核心 aw-*
   → before-instances（脚本钩子；改作者面）
-  → check（核心方言 + 未知未注册标签；见 check.md）
-  → elaborate（只认 aw-*；on-template；写 aw-render）
+  → check（作者面 + deps）
+  → elaborate（只认 aw-*；写 aw-render）
   → before-dump（只读）
-  → dump
+  → connect run 写 .sv
 ```
 
-- 类型 A **不插入** check↔elaborate 之间。  
-- 类型 B expand 与 `before-instances` 同属「改作者面」→ **必须在 check 之前**（落地时 page/cli 与插件一并改；见 [`../connect/lifecycle.md`](../connect/lifecycle.md)）。  
-- elaborate **仍然只懂核心 `aw-*`**；**禁止**在 `on-template` 写盘或绕过 render。  
-- 类型 B 钩子 **先同步**（与现网 `aw.on` 一致；不开放 async）。
-
-心智模型：
+类型 B 的 expand 若以后落地，插在 `before-instances` 之前，并且必须在 check 之前。现在没有这条步骤。elaborate **仍然只懂核心 `aw-*`**。
 
 ```text
-autowire.toml
-  [plugins.wishbone] …
-  [connect.phy_wrap] html=…
-
-A: generate → plugins_dir/<id>/*.sv → analysis → leaf
-B: expand → aw-* → check → elaborate → dump
+A（已落地）: plugin wishbone run → plugins_dir/wishbone/*.sv → analysis run → leaf
+B（暂时不做）: expand → aw-* → check → elaborate → connect run
 ```
 
-## 7. 仍开放（实现细节）
+## 7. 暂时不做
 
-1. 登记 API：`registerPlugin()` vs 目录扫描。  
-2. 前缀强制：`awx-` 固定 vs 嵌入 plugin id。  
-3. 类型 A 的命令形状见 [`../cli.md`](../cli.md)：每个插件自己的 `run`，不共用 connect 的执行器。  
+1. 类型 B 的登记 API（`registerPlugin()` 或目录扫描）和标签前缀。现在没有要展开的 `aw-*` 插件标签。  
+2. 类型 A 的命令形状已落地，见 [`../cli.md`](../cli.md)。每个插件自己的 `run`，不共用 connect 的执行器。
 
-已裁定（勿再打开）：A/B 分型；口表三路并进、无插件私有接口；A 用 hdxml 增量；B 像 submods；generate ⊥ dump；expand→check→elaborate；B 钩子同步。
+已裁定、此阶段不改：A/B 分型；口表三路并进、无插件私有接口；A 用 hdxml 增量；B 的目标仍是像 submods、钩子同步。有具体标签需求再实现 B。

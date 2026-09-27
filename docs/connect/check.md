@@ -1,6 +1,6 @@
 # `autowire check` 契约（作者面规则检查）
 
-> 状态：**已实现**（`src/core/aw.ts` `check`；cli / web / `POST /api/check` 同源）。  
+> 状态：**已实现**（`src/core/aw.ts` `check`；`connect check` 与页面 [Check] 同源）。  
 > 方言「合法 HTML」见 [`html.md`](./html.md) / [`rules.md`](./rules.md) / [`to-rules.md`](./to-rules.md)；**本文只定义哪一阶段、用什么上下文、报 error 还是 warn**。  
 > 摘要：`bun index.ts help check`。改检查项时同步改本文与 help。
 
@@ -17,11 +17,13 @@
 check（本文）──error──▶ 拒绝 render
         │ ok
         ▼
-elaborate（语义门禁）──error──▶ 拒绝 dump
+elaborate（语义门禁）──error──▶ 拒绝 connect run 写盘
         │ ok → aw-render 冻结
         ▼
-dump（可印性）──error──▶ 拒绝写盘
+connect run（可印性）──error──▶ 拒绝写盘
 ```
+
+页面 [Run] 在 check 或 elaborate 失败时同样中止，并且不写盘。
 
 ## 2. 职责总表
 
@@ -94,11 +96,12 @@ visible(M) = { M 的直接子 aw-mod name }
 | const/open 方向 | elaborate | 需端口 `dir` |
 | 信号维冲突 / part 冲突 | elaborate | |
 | 自动导出端口 | elaborate | |
-| render 可印性 | dump | 无残留 template/rewrite |
+| render 可印性 | connect run | 无残留 template/rewrite |
 
 ## 5. 与 Web / CLI
 
-- `autowire check`、页内 [Check]、GET `?check=1`、`POST /api/check` **同一** `check()`。  
-- [Render] / `?render=1` **必须**先过 check（无 error）；elaborate 仍可再报 error。  
+- `autowire connect check`、页内 [Check]、GET `?check=1` **同一** `check()`。页面没有 `POST /api/check`。  
+- [Elaborate] / `?elaborate=1` **必须**先过 check（无 error）；elaborate 仍可再报 error。  
+- [Run] 只把源码放进 `#aw-generated`。写盘是 `connect run`。  
 - 目标编排：作者面突变（插件 B expand / `before-instances`）在 check **之前**（[`lifecycle.md`](./lifecycle.md) §3.1；web 已对齐）。  
 - 详见 [`../workspace/web-ui.md`](../workspace/web-ui.md) §3.1。

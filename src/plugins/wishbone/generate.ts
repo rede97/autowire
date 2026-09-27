@@ -3,6 +3,7 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { writeIfChanged } from "../../core/write.ts";
 import type { WishboneSource, WorkspaceConfig } from "../../workspace.ts";
 import { type BusDef, flattenBuses, isBusDef } from "../wishbone-bus/dsl.ts";
 import { busModuleName } from "../wishbone-bus/emit.ts";
@@ -26,7 +27,6 @@ import { swLayoutFingerprint } from "../wishbone-regfile/emit-sw.ts";
 import { generateDef as generateRegfileDef } from "../wishbone-regfile/generate.ts";
 import { type LaidRegfile, layoutRegfile } from "../wishbone-regfile/layout.ts";
 import { PLUGIN_ID } from "./id.ts";
-import { writeIfChanged } from "../../core/write.ts";
 
 export { PLUGIN_ID };
 
@@ -132,12 +132,14 @@ async function packSoftware(
 		for (const bus of mapped) {
 			const name = busMapHeaderName(bus);
 			const cPath = join(ws.wishboneCExport, name);
-			if (await writeIfChanged(cPath, emitBusMapC(bus), force)) paths.push(cPath);
+			if (await writeIfChanged(cPath, emitBusMapC(bus), force))
+				paths.push(cPath);
 			headers.push(name);
 		}
 		if (headers.length > 0) {
 			const uPath = join(ws.wishboneCExport, "wishbone.h");
-			if (await writeIfChanged(uPath, emitCUmbrella(headers), force)) paths.push(uPath);
+			if (await writeIfChanged(uPath, emitCUmbrella(headers), force))
+				paths.push(uPath);
 		}
 	}
 	if (ws.wishboneUvmExport) {
@@ -148,12 +150,14 @@ async function packSoftware(
 		for (const bus of mapped) {
 			const name = `${busRalBlockName(bus)}.sv`;
 			const uPath = join(ws.wishboneUvmExport, name);
-			if (await writeIfChanged(uPath, emitBusMapUvm(bus), force)) paths.push(uPath);
+			if (await writeIfChanged(uPath, emitBusMapUvm(bus), force))
+				paths.push(uPath);
 			files.push(name);
 		}
 		if (files.length > 0) {
 			const uPath = join(ws.wishboneUvmExport, "ral_wishbone.sv");
-			if (await writeIfChanged(uPath, emitUvmUmbrella(files), force)) paths.push(uPath);
+			if (await writeIfChanged(uPath, emitUvmUmbrella(files), force))
+				paths.push(uPath);
 		}
 	}
 	if (ws.wishboneExcelExport && (excelBySheet.size > 0 || mapped.length > 0)) {

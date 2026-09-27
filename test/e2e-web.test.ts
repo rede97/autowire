@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { type Browser, chromium } from "playwright";
 import { startWeb } from "../src/web/server.ts";
@@ -8,12 +8,11 @@ import type { WorkspaceConfig } from "../src/workspace.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
 // End-to-end: the demo workspace (demo/soc/autowire.toml + connect/*.html),
-// real headless Chromium, real dump. Golden .sv files live in test/golden/soc/.
+// real headless Chromium. The page shows generated source and does not write
+// the workspace. .sv goldens are connect run's job, not this browser session.
 
 const ROOT = join(import.meta.dir, "..");
 const DEMO = join(ROOT, "demo", "soc");
-const GOLDEN_DIR = join(ROOT, "test", "golden", "soc");
-const UPDATE_GOLDEN = process.env.AW_UPDATE_GOLDEN === "1";
 
 let ws: WorkspaceConfig;
 let base = "";
@@ -37,16 +36,9 @@ beforeAll(async () => {
 	ws = await loadWorkspace(join(DEMO, "autowire.toml"));
 	if (!existsSync(join(ws.indexDir, "index.xml"))) {
 		throw new Error(
-			"RtlIndex missing; run `bun ../../index.ts analysis` in demo/soc first",
+			"RtlIndex missing; run `bun ../../index.ts analysis run` in demo/soc first",
 		);
 	}
-	// Clean dump surfaces so the test observes only this run's writes.
-	await rm(join(DEMO, ".autowire", "connect"), {
-		recursive: true,
-		force: true,
-	});
-	await rm(ws.connectDir, { recursive: true, force: true });
-	await rm(ws.simDir, { recursive: true, force: true });
 	base = await startWeb(ws, 0, null);
 	browser = await chromium.launch({ headless: true });
 }, 30000);
@@ -63,7 +55,13 @@ describe("autowire web e2e", () => {
 		expect(await page.locator("#aw-status").getAttribute("data-state")).toBe(
 			"idle",
 		);
-		for (const id of ["#btn-check", "#btn-render", "#btn-dump", "#btn-reset"]) {
+		for (const id of [
+			"#btn-check",
+			"#btn-elaborate",
+			"#btn-run",
+			"#btn-save",
+			"#btn-reset",
+		]) {
 			expect(await page.locator(id).isVisible()).toBe(true);
 		}
 		const mods = await page.locator("#aw-live aw-mod").all();
@@ -75,7 +73,7 @@ describe("autowire web e2e", () => {
 		await page.close();
 	});
 
-	test("?check=1 validates only (render untouched, no .sv)", async () => {
+	test("?check=1 validates only (render untouched, no workspace write)", async () => {
 		const page = await browser.newPage();
 		await page.goto(`${base}?check=1`);
 		const status = await waitStatus(page);
@@ -84,7 +82,7 @@ describe("autowire web e2e", () => {
 		expect(
 			await page.locator("#aw-live aw-render > aw-insts > aw-inst").all(),
 		).toHaveLength(0);
-		expect(existsSync(ws.connectDir)).toBe(false);
+		expect(existsSync(join(DEMO, ".autowire", "save"))).toBe(false);
 		await page.close();
 	});
 
@@ -101,14 +99,14 @@ describe("autowire web e2e", () => {
 		await page.close();
 	});
 
-	test("buttons: [Render] auto-runs check; [Reset] restores author face", async () => {
+	test("buttons: [Elaborate] auto-runs check; [Reset] restores author face", async () => {
 		const page = await browser.newPage();
 		await page.goto(`${base}`);
 		await page.waitForSelector("#aw-live aw-mod");
-		await page.locator("#btn-render").click();
+		await page.locator("#btn-elaborate").click();
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain("render: ok");
+		expect(status.text).toContain("elaborate: ok");
 		expect(
 			await page
 				.locator(
@@ -128,174 +126,132 @@ describe("autowire web e2e", () => {
 		).toHaveLength(0);
 	});
 
-	test("?dump=1 on tb: deps chain dumps first, SV files match goldens", async () => {
+	test("?run=1 shows snapshots and does not write the workspace", async () => {
+		const before = existsSync(join(ws.connectDir, "soc_top.sv"))
+			? await readFile(join(ws.connectDir, "soc_top.sv"), "utf8")
+			: null;
 		const page = await browser.newPage();
-		await page.goto(`${base}?unit=soc_top&dump=1`);
+		await page.goto(`${base}?unit=soc_top&run=1`);
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain("dump: 3 file(s)");
-		expect(existsSync(join(DEMO, ".autowire", "connect", "sha256wb.xml"))).toBe(
-			true,
-		);
-		expect(
-			existsSync(join(DEMO, ".autowire", "connect", "sd_sha_ch.xml")),
-		).toBe(true);
-		expect(existsSync(join(DEMO, ".autowire", "connect", "soc_top.xml"))).toBe(
-			true,
-		);
+		expect(status.text).toContain("snapshot(s) in view");
+		const shown = (await page.locator("#aw-generated").textContent()) ?? "";
+		expect(shown).toContain('name="sha256wb"');
+		expect(shown).toContain('name="sd_sha_ch"');
+		expect(shown).toContain('name="soc_top"');
 		await page.close();
-		const names = ["soc_top", "sd_sha_ch", "sha256wb"];
-		await mkdir(GOLDEN_DIR, { recursive: true });
-		for (const n of names) {
-			const got = await readFile(join(ws.connectDir, `${n}.sv`), "utf8");
-			const goldenPath = join(GOLDEN_DIR, `${n}.sv`);
-			if (UPDATE_GOLDEN || !existsSync(goldenPath)) {
-				await writeFile(goldenPath, got, "utf8");
-			} else {
-				expect(got).toBe(await readFile(goldenPath, "utf8"));
-			}
-		}
+		const after = existsSync(join(ws.connectDir, "soc_top.sv"))
+			? await readFile(join(ws.connectDir, "soc_top.sv"), "utf8")
+			: null;
+		expect(after).toBe(before);
 	});
 
-	test("?dump=1 on soc_tb: writes rtl/gen/sim/tb_soc.sv (no connect XML for sim)", async () => {
+	test("?run=1 on soc_tb shows tb_soc in the page and writes nothing", async () => {
+		const simPath = join(ws.simDir, "tb_soc.sv");
+		const before = existsSync(simPath) ? await readFile(simPath, "utf8") : null;
 		const page = await browser.newPage();
-		await page.goto(`${base}?unit=soc_tb&dump=1`);
+		await page.goto(`${base}?unit=soc_tb&run=1`);
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toMatch(/dump: \d+ file\(s\)/);
+		expect(status.text).toContain("snapshot(s) in view");
+		const shown = (await page.locator("#aw-generated").textContent()) ?? "";
+		expect(shown).toContain('name="tb_soc"');
 		await page.close();
 		expect(existsSync(join(DEMO, ".autowire", "connect", "soc_tb.xml"))).toBe(
 			false,
 		);
-		const got = await readFile(join(ws.simDir, "tb_soc.sv"), "utf8");
-		expect(got).toContain("module tb_soc;");
-		expect(got).toContain('`include "tb_env_setup.svh"');
-		expect(got).toContain('`include "tb_sim.svh"');
-		expect(got).toContain("soc_top u_dut");
-		const goldenPath = join(GOLDEN_DIR, "tb_soc.sv");
-		await mkdir(GOLDEN_DIR, { recursive: true });
-		if (UPDATE_GOLDEN || !existsSync(goldenPath)) {
-			await writeFile(goldenPath, got, "utf8");
-		} else {
-			expect(got).toBe(await readFile(goldenPath, "utf8"));
-		}
+		const after = existsSync(simPath) ? await readFile(simPath, "utf8") : null;
+		expect(after).toBe(before);
 	});
 
-	test("dump gate: leftover template in render → 422; unknown snapshot → 404", async () => {
-		const bad = await fetch(`${base}api/dump`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				id: "sha256wb",
-				html: "<autowire><aw-mod name='x'><aw-render><aw-templates><aw-template></aw-template></aw-templates></aw-render></aw-mod></autowire>",
-			}),
-		});
-		expect(bad.status).toBe(422);
+	test("write routes are gone; unknown snapshot is 404", async () => {
+		for (const path of ["/api/dump", "/api/save", "/api/check"]) {
+			const res = await fetch(`${base}${path.slice(1)}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ id: "sha256wb", html: "<autowire/>" }),
+			});
+			expect(res.status).toBe(404);
+		}
 		const missing = await fetch(`${base}api/connect?id=ghost_unit`);
 		expect(missing.status).toBe(404);
-		const badId = await fetch(`${base}api/dump`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ id: "../escape", html: "<autowire/>" }),
-		});
-		expect(badId.status).toBe(400);
 	});
 
-	test("api guard: cross-origin, non-JSON body, non-identifier module name are refused", async () => {
-		const jsonType = { "content-type": "application/json" };
-		const crossSite = await fetch(`${base}api/dump`, {
-			method: "POST",
-			headers: { ...jsonType, origin: "https://evil.example" },
-			body: JSON.stringify({ id: "sha256wb", html: "<autowire/>" }),
+	test("api guard: cross-origin GET is refused", async () => {
+		const crossSite = await fetch(`${base}api/units`, {
+			headers: { origin: "https://evil.example" },
 		});
 		expect(crossSite.status).toBe(403);
-		const plain = await fetch(`${base}api/save`, {
-			method: "POST",
-			headers: { "content-type": "text/plain" },
-			body: JSON.stringify({ id: "sha256wb", html: "<autowire/>" }),
-		});
-		expect(plain.status).toBe(415);
-		const traversal = await fetch(`${base}api/dump`, {
-			method: "POST",
-			headers: jsonType,
-			body: JSON.stringify({
-				id: "sha256wb",
-				html: "<autowire><aw-mod name='../../escape'><aw-render></aw-render></aw-mod></autowire>",
-			}),
-		});
-		expect(traversal.status).toBe(422);
-		expect(((await traversal.json()) as { error: string }).error).toContain(
-			"not a plain SystemVerilog identifier",
+	});
+
+	test("save downloads visible source and does not write .autowire/save", async () => {
+		await rm(join(DEMO, ".autowire", "save"), { recursive: true, force: true });
+		const page = await browser.newPage();
+		await page.goto(`${base}?unit=sha256wb&run=1`);
+		await waitStatus(page);
+		const download = page.waitForEvent("download");
+		await page.locator("#btn-save").click();
+		const file = await download;
+		expect(file.suggestedFilename()).toBe("sha256wb.txt");
+		const status = await waitStatus(page);
+		expect(status.state).toBe("done");
+		expect(status.text).toContain("browser download");
+		await page.close();
+		expect(existsSync(join(DEMO, ".autowire", "save", "sha256wb.html"))).toBe(
+			false,
 		);
 	});
 
-	test("save: [Save] drops live DOM to .autowire/save; API guards id/body", async () => {
+	test("session refuses a step whose predecessor was not run", async () => {
 		const page = await browser.newPage();
-		await page.goto(`${base}?unit=sha256wb&check=1`);
-		await waitStatus(page);
-		await page.locator("#btn-save").click();
-		const saveDone = page.locator("#aw-status", { hasNotText: /^check:/ });
-		await saveDone.waitFor({ timeout: 10000 });
-		const status = await waitStatus(page);
-		expect(status.state).toBe("done");
-		expect(status.text.replaceAll("\\", "/")).toContain(
-			".autowire/save/sha256wb.html",
-		);
+		await page.goto(`${base}?unit=sha256wb`);
+		await page.waitForSelector("#aw-live aw-mod");
+		const skipped = await page.evaluate(async () => {
+			const aw = (
+				window as unknown as { aw: { session: (s: string) => Promise<string> } }
+			).aw;
+			try {
+				await aw.session("elaborate");
+				return "";
+			} catch (e) {
+				return (e as Error).message;
+			}
+		});
+		expect(skipped).toContain("requires a clean check");
+		const help = await page.evaluate(async () => {
+			const aw = (
+				window as unknown as { aw: { session: (s: string) => Promise<string> } }
+			).aw;
+			return aw.session("help");
+		});
+		expect(help).toContain("before-instances");
+		expect(help).toContain("write a file");
+		const ran = await page.evaluate(async () => {
+			const aw = (
+				window as unknown as { aw: { session: (s: string) => Promise<string> } }
+			).aw;
+			return aw.session("run");
+		});
+		expect(ran).toContain('name="sha256wb"');
 		await page.close();
-		const saved = await readFile(
-			join(DEMO, ".autowire", "save", "sha256wb.html"),
-			"utf8",
-		);
-		// live DOM: author content present, and it is not the author file path
-		expect(saved).toContain("<aw-content>");
-		expect(saved).toContain('name="sha256wb"');
-		const ghost = await fetch(`${base}api/save`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ id: "ghost_unit", html: "<autowire/>" }),
-		});
-		expect(ghost.status).toBe(404);
-		const noRoot = await fetch(`${base}api/save`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ id: "sha256wb", html: "<div/>" }),
-		});
-		expect(noRoot.status).toBe(422);
-		const badId = await fetch(`${base}api/save`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ id: "../escape", html: "<autowire/>" }),
-		});
-		expect(badId.status).toBe(400);
 	});
 
 	test("check error path: tb without dep snapshot reports missing snapshot", async () => {
-		await rm(join(DEMO, ".autowire", "connect", "sd_sha_ch.xml"), {
-			force: true,
-		});
-		const page = await browser.newPage();
-		await page.goto(`${base}?unit=soc_top&check=1`);
-		const status = await waitStatus(page);
-		expect(status.state).toBe("error");
-		expect(status.text).toContain('snapshot for "sd_sha_ch" missing');
-		expect(await page.title()).toMatch(/\[error\]$/);
-		await page.close();
-		const gated = await fetch(`${base}api/dump`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				id: "soc_top",
-				html: "<autowire><aw-mod name='soc_top'><aw-render></aw-render></aw-mod></autowire>",
-			}),
-		});
-		expect(gated.status).toBe(422);
-		expect(((await gated.json()) as { error: string }).error).toContain(
-			'check failed for "soc_top"',
-		);
-		// restore shared state for later runs
-		const page2 = await browser.newPage();
-		await page2.goto(`${base}?unit=soc_top&dump=1`);
-		await waitStatus(page2);
-		await page2.close();
+		const snap = join(DEMO, ".autowire", "connect", "sd_sha_ch.xml");
+		const saved = existsSync(snap) ? await readFile(snap, "utf8") : null;
+		await rm(snap, { force: true });
+		try {
+			const page = await browser.newPage();
+			await page.goto(`${base}?unit=soc_top&check=1`);
+			const status = await waitStatus(page);
+			expect(status.state).toBe("error");
+			expect(status.text).toContain('snapshot for "sd_sha_ch" missing');
+			expect(await page.title()).toMatch(/\[error\]$/);
+			await page.close();
+		} finally {
+			if (saved !== null) {
+				await Bun.write(snap, saved);
+			}
+		}
 	});
 });

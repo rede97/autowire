@@ -1,6 +1,6 @@
 # 连接 HTML 方言（实现约束）
 
-> 状态：**已实现**（`web/aw.js`；`autowire web` / `check` / `/api/dump` 落地；Playwright 用例与 golden 见 `src/e2e-web.test.ts` / `test/golden/`）。  
+> 状态：**已实现**（`web/aw.js`；`autowire connect web` / `connect check` / `connect run` 落地；Playwright 用例见 `test/e2e-web.test.ts`）。  
 > 摘要切片：`bun index.ts help connect`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
 > 结构以 [`examples/connect/01-author-simple.html`](../examples/connect/01-author-simple.html) 为准。  
@@ -16,7 +16,7 @@
 | 输入 | **作者 HTML（`aw-content`）** | imports / param / 内部 localparam / 显式 port；具名 `aw-template`；例化 + 引用/overwrite |
 | 输出 | **渲染结果（`aw-render`）** | 具体 instance、信号、导出端口、逐条连线（**生成物**） |
 
-打印机、`/api/dump`、Playwright golden **必须**只认各 `aw-mod` 下的 **`<aw-render>`**，**禁止**把 `aw-content` / `aw-templates` 原文当 netlist。
+打印机、`connect run`、页面 `#aw-generated` **必须**只认各 `aw-mod` 下的 **`<aw-render>`**，**禁止**把 `aw-content` / `aw-templates` 原文当 netlist。
 
 `aw-rewrite` 使用浏览器 **`RegExp` + `String.replace`**（`$1` / `$<name>` + 变量 `` `${…}` ``）。非常规生成挂在渲染生命周期脚本上（[`lifecycle.md`](./lifecycle.md)），不挂在 rewrite 属性上。
 
@@ -368,7 +368,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ### 4.2 dump 范围
 
-`/api/dump` **必须**收集**全部**相关 `aw-mod` 的 `aw-render`（含嵌套 `aw-submods` 与多 HTML 纳入的模块），不只顶层一棵子树。
+`connect run` **必须**收集**全部**相关 `aw-mod` 的 `aw-render`（含嵌套 `aw-submods` 与多 HTML 纳入的模块），不只顶层一棵子树。页面 [Run] 展示同一份文本，不写盘。
 
 作者面 **可以**声明内部 `aw-localparams`；**禁止**手写 uniquify `Mod__Inst__Param` 当 SoT。
 
@@ -387,12 +387,11 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
     →  hdxml → RtlIndex（只读）
     →  check（作者面 aw-content 合法性 + deps；不写盘）
-    →  按 deps 拓扑 elaborate（无边单元可并行）→ .autowire/connect/<id>.xml 快照
-    →  POST /api/dump（读 POST 体全部相关 aw-render；刷新 xml 快照）
-    →  autowire 写 .sv → DV
+    →  按 deps 拓扑 elaborate → connect run 写 .autowire/connect/<id>.xml 快照
+    →  connect run 读全部相关 aw-render，写 .sv → DV
 ```
 
-落地顺序：`aw.js` → `autowire web` + check + dump → Playwright golden → 才允许 `autowire cli`。
+落地顺序：`aw.js` → `connect web` + `connect check` + `connect run`。页面会话不写文件。
 
 ## 6. 多模引用与多 HTML
 
@@ -435,8 +434,6 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 高级 / 不规则处理：[`lifecycle.md`](./lifecycle.md)。  
 两写一冻：`before-instances` → `on-template` → 引擎写 `aw-render`（冻结）→ `before-dump` 只读。产物 **必须**只来自引擎写出的 `aw-render`，**禁止**脚本事后改 render。
 
-## 10. 仍开放
+## 10. 暂时不做
 
-1. 工作区 toml：多包/多 chip 是否允许多份 toml（见 [`../workspace/toml.md`](../workspace/toml.md) §6）。
-
-已裁定（随 aw.js 落地）：生命周期钩子 = `aw.on(phase, fn)`，按连接单元隔离；钩子同步；子模整段先于父模连线 elaborate（lifecycle.md §6）。
+工作区只认一份 `autowire.toml`。多包/多 chip 的多份文件见 [`../workspace/toml.md`](../workspace/toml.md) §6，这个阶段不实现。

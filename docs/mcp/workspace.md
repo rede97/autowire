@@ -1,8 +1,8 @@
 # 工作区 MCP（本地文件 / RtlIndex）
 
-> 状态：**草稿，未实现**。  
+> 状态：**暂时不做**（2026-09-27）。这个阶段不实现节点级 HTML 编辑。Agent 通过 Playwright 操作 `connect web` 的活 DOM，再把可见源码保存到本地。索引检索用已落地的 `analysis search`、`analysis info`、`analysis deps`，不另做一套 MCP。  
 > 总原则与双 MCP 分途：[`README.md`](./README.md)。  
-> **禁止**在本 MCP 内实现 elaborate / 打印 RTL；需要结果时 **必须**再走 `autowire web`（check→render→dump）或等价工具。
+> **禁止**在本 MCP 内实现 elaborate / 打印 RTL。需要 `.sv` 时走 `connect run`。页面只展示源码。
 
 关键字「必须 / 应当 / 可以」按 RFC 2119。
 
@@ -38,8 +38,8 @@
 |---|---|
 | `rtlindex_search` | 模糊查模块 / 端口 / 参数名；返回路径、文件 XML 定位 |
 | `rtlindex_module` | 按名取 params / ports / instances / 源路径（对齐 `/api/module`） |
-| `rtlindex_deps` | 依赖树摘要（对齐 `autowire deps`） |
-| `analysis_run` | 触发 `autowire analysis`（映射 toml→hdxml） |
+| `rtlindex_deps` | 依赖树摘要（对齐 `analysis deps`） |
+| `analysis_run` | 触发 `analysis run`（映射 toml→hdxml） |
 | `index_reload` | 仅重新加载已有 `.autowire/hdxml` 进 MCP 侧缓存（不分析） |
 
 缺失索引或 `definesFp` 过期 → **报错**并提示先 `analysis_run`（与 web 加载纪律一致）。
@@ -73,20 +73,21 @@ connect-unit / aw-mod@name / aw-content / aw-insts / aw-inst@id
 | 步骤 | 谁做 |
 |---|---|
 | Edit 作者 HTML | 本 MCP |
-| check / render / dump | Agent **显式**调 web API、Playwright，或 CLI |
+| check / elaborate | Agent **显式**调页面会话或 `connect check` / `connect run` |
 | 看活 DOM | **A. Playwright MCP**（另一途径） |
 
-本 MCP **可以**提供只读提示：`suggest_web_url`（拼 `?check=1` 等），但 **禁止**在同一工具调用里静默 dump。
+本 MCP **可以**提供只读提示：`suggest_web_url`（拼 `?check=1` 等），但 **禁止**在同一工具调用里静默写 `.sv`。
 
 ## 4. 与 Playwright MCP 的协作
 
 ```text
 B: html_update(inst) → 写盘
-A: browser reload or GET ?render=1 → 看 aw-render
-A/工具: dump → .sv
+A: browser reload or GET ?elaborate=1 → 看 aw-render
+A: session("run") → #aw-generated
+工具: connect run → .sv
 ```
 
-- A **不**把调试 DOM 写回作者 HTML；调试产物可以经 `POST /api/save` 落到 `.autowire/save/`（临时目录，已实现），合回作者面由本地人工决定。
+- A **不**把调试 DOM 写回作者 HTML，静态服务也没有保存端点。合回作者面由本地人工决定：浏览器下载，或 MCP 读取 `#aw-generated` 后自己存。
 
 ## 5. 实现提示（非规范）
 
@@ -94,11 +95,6 @@ A/工具: dump → .sv
 - MCP server **应当**只读/写工作区根内路径（与 web 同源安全策略对齐）。  
 - 大型 HTML：list/get **应当**支持 depth / filter，避免一次吐整树。
 
-## 6. 仍开放
+## 6. 暂时不做
 
-1. 传输：Cursor stdio MCP vs 仅 `bun` CLI 子命令（Agent 调 CLI 也算「工作区工具面」）。  
-2. 节点路径正式语法（CSS-like vs JSON pointer）。  
-3. `html_update` 是否允许改 `aw-template` 内 rewrite（仍是作者面，但是高风险）。  
-4. 与 `docs/plugins/` 声明 HTML 是否共用 Edit API。
-
-裁定后改本文 + [`README.md`](./README.md) + `help status`，再实现。
+传输、节点路径语法、是否允许改 `aw-template` 内 rewrite、与插件 HTML 共用 Edit API：当前没有直接操作 HTML 节点的需求，全部搁置。有需求再打开本文并改 `help status`。

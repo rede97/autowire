@@ -15,5 +15,5 @@
 - **语言**：代码与配置中的注释、错误/提示信息一律**英文**（`docs/` 中文文档除外）。TS 侧由 `test/lang-guard.test.ts` 强制（CJK 即红）。
 - **Lint**：TS 一律过 Biome——提交前跑 `bun run lint`（`biome check .`），零 error 才可提交。
 - **Windows**：工具链统一 MSYS2 UCRT64（Bun / Biome / Playwright 保持 Windows 原生），PATH 只加 `C:\msys64\ucrt64\bin`，行尾 LF（`core.autocrlf false`）。细则见 [`docs/dev/windows-msys2.md`](docs/dev/windows-msys2.md)。
-- **生产包目标**（打包未落地）：并排三颗二进制 `autowire` + `hdxml` + `lightpanda`。开发与 CI 仍用 Playwright Chromium。细则见 [`docs/dev/release.md`](docs/dev/release.md)。
+- **生产包**（暂时不做）：目标仍是并排三颗二进制 `autowire` + `hdxml` + `lightpanda`。这个阶段不写打包脚本。开发与 CI 仍用 Playwright Chromium。细则见 [`docs/dev/release.md`](docs/dev/release.md)。
 - **`.svh` 不进 filelist**：`.f`/`.lst`/`.flst`/`.list` 里出现 `.svh` 条目，hdxml 跳过并警告，**不要**靠把 svh 写进列表来传宏。宏头文件只用 `` `include ``（源内）或 `define_headers`（独立加载）；EDA 全局宏场景用 `eda_load.f`（头部 svh）+ 共享纯源码 `rtl.f` 的降级组合。

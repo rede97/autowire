@@ -26,19 +26,33 @@ export function registerConnect(program: Command): void {
 			"workspace dir or autowire.toml path (default: search upward from CWD)",
 		)
 		.option("--force", "rewrite outputs even when the bytes already match")
-		.action(async (unit: string | undefined, opts: { workspace?: string; force?: boolean }) => {
-			const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
-			const selected = selectUnits(cfg, unit);
-			const leafDb = new LeafDb(cfg.indexDir);
-			const session = new Map<string, Awaited<ReturnType<typeof renderUnit>>>();
-			for (const u of selected) {
-				const rendered = await renderUnit(cfg, u, leafDb, session, opts.force ?? false);
-				session.set(u.id, rendered);
-				for (const w of rendered.warnings)
-					console.warn(`${u.id}: warning: ${w}`);
-				for (const file of rendered.files) console.log(file);
-			}
-		});
+		.action(
+			async (
+				unit: string | undefined,
+				opts: { workspace?: string; force?: boolean },
+			) => {
+				const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
+				const selected = selectUnits(cfg, unit);
+				const leafDb = new LeafDb(cfg.indexDir);
+				const session = new Map<
+					string,
+					Awaited<ReturnType<typeof renderUnit>>
+				>();
+				for (const u of selected) {
+					const rendered = await renderUnit(
+						cfg,
+						u,
+						leafDb,
+						session,
+						opts.force ?? false,
+					);
+					session.set(u.id, rendered);
+					for (const w of rendered.warnings)
+						console.warn(`${u.id}: warning: ${w}`);
+					for (const file of rendered.files) console.log(file);
+				}
+			},
+		);
 
 	connect
 		.command("check")

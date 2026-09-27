@@ -26,19 +26,20 @@ Other topics are command/dialect reference: autowire help topics
 
 What it is
   Connectivity is one HTML + <script>. After the browser runs the script, the live DOM is the netlist.
-  Hand the render result to autowire; it writes RTL, then DV.
-  Early path: aw.js + local web page; debug via Playwright MCP (browser, isolated).
+  connect run writes .sv from that netlist. The page shows the same text and does not write.
+  Early path: aw.js + connect web; debug via Playwright MCP (browser, isolated).
   Settled path: autowire connect run — happy-dom runs the same HTML + module scripts,
   then the same check → elaborate → before-dump pipeline. Playwright stays for debug.
-  MCP vs tools: tools own generate/check/render/dump; MCPs must not be a live netlist engine.
-  Two MCP paths (docs/mcp/): Playwright = runtime debug; Workspace = author HTML + RtlIndex
-  (edit/search/analysis) — not landed; generating still requires explicit Web tool path.
+  MCP vs tools: tools own check and connect run; MCPs must not be a live netlist engine.
+  Playwright MCP drives the page. Saving is the browser download or the driver storing
+  #aw-generated locally. Direct HTML-node edit is parked (docs/mcp/workspace.md).
+  RtlIndex lookup is analysis search / info / deps.
 
 Pipeline
   autowire.toml (.f + svh / macros)
-      →  hdxml → RtlIndex (read-only)
+      →  analysis run → hdxml → RtlIndex (read-only)
       →  HTML aw-content (+ aw-submods)
-      →  check (author HTML legality + deps; no write; not aw-render)
+      →  connect check (author HTML legality + deps; no write; not aw-render)
       →  elaboration → aw-render
       →  connect run writes .sv → DV
 
@@ -47,20 +48,18 @@ You can do now
   2. autowire init / analysis run for workspace + RtlIndex.
   3. Author connect HTML per docs/connect/html.md.
   4. autowire connect web [unit]; wait for first paint.
-  2. Playwright MCP: navigate / snapshot / evaluate / click — inspect live DOM, not source HTML.
-     Workspace MCP (docs/mcp/workspace.md, not landed): node-level author HTML edit + RtlIndex
-     search; does not elaborate; call web for check/render/dump when results are needed.
-  3. Run check on aw-content (legality + deps) separately from render/dump; dump should refuse unclean check.
-  4. connect run writes .sv from aw-render. The browser session does not write.
-  5. autowire connect run [unit] when the design is settled and a browser is not needed.
+  5. Playwright MCP: navigate / snapshot / evaluate / click — inspect live DOM, not source HTML.
+     Do not add a node-edit MCP. Search the index with analysis search / info / deps.
+  6. connect check reports author-face errors and warnings. It does not write.
+  7. connect run writes .sv from aw-render. The browser session does not write.
      Same module scripts and aw-render as the page. Unchanged files are skipped.
 
 Rules of engagement
   Edit this help (src/cli/help.ts) when behavior changes; format constraints live in docs/.
   Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
   Windows: MSYS2 UCRT64 toolchain, ucrt64/bin on PATH, LF checkout (docs/dev/windows-msys2.md).
-  Production package target (not landed): sibling binaries autowire + hdxml + lightpanda
-    (docs/dev/release.md). Dev/CI debug stays Playwright + Chromium.
+  Production package is parked (docs/dev/release.md): do not add an installer
+    or switch dev/CI debug to Lightpanda. Dev/CI stays Playwright + Chromium.
   Connect authoring (docs/connect/html.md §3.5.5): same-name → identity (omit);
     rename batch → one aw-rewrite RegExp — never list identity ports one-by-one.
 `,
@@ -71,40 +70,40 @@ Status (code is truth; do not invent finished commands)
 Landed
   autowire help [topic]
   autowire init / analysis run   workspace autowire.toml → hdxml
-  autowire analysis deps    RTL module dependency tree
+  autowire analysis deps|search|info   read the RtlIndex; no write
   hdxml sidecar             analysis → RtlIndex XML
   aw.js                     engine: src/core/aw.ts → build:web → web/aw.js (generated; guarded)
   autowire connect web [unit]  static session; buttons; no workspace write
   autowire connect check [unit] author-face legality + deps (no write)
   autowire connect run [unit]   happy-dom: scripts → elaborate → write .sv (no browser)
-  Playwright cases/golden   src/e2e-web.test.ts + test/golden/*.sv (headless Chromium)
   Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
-  aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; dump → sim_dir
-  Playwright cases/golden   src/e2e-web.test.ts + test/golden/*.sv (headless Chromium)
+  Page session              window.aw.session: before-instances, check, elaborate,
+                            before-dump, run, save, help. Source stays in #aw-generated.
+                            Save is a browser download. The page does not write files.
+  aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir
+  plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/ (docs/cli.md)
 
-Not landed
-  Command shape (docs/cli.md): connect exposes run and check. web is a stateful
-    session; MCP steps before-instances, check, elaborate, before-dump, or run.
-    Generated source stays in the visible page. Save uses the browser. Buttons
-    remain for manual use. Web commands do not write files. analysis groups
-    run, deps, search, and info. Not landed.
-  Workspace MCP             author HTML node edit + RtlIndex search (docs/mcp/workspace.md)
+Not landed (parked; do not implement until a later ask)
   Production package        three sibling binaries: autowire, hdxml, lightpanda
-                            (docs/dev/release.md). lightpanda is the only bundled debug
-                            browser (its mcp and serve commands). Do not ship Playwright
-                            or Chromium. Do not link lightpanda into autowire.
-                            Dev/CI goldens stay Playwright + headless Chromium.
-                            Linux x86_64, Linux aarch64, macOS (glibc on Linux).
-                            No native Windows build. Lightpanda is AGPL-3.0; pin one
-                            build; set LIGHTPANDA_DISABLE_TELEMETRY=true.
+                            (docs/dev/release.md). Parked. Dev/CI stays Playwright.
+  Workspace HTML edit       no node-edit MCP. This stage: the agent drives the
+                            browser, then saves locally. Direct HTML-node edit is
+                            not required (docs/mcp/workspace.md).
+  Plugin type B             expand custom tags into core aw-*. Parked. No aw-*
+                            plugin tags in use. Type A wishbone run is landed.
+  Wishbone open items       extra arbiter policies, crossbar, SlaveBus downlink,
+                            posted async FIFO, CDC constraints, real DFT TAP.
+                            Parked (docs/plugins/wishbone-bus.md §8). Tag domains
+                            (ShadowDomain / TagFrom*) are landed.
+  Multiple autowire.toml    one file per workspace. Nested copies and dep closure
+                            are not needed (docs/workspace/toml.md §6).
 
 Parallel (does not block connect)
   Plugin registry (docs/plugins/): type A = generate → plugins_dir → analysis/RtlIndex leaf
     (hash incremental; no plugin-private port API);
-    type B = expand → core aw-* like submods (childRenders); then check → elaborate;
-    orchestration: expand/before-instances before check (docs/connect/lifecycle.md §3.1)
-  Wishbone — implementing now (docs/plugins/wishbone-regfile.md + wishbone-bus.md);
-    one plugin id wishbone (aliases wishbone-regfile / wishbone-bus warn + same generate);
+    type B = expand custom aw-* tags like submods; parked, no such tags in use;
+  Wishbone — landed (docs/plugins/wishbone-regfile.md + wishbone-bus.md);
+    one plugin id wishbone (wishbone-regfile / wishbone-bus are not command aliases);
     two DSL types stay: RegfileDef vs BusDef (no merged IR);
     draft API + samples: docs/examples/regfile/regfile.ts;
     toml [wishbone.<source>] ts= (one file may export either or both; optional exports=);
@@ -143,7 +142,7 @@ Parallel (does not block connect)
     W1C c_rg_<field>_set hw set (set wins); RWW same-cycle SW > HW;
     RWE o_<domain>_sel (lowest set bit, address tag only) + i_<domain>_mux_sel
     (inner_shadow_mux sideband index; not o_<domain>_sel) + optional ext_<field>_ready;
-    tag domains (docs/plugins/wishbone-bus.md 2.1; PROPOSAL, not landed):
+    tag domains (docs/plugins/wishbone-bus.md §2.1, landed):
       hoist ShadowDomain(name, copies, width) to its own shared export;
       Bus tags= declares TGA order + source — bare name = pass through from
       uplink, TagFromAddr/TagFromPin/TagFromReg = produced at this level;
@@ -327,7 +326,7 @@ aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlI
   multidim example: docs/examples/connect/04-author-multidim.html.
 Lifecycle scripts: docs/connect/lifecycle.md —
   target order: [B expand] → before-instances → check → elaborate (on-template) → aw-render frozen;
-  before-dump read-only; type-A plugin generate stays outside this pipeline (docs/plugins/).
+  before-dump read-only; type-A plugin wishbone run stays outside this pipeline (docs/plugins/).
 Templates are per-aw-mod only. Connected nets → aw-signals; identity/export may auto-export ports.
 aw-imports → SV import at module head (deduped).
 
@@ -356,7 +355,7 @@ autowire connect web
   autowire connect web [unit]
 
 Static page on 127.0.0.1. The session does not write the workspace.
-Buttons: Check, Run, Save, Reset. Generated source is visible in #aw-generated.
+Buttons: Check, Elaborate, Run, Save, Reset. Generated source is visible in #aw-generated.
 Save downloads that text in the browser. MCP calls window.aw.session(step):
   before-instances, check, elaborate, before-dump, run, save, help.
 None of those steps write a file. connect run writes .sv.
@@ -431,8 +430,8 @@ Do not
     (old outline/apply/rewrite all-in-one). Allowed: Playwright MCP (debug) and Workspace MCP
     (author-file edit + RtlIndex query; docs/mcp/) — generate still via web/cli tools only
   browser writing the workspace directly
-  build cli before Web cases
-  two wiring semantics (Web and cli must share aw.js + goldens)
+  build a second RTL writer in the browser (connect run writes .sv; the page only shows it)
+  two wiring semantics (the page and connect run must share aw.js)
   copy a per-chip connect prompt (edit help agent / src/cli/help.ts instead)
   make README a second contract without updating help
   put wiring into autowire.toml ([connect.<id>] allows only html= + deps= — no top, no wiring)

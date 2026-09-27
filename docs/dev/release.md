@@ -1,6 +1,6 @@
 # 生产发布包
 
-> 状态：**目标已裁定，打包脚本尚未落地**。未出现在 `help status` 的 Landed 列表里，不要提前做安装器或把开发调试改成依赖 Lightpanda。
+> 状态：**暂时不做**（2026-09-27）。目标仍是三颗并排二进制，但这个阶段不写打包脚本，也不把开发调试改成依赖 Lightpanda。开发与 CI 继续用 Bun、Playwright 及其 Chromium。不要把本文里的包布局当成现网。
 > 开发与 CI 仍按仓库现况：Bun、Playwright 及其 Chromium、`bun test`。本文只规定**发给用户的生产包里有什么**。
 > Windows 开发环境见 [windows-msys2.md](./windows-msys2.md)，不由本包覆盖。
 
@@ -44,7 +44,11 @@ Lightpanda 自带协议服务，生产包不再附带 Chromium、Playwright 或 
 - Lightpanda 以 **AGPL-3.0** 分发。生产包附带其许可证，并提供**该次构建所对应源码**的获取方式。
 - 发布物钉住一次具体构建。不用会移动的 `nightly` 标签充当版本号。
 
-## 5. 尚未落地
+## 5. 暂时不做
+
+这个阶段不实现：
 
 - 打包脚本、版本钉、安装布局、PATH 约定。
 - 把开发用 `.mcp.json` 换成生产包的 `lightpanda mcp`。
+
+有新的发布需求再打开。在此之前 `help status` 把本节放在 Not landed。

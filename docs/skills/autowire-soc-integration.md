@@ -3,7 +3,7 @@
 > 状态：**草稿，评审中**（开发阶段材料，持续优化）。
 > 性质：实战手册，**非**格式约束；约束以本目录契约文档 + `bun index.ts help agent` 为准。
 > 依据：`demo/soc` 实际落地过程（picorv32 + 2× sdspi + DMA→AXIS→sha256，Wishbone B4 + AXI4-Stream）。
-> 2026-09-09 随 `/api/save` 调试落盘一同整理。
+> 2026-09-27 起页面不再写盘：RTL 由 `connect run` 写，调试保存走浏览器或 MCP。
 
 ## 1. 全流程速查
 
@@ -17,13 +17,14 @@
 IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/patches/`**，checkout 后跑 `patches/apply.sh`，禁止在上游子模块落本地 commit）
   → 手写集成叶子（rtl/*.v，英文注释）
   → rtl/soc.f（filelist，路径相对工作区根；.svh 禁止入内）
-  → autowire.toml（[analysis.rtl] filelists + [connect.<id>] DAG + [dump] dir）
-  → bun <repo>/index.ts analysis          # hdxml → RtlIndex（先看 0 blackbox / 0 error）
+  → autowire.toml（[analysis.rtl] filelists + [connect.<id>] DAG）
+  → bun <repo>/index.ts analysis run      # hdxml → RtlIndex（先看 0 blackbox / 0 error）
   → sot/connect/*.html（aw-content 作者面；wishbone ts= 同树 wb_reg_*.ts / wb_bus_*.ts）
-  → bun <repo>/index.ts check             # 作者面合法性 + deps（先于 render）
-  → bun <repo>/index.ts web <top_unit>    # 起 127.0.0.1 页面
-  → 浏览器打开 ?dump=1                    # check → render（deps 单元自动先行）→ 写 rtl/gen/connect|sim
-  → verilator 冒烟                         # sim/verilator/run.sh[+ --sd | --tb-mod]；见 §6 / fw/README.md（仅 Verilator）
+  → bun <repo>/index.ts plugin wishbone run
+  → bun <repo>/index.ts connect check     # 作者面合法性 + deps
+  → bun <repo>/index.ts connect run       # happy-dom 写 rtl/gen/connect|sim
+  → 要看页面时：bun <repo>/index.ts connect web <top_unit>
+  → verilator 冒烟                         # sim/verilator/run.sh[+ --sd | --regfile | --tb-mod]；见 §6 / fw/README.md（仅 Verilator）
 ```
 
 `.autowire/` 全部是可删生成物：`hdxml/`（RtlIndex）、`connect/<id>.xml`（抽象模块快照，唯一形式，无 html 快照）、`dump/<id>.html`（调试落盘）。
@@ -34,13 +35,13 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
 - **扁平向量总线**：interconnect 主从端口全部摊平成 `m_*[NM*32-1:0]` / `s_*[NS*32-1:0]` 大向量，连接侧用 `part` 算术切片：`part="32*${idx}+31:32*${idx}"`、单位 bit 用 `part="${idx}"`。net 各连接点的 `width` 写法必须**逐字一致**（文本级一致性检查）。
 - **BASE/MASK 译码表**走 `aw-param` 拼接字面量；含操作符/拼接的 override 自动折叠成 `Mod__Inst__Param` localparam，纯字面量 inline。
 - **常量绑死**必须显式 `type="const"`（`to="1'b0"` 裸写报错）；**显式悬空** `type="open"`（只 output/inout）。
-- **跨单元封装**：被引方独立 `[connect.<id>]` 单元（如 sha256wb），引用方 toml `deps=[...]`；dump 链会自动按拓扑先 elaborate 依赖。reset 极性不一致（`rst_ni` vs `wb_rst_i`/`i_sd_reset`）用一个小桥接模块，别想在连接方言里内嵌逻辑。
+- **跨单元封装**：被引方独立 `[connect.<id>]` 单元（如 sha256wb），引用方 toml `deps=[...]`；`connect run` 按拓扑先 elaborate 依赖。reset 极性不一致（`rst_ni` vs `wb_rst_i`/`i_sd_reset`）用一个小桥接模块，别想在连接方言里内嵌逻辑。
 - **打印结果**：固件经 WB 写 testout 寄存器 → 顶层 `test_valid/test_data` 引脚，tb 直接观测。
 
 ## 3. 验证纪律（demo/soc/sim/ + fw/ 模式）
 
 - **冒烟路径：仅 Verilator + C 固件**（不用 iverilog）：
-  - 基础：`./sim/verilator/run.sh` → `fw/basic_smoke`：顶层 interconnect（cpu + JTAG dbg）级联进两个 `sd_sha` channel；外部 JTAG 冒烟（`jtag_host.h`）与固件并发；CPU 打 smoke + SHA0/SHA1 CTRL；写 `FABRIC.rb_grant_en` 给两个 channel arbiter。**channel DMA 打不到父级 SRAM/flash**。SD→SHA DMA 走 `--sd`。字段位域与窗基址来自 `fw/gen/wishbone/`（`plugin generate wishbone`；**入库展示，禁止当临时产物删除**）。
+  - 基础：`./sim/verilator/run.sh` → `fw/basic_smoke`：顶层 interconnect（cpu + JTAG dbg）级联进两个 `sd_sha` channel；外部 JTAG 冒烟（`jtag_host.h`）与固件并发；CPU 打 smoke + SHA0/SHA1 CTRL；写 `FABRIC.rb_grant_en` 给两个 channel arbiter。**channel DMA 打不到父级 SRAM/flash**。SD→SHA DMA 走 `--sd`。字段位域与窗基址来自 `fw/gen/wishbone/`（`plugin wishbone run`；**入库展示，禁止当临时产物删除**）。
   - SD：`./sim/verilator/run.sh --sd` → `fw/sd_sha256` + GPL-3 `third_party/sdspisim` + `images/zeros_sha.img`。
   - GPL 边界：`sdspisim` 只进 Verilator C++ harness；固件侧用 MIT `fw/common/sdspi_regs.h`。
   - aw-tb-mod：`./sim/verilator/run.sh --tb-mod` → dump 的 `rtl/gen/sim/tb_soc.sv`（`--binary --timing`；`sim/tb_board.svh` + `tb_sim.svh` + `tb_jtag.svh`；flash 用 `spiflash_vl`，pad 显式 OE 解析，无 inout Z）。
@@ -50,22 +51,22 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
 - 已知答案测试（KAT）：`hashlib` / IP bench 向量；寄存器侧为 **每 32-bit 字字节反序**。
 - **阴性控制必须做**：改 1 字节消息 → 必须 FAIL。
 - TB 观测：`test_valid/test_data`；pass=`0x600d600d` / fail=`0xdead0001` / alive=`0x1`。
-- 生成后验收路径：改插件生成器 → `plugin generate all` → `analysis` → web dump（`?dump=1`）→ `./sim/verilator/run.sh --regfile`（regfile 全 Access + SEL + shadow bank 覆盖）+ `./sim/verilator/run.sh --tb-mod`（aw-tb-mod dump 全 SoC）。
+- 生成后验收路径：改插件生成器 → `plugin wishbone run` → `analysis run` → `connect run` → `./sim/verilator/run.sh --regfile`（regfile 全 Access + SEL + shadow bank 覆盖）+ `./sim/verilator/run.sh --tb-mod`（aw-tb-mod 的 `connect run` 写出全 SoC TB）。页面 `?run=1` 只在 `#aw-generated` 里看同一份源码，不写盘。
 
 ## 4. MCP 调试回路（已落地的官方路径）
 
 ```text
 Playwright MCP（浏览器 A 面）
   → 读 live DOM：querySelector("aw-content").outerHTML（整树可取；原文件另有 GET /api/author?id=）
-  → 改 live DOM：setAttribute / 插删节点（Render 前任意改，引擎吃的就是活 DOM）
-  → 点 [Check]/[Render] 或 GET ?check=1/?render=1 验证
-  → 点 [Save]（或 POST /api/save {id, html}）→ .autowire/save/<id>.html
-  → 本地 diff sot/connect/<id>.html .autowire/save/<id>.html，人工决定是否合回
+  → 改 live DOM：setAttribute / 插删节点（Elaborate 前任意改，引擎吃的就是活 DOM）
+  → 点 [Check]/[Elaborate] 或 GET ?check=1/?elaborate=1 验证
+  → 点 [Run] 或 window.aw.session("run")，源码出现在 #aw-generated
+  → 点 [Save] 只触发浏览器下载；MCP 自己把可见文本存到选定路径，再决定是否合回作者 HTML
 ```
 
-红线：**浏览器永不写工作区**；唯一 RTL 写路径是 `POST /api/dump`；`/api/save` 只写 `.autowire/save/` 临时目录，作者面 SoT 只在 `sot/`（`connect/*.html` + `wb_reg_*.ts` / `wb_bus_*.ts`）。页面 [Reset] 一键回作者面。
+红线：**浏览器和 `connect web` 都不写工作区**。`.sv` 只由 `connect run` 写。作者面 SoT 只在 `sot/`（`connect/*.html` + `wb_reg_*.ts` / `wb_bus_*.ts`）。页面 [Reset] 一键回作者面。没有 `POST /api/dump` 或 `POST /api/save`。
 
-端点速查：`GET /api/author?id=`（作者原文）、`GET /api/connect?id=`（xml 快照）、`POST /api/check`、`POST /api/dump`、`POST /api/save`。
+端点速查：`GET /api/units`、`GET /api/author?id=`（作者原文）、`GET /api/connect?id=`（xml 快照）、`GET /api/rtlindex`、`GET /api/module?name=`。会话步进是 `window.aw.session(step)`，不是 POST。
 
 ## 5. 踩坑清单（全是真实踩过的）
 
@@ -84,9 +85,9 @@ Playwright MCP（浏览器 A 面）
 
 ## 6. 下一步开发的已知边界
 
-- `autowire cli` 未落地（等 Web 用例/golden 稳定）。
-- 工作区 MCP（docs/mcp/workspace.md）：草稿，节点级 html_edit 未实现；传输未定（stdio MCP vs CLI）。
-- 插件机制（docs/plugins/）：草稿。
+- 工作区节点编辑（docs/mcp/workspace.md）：暂时不做。这个阶段用 Playwright 操作页面，再把 `#aw-generated` 存到本地。检索用 `analysis search` / `info` / `deps`。
+- 插件类型 B（把自定义标签展开成 `aw-*`）：暂时不做。`plugin wishbone run` 已落地。Wishbone §8 的开放项等后续需求再追加。
+- 生产包与多份 `autowire.toml`：暂时不做。一个工作区一份 toml，只认直接 `deps`。
 - demo/soc 验证路线（与 `fw/README.md` 对齐；**仅 Verilator**）：
   1. **基础冒烟**：`sim/verilator/run.sh` — `fw/basic_smoke`（SRAM zeros SHA + Flash `0x0100_1000` KAT SHA + dual DMA RR）。
   2. **SD 冒烟**：`sim/verilator/run.sh --sd` — `sdspisim` + `fw/sd_sha256`（CMD17→FIFO→DMA→SHA）。

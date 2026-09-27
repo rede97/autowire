@@ -9,7 +9,7 @@
 声明式 `aw-template` / `aw-rewrite` / `aw-connect` 覆盖常规改名与连线。  
 超出时：在 **elaboration 生命周期**上挂 `<script type="module">`，只改 **作者面 / template 展开中间态**；引擎再单向写入各 `aw-mod` 的 `<aw-render>`。
 
-打印机 / `/api/dump` / golden **只认** `aw-render`。  
+打印机、`connect run`、页面上的 `#aw-generated` **只认** `aw-render`。  
 **`aw-render` 一旦写满即冻结**：钩子 **禁止**再改渲染结果。
 
 ## 2. 常规 vs 高级
@@ -48,14 +48,16 @@
 作者面突变（类型 B 标签 expand、脚本 `before-instances`）**必须**发生在 **check 之前**，否则 Check 绿无法覆盖钩子/插件产物。类型 A `generate` **在连接流水线外**（见 [`../plugins/README.md`](../plugins/README.md) §6）。
 
 ```text
-[可选] plugin generate (A) → plugins_dir → analysis → RtlIndex
+[可选] plugin wishbone run (A) → plugins_dir → analysis run → RtlIndex
 单元内：
   → [B] expand 自定义标签 → 核心 aw-*
   → before-instances（脚本）
   → check（作者面 + deps；help check / check.md）
   → elaborate（params → on-template → identity/wires → 冻结 aw-render）
-  → before-dump（只读）→ POST /api/dump
+  → before-dump（只读）→ connect run 写 .sv
 ```
+
+页面会话走同一条链，但停在可见源码：`window.aw.session` 的 `run` 与 `connect run` 得到同一份快照，不写文件。
 
 同一 HTML → 同一 `aw-render`（钩子 **应当**幂等）。elaborate **仅在本模（含子树）无新增 error 时** write/freeze `aw-render`（失败不留下半成品冻结面）。
 
@@ -79,15 +81,15 @@
 4. `on-template` **应当**按例化触发（参数给出当前 `mod` / `inst` / 所用 `template`）；全局汇总若需要，也只碰未 commit 的中间态。  
 5. dump 前每个 `aw-render` 必须合法（无 template/rewrite），且与冻结后内容一致。
 
-## 5. check / dump / Playwright
+## 5. check / run / Playwright
 
-- 正式 **check** 走 **`autowire check` / `POST /api/check`**：校验 **作者面 `aw-content`** + deps（**不写盘**；**不以 `aw-render` 为 SoT**）；见 `help check` / [`check.md`](./check.md)。目标上 check 在 expand / `before-instances` **之后**（§3.1）。  
-- snapshot 活 DOM（`aw-render` 为引擎写出后的冻结结果，供 dump / golden）。  
-- 写回仍 `POST /api/dump`（全部相关 `aw-render`）；dump **应当**在 content check 无 error 且 render 可印后才写。  
-- golden 比对 render，不比对脚本源。  
-- **禁止**在 golden / dump 前用脚本改 render 来「对齐」期望。  
-- 插件：类型 A generate 在流水线外；类型 B expand 见 [`../plugins/README.md`](../plugins/README.md)。
-- `autowire render` 用 happy-dom 执行本节脚本并走同一流水线，快照必须与 Chromium 一致，然后按 dump 规则写 `.sv`。不需要浏览器。
+- 正式 **check** 走 **`autowire connect check`** 或页面 [Check]：校验 **作者面 `aw-content`** + deps（**不写盘**；**不以 `aw-render` 为 SoT**）；见 `help check` / [`check.md`](./check.md)。目标上 check 在 expand / `before-instances` **之后**（§3.1）。  
+- snapshot 是活 DOM（`aw-render` 为引擎写出后的冻结结果）。`connect run` 把它写成 `.sv`；页面把它放进 `#aw-generated`。  
+- 写回只走 `connect run`（全部相关 `aw-render`）；**应当**在 content check 无 error 且 render 可印后才写。页面不写。  
+- 对照只认 render，不认脚本源。  
+- **禁止**在写盘前用脚本改 render 来「对齐」期望。  
+- 插件：类型 A 的 `plugin wishbone run` 在流水线外；类型 B expand 见 [`../plugins/README.md`](../plugins/README.md)。
+- `autowire connect run` 用 happy-dom 执行本节脚本并走同一流水线，快照必须与 Chromium 一致，然后写 `.sv`。不需要浏览器。
 
 ## 6. 裁定（随 aw.js 落地）
 

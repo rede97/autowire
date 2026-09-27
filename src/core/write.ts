@@ -12,7 +12,9 @@ export async function writeIfChanged(
 		try {
 			const prev = await readFile(path);
 			const next =
-				typeof content === "string" ? Buffer.from(content) : Buffer.from(content);
+				typeof content === "string"
+					? Buffer.from(content)
+					: Buffer.from(content);
 			if (Buffer.compare(prev, next) === 0) return false;
 		} catch {
 			// Missing or unreadable: write it.

@@ -21,7 +21,7 @@ function resetVal(r: FieldReset | undefined, copy: number): number {
 	return r[copy] ?? 0;
 }
 
-function parseTag(tag_bits: string): { hi: number; lo: number } {
+function _parseTag(tag_bits: string): { hi: number; lo: number } {
 	const m = /^(\d+)\s*:\s*(\d+)$/.exec(tag_bits.trim());
 	if (!m) throw new Error(`bad tag_bits ${tag_bits}`);
 	return { hi: Number(m[1]), lo: Number(m[2]) };

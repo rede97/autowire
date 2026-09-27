@@ -12,7 +12,7 @@ import {
 	type WbMaster,
 } from "./dsl.ts";
 import { busModuleKind, busSystemModuleName, type FabricPort } from "./emit.ts";
-import { packedTagExpr, tagPlan, tagPort } from "./tag.ts";
+import { tagPlan, tagPort } from "./tag.ts";
 
 export const MASTER_MODULES = [
 	"wb_sync_cell",

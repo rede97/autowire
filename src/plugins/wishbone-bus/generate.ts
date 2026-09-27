@@ -4,13 +4,13 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { writeIfChanged } from "../../core/write.ts";
 import type { WorkspaceConfig } from "../../workspace.ts";
 import { PLUGIN_ID } from "../wishbone/id.ts";
 import { type BusDef, isBusDef } from "./dsl.ts";
 import { busModuleName, busSystemModuleName, emitBusSv } from "./emit.ts";
 import { emitBusSystemSv } from "./emit-attach.ts";
 import { emitBusIcl, emitBusPdl, MASTER_MODULES } from "./emit-master.ts";
-import { writeIfChanged } from "../../core/write.ts";
 
 export { PLUGIN_ID };
 
@@ -93,8 +93,10 @@ export async function generateDef(
 	const pdl = emitBusPdl(def);
 	if (icl && pdl) {
 		const stem = join(outDir, busSystemModuleName(def));
-		if (await writeIfChanged(`${stem}.icl`, icl, force)) paths.push(`${stem}.icl`);
-		if (await writeIfChanged(`${stem}.pdl`, pdl, force)) paths.push(`${stem}.pdl`);
+		if (await writeIfChanged(`${stem}.icl`, icl, force))
+			paths.push(`${stem}.icl`);
+		if (await writeIfChanged(`${stem}.pdl`, pdl, force))
+			paths.push(`${stem}.pdl`);
 	}
 	return paths;
 }

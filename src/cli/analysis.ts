@@ -29,7 +29,9 @@ export function registerAnalysis(program: Command): void {
 
 	const analysis = program
 		.command("analysis")
-		.description("RtlIndex: run hdxml, then query deps, names, and module info");
+		.description(
+			"RtlIndex: run hdxml, then query deps, names, and module info",
+		);
 
 	analysis
 		.command("run")
@@ -45,10 +47,7 @@ export function registerAnalysis(program: Command): void {
 			"--sub-bars",
 			"per-thread sub progress bars (current file per worker)",
 		)
-		.option(
-			"--force",
-			"rewrite the RtlIndex cache (full re-parse)",
-		)
+		.option("--force", "rewrite the RtlIndex cache (full re-parse)")
 		.action(
 			async (opts: {
 				workspace?: string;
@@ -142,7 +141,9 @@ export function registerAnalysis(program: Command): void {
 					opts.enum ? "enum" : "",
 				].filter((k) => k !== "");
 				if (kinds.length > 1) {
-					console.error("analysis search: choose only one of --module --port --package --enum");
+					console.error(
+						"analysis search: choose only one of --module --port --package --enum",
+					);
 					process.exit(1);
 				}
 				const kind = (kinds[0] ?? "module") as SearchKind;
@@ -217,6 +218,8 @@ interface SearchHit {
 	xml: string;
 	rtl: string;
 	line?: number;
+	/** RTL declaration to scan. Port and enum hits scan the owner, not the member. */
+	owner?: string;
 }
 
 function matcher(pattern: string, regex: boolean): (name: string) => boolean {
@@ -252,40 +255,60 @@ async function searchIndex(
 		return hits.map((h) => ({ ...h, line: lines.get(`${h.rtl}\0${h.name}`) }));
 	}
 	if (kind === "package") {
-		return [...index.packageSource.entries()]
+		const hits = [...index.packageSource.entries()]
 			.filter(([name]) => match(name))
 			.map(([name, rtl]) => ({
 				name,
 				xml: index.packageIndex.get(name) ?? "",
 				rtl,
 			}));
+		const lines = await declarationLines(
+			hits.map((h) => [h.name, h.rtl]),
+			"package",
+		);
+		return hits.map((h) => ({ ...h, line: lines.get(`${h.rtl}\0${h.name}`) }));
 	}
 	const db = new LeafDb(dir);
 	const hits: SearchHit[] = [];
 	const names =
-		kind === "enum" ? [...index.packageSource.keys()] : [...index.moduleSource.keys()];
+		kind === "enum"
+			? [...index.packageSource.keys()]
+			: [...index.moduleSource.keys()];
 	for (const owner of names) {
 		const leaf = await db.get(owner);
 		if (!leaf) continue;
 		const xml =
-			(kind === "enum" ? index.packageIndex : index.moduleIndex).get(owner) ?? "";
+			(kind === "enum" ? index.packageIndex : index.moduleIndex).get(owner) ??
+			"";
 		const rtl =
-			(kind === "enum" ? index.packageSource : index.moduleSource).get(owner) ?? "";
+			(kind === "enum" ? index.packageSource : index.moduleSource).get(owner) ??
+			"";
 		const items =
 			kind === "enum"
 				? leaf.params.filter((p) => p.kind === "localparam").map((p) => p.name)
 				: leaf.ports.map((p) => p.name);
 		for (const name of items) {
-			if (match(name)) hits.push({ name: `${owner}.${name}`, xml, rtl });
+			if (match(name)) hits.push({ name: `${owner}.${name}`, xml, rtl, owner });
 		}
 	}
-	return hits;
+	const lines = await declarationLines(
+		hits.map((h) => [h.owner ?? "", h.rtl]),
+		kind === "enum" ? "localparam" : "port",
+	);
+	return hits.map((h) => ({
+		name: h.name,
+		xml: h.xml,
+		rtl: h.rtl,
+		line: lines.get(`${h.rtl}\0${h.owner}`),
+	}));
 }
 
-/** Line of `module <name>` in the RTL file. One read per file, so several
- * modules declared in the same file each get their own line. */
+/** Line of the declaration in the RTL file. One read per file, so several
+ * modules declared in the same file each get their own line. Port and enum
+ * hits use the owning module or package line: the index has no member span. */
 async function declarationLines(
 	items: readonly (readonly [string, string])[],
+	kind: "module" | "package" | "port" | "localparam" = "module",
 ): Promise<Map<string, number>> {
 	const byFile = new Map<string, string[]>();
 	for (const [name, rtl] of items) {
@@ -302,8 +325,14 @@ async function declarationLines(
 			continue;
 		}
 		const lines = text.split(/\r?\n/);
+		const keyword =
+			kind === "package"
+				? "package"
+				: kind === "localparam"
+					? "localparam"
+					: "module";
 		for (const name of names) {
-			const re = new RegExp(`\\bmodule\\s+${name}\\b`);
+			const re = new RegExp(`\\b${keyword}\\s+${name}\\b`);
 			const line = lines.findIndex((row) => re.test(row));
 			if (line >= 0) out.set(`${rtl}\0${name}`, line + 1);
 		}
