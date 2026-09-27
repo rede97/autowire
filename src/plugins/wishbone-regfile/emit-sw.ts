@@ -163,7 +163,7 @@ export function emitRegfileC(laid: LaidRegfile): string {
 	return lines.join("\n");
 }
 
-/** uvm_reg: one class per cell. No ral_block / add_reg(offset). */
+/** uvm_reg: one class per cell, plus one leaf ral_block per sheet (add_submap on the bus side). */
 export function emitRegfileUvm(laid: LaidRegfile): string {
 	const table = effectiveSheet(laid.def);
 	const macro = `RAL_${ident(table).toUpperCase()}_SV`;
@@ -218,6 +218,49 @@ export function emitRegfileUvm(laid: LaidRegfile): string {
 		lines.push(`endclass : ${cls}`);
 		lines.push("");
 	}
+	// Leaf block: one register per cell at its layout offset; a bus hangs it
+	// with add_submap (shared once across hangs and shadow aliases).
+	const blk = `ral_block_${ident(table)}`;
+	lines.push(`// Leaf block — ${table}: ${laid.def.desc}`);
+	lines.push(`class ${blk} extends uvm_reg_block;`);
+	for (const cell of laid.cells) {
+		lines.push(
+			`\trand ral_reg_${ident(table)}_${ident(cell.name)} ${ident(cell.name)};`,
+		);
+	}
+	lines.push("");
+	lines.push(`\tfunction new(string name = "${blk}");`);
+	lines.push("\t\tsuper.new(name, build_coverage(UVM_NO_COVERAGE));");
+	lines.push("\tendfunction: new");
+	lines.push("");
+	lines.push("\tvirtual function void build();");
+	lines.push(
+		'\t\tdefault_map = create_map("default_map", 0, 4, UVM_LITTLE_ENDIAN);',
+	);
+	for (const cell of laid.cells) {
+		const cls = `ral_reg_${ident(table)}_${ident(cell.name)}`;
+		const inst = ident(cell.name);
+		const sh = shadowComment(cell, laid.shadows);
+		if (sh) lines.push(`\t\t// ${inst}: ${sh}`);
+		const rights = cell.fields.every(
+			(f) => f.field.access === Access.RO || f.field.access === Access.RC,
+		)
+			? "RO"
+			: "RW";
+		lines.push(
+			`\t\tthis.${inst} = ${cls}::type_id::create("${inst}",, get_full_name());`,
+		);
+		lines.push(`\t\tthis.${inst}.configure(this);`);
+		lines.push(`\t\tthis.${inst}.build();`);
+		lines.push(
+			`\t\tdefault_map.add_reg(this.${inst}, 32'h${cell.byte_offset.toString(16).padStart(8, "0")}, "${rights}");`,
+		);
+	}
+	lines.push("\tendfunction: build");
+	lines.push("");
+	lines.push(`\t\`uvm_object_utils(${blk})`);
+	lines.push(`endclass : ${blk}`);
+	lines.push("");
 	lines.push(`\`endif // ${macro}`, "");
 	return lines.join("\n");
 }

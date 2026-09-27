@@ -47,11 +47,18 @@ export const hbm_ch = Bus("hbm_ch", "HBM channel: aword + 2x dword", {
 	],
 });
 
-/** Level 1: channel decoder. `TagFromAddr` produces pstate and strips the bits. */
-export const hbm = Bus("hbm", "HBM channel decoder (16 channels)", {
+/** Level 1: channel interconnect. `TagFromAddr` produces pstate and strips the bits. */
+export const hbm = Bus("hbm", "HBM channel interconnect (16 channels)", {
 	addrWidth: 19,
 	tags: [TagFromAddr(pstate, "18:17")],
-	masters: [Master("cfg", "Configuration port")],
+	masters: [
+		Master("cfg", "Configuration port (fabric clk, 800 MHz)"),
+		Master("host", "SoC APB host (100 MHz PCLK)", {
+			apb: true,
+			cdc: true,
+			timeout: 64,
+		}),
+	],
 	slaves: Array.from({ length: CH_COUNT }, (_, i) =>
 		SlaveBus(hbm_ch, i * CH_SIZE, {
 			id: `ch${i}`,

@@ -494,7 +494,7 @@ effective_sel = wb_tga[tag-bits]
 [plugins.wishbone]
 export = "fw/gen/wishbone/wishbone.xlsx"  # field sheets + one sheet per bus tree
 c      = "fw/gen/wishbone"                # <sheet>.h + <bus>_map.h + wishbone.h
-uvm    = "dv/ral"                         # ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv
+uvm    = "dv/ral"                         # ral_<SHEET>.sv（cell 类 + 叶子 ral_block_<sheet>）+ ral_block_* + ral_wishbone.sv
 
 # source_id = SoT 文件槽（可含 RegfileDef 与/或 BusDef）；不是单个叶子名
 [wishbone.examples]
@@ -511,7 +511,7 @@ ts = "docs/examples/regfile/regfile.ts"
 - 省略某键 → 跳过该导出。键必须是非空字符串。  
 - Excel 工作表名来自 **有效 `sheet`**（缺省 = `name`），不是 HTML 属性。同 sheet 的多例化共用一份软件/文档产物。  
 - C / uvm_reg / Excel **禁止**进 `plugins_dir`（那是 SV 叶子）；也 **禁止**当 connect/sim dump。
-- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；channel bus `SlaveRegfile(sha256, 0x40)` 挂一次，两个 `SlaveBus` channel 例化同一 `sd_sha_system`。父级 `TagFromAddr(bank)` 把每个 channel 和 smoke 拆成 bank0..3；`sd_sha` 只透传 `bank`，不再拆。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`soc_wb_map.h` overlay `ch0_bank0_sha256` … + `wishbone.h`）；`fw/common/soc_map.h` 只做别名（固件用 bank0）。C 头 **入库展示**（`fw/gen/wishbone/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`，同一目录还有 `<bus>.ralf`；`ral_block_soc_wb.sv` 与 `ral_wishbone.sv` 同套打包。
+- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；channel bus `SlaveRegfile(sha256, 0x40)` 挂一次，两个 `SlaveBus` channel 例化同一 `sd_sha_system`。父级 `TagFromAddr(bank)` 把每个 channel 和 smoke 拆成 bank0..3；`sd_sha` 只透传 `bank`，不再拆。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`soc_wb_map.h` overlay `ch0_bank0_sha256` … + `wishbone.h`）；`fw/common/soc_map.h` 只做别名（固件用 bank0）。C 头 **入库展示**（`fw/gen/wishbone/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（无 `.ralf`；`ral_block_soc_wb.sv` 与 `ral_wishbone.sv` 同套打包）。
 
 ### 6.1 C 头、uvm_reg 与 Excel（已裁定；C / uvm_reg / Excel emit 已落地）
 
@@ -532,7 +532,7 @@ wishbone generate（同一插件；RegfileDef / BusDef 类型分立）
 |---|---|---|---|---|
 | Excel | `export=` **文件** | 每表一 sheet | 对照主干 `gen_excel_doc.py`：**cell 黄行 + field 行（MSB 在上）+ reserved 灰行**；公式算位宽 / `'h` / `DEC2HEX` / 加权复位和。列：Sub-Addr（叶子 byte offset，无 `0x`）/ Start Bit / End Bit / Bit Width / Default Value / R/W Property / Name / Description / Reset Dec / Hex / Sum / SHADOW（仅 cell 行填 `shadow` 名）。**删**主干空列 A、`Selection ADDRWIDTH`（恒空；窗宽/TGA 归 bus）。复位只写 copy 0。字段 `note` 写在同一 Description 单元格：第一行仍是 `desc`，换行后是正文。表级 `note` 挂在表头 Description 批注（插数据行会错开位宽公式）。**禁止**墙钟/用户名；**禁止**把 `note` 写进 RTL / C / uvm_reg | 窗基址、TGA/`tagBits`、`remaps`、物理 copy 展开 |
 | C | `c=` **目录** | `<sheet>.h`（空 = `name`；同 sheet 只写一份） | 对照主干 `gen_chead.py` 的 **cell 形**：每 cell `struct …_BITS` 位域 + `union { volatile uint32_t all; … bit; }`。LSB=0 与 Field bit `offset` 一致。shadow 只写注释。头稳定（plugin id + 表名），**禁止**墙钟/用户名 | `OFFSET_*` / 带 padding 的整表 overlay / 窗基址 / TGA |
-| UVM | `uvm=` **目录** | `ral_<SHEET>.sv` | 对照主干 `gen_ralf.py` 的 **cell 级结果**：`class ral_reg_<table>_<cell> extends uvm_reg` + `uvm_reg_field`（width / lsb / access / reset）。**禁止** `.ralf` 文本。shadow 只写注释 | `ral_block_*` 的 `default_map.add_reg(offset)`、窗基址、TGA；block 组装归 bus |
+| UVM | `uvm=` **目录** | `ral_<SHEET>.sv` | 对照主干 `gen_ralf.py` 的 **cell 级结果**：`class ral_reg_<table>_<cell> extends uvm_reg` + `uvm_reg_field`（width / lsb / access / reset）；外加每 sheet 一份叶子 `class ral_block_<sheet> extends uvm_reg_block`，cell 以布局 offset `add_reg` 进自己的 `default_map`。**禁止** `.ralf` 文本。shadow 只写注释 | 窗基址、TGA、跨叶子的地址图；bus 侧只用 `add_submap` 挂叶子 block |
 
 复位值：标量 `.reset`；dict 只取 **copy 0**（与「可见的一份」一致）。Access → `uvm_reg_field` 的 `access` 字符串沿主干 `field.access.ral_name`（实现时对照 Python Access）；C 位域不编码 Access。
 
@@ -578,6 +578,6 @@ wishbone generate（同一插件；RegfileDef / BusDef 类型分立）
 - ~~W1C 置位通路~~ → **`c_rg_<field>_set`** 硬件置位 in；同周期 **set 优先**于 W1C 清；仍 **无 W1S**。
 - ~~RWW 同周期优先级~~ → **SW 写优先**于 HW `_strb`（HW 写被吞）。
 - ~~scalar shadow sel~~ → 多 bit mask 时 `o_<shadow>_sel` / 内选旁路取 **最低置位 copy**；读仍按位或。
-- ~~C / uvm_reg 软件分层~~ → 叶子只出 **字段 layout**（struct 位域 / `uvm_reg`）；软件文件名 = 有效 **`sheet`**（空 = `name`）。多硬件例化（不同 `name`）**必须**共用同一份 C/`uvm_reg`，只要 `sheet` 相同且 layout 一致；`name` 只服务 SV 叶子 / WB identity。shadow **仅注释**；窗基址、cell 编排、TGA 选 bank **由 bus 后组装**。Excel 仍可文档化叶子 offset。与 Excel 一样禁止回写 TS。
+- ~~C / uvm_reg 软件分层~~ → 叶子出 **字段 layout**（struct 位域 / `uvm_reg` cell 类）**外加每 sheet 一份叶子 `ral_block_<sheet>`**（cell 按布局 offset `add_reg`）；软件文件名 = 有效 **`sheet`**（空 = `name`）。多硬件例化（不同 `name`）**必须**共用同一份 C/`uvm_reg`，只要 `sheet` 相同且 layout 一致；`name` 只服务 SV 叶子 / WB identity。shadow **仅注释**；窗基址、cell 编排、TGA 选 bank **由 bus 后组装**（bus 侧 `add_submap` 挂叶子 block）。Excel 仍可文档化叶子 offset。与 Excel 一样禁止回写 TS。
 
 CLI：`autowire plugin wishbone run`（需 `[wishbone.<source_id>] ts=`；一文件可多叶子 / 总线）。

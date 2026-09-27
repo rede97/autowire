@@ -44,7 +44,7 @@ describe("wishbone tag domains", () => {
 		expect(plan.addrMask).toBe(0x0006_0000);
 		expect(plan.inherited).toHaveLength(0);
 		const sv = emitBusSv(hbm);
-		expect(sv).toContain("assign g_tga_pstate = m_adr_i[18:17];");
+		expect(sv).toContain("assign g_tga_pstate = g_adr[18:17];");
 		expect(sv).toContain("assign g_adr_dec = g_adr & 19'h1ffff;");
 		// Tag bits are stripped before compare and before forwarding.
 		expect(sv).toContain("if ((g_adr_dec & 19'h7f000) == 19'h00000)");
@@ -52,6 +52,7 @@ describe("wishbone tag domains", () => {
 			"ch0_i_wb_adr  = (slot_sel[SLOT_CH0] || broadcast_ch_all)",
 		);
 		expect(sv).not.toContain("m_tga_pstate");
+		expect(sv).not.toContain("cfg_o_wb_tga");
 	});
 
 	test("pass-through level inherits the tag and never re-derives it", () => {
@@ -59,6 +60,10 @@ describe("wishbone tag domains", () => {
 		expect(plan.inherited).toHaveLength(1);
 		expect(plan.addrMask).toBe(0);
 		const sv = emitBusSv(hbm_ch);
+		// Decoder body declares its request bundle (no implicit nets) and the
+		// inherited tag arrives on the flat master port.
+		expect(sv).toContain("logic [11:0] g_adr;");
+		expect(sv).toContain("assign g_up_pstate = m_tga_pstate;");
 		expect(sv).toContain("assign g_tga_pstate = g_up_pstate;");
 		expect(sv).not.toContain("g_adr_dec");
 		expect(sv).toContain("assign aword_i_wb_tga_pstate");
@@ -148,7 +153,7 @@ describe("wishbone tag domains", () => {
 		expect(sv).not.toContain("m_tga_pstate");
 	});
 
-	test("HBM region broadcast fans a write out and has no data port", () => {
+	test("HBM region broadcast: write fan-out, read OR, no data port", () => {
 		expect(hbm.slaves.find((s) => s.name === "ch_bcast")?.broadcast).toBe(
 			"ch_all",
 		);
@@ -160,7 +165,9 @@ describe("wishbone tag domains", () => {
 		).toBeUndefined();
 		const parent = emitBusSv(hbm);
 		const child = emitBusSv(hbm_ch);
-		expect(parent).toContain("assign broadcast_ch_all = g_we");
+		expect(parent).toContain(
+			"assign broadcast_ch_all = (g_adr_dec & 19'h7f000) == 19'h10000;",
+		);
 		expect(parent).toContain(
 			"ch15_i_wb_cyc = (slot_sel[SLOT_CH15] || broadcast_ch_all)",
 		);
@@ -168,16 +175,26 @@ describe("wishbone tag domains", () => {
 		expect(parent).toContain(
 			"(({19{slot_sel[SLOT_CH0]}} & g_adr_dec) | ({19{broadcast_ch_all}} & (g_adr_dec - 19'h10000))) & ~19'h7f000",
 		);
+		// Broadcast read ORs every subscriber's DAT; the window itself is not unmapped.
+		expect(parent).toContain(
+			"({32{broadcast_ch_all}} & (ch0_o_wb_dat | ch1_o_wb_dat",
+		);
+		expect(parent).toContain("(unmapped & g_stb & !(broadcast_ch_all))");
 		expect(parent).not.toContain("ch_bcast_i_wb_");
 		expect(parent).not.toContain("ch_bcast_o_wb_");
 		expect(parent).not.toContain("SLOT_CH_BCAST");
-		expect(child).toContain("assign broadcast_dword_all = g_we");
+		expect(child).toContain(
+			"assign broadcast_dword_all = (g_adr & 12'hf00) == 12'h300;",
+		);
 		expect(child).toContain(
 			"dword0_i_wb_cyc = (slot_sel[SLOT_DWORD0] || broadcast_dword_all)",
 		);
 		expect(child).toContain("aword_i_wb_cyc  = slot_sel[SLOT_AWORD]");
 		expect(child).toContain(
 			"(({12{slot_sel[SLOT_DWORD0]}} & g_adr) | ({12{broadcast_dword_all}} & (g_adr - 12'h300))) & ~12'hf00",
+		);
+		expect(child).toContain(
+			"({32{broadcast_dword_all}} & (dword0_o_wb_dat | dword1_o_wb_dat))",
 		);
 		expect(child).not.toContain("dword_bcast_i_wb_");
 		expect(child).not.toContain("dword_bcast_o_wb_");

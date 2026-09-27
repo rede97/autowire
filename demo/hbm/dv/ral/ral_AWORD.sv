@@ -94,4 +94,40 @@ class ral_reg_aword_DRIVE extends uvm_reg;
 	`uvm_object_utils(ral_reg_aword_DRIVE)
 endclass : ral_reg_aword_DRIVE
 
+// Leaf block — aword: HBM aword CSR (command/address lane)
+class ral_block_aword extends uvm_reg_block;
+	rand ral_reg_aword_ID ID;
+	rand ral_reg_aword_STATUS STATUS;
+	rand ral_reg_aword_TIMING TIMING;
+	rand ral_reg_aword_DRIVE DRIVE;
+
+	function new(string name = "ral_block_aword");
+		super.new(name, build_coverage(UVM_NO_COVERAGE));
+	endfunction: new
+
+	virtual function void build();
+		default_map = create_map("default_map", 0, 4, UVM_LITTLE_ENDIAN);
+		this.ID = ral_reg_aword_ID::type_id::create("ID",, get_full_name());
+		this.ID.configure(this);
+		this.ID.build();
+		default_map.add_reg(this.ID, 32'h00000000, "RO");
+		this.STATUS = ral_reg_aword_STATUS::type_id::create("STATUS",, get_full_name());
+		this.STATUS.configure(this);
+		this.STATUS.build();
+		default_map.add_reg(this.STATUS, 32'h00000004, "RO");
+		// TIMING: shadow: pstate, 4 copies (bank select is a bus TGA concern)
+		this.TIMING = ral_reg_aword_TIMING::type_id::create("TIMING",, get_full_name());
+		this.TIMING.configure(this);
+		this.TIMING.build();
+		default_map.add_reg(this.TIMING, 32'h00000008, "RW");
+		// DRIVE: shadow: pstate, 4 copies (bank select is a bus TGA concern)
+		this.DRIVE = ral_reg_aword_DRIVE::type_id::create("DRIVE",, get_full_name());
+		this.DRIVE.configure(this);
+		this.DRIVE.build();
+		default_map.add_reg(this.DRIVE, 32'h0000000c, "RW");
+	endfunction: build
+
+	`uvm_object_utils(ral_block_aword)
+endclass : ral_block_aword
+
 `endif // RAL_AWORD_SV

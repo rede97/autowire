@@ -274,4 +274,89 @@ class ral_reg_smoke_key_key_2 extends uvm_reg;
 	`uvm_object_utils(ral_reg_smoke_key_key_2)
 endclass : ral_reg_smoke_key_key_2
 
+// Leaf block — smoke: SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)
+class ral_block_smoke extends uvm_reg_block;
+	rand ral_reg_smoke_ID ID;
+	rand ral_reg_smoke_STATUS STATUS;
+	rand ral_reg_smoke_CFG CFG;
+	rand ral_reg_smoke_FEED FEED;
+	rand ral_reg_smoke_FIFO FIFO;
+	rand ral_reg_smoke_CMD CMD;
+	rand ral_reg_smoke_IRQ IRQ;
+	rand ral_reg_smoke_BANK BANK;
+	rand ral_reg_smoke_BANKSEL BANKSEL;
+	rand ral_reg_smoke_ACTIVE ACTIVE;
+	rand ral_reg_smoke_FABRIC FABRIC;
+	rand ral_reg_smoke_key_key_0 key_key_0;
+	rand ral_reg_smoke_key_key_1 key_key_1;
+	rand ral_reg_smoke_key_key_2 key_key_2;
+
+	function new(string name = "ral_block_smoke");
+		super.new(name, build_coverage(UVM_NO_COVERAGE));
+	endfunction: new
+
+	virtual function void build();
+		default_map = create_map("default_map", 0, 4, UVM_LITTLE_ENDIAN);
+		this.ID = ral_reg_smoke_ID::type_id::create("ID",, get_full_name());
+		this.ID.configure(this);
+		this.ID.build();
+		default_map.add_reg(this.ID, 32'h00000000, "RO");
+		this.STATUS = ral_reg_smoke_STATUS::type_id::create("STATUS",, get_full_name());
+		this.STATUS.configure(this);
+		this.STATUS.build();
+		default_map.add_reg(this.STATUS, 32'h00000004, "RO");
+		this.CFG = ral_reg_smoke_CFG::type_id::create("CFG",, get_full_name());
+		this.CFG.configure(this);
+		this.CFG.build();
+		default_map.add_reg(this.CFG, 32'h00000008, "RW");
+		this.FEED = ral_reg_smoke_FEED::type_id::create("FEED",, get_full_name());
+		this.FEED.configure(this);
+		this.FEED.build();
+		default_map.add_reg(this.FEED, 32'h0000000c, "RW");
+		this.FIFO = ral_reg_smoke_FIFO::type_id::create("FIFO",, get_full_name());
+		this.FIFO.configure(this);
+		this.FIFO.build();
+		default_map.add_reg(this.FIFO, 32'h00000010, "RW");
+		this.CMD = ral_reg_smoke_CMD::type_id::create("CMD",, get_full_name());
+		this.CMD.configure(this);
+		this.CMD.build();
+		default_map.add_reg(this.CMD, 32'h00000014, "RW");
+		this.IRQ = ral_reg_smoke_IRQ::type_id::create("IRQ",, get_full_name());
+		this.IRQ.configure(this);
+		this.IRQ.build();
+		default_map.add_reg(this.IRQ, 32'h00000018, "RW");
+		// BANK: shadow: bank, 4 copies (bank select is a bus TGA concern)
+		this.BANK = ral_reg_smoke_BANK::type_id::create("BANK",, get_full_name());
+		this.BANK.configure(this);
+		this.BANK.build();
+		default_map.add_reg(this.BANK, 32'h0000001c, "RW");
+		this.BANKSEL = ral_reg_smoke_BANKSEL::type_id::create("BANKSEL",, get_full_name());
+		this.BANKSEL.configure(this);
+		this.BANKSEL.build();
+		default_map.add_reg(this.BANKSEL, 32'h0000002c, "RW");
+		this.ACTIVE = ral_reg_smoke_ACTIVE::type_id::create("ACTIVE",, get_full_name());
+		this.ACTIVE.configure(this);
+		this.ACTIVE.build();
+		default_map.add_reg(this.ACTIVE, 32'h00000034, "RO");
+		this.FABRIC = ral_reg_smoke_FABRIC::type_id::create("FABRIC",, get_full_name());
+		this.FABRIC.configure(this);
+		this.FABRIC.build();
+		default_map.add_reg(this.FABRIC, 32'h00000030, "RW");
+		this.key_key_0 = ral_reg_smoke_key_key_0::type_id::create("key_key_0",, get_full_name());
+		this.key_key_0.configure(this);
+		this.key_key_0.build();
+		default_map.add_reg(this.key_key_0, 32'h00000020, "RW");
+		this.key_key_1 = ral_reg_smoke_key_key_1::type_id::create("key_key_1",, get_full_name());
+		this.key_key_1.configure(this);
+		this.key_key_1.build();
+		default_map.add_reg(this.key_key_1, 32'h00000024, "RW");
+		this.key_key_2 = ral_reg_smoke_key_key_2::type_id::create("key_key_2",, get_full_name());
+		this.key_key_2.configure(this);
+		this.key_key_2.build();
+		default_map.add_reg(this.key_key_2, 32'h00000028, "RW");
+	endfunction: build
+
+	`uvm_object_utils(ral_block_smoke)
+endclass : ral_block_smoke
+
 `endif // RAL_SMOKE_SV

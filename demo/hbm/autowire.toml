@@ -1,8 +1,10 @@
 # autowire workspace: HBM-style two-level Wishbone fabric (bus generator only).
 # No hand-written RTL and no connect HTML — this demo exercises the bus plugin:
-#   level 1  hbm      channel decoder; produces the pstate tag from ADR[18:17]
+#   level 1  hbm      interconnect: cfg (WB, fabric clk) + host (APB via
+#                     wb_apb2wb + wb_cdc); produces the pstate tag from ADR[18:17]
 #   level 2  hbm_ch   aword + dword0 + dword1; passes the tag through
 # Run from this directory: bun ../../index.ts plugin wishbone run
+# VCS + UVM-1.2 regression (agents/RAL in dv/uvm): sim/vcs/run.sh
 
 [dump]
 plugins_dir = "rtl/gen/plugins"

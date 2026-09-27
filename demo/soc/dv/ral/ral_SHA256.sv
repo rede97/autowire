@@ -166,4 +166,63 @@ class ral_reg_sha256_HASH7 extends uvm_reg;
 	`uvm_object_utils(ral_reg_sha256_HASH7)
 endclass : ral_reg_sha256_HASH7
 
+// Leaf block — sha256: SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane
+class ral_block_sha256 extends uvm_reg_block;
+	rand ral_reg_sha256_CTRL CTRL;
+	rand ral_reg_sha256_HASH0 HASH0;
+	rand ral_reg_sha256_HASH1 HASH1;
+	rand ral_reg_sha256_HASH2 HASH2;
+	rand ral_reg_sha256_HASH3 HASH3;
+	rand ral_reg_sha256_HASH4 HASH4;
+	rand ral_reg_sha256_HASH5 HASH5;
+	rand ral_reg_sha256_HASH6 HASH6;
+	rand ral_reg_sha256_HASH7 HASH7;
+
+	function new(string name = "ral_block_sha256");
+		super.new(name, build_coverage(UVM_NO_COVERAGE));
+	endfunction: new
+
+	virtual function void build();
+		default_map = create_map("default_map", 0, 4, UVM_LITTLE_ENDIAN);
+		this.CTRL = ral_reg_sha256_CTRL::type_id::create("CTRL",, get_full_name());
+		this.CTRL.configure(this);
+		this.CTRL.build();
+		default_map.add_reg(this.CTRL, 32'h00000000, "RW");
+		this.HASH0 = ral_reg_sha256_HASH0::type_id::create("HASH0",, get_full_name());
+		this.HASH0.configure(this);
+		this.HASH0.build();
+		default_map.add_reg(this.HASH0, 32'h00000004, "RO");
+		this.HASH1 = ral_reg_sha256_HASH1::type_id::create("HASH1",, get_full_name());
+		this.HASH1.configure(this);
+		this.HASH1.build();
+		default_map.add_reg(this.HASH1, 32'h00000008, "RO");
+		this.HASH2 = ral_reg_sha256_HASH2::type_id::create("HASH2",, get_full_name());
+		this.HASH2.configure(this);
+		this.HASH2.build();
+		default_map.add_reg(this.HASH2, 32'h0000000c, "RO");
+		this.HASH3 = ral_reg_sha256_HASH3::type_id::create("HASH3",, get_full_name());
+		this.HASH3.configure(this);
+		this.HASH3.build();
+		default_map.add_reg(this.HASH3, 32'h00000010, "RO");
+		this.HASH4 = ral_reg_sha256_HASH4::type_id::create("HASH4",, get_full_name());
+		this.HASH4.configure(this);
+		this.HASH4.build();
+		default_map.add_reg(this.HASH4, 32'h00000014, "RO");
+		this.HASH5 = ral_reg_sha256_HASH5::type_id::create("HASH5",, get_full_name());
+		this.HASH5.configure(this);
+		this.HASH5.build();
+		default_map.add_reg(this.HASH5, 32'h00000018, "RO");
+		this.HASH6 = ral_reg_sha256_HASH6::type_id::create("HASH6",, get_full_name());
+		this.HASH6.configure(this);
+		this.HASH6.build();
+		default_map.add_reg(this.HASH6, 32'h0000001c, "RO");
+		this.HASH7 = ral_reg_sha256_HASH7::type_id::create("HASH7",, get_full_name());
+		this.HASH7.configure(this);
+		this.HASH7.build();
+		default_map.add_reg(this.HASH7, 32'h00000020, "RO");
+	endfunction: build
+
+	`uvm_object_utils(ral_block_sha256)
+endclass : ral_block_sha256
+
 `endif // RAL_SHA256_SV

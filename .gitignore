@@ -43,13 +43,14 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 .autowire
-# generated dumps — ignored except demo/soc RTL + firmware showcase (regenerate + commit with SoT)
+# generated dumps — ignored except demo RTL showcase (regenerate + commit with SoT)
 gen/
 !demo/soc/rtl/gen/
 !demo/soc/fw/gen/
+!demo/hbm/rtl/gen/
 
 # simulation build artifacts
 obj_dir*/
-demo/soc/sim/vcs/work/
+demo/*/sim/vcs/work/
 
 ucli.key

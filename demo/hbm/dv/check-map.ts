@@ -1,15 +1,14 @@
 // HBM software-map check.
-// Reads the generated C map, RALF, and uvm_reg block and checks them against
-// the address the fabric actually decodes: channel = ADR[15:12], pstate =
+// Reads the generated C map and uvm_reg block and checks them against the
+// address the fabric actually decodes: channel = ADR[15:12], pstate =
 // ADR[18:17], directly above the windows. Bits above the tag are discarded.
-// again. Broadcast windows are real addresses. No UVM simulator is required.
+// Broadcast windows are real addresses. No UVM simulator is required.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 const c = readFileSync(resolve(root, "fw/gen/wishbone/hbm_map.h"), "utf8");
-const ralf = readFileSync(resolve(root, "dv/ral/hbm.ralf"), "utf8");
 const uvm = readFileSync(resolve(root, "dv/ral/ral_block_hbm.sv"), "utf8");
 const ch = readFileSync(resolve(root, "dv/ral/ral_block_hbm_ch.sv"), "utf8");
 
@@ -40,7 +39,6 @@ for (let chn = 0; chn < 16; chn++) {
 			`#define HBM_${tag.toUpperCase()}_DWORD_BCAST_BASE 0x${(base + 0x300).toString(16).padStart(8, "0")}u`,
 			"C",
 		);
-		need(ralf, `block hbm_ch ${tag} @0x${base.toString(16)};`, "RALF");
 		need(uvm, `add_submap(this.${tag}.default_map, 32'h${base.toString(16).padStart(8, "0")})`, "uvm");
 	}
 }
@@ -48,22 +46,18 @@ for (let chn = 0; chn < 16; chn++) {
 const bcast = 16 * CH;
 need(c, `#define HBM_CH_BCAST_BASE 0x${bcast.toString(16).padStart(8, "0")}u`, "C");
 need(c, "broadcast ch_all", "C");
-need(ralf, `# ch_bcast @0x${bcast.toString(16)} broadcast ch_all`, "RALF");
-if (ralf.includes("ch_bcast_pstate")) fail("broadcast window was split per pstate");
 
-// The child only passes pstate through, so its own block is not copied.
+// The child only passes pstate through, so its own block is not copied;
+// regfile leaves hang as shared leaf blocks (one class per sheet).
 const childCopies = ch.match(/_pstate/g);
 if (childCopies) fail(`hbm_ch uvm block was split per pstate (${childCopies.length})`);
-need(ch, "add_reg(this.aword_TIMING, 32'h00000008", "child uvm");
-need(ch, "add_reg(this.dword0_VREF, 32'h00000108", "child uvm");
+need(ch, "add_submap(this.aword.default_map, 32'h00000000", "child uvm");
+need(ch, "add_submap(this.dword0.default_map, 32'h00000100", "child uvm");
 need(ch, "broadcast dword_all", "child uvm");
-
-// One register type, many instances. pstate1 reuses the same aword_TIMING.
-const defs = ralf.match(/^register aword_TIMING \{/gm) ?? [];
-if (defs.length !== 1) fail(`aword_TIMING defined ${defs.length} times`);
-const uses = ralf.match(/register aword_TIMING /g) ?? [];
-if (uses.length < 2) fail("aword_TIMING was not instantiated");
-
+// One leaf block class per sheet, shared by both dword hangs.
+const leaf = readFileSync(resolve(root, "dv/ral/ral_DWORD.sv"), "utf8");
+const leafDefs = leaf.match(/^class ral_block_dword /gm) ?? [];
+if (leafDefs.length !== 1) fail(`ral_block_dword defined ${leafDefs.length} times`);
 if (!c.includes("cell shadow pstate")) fail("C lost the cell shadow note");
 
 if (errors.length > 0) {

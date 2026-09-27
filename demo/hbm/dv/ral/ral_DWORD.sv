@@ -51,6 +51,25 @@ class ral_reg_dword_STATUS extends uvm_reg;
 	`uvm_object_utils(ral_reg_dword_STATUS)
 endclass : ral_reg_dword_STATUS
 
+// Cell TRAIN — Per-lane train pass (active low)
+class ral_reg_dword_TRAIN extends uvm_reg;
+	     uvm_reg_field train_pass_n; // bit [0]
+	     uvm_reg_field reserved_1  ; // bit [31:1]
+
+	function new(string name = "ral_reg_dword_TRAIN");
+		super.new(name, 32, build_coverage(UVM_NO_COVERAGE));
+	endfunction: new
+
+	virtual function void build();
+		this.train_pass_n = uvm_reg_field::type_id::create("train_pass_n",, get_full_name());
+		this.train_pass_n.configure(this, 1, 0, "RO", 0, 1'h0, 1, 0, 0);
+		this.reserved_1 = uvm_reg_field::type_id::create("reserved_1",, get_full_name());
+		this.reserved_1.configure(this, 31, 1, "RO", 0, 31'h0, 1, 0, 0);
+	endfunction: build
+
+	`uvm_object_utils(ral_reg_dword_TRAIN)
+endclass : ral_reg_dword_TRAIN
+
 // Cell VREF — Per-pstate receiver reference
 // shadow: pstate, 4 copies (bank select is a bus TGA concern)
 class ral_reg_dword_VREF extends uvm_reg;
@@ -96,5 +115,46 @@ class ral_reg_dword_EQ extends uvm_reg;
 
 	`uvm_object_utils(ral_reg_dword_EQ)
 endclass : ral_reg_dword_EQ
+
+// Leaf block — dword: HBM dword CSR (data lane)
+class ral_block_dword extends uvm_reg_block;
+	rand ral_reg_dword_ID ID;
+	rand ral_reg_dword_STATUS STATUS;
+	rand ral_reg_dword_TRAIN TRAIN;
+	rand ral_reg_dword_VREF VREF;
+	rand ral_reg_dword_EQ EQ;
+
+	function new(string name = "ral_block_dword");
+		super.new(name, build_coverage(UVM_NO_COVERAGE));
+	endfunction: new
+
+	virtual function void build();
+		default_map = create_map("default_map", 0, 4, UVM_LITTLE_ENDIAN);
+		this.ID = ral_reg_dword_ID::type_id::create("ID",, get_full_name());
+		this.ID.configure(this);
+		this.ID.build();
+		default_map.add_reg(this.ID, 32'h00000000, "RO");
+		this.STATUS = ral_reg_dword_STATUS::type_id::create("STATUS",, get_full_name());
+		this.STATUS.configure(this);
+		this.STATUS.build();
+		default_map.add_reg(this.STATUS, 32'h00000004, "RO");
+		this.TRAIN = ral_reg_dword_TRAIN::type_id::create("TRAIN",, get_full_name());
+		this.TRAIN.configure(this);
+		this.TRAIN.build();
+		default_map.add_reg(this.TRAIN, 32'h00000010, "RO");
+		// VREF: shadow: pstate, 4 copies (bank select is a bus TGA concern)
+		this.VREF = ral_reg_dword_VREF::type_id::create("VREF",, get_full_name());
+		this.VREF.configure(this);
+		this.VREF.build();
+		default_map.add_reg(this.VREF, 32'h00000008, "RW");
+		// EQ: shadow: pstate, 4 copies (bank select is a bus TGA concern)
+		this.EQ = ral_reg_dword_EQ::type_id::create("EQ",, get_full_name());
+		this.EQ.configure(this);
+		this.EQ.build();
+		default_map.add_reg(this.EQ, 32'h0000000c, "RW");
+	endfunction: build
+
+	`uvm_object_utils(ral_block_dword)
+endclass : ral_block_dword
 
 `endif // RAL_DWORD_SV

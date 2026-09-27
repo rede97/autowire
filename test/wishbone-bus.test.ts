@@ -26,7 +26,6 @@ import { emitBusSystemSv } from "../src/plugins/wishbone-bus/emit-attach.ts";
 import {
 	emitBusMapC,
 	emitBusMapUvm,
-	emitBusRalf,
 } from "../src/plugins/wishbone-bus/emit-map.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
@@ -513,11 +512,6 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(uvm).toContain("default_map.add_submap(this.ch0_bank0.default_map");
 		expect(uvm).toContain("32'h03000000");
 		expect(uvm).toContain("32'h03006000");
-		const ralf = emitBusRalf(soc_wb);
-		expect(ralf).toContain("block sd_sha ch0_bank0 @0x3000000;");
-		expect(ralf).toContain("block sd_sha ch1_bank0 @0x3001000;");
-		expect(ralf).toContain("block sd_sha {");
-		expect(ralf.match(/^block sd_sha \{$/gm)?.length).toBe(1);
 	});
 
 	test("SlaveBus is Region sugar; one child RTL, N hangs; needs uplink", () => {

@@ -332,7 +332,7 @@ endmodule
 		180_000,
 	);
 
-	test("C and uvm_reg exports are field layout only", () => {
+	test("C export is field layout only; uvm_reg adds one leaf block", () => {
 		const c = emitRegfileC(layoutRegfile(smoke_rw));
 		expect(c).toContain("struct SMOKE_RW_CFG_BITS");
 		expect(c).toContain("union SMOKE_RW_CFG");
@@ -347,9 +347,10 @@ endmodule
 		expect(uvm).toContain("class ral_reg_smoke_rw_CFG extends uvm_reg");
 		expect(uvm).toContain('.configure(this, 1, 0, "RW", 0, 1\'h0, 1, 1, 0)');
 		expect(uvm).toContain('.configure(this, 3, 8, "RW", 0, 3\'h1, 1, 1, 0)');
-		expect(uvm).not.toContain("ral_block_");
-		expect(uvm).not.toContain("add_reg");
-		expect(uvm).not.toContain("default_map");
+		// One leaf block per sheet; the bus side hangs it with add_submap.
+		expect(uvm).toContain("class ral_block_smoke_rw extends uvm_reg_block");
+		expect(uvm).toContain('default_map.add_reg(this.CFG, 32\'h00000000, "RW")');
+		expect(uvm.match(/^class ral_block_smoke_rw /gm)?.length).toBe(1);
 	});
 
 	test("C/UVM shadow is a comment; reset dict uses copy 0", () => {

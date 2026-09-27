@@ -33,6 +33,9 @@ export const dword = Regfile(
 			Field("train_done", Access.RO, 1, "Read training done"),
 			Field("eye_width", Access.RO, 8, "Measured eye width").offset(8),
 		]),
+		Cell("TRAIN", "Per-lane train pass (active low)", CellDefault.offset(0x10), [
+			Field("train_pass_n", Access.RO, 1, "0 = lane passed read training"),
+		]),
 		Cell(
 			"VREF",
 			"Per-pstate receiver reference",

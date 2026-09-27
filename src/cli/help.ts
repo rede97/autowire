@@ -113,7 +113,8 @@ Parallel (does not block connect)
     field .note() continues that Description cell after a newline;
     regfile .note() is the header Description comment;
     trunk columns; leaf offset; no empty A / ADDRWIDTH), c= C dir (layout .h + <bus>_map.h + wishbone.h umbrella),
-    uvm= uvm_reg dir (ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv; uvm_reg model only, no RALF)
+    uvm= uvm_reg dir (ral_<SHEET>.sv with cell classes + leaf ral_block_<SHEET>, bus ral_block_* hang
+    leaves via add_submap; uvm_reg model only, no RALF)
     (one block per bus; TagFromAddr splits that level into one instance per copy;
     a pass-through child is not split again; broadcast windows are addresses);
     git-tracked showcase fw/gen/wishbone (do not delete);

@@ -59,13 +59,17 @@ function isUplinkMasterPort(name: string): boolean {
 }
 
 function isDecoderMasterPort(name: string): boolean {
-	return name.startsWith("m_") && (name.endsWith("_i") || name.endsWith("_o"));
+	return (
+		(name.startsWith("m_") && (name.endsWith("_i") || name.endsWith("_o"))) ||
+		name.startsWith("m_tga_")
+	);
 }
 
 /** Fabric port → wrapper net when the cascade face is remapped to i_wb_* / o_wb_*. */
 function cascadeNet(fabricName: string, def: BusDef): string {
-	if (!hasCascadeFace(def)) return fabricName;
 	if (busModuleKind(def) === "decoder") {
+		const tag = /^m_tga_(\w+)$/.exec(fabricName);
+		if (tag?.[1]) return `i_wb_tga_${tag[1]}`;
 		const inn = /^m_(\w+)_i$/.exec(fabricName);
 		if (inn?.[1]) return `i_wb_${inn[1]}`;
 		const out = /^m_(\w+)_o$/.exec(fabricName);

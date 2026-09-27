@@ -317,14 +317,25 @@ function tagValue(gPrefix: string, tag: WbTagSource): string {
 function emitDecoderBody(def: BusDef): string[] {
 	const aw = def.addr_width;
 	const tw = tagDomainsWidth(def.tags);
+	const inherited = tagPlan(def).inherited;
 	const slaves = dataSlaves(def);
 	const out: string[] = [];
+	out.push(
+		`\tlogic ${packedRange(aw).padEnd(7)}g_adr;`,
+		"\tlogic [31:0] g_wdata;",
+		"\tlogic [3:0]  g_sel;",
+	);
 	if (tw > 0) {
 		for (const t of def.tags) {
 			out.push(
 				`\tlogic ${packedRange(domainWidth(t.domain)).padEnd(7)}${`g_tga_${t.domain.name}`};`,
 			);
 		}
+	}
+	for (const t of inherited) {
+		out.push(
+			`\tlogic ${packedRange(domainWidth(t.domain)).padEnd(7)}g_up_${t.domain.name};`,
+		);
 	}
 	out.push(
 		"\tlogic        g_cyc;",
@@ -343,6 +354,14 @@ function emitDecoderBody(def: BusDef): string[] {
 			"\tassign g_wdata = m_wdat_q;",
 			"\tassign g_sel   = m_sel_q;",
 		);
+		// Unpack the pipe's packed TGA (declaration order, first domain = LSB).
+		let lo = 0;
+		for (const t of inherited) {
+			const w = domainWidth(t.domain);
+			const slice = w === 1 ? `m_tga_q[${lo}]` : `m_tga_q[${lo + w - 1}:${lo}]`;
+			out.push(`\tassign g_up_${t.domain.name} = ${slice};`);
+			lo += w;
+		}
 		out.push(...emitTagDrive(def, "g_", "m_adr_q"));
 		out.push(
 			"\tassign g_cyc   = m_cyc_q;",
@@ -356,6 +375,11 @@ function emitDecoderBody(def: BusDef): string[] {
 			"\tassign g_wdata = m_dat_i;",
 			"\tassign g_sel   = m_sel_i;",
 		);
+		for (const t of inherited) {
+			out.push(
+				`\tassign g_up_${t.domain.name} = ${tagPort("m", t.domain.name)};`,
+			);
+		}
 		out.push(...emitTagDrive(def, "g_", "m_adr_i"));
 		out.push(
 			"\tassign g_cyc   = m_cyc_i;",
@@ -625,9 +649,9 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 	for (const s of def.slaves) {
 		if (!s.broadcast) continue;
 		out.push(
-			`\t// Broadcast ${s.broadcast}: write-only strobe, no WB data port`,
+			`\t// Broadcast ${s.broadcast}: no WB data port; writes fan out, reads OR subscriber DAT`,
 			`\tlogic broadcast_${s.broadcast};`,
-			`\tassign broadcast_${s.broadcast} = ${gPrefix}we && (${adr} & ${aw}'h${hex(s.mask, aw)}) == ${aw}'h${hex(s.base, aw)};`,
+			`\tassign broadcast_${s.broadcast} = (${adr} & ${aw}'h${hex(s.mask, aw)}) == ${aw}'h${hex(s.base, aw)};`,
 			"",
 		);
 	}
@@ -727,6 +751,8 @@ function emitMasterPipe(
 	const p = idxName ?? `m${idx}`;
 	const pin = (stem: string) =>
 		idxName ? `${idxName}_${stem}` : wb(m.name, stem);
+	// Decoder master tags are flat `m_tga_<domain>`; interconnect masters are
+	// `<m>_o_wb_tga_<domain>`.
 	const tw = tagDomainsWidth(tags);
 	const out: string[] = [
 		`\tlogic ${packedRange(aw).padEnd(7)}${p}_adr_q;`,
@@ -752,7 +778,7 @@ function emitMasterPipe(
 		if (tw > 0) {
 			out.push(
 				`\tassign ${p}_tga_q  = ${packedTagExpr(tags, (t) =>
-					tagPort(pin("o_wb"), t.domain.name),
+					tagPort(idxName ?? pin("o_wb"), t.domain.name),
 				)};`,
 			);
 		}
@@ -778,7 +804,7 @@ function emitMasterPipe(
 	);
 	if (tw > 0) {
 		out.push(
-			`\t\t.m_tga(${packedTagExpr(tags, (t) => tagPort(pin("o_wb"), t.domain.name))}),`,
+			`\t\t.m_tga(${packedTagExpr(tags, (t) => tagPort(idxName ?? pin("o_wb"), t.domain.name))}),`,
 		);
 	}
 	out.push(
@@ -900,15 +926,6 @@ function emitResponseMux(
 	stb: string,
 ): string[] {
 	const out: string[] = [];
-	pushOrAssign(
-		out,
-		dat,
-		slaves.map((s) =>
-			(s.pipe ?? 0) > 0
-				? `({32{${slotSel(s.name)}}} & ${s.name}_pipe_rdat)`
-				: `({32{${slotSel(s.name)}}} & ${wb(s.name, "o_wb_dat")})`,
-		),
-	);
 	const groups = new Map<string, WbSlave[]>();
 	for (const s of slaves) {
 		for (const name of s.broadcastBy ?? []) {
@@ -917,14 +934,31 @@ function emitResponseMux(
 			groups.set(name, list);
 		}
 	}
+	const datTerms = slaves.map((s) =>
+		(s.pipe ?? 0) > 0
+			? `({32{${slotSel(s.name)}}} & ${s.name}_pipe_rdat)`
+			: `({32{${slotSel(s.name)}}} & ${wb(s.name, "o_wb_dat")})`,
+	);
+	// Broadcast read: OR every subscriber's read data (any-1 status readback).
+	for (const [name, members] of groups) {
+		const terms = members.map((s) =>
+			(s.pipe ?? 0) > 0 ? `${s.name}_pipe_rdat` : wb(s.name, "o_wb_dat"),
+		);
+		datTerms.push(`({32{broadcast_${name}}} & (${terms.join(" | ")}))`);
+	}
+	pushOrAssign(out, dat, datTerms);
 	const broadcastAcks = [...groups.entries()].map(([name, members]) => {
 		const terms = members.map((s) =>
 			(s.pipe ?? 0) > 0 ? `${s.name}_pipe_ack` : wb(s.name, "o_wb_ack"),
 		);
 		return `(broadcast_${name} & ${terms.join(" & ")})`;
 	});
+	// A broadcast window hit is not "unmapped": its ACK is the subscriber AND.
+	const bcastAny = [...groups.keys()].map((name) => `broadcast_${name}`);
 	pushOrAssign(out, ack, [
-		`(unmapped & ${stb})`,
+		bcastAny.length > 0
+			? `(unmapped & ${stb} & !(${bcastAny.join(" | ")}))`
+			: `(unmapped & ${stb})`,
 		...broadcastAcks,
 		...slaves.map((s) =>
 			(s.pipe ?? 0) > 0
