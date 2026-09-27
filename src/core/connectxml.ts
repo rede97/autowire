@@ -1,18 +1,15 @@
 // Connect-unit abstract module info XML (`.autowire/connect/<id>.xml`).
 // Format mirrors the RtlIndex conventions (docs/hdxml/rtlindex-xml.md §3):
-// attributes carry all data, port direction via tag name, modules sorted by
+// attributes carry all data (port direction via @dir), modules sorted by
 // name, ports in declaration order — but NO timestamps or content hashes
 // (deterministic diff-friendly; the HTML snapshot remains the full render).
 
 import type { RenderModule } from "./printer.ts";
 import { flattenModules } from "./printer.ts";
 
-const DIRTAG: Record<string, string> = {
-	input: "input",
-	output: "output",
-	inout: "inout",
-	interface: "interface",
-};
+/** Port directions written verbatim; kept as an attr so <ports> stays in
+ *  declaration order (tag-per-direction would lose it under Bun.XML's
+ *  group-by-tag object shape). */
 
 function esc(s: string): string {
 	return s
@@ -54,9 +51,11 @@ export function connectXml(unitId: string, mods: RenderModule[]): string {
 		if (m.ports.length > 0) {
 			out.push("    <ports>");
 			for (const p of m.ports) {
-				const tag = DIRTAG[p.dir] ?? "input";
-				const attrs: [string, string][] = [["name", p.name]];
-				if (tag === "interface") {
+				const attrs: [string, string][] = [
+					["name", p.name],
+					["dir", p.dir],
+				];
+				if (p.dir === "interface") {
 					attrs.push(["interface", p.interface]);
 					if (p.modport) attrs.push(["modport", p.modport]);
 				} else {
@@ -65,7 +64,7 @@ export function connectXml(unitId: string, mods: RenderModule[]): string {
 					if (p.nettype) attrs.push(["nettype", p.nettype]);
 				}
 				out.push(
-					`      <${tag} ${attrs.map(([k, v]) => `${k}="${esc(v)}"`).join(" ")}/>`,
+					`      <port ${attrs.map(([k, v]) => `${k}="${esc(v)}"`).join(" ")}/>`,
 				);
 			}
 			out.push("    </ports>");
@@ -114,18 +113,20 @@ export function parseConnectXml(text: string): ConnectXmlModule[] {
 		const mo = m as Record<string, unknown>;
 		const ports: ConnectXmlModule["ports"] = [];
 		const portsEl = mo.ports as Record<string, unknown> | undefined;
-		for (const dir of ["input", "output", "inout", "interface"]) {
-			for (const p of asArr(portsEl?.[dir])) {
-				ports.push({
-					name: at(p, "name"),
-					dir,
-					packed: at(p, "packed") || null,
-					unpacked: at(p, "unpacked") || null,
-					nettype: at(p, "nettype") || null,
-					interface: at(p, "interface") || null,
-					modport: at(p, "modport") || null,
-				});
-			}
+		if (portsEl?.input !== undefined || portsEl?.output !== undefined)
+			throw new Error(
+				"connect XML: stale direction-tagged ports; rerun `connect run` to regenerate the sidecar",
+			);
+		for (const p of asArr(portsEl?.port)) {
+			ports.push({
+				name: at(p, "name"),
+				dir: at(p, "dir") || "input",
+				packed: at(p, "packed") || null,
+				unpacked: at(p, "unpacked") || null,
+				nettype: at(p, "nettype") || null,
+				interface: at(p, "interface") || null,
+				modport: at(p, "modport") || null,
+			});
 		}
 		const paramsEl = mo.params as Record<string, unknown> | undefined;
 		const impEl = mo.imports as Record<string, unknown> | undefined;

@@ -381,16 +381,16 @@ module soc_top (
 		.i_wb_cyc          (ch0_i_wb_cyc      ), // i
 		.i_wb_stb          (ch0_i_wb_stb      ), // i
 		.i_wb_we           (ch0_i_wb_we       ), // i
-		.rst               (rst               ), // i
-		.i_miso            (sd0_miso          ), // i
-		.i_cd              (sd0_cd            ), // i
-		.rst_ni            (rst_ni            ), // i
 		.o_wb_dat          (ch0_o_wb_dat      ), // o [31:0]
 		.o_wb_ack          (ch0_o_wb_ack      ), // o
+		.rst               (rst               ), // i
 		.o_cs_n            (sd0_cs_n          ), // o
 		.o_sck             (sd0_sck           ), // o
 		.o_mosi            (sd0_mosi          ), // o
+		.i_miso            (sd0_miso          ), // i
+		.i_cd              (sd0_cd            ), // i
 		.o_sd_irq          (irq_srcs[0]       ), // o
+		.rst_ni            (rst_ni            ), // i
 		.o_dma_irq         (irq_srcs[2]       ), // o
 		.o_sha_irq         (irq_srcs[4]       )  // o
 	);
@@ -405,16 +405,16 @@ module soc_top (
 		.i_wb_cyc          (ch1_i_wb_cyc      ), // i
 		.i_wb_stb          (ch1_i_wb_stb      ), // i
 		.i_wb_we           (ch1_i_wb_we       ), // i
-		.rst               (rst               ), // i
-		.i_miso            (sd1_miso          ), // i
-		.i_cd              (sd1_cd            ), // i
-		.rst_ni            (rst_ni            ), // i
 		.o_wb_dat          (ch1_o_wb_dat      ), // o [31:0]
 		.o_wb_ack          (ch1_o_wb_ack      ), // o
+		.rst               (rst               ), // i
 		.o_cs_n            (sd1_cs_n          ), // o
 		.o_sck             (sd1_sck           ), // o
 		.o_mosi            (sd1_mosi          ), // o
+		.i_miso            (sd1_miso          ), // i
+		.i_cd              (sd1_cd            ), // i
 		.o_sd_irq          (irq_srcs[1]       ), // o
+		.rst_ni            (rst_ni            ), // i
 		.o_dma_irq         (irq_srcs[3]       ), // o
 		.o_sha_irq         (irq_srcs[5]       )  // o
 	);

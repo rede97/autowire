@@ -3,9 +3,7 @@
 // Input is the deterministic snapshot produced by web/aw.js serializeSnapshot():
 // <autowire> → aw-mod (name) → aw-render (params/imports/localparams/ports/signals/insts),
 // with nested aw-mod after the render. All data lives on attributes.
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { writeIfChanged } from "./write.ts";
+// Pure snapshot → SV text. No node imports: the page bundle uses this too.
 
 export interface RenderParam {
 	name: string;
@@ -206,9 +204,35 @@ function splitInc(s: string): string[] {
 	return s.split(/\s+/).filter(Boolean);
 }
 
-/** Parse a snapshot string (or snapshot file) into render modules. */
+/** DOM element → Bun.XML object shape (children grouped by tag, `@attr`).
+ *  localName stays lowercase even in HTML-mode parsers (some light browsers
+ *  wrap text/xml into an HTML skeleton and uppercase tagName). */
+function domToObj(el: Element): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const attr of el.attributes) out[`@${attr.name}`] = attr.value;
+	for (const child of el.children) {
+		const v = domToObj(child);
+		const prev = out[child.localName];
+		if (prev === undefined) out[child.localName] = v;
+		else if (Array.isArray(prev)) prev.push(v);
+		else out[child.localName] = [prev, v];
+	}
+	return out;
+}
+
+/** Parse a snapshot string (or snapshot file) into render modules.
+ *  Bun.XML on the CLI; DOMParser in the page bundle (no Bun global there). */
 export function parseSnapshot(text: string): RenderModule[] {
-	const doc: unknown = Bun.XML.parse(text);
+	let doc: Record<string, unknown>;
+	if (typeof Bun !== "undefined") {
+		doc = Bun.XML.parse(text) as Record<string, unknown>;
+	} else {
+		// querySelector, not documentElement: the root may be wrapped.
+		const rootEl = new DOMParser()
+			.parseFromString(text, "text/xml")
+			.querySelector("autowire");
+		doc = rootEl ? { autowire: domToObj(rootEl) } : {};
+	}
 	const root = isObj(doc) ? doc.autowire : undefined;
 	if (!isObj(root)) throw new Error("snapshot: missing <autowire> root");
 	const mods: RenderModule[] = [];
@@ -546,23 +570,4 @@ export function assertModuleNames(mods: RenderModule[]): void {
 			);
 		}
 	}
-}
-
-/** Write a snapshot's modules as .sv files into outDir; returns written paths. */
-export async function writeSvFiles(
-	mods: RenderModule[],
-	outDir: string,
-	unitId: string,
-	style: PrintStyle = {},
-	force = false,
-): Promise<string[]> {
-	assertModuleNames(mods);
-	await mkdir(outDir, { recursive: true });
-	const written: string[] = [];
-	for (const m of flattenModules(mods)) {
-		const path = join(outDir, `${m.name}.sv`);
-		if (await writeIfChanged(path, printSv(m, unitId, style), force))
-			written.push(path);
-	}
-	return written;
 }

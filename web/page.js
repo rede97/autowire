@@ -1,5 +1,369 @@
 // src/web/page.ts
 import * as AWruntime from "/aw.js";
+
+// src/core/printer.ts
+function isObj(v) {
+  return typeof v === "object" && v !== null;
+}
+function str(v) {
+  return typeof v === "string" ? v : "";
+}
+function arr(v) {
+  if (Array.isArray(v))
+    return v;
+  return v === undefined || v === null ? [] : [v];
+}
+function parseParams(v) {
+  const out = [];
+  for (const p of arr(isObj(v) ? v["aw-param"] : undefined)) {
+    if (!isObj(p))
+      continue;
+    out.push({ name: str(p["@name"]), value: str(p["@value"]) });
+  }
+  return out;
+}
+function parseMod(v, tag = "aw-mod") {
+  if (!isObj(v))
+    return null;
+  const render = isObj(v["aw-render"]) ? v["aw-render"] : {};
+  const ports = [];
+  const portsEl = isObj(render["aw-ports"]) ? render["aw-ports"] : undefined;
+  for (const p of arr(portsEl?.["aw-port"])) {
+    if (!isObj(p))
+      continue;
+    ports.push({
+      name: str(p["@name"]),
+      dir: str(p["@dir"]) || "input",
+      packed: str(p["@packed"]),
+      unpacked: str(p["@unpacked"]),
+      nettype: str(p["@nettype"]),
+      interface: str(p["@interface"]),
+      modport: str(p["@modport"])
+    });
+  }
+  const signals = [];
+  const sigEl = isObj(render["aw-signals"]) ? render["aw-signals"] : undefined;
+  for (const s of arr(sigEl?.["aw-signal"])) {
+    if (!isObj(s))
+      continue;
+    signals.push({
+      name: str(s["@name"]),
+      packed: str(s["@packed"]),
+      unpacked: str(s["@unpacked"]),
+      nettype: str(s["@nettype"])
+    });
+  }
+  const imports = [];
+  const impEl = isObj(render["aw-imports"]) ? render["aw-imports"] : undefined;
+  for (const i of arr(impEl?.["aw-import"])) {
+    if (!isObj(i))
+      continue;
+    imports.push({
+      package: str(i["@package"]),
+      symbol: str(i["@symbol"]) || "*"
+    });
+  }
+  const localparams = [];
+  const lpEl = isObj(render["aw-localparams"]) ? render["aw-localparams"] : undefined;
+  for (const lp of arr(lpEl?.["aw-localparam"])) {
+    if (!isObj(lp))
+      continue;
+    localparams.push({
+      name: str(lp["@name"]),
+      value: str(lp["@value"]),
+      folded: str(lp["@folded"]) === "true",
+      forInst: str(lp["@for-inst"]),
+      forParam: str(lp["@for-param"])
+    });
+  }
+  const insts = [];
+  const instEl = isObj(render["aw-insts"]) ? render["aw-insts"] : undefined;
+  for (const inst of arr(instEl?.["aw-inst"])) {
+    if (!isObj(inst))
+      continue;
+    const connects = [];
+    for (const c of arr(inst["aw-connect"])) {
+      if (!isObj(c))
+        continue;
+      connects.push({
+        port: str(c["@port"]),
+        to: str(c["@to"]),
+        part: str(c["@part"]),
+        type: str(c["@type"]),
+        dir: str(c["@dir"]),
+        portPacked: str(c["@port-packed"]),
+        portUnpacked: str(c["@port-unpacked"])
+      });
+    }
+    insts.push({
+      id: str(inst["@id"]),
+      mod: str(inst["@mod"]),
+      params: parseParams(inst),
+      connects
+    });
+  }
+  const children = [];
+  for (const sm of arr(v["aw-mod"])) {
+    const parsed = parseMod(sm, "aw-mod");
+    if (parsed)
+      children.push(parsed);
+  }
+  return {
+    name: str(v["@name"]),
+    params: parseParams(render["aw-params"]),
+    imports,
+    localparams,
+    ports,
+    signals,
+    insts,
+    children,
+    isTb: tag === "aw-tb-mod" || str(render["@tb"]) === "1",
+    bodyPreInclude: splitInc(str(v["@body-pre-include"]) || str(render["@body-pre-include"])),
+    bodyPostInclude: splitInc(str(v["@body-post-include"]) || str(render["@body-post-include"]))
+  };
+}
+function splitInc(s) {
+  return s.split(/\s+/).filter(Boolean);
+}
+function domToObj(el) {
+  const out = {};
+  for (const attr of el.attributes)
+    out[`@${attr.name}`] = attr.value;
+  for (const child of el.children) {
+    const v = domToObj(child);
+    const prev = out[child.localName];
+    if (prev === undefined)
+      out[child.localName] = v;
+    else if (Array.isArray(prev))
+      prev.push(v);
+    else
+      out[child.localName] = [prev, v];
+  }
+  return out;
+}
+function parseSnapshot(text) {
+  let doc;
+  if (typeof Bun !== "undefined") {
+    doc = Bun.XML.parse(text);
+  } else {
+    const rootEl = new DOMParser().parseFromString(text, "text/xml").querySelector("autowire");
+    doc = rootEl ? { autowire: domToObj(rootEl) } : {};
+  }
+  const root = isObj(doc) ? doc.autowire : undefined;
+  if (!isObj(root))
+    throw new Error("snapshot: missing <autowire> root");
+  const mods = [];
+  for (const m of arr(root["aw-mod"])) {
+    const parsed = parseMod(m, "aw-mod");
+    if (parsed)
+      mods.push(parsed);
+  }
+  for (const m of arr(root["aw-tb-mod"])) {
+    const parsed = parseMod(m, "aw-tb-mod");
+    if (parsed)
+      mods.push(parsed);
+  }
+  return mods;
+}
+function flattenModules(mods) {
+  const out = [];
+  for (const m of mods) {
+    out.push(m);
+    out.push(...flattenModules(m.children));
+  }
+  return out;
+}
+function packedSv(packed) {
+  if (!packed)
+    return "";
+  return packed.startsWith("[") ? packed : `[${packed}]`;
+}
+function signalDecl(nettype, packed, unpacked, name) {
+  const t = nettype === "logic" ? "logic" : "wire";
+  const pd = packedSv(packed);
+  const ud = unpacked ? ` ${unpacked.startsWith("[") ? unpacked : `[${unpacked}]`}` : "";
+  return `${t}${pd ? ` ${pd}` : ""} ${name}${ud};`;
+}
+function printSv(m, unitId, style = {}) {
+  const lines = [];
+  const sot = m.isTb ? "sim HTML" : "connect HTML";
+  lines.push(`// Generated by autowire dump (unit "${unitId}"). Do not edit: SoT is the ${sot}.`);
+  if (m.isTb) {
+    if (m.params.length > 0) {
+      const paramNamePad = style.paramAlign ? Math.max(...m.params.map((p) => p.name.length), 0) : 0;
+      lines.push(`module ${m.name} #(`);
+      for (const [i, p] of m.params.entries()) {
+        const nm = paramNamePad ? p.name.padEnd(paramNamePad) : p.name;
+        lines.push(`	parameter ${nm} = ${p.value}${i < m.params.length - 1 ? "," : ""}`);
+      }
+      lines.push(");");
+    } else {
+      lines.push(`module ${m.name};`);
+    }
+    for (const inc of m.bodyPreInclude ?? [])
+      lines.push(`\`include "${inc}"`);
+    for (const imp of m.imports)
+      lines.push(`	import ${imp.package}::${imp.symbol};`);
+    if (m.imports.length > 0)
+      lines.push("");
+    for (const lp of m.localparams)
+      lines.push(`	localparam ${lp.name} = ${lp.value};`);
+    if (m.localparams.length > 0)
+      lines.push("");
+    const sigDecls = m.signals;
+    const sigTypePad = style.signalAlign && sigDecls.length > 0 ? 5 : 0;
+    const sigPackPad = style.signalAlign ? Math.max(...sigDecls.map((s) => packedSv(s.packed).length), 0) : 0;
+    for (const s of sigDecls) {
+      const nt = s.nettype === "wire" ? "wire" : "logic";
+      if (!style.signalAlign) {
+        lines.push(`	${signalDecl(nt, s.packed, s.unpacked, s.name)}`);
+        continue;
+      }
+      const pd = packedSv(s.packed);
+      const ud = s.unpacked ? ` ${s.unpacked.startsWith("[") ? s.unpacked : `[${s.unpacked}]`}` : "";
+      const packCol = sigPackPad > 0 ? ` ${pd.padEnd(sigPackPad)}` : "";
+      lines.push(`	${nt.padEnd(sigTypePad)}${packCol} ${s.name}${ud};`);
+    }
+    if (sigDecls.length > 0)
+      lines.push("");
+    lines.push(...printInsts(m, style));
+    for (const inc of m.bodyPostInclude ?? [])
+      lines.push(`\`include "${inc}"`);
+    lines.push("endmodule");
+    lines.push("");
+    return lines.join(`
+`);
+  }
+  const paramNamePad = style.paramAlign ? Math.max(...m.params.map((p) => p.name.length), 0) : 0;
+  const params = m.params.map((p) => `parameter ${paramNamePad ? p.name.padEnd(paramNamePad) : p.name} = ${p.value}`);
+  const plainPorts = m.ports.filter((p) => p.dir !== "interface");
+  const dirPad = style.portAlign ? Math.max(...plainPorts.map((p) => p.dir.length), 0) : 0;
+  const typePad = style.portAlign && plainPorts.length > 0 ? 5 : 0;
+  const packPad = style.portAlign ? Math.max(...plainPorts.map((p) => packedSv(p.packed).length), 0) : 0;
+  const portText = m.ports.map((p) => {
+    if (p.dir === "interface") {
+      const mp = p.modport ? `.${p.modport}` : "";
+      return `${p.interface}${mp} ${p.name}`;
+    }
+    const t = p.nettype === "logic" ? "logic" : "wire";
+    const pd = packedSv(p.packed);
+    const ud = p.unpacked ? ` ${p.unpacked.startsWith("[") ? p.unpacked : `[${p.unpacked}]`}` : "";
+    if (!style.portAlign)
+      return `${p.dir} ${t}${pd ? ` ${pd}` : ""} ${p.name}${ud}`;
+    const packCol = packPad > 0 ? ` ${pd.padEnd(packPad)}` : "";
+    return `${p.dir.padEnd(dirPad)} ${t.padEnd(typePad)}${packCol} ${p.name}${ud}`;
+  });
+  const header = params.length > 0 ? `module ${m.name} #(` : `module ${m.name} (`;
+  lines.push(header);
+  const paramLines = params.map((p, i) => `	${p}${i < params.length - 1 ? "," : ""}`);
+  lines.push(...paramLines);
+  if (params.length > 0)
+    lines.push(") (");
+  for (const [i, p] of portText.entries()) {
+    lines.push(`	${p}${i < portText.length - 1 ? "," : ""}`);
+  }
+  lines.push(");");
+  for (const imp of m.imports)
+    lines.push(`	import ${imp.package}::${imp.symbol};`);
+  if (m.imports.length > 0)
+    lines.push("");
+  for (const lp of m.localparams)
+    lines.push(`	localparam ${lp.name} = ${lp.value};`);
+  if (m.localparams.length > 0)
+    lines.push("");
+  const portNames = new Set(m.ports.map((p) => p.name));
+  const sigDecls = m.signals.filter((s) => !portNames.has(s.name));
+  const sigTypePad = style.signalAlign && sigDecls.length > 0 ? 5 : 0;
+  const sigPackPad = style.signalAlign ? Math.max(...sigDecls.map((s) => packedSv(s.packed).length), 0) : 0;
+  let printedSignals = 0;
+  for (const s of sigDecls) {
+    printedSignals++;
+    if (!style.signalAlign) {
+      lines.push(`	${signalDecl(s.nettype, s.packed, s.unpacked, s.name)}`);
+      continue;
+    }
+    const t = s.nettype === "logic" ? "logic" : "wire";
+    const pd = packedSv(s.packed);
+    const ud = s.unpacked ? ` ${s.unpacked.startsWith("[") ? s.unpacked : `[${s.unpacked}]`}` : "";
+    const packCol = sigPackPad > 0 ? ` ${pd.padEnd(sigPackPad)}` : "";
+    lines.push(`	${t.padEnd(sigTypePad)}${packCol} ${s.name}${ud};`);
+  }
+  if (printedSignals > 0)
+    lines.push("");
+  lines.push(...printInsts(m, style));
+  lines.push("endmodule");
+  lines.push("");
+  return lines.join(`
+`);
+}
+function printInsts(m, style) {
+  const constNames = new Set([
+    ...m.params.map((p) => p.name),
+    ...m.localparams.map((l) => l.name)
+  ]);
+  const rows = m.insts.map((inst) => inst.connects.map((c) => ({
+    port: c.port,
+    rhs: connectRhs(c, constNames),
+    dir: style.instPortDir ? dirMark(c.dir, style.instPortDirFormat) : "",
+    width: style.instPortWidth ? widthMark(c.portPacked, c.portUnpacked) : ""
+  })));
+  const dirPad = Math.max(0, ...rows.flat().map((r) => r.width ? r.dir.length : 0));
+  const aligned = [
+    ...style.instPortAlign ? rows.flat().map((r) => ({ name: r.port, value: r.rhs })) : [],
+    ...style.instParamAlign ? m.insts.flatMap((inst) => inst.params.map((p) => ({ name: p.name, value: p.value }))) : []
+  ];
+  const namePad = Math.max(0, ...aligned.map((c) => c.name.length));
+  const valuePad = Math.max(0, ...aligned.map((c) => c.value.length));
+  const portPad = style.instPortAlign ? namePad : 0;
+  const rhsPad = style.instPortAlign ? valuePad : 0;
+  const paramPad = style.instParamAlign ? namePad : 0;
+  const paramValuePad = style.instParamAlign ? valuePad : 0;
+  const lines = [];
+  for (const [k, inst] of m.insts.entries()) {
+    if (inst.params.length > 0) {
+      lines.push(`	${inst.mod} #(`);
+      for (const [i, p] of inst.params.entries()) {
+        lines.push(`		.${p.name.padEnd(paramPad)}(${p.value.padEnd(paramValuePad)})${i < inst.params.length - 1 ? "," : ""}`);
+      }
+      lines.push(`	) ${inst.id} (`);
+    } else {
+      lines.push(`	${inst.mod} ${inst.id} (`);
+    }
+    const conns = rows[k] ?? [];
+    for (const [i, r] of conns.entries()) {
+      const last = i === conns.length - 1;
+      const row = `		.${r.port.padEnd(portPad)}(${r.rhs.padEnd(rhsPad)})${last ? "" : ","}`;
+      const mark = r.width ? `${r.dir ? `${r.dir.padEnd(dirPad)} ` : ""}${r.width}` : r.dir;
+      lines.push(mark ? `${row}${last ? " " : ""} // ${mark}` : row);
+    }
+    lines.push("\t);");
+  }
+  if (m.insts.length > 0)
+    lines.push("");
+  return lines;
+}
+var DIR_MARKS = {
+  full: { input: "input", output: "output", inout: "inout" },
+  short: { input: "i", output: "o", inout: "io" }
+};
+function widthMark(packed, unpacked) {
+  const p = packed ? packedSv(packed) : "";
+  const bits = /^\[\s*(\d+)\s*:\s*\1\s*\]$/.test(p) ? "" : p;
+  return unpacked ? `${bits};${packedSv(unpacked)}` : bits;
+}
+function dirMark(dir, format = "full") {
+  return DIR_MARKS[format][dir] ?? "";
+}
+function connectRhs(c, constNames) {
+  if (c.type === "open")
+    return "";
+  if (c.type === "raw")
+    return c.to;
+  const netForm = /^[A-Za-z_][A-Za-z0-9_]*$/.test(c.to) && !constNames.has(c.to);
+  return netForm ? `${c.to}${c.part ? `[${c.part.replace(/^\[|\]$/g, "")}]` : ""}` : c.to;
+}
+
+// src/web/page.ts
 var AW = AWruntime;
 var win = window;
 AW.installGlobal(window);
@@ -25,20 +389,41 @@ function showGenerated(text) {
   if (box)
     box.textContent = text;
 }
-function saveGenerated() {
+function downloadText(text, filename) {
+  const blob = new Blob([text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function saveSv() {
   const text = $("#aw-generated")?.textContent ?? "";
   if (!text) {
     setStatus("error", "save: run first; nothing generated");
     throw new Error("save: run first; nothing generated");
   }
-  const blob = new Blob([text], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${state.current ?? "autowire"}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
-  setStatus("done", "save: browser download");
+  downloadText(text, `${state.current ?? "autowire"}.sv`);
+  setStatus("done", "save: browser download (.sv)");
+  return text;
+}
+function saveHtml() {
+  const id = state.current;
+  if (!id)
+    throw new Error("no unit selected");
+  const entry = state.docs.get(id);
+  if (!entry)
+    throw new Error(`save-html: unit "${id}" not loaded`);
+  const clone = entry.container.cloneNode(true);
+  for (const r of clone.querySelectorAll("aw-render"))
+    r.textContent = "";
+  const face = clone.querySelector(":scope > autowire");
+  const text = `<!-- live author face of unit "${id}"; aw-render stripped; <script> lives in the author file -->
+${face?.outerHTML ?? clone.innerHTML}
+`;
+  downloadText(text, `${id}.html`);
+  setStatus("done", "save-html: browser download (author face, no aw-render)");
   return text;
 }
 var SESSION_HELP = [
@@ -46,8 +431,9 @@ var SESSION_HELP = [
   "check: rule report; requires before-instances in this session",
   "elaborate: freeze aw-render; requires a clean check in this session",
   "before-dump: read-only hook; requires elaborate in this session",
-  "run: the whole chain; same result as connect run, no file write",
-  "save: return #aw-generated and start a browser download; no workspace path",
+  "run: the whole chain; same result as connect run, no file write; shows .sv",
+  "save / save-sv: download the printed .sv text (browser download)",
+  "save-html: download the live author HTML with aw-render stripped",
   "none of these steps write a file"
 ].join(`
 `);
@@ -96,11 +482,13 @@ async function sessionStep(step) {
   if (step === "run") {
     const res = await runView(id);
     state.phase.set(id, "before-dump");
-    return res.files.join(`
-`);
+    return res.sv;
   }
-  if (step === "save") {
-    return saveGenerated();
+  if (step === "save" || step === "save-sv") {
+    return saveSv();
+  }
+  if (step === "save-html") {
+    return saveHtml();
   }
   throw new Error(`unknown session step "${step}"`);
 }
@@ -330,11 +718,22 @@ async function runView(id) {
     if (!entry)
       throw new Error(`unit "${uid}" not loaded`);
     AW.runBeforeDump(entry.doc, uid);
-    files.push(AW.serializeSnapshot(entry.doc));
+    files.push({
+      uid,
+      text: AW.serializeSnapshot(entry.doc)
+    });
   }
-  showGenerated(files.join(`
-`));
-  return { files };
+  const chunks = [];
+  for (const { uid, text } of files) {
+    for (const m of flattenModules(parseSnapshot(text))) {
+      chunks.push(`// --- ${uid}/${m.name}.sv ---
+${printSv(m, uid, state.style)}`);
+    }
+  }
+  const sv = chunks.join(`
+`);
+  showGenerated(sv);
+  return { files: files.map((f) => f.text), sv };
 }
 async function runBeforeDumpOnly(id) {
   const entry = state.docs.get(id);
@@ -553,10 +952,17 @@ async function init() {
   $("#btn-check").addEventListener("click", () => runChain({ check: true }));
   $("#btn-elaborate").addEventListener("click", () => runChain({ elaborate: true }));
   $("#btn-run").addEventListener("click", () => runChain({ run: true }));
-  $("#btn-save").addEventListener("click", () => {
+  $("#btn-save-sv").addEventListener("click", () => {
     try {
-      saveGenerated();
+      saveSv();
     } catch {}
+  });
+  $("#btn-save-html").addEventListener("click", () => {
+    try {
+      saveHtml();
+    } catch (e) {
+      setStatus("error", e instanceof Error ? e.message : String(e));
+    }
   });
   $("#btn-reset").addEventListener("click", () => resetAll());
   $("#dep-tree").addEventListener("click", (e) => {

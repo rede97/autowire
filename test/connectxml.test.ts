@@ -30,12 +30,12 @@ describe("connect XML sidecar", () => {
 		expect(xml.indexOf('name="alpha"')).toBeLessThan(
 			xml.indexOf('name="zeta"'),
 		);
-		// direction via tag name, not a dir attribute
+		// direction via the dir attribute; ports stay in declaration order
 		expect(xml).toContain(
-			'<output name="data_o" packed="[W-1:0]" nettype="logic"/>',
+			'<port name="data_o" dir="output" packed="[W-1:0]" nettype="logic"/>',
 		);
 		expect(xml).toContain(
-			'<interface name="s_axi" interface="axi_if" modport="slave"/>',
+			'<port name="s_axi" dir="interface" interface="axi_if" modport="slave"/>',
 		);
 		expect(xml).toContain('<param name="W" value="8"/>');
 		expect(xml).toContain('<import package="cc_pkg" symbol="*"/>');
@@ -48,8 +48,13 @@ describe("connect XML sidecar", () => {
 		expect(mods.map((m) => m.name)).toEqual(["alpha", "zeta"]);
 		const alpha = mods[0];
 		expect(alpha?.params).toEqual([{ name: "W", value: "8" }]);
-		// the parser regroups by direction tag (named connects make port order
-		// non-semantic); the XML document itself keeps declaration order
+		// port order is semantic (it keys the connect sort in writeRender), so
+		// the roundtrip must keep declaration order
+		expect(alpha?.ports.map((p) => p.name)).toEqual([
+			"data_o",
+			"clk_i",
+			"s_axi",
+		]);
 		expect(alpha?.ports.find((p) => p.name === "data_o")).toMatchObject({
 			dir: "output",
 			packed: "[W-1:0]",

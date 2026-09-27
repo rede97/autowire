@@ -17,6 +17,8 @@ Three processes, never linked into one binary. Details: [`docs/dev/release.md`](
 
 Usual path: `analysis run` (hdxml) -> `plugin wishbone run` when the TypeScript SoT changed -> `connect check` -> `connect run`. Open `connect web` and drive it with Playwright only to inspect the live page. The page does not write files.
 
+Any CDP-speaking headless browser can drive the page (Playwright is only the client). Pattern + helpers: [`docs/dev/cdp-debug.md`](docs/dev/cdp-debug.md), `scripts/cdp-helper.ts`, or `help cdp`.
+
 ## Commands
 
 Use Bun only: `bun`, `bun test`, `bunx`. Do not use Node, npm, or npx equivalents.

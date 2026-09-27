@@ -1,13 +1,20 @@
 // autowire web page controller (docs/workspace/web-ui.md). Runs in the browser only.
 // Buttons and GET params share the same action chain: select → check → elaborate → run.
 // Check has no prerequisite. Elaborate depends on a clean check. Run implies both.
-// Nothing here writes the workspace. Save downloads #aw-generated.
+// Nothing here writes the workspace. Save SV downloads the printed .sv text;
+// Save HTML downloads the live author HTML with aw-render stripped.
 
 // The engine is served as a bundle at /aw.js (runtime URL); tsc cannot resolve
 // rooted specifiers, so we import it untyped and re-type it from the source.
 // @ts-expect-error runtime bundle URL
 import * as AWruntime from "/aw.js";
 import type * as AwEngine from "../core/aw.ts";
+import {
+	flattenModules,
+	type PrintStyle,
+	parseSnapshot,
+	printSv,
+} from "../core/printer.ts";
 
 const AW = AWruntime as typeof AwEngine;
 
@@ -60,7 +67,7 @@ const statusEl = $("#aw-status");
 
 const state: {
 	workspace: string;
-	style: { paramInline?: boolean };
+	style: { paramInline?: boolean } & PrintStyle;
 	units: UnitMeta[]; // topo order: deps first
 	unitMods: Map<string, string>; // mod name → unit id (top-level aw-mod of each unit)
 	current: string | null; // current unit id
@@ -87,21 +94,43 @@ function showGenerated(text: string): void {
 	if (box) box.textContent = text;
 }
 
-/** Browser download of the visible source. Does not write the workspace. */
-function saveGenerated(): string {
+/** Browser download. Does not write the workspace. */
+function downloadText(text: string, filename: string): void {
+	const blob = new Blob([text], { type: "text/plain" });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement("a");
+	a.href = url;
+	a.download = filename;
+	a.click();
+	URL.revokeObjectURL(url);
+}
+
+/** Save SV: download the printed .sv text shown after Run. No render XML. */
+function saveSv(): string {
 	const text = $("#aw-generated")?.textContent ?? "";
 	if (!text) {
 		setStatus("error", "save: run first; nothing generated");
 		throw new Error("save: run first; nothing generated");
 	}
-	const blob = new Blob([text], { type: "text/plain" });
-	const url = URL.createObjectURL(blob);
-	const a = document.createElement("a");
-	a.href = url;
-	a.download = `${state.current ?? "autowire"}.txt`;
-	a.click();
-	URL.revokeObjectURL(url);
-	setStatus("done", "save: browser download");
+	downloadText(text, `${state.current ?? "autowire"}.sv`);
+	setStatus("done", "save: browser download (.sv)");
+	return text;
+}
+
+/** Save HTML: the unit's live <autowire> author face with aw-render stripped
+ *  (render is engine-owned and regenerable). For agent-edited author faces.
+ *  Scripts are not part of the unit DOM tree; edit the author file for those. */
+function saveHtml(): string {
+	const id = state.current;
+	if (!id) throw new Error("no unit selected");
+	const entry = state.docs.get(id);
+	if (!entry) throw new Error(`save-html: unit "${id}" not loaded`);
+	const clone = entry.container.cloneNode(true) as HTMLElement;
+	for (const r of clone.querySelectorAll("aw-render")) r.textContent = "";
+	const face = clone.querySelector(":scope > autowire");
+	const text = `<!-- live author face of unit "${id}"; aw-render stripped; <script> lives in the author file -->\n${face?.outerHTML ?? clone.innerHTML}\n`;
+	downloadText(text, `${id}.html`);
+	setStatus("done", "save-html: browser download (author face, no aw-render)");
 	return text;
 }
 
@@ -110,8 +139,9 @@ const SESSION_HELP = [
 	"check: rule report; requires before-instances in this session",
 	"elaborate: freeze aw-render; requires a clean check in this session",
 	"before-dump: read-only hook; requires elaborate in this session",
-	"run: the whole chain; same result as connect run, no file write",
-	"save: return #aw-generated and start a browser download; no workspace path",
+	"run: the whole chain; same result as connect run, no file write; shows .sv",
+	"save / save-sv: download the printed .sv text (browser download)",
+	"save-html: download the live author HTML with aw-render stripped",
 	"none of these steps write a file",
 ].join("\n");
 
@@ -154,10 +184,13 @@ async function sessionStep(step: string): Promise<string> {
 	if (step === "run") {
 		const res = await runView(id);
 		state.phase.set(id, "before-dump");
-		return res.files.join("\n");
+		return res.sv;
 	}
-	if (step === "save") {
-		return saveGenerated();
+	if (step === "save" || step === "save-sv") {
+		return saveSv();
+	}
+	if (step === "save-html") {
+		return saveHtml();
 	}
 	throw new Error(`unknown session step "${step}"`);
 }
@@ -181,7 +214,7 @@ const unitOf = (id: string): UnitMeta | undefined =>
 
 interface UnitsMeta {
 	workspace: string;
-	style?: { paramInline?: boolean };
+	style?: { paramInline?: boolean; localparamUpper?: boolean } & PrintStyle;
 	units: UnitMeta[];
 	defaultUnit: string | null;
 }
@@ -420,7 +453,7 @@ async function runRender(id: string): Promise<AwEngine.CheckResult> {
 	return res;
 }
 
-async function runView(id: string): Promise<{ files: string[] }> {
+async function runView(id: string): Promise<{ files: string[]; sv: string }> {
 	if (!unitOf(id)) throw new Error(`unknown unit "${id}"`);
 	const chain: string[] = [];
 	const visit = (uid: string): void => {
@@ -429,7 +462,7 @@ async function runView(id: string): Promise<{ files: string[] }> {
 		chain.push(uid);
 	};
 	visit(id);
-	const files: string[] = [];
+	const files: { uid: string; text: string }[] = [];
 	for (const uid of chain) {
 		const checkRes = await runCheck(uid);
 		if (checkRes.errors.length > 0) {
@@ -442,10 +475,24 @@ async function runView(id: string): Promise<{ files: string[] }> {
 		const entry = state.docs.get(uid);
 		if (!entry) throw new Error(`unit "${uid}" not loaded`);
 		AW.runBeforeDump(entry.doc as unknown as Document, uid);
-		files.push(AW.serializeSnapshot(entry.doc as unknown as Document));
+		files.push({
+			uid,
+			text: AW.serializeSnapshot(entry.doc as unknown as Document),
+		});
 	}
-	showGenerated(files.join("\n"));
-	return { files };
+	// Show and return the same .sv text connect run writes (page rule:
+	// display == written text). Snapshots stay visible in #aw-live.
+	const chunks: string[] = [];
+	for (const { uid, text } of files) {
+		for (const m of flattenModules(parseSnapshot(text))) {
+			chunks.push(
+				`// --- ${uid}/${m.name}.sv ---\n${printSv(m, uid, state.style)}`,
+			);
+		}
+	}
+	const sv = chunks.join("\n");
+	showGenerated(sv);
+	return { files: files.map((f) => f.text), sv };
 }
 
 /** Read-only before-dump on a unit this session already elaborated. */
@@ -701,11 +748,18 @@ async function init(): Promise<void> {
 		runChain({ elaborate: true }),
 	);
 	$("#btn-run").addEventListener("click", () => runChain({ run: true }));
-	$("#btn-save").addEventListener("click", () => {
+	$("#btn-save-sv").addEventListener("click", () => {
 		try {
-			saveGenerated();
+			saveSv();
 		} catch {
 			/* status already set */
+		}
+	});
+	$("#btn-save-html").addEventListener("click", () => {
+		try {
+			saveHtml();
+		} catch (e) {
+			setStatus("error", e instanceof Error ? e.message : String(e));
 		}
 	});
 	$("#btn-reset").addEventListener("click", () => resetAll());

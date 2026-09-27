@@ -14,6 +14,7 @@ export const HELP_TOPICS = [
 	"deps",
 	"dont",
 	"docs",
+	"cdp",
 ] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
@@ -79,8 +80,9 @@ Landed
   autowire connect elaborate [unit] check + elaborate + before-dump (no write)
   Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
   Page session              window.aw.session: before-instances, check, elaborate,
-                            before-dump, run, save, help. Source stays in #aw-generated.
-                            Save is a browser download. The page does not write files.
+                            before-dump, run, save / save-sv, save-html, help.
+                            Run shows the .sv text (same as connect run writes).
+                            Saves are browser downloads. The page does not write files.
   aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir
   plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/ (docs/cli.md)
 
@@ -369,9 +371,11 @@ autowire connect web
   autowire connect web [unit]
 
 Static page on 127.0.0.1. The session does not write the workspace.
-Buttons: Check, Elaborate, Run, Save, Reset. Generated source is visible in #aw-generated.
-Save downloads that text in the browser. MCP calls window.aw.session(step):
-  before-instances, check, elaborate, before-dump, run, save, help.
+Buttons: Check, Elaborate, Run, Save SV, Save HTML, Reset. After Run,
+#aw-generated shows the printed .sv (the same text connect run writes).
+Save SV downloads that .sv; Save HTML downloads the live author face with
+aw-render stripped. MCP calls window.aw.session(step):
+  before-instances, check, elaborate, before-dump, run, save / save-sv, save-html, help.
 None of those steps write a file. connect run writes .sv.
 
 GET (read-only)
@@ -478,6 +482,30 @@ the examples. Dev builds read the repo instead of the bundle.
 Existing files at those paths are replaced. The bundle skips .autowire, firmware
 build/, and Verilator obj_dir. See docs/dev/release.md section 1.1.
 `,
+
+	cdp: `\
+CDP browsers — driving connect web from any CDP client
+
+Playwright is only the CDP client here. Any CDP-speaking headless browser works:
+Playwright Chromium (dev/CI default), obscura, lightpanda (production, parked).
+
+  obscura_c7 serve --port 9222 --allow-private-network   # CDP endpoint
+  bun index.ts connect web soc_top --port 4173           # page session (demo/soc)
+  chromium.connectOverCDP("http://127.0.0.1:9222")       // attach
+
+Driver helpers: scripts/cdp-helper.ts (connectCdp / openPage / runSession /
+authorFaceText / installEngine). Pattern and quirks: docs/dev/cdp-debug.md.
+
+Minimal-browser quirks (obscura-verified)
+  no lifecycle events   goto(domcontentloaded) only; setContent/addScriptTag hang
+  no blob:/data: URLs   import the engine over http: await import("/aw.js")
+  downloads navigate    stub HTMLAnchorElement.prototype.click to read save text
+  SSRF guard            --allow-private-network for 127.0.0.1
+
+Equivalence baseline: the page and connect run must produce byte-identical
+snapshots and .sv. Port order is semantic (connect sort key); the connect
+sidecar keeps ports in declaration order.
+`,
 };
 
 /** Default `autowire help` — command index + one-line Agent pointer. */
@@ -522,6 +550,7 @@ function topicsIndex(): string {
 		"  deps       dependency tree",
 		"  dont       forbidden items",
 		"  docs       unpack bundled docs and demos",
+		"  cdp        drive connect web from any CDP browser",
 		"",
 		"Default (no topic): command index.",
 		"",

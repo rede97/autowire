@@ -59,8 +59,18 @@ async function handleApi(
 		return json({
 			workspace: ws.root,
 			style: {
+				// engine param folding
 				paramInline: ws.styleParamInline,
 				localparamUpper: ws.styleLocalparamUpper,
+				// printSv style (same text as connect run)
+				portAlign: ws.stylePortAlign,
+				paramAlign: ws.styleParamAlign,
+				instPortAlign: ws.styleInstPortAlign,
+				instParamAlign: ws.styleInstParamAlign,
+				instPortDir: ws.styleInstPortDir,
+				instPortDirFormat: ws.styleInstPortDirFormat,
+				instPortWidth: ws.styleInstPortWidth,
+				signalAlign: ws.styleSignalAlign,
 			},
 			units: units.map((u) => ({
 				id: u.id,
@@ -172,7 +182,8 @@ const PAGE_HTML = `<!doctype html>
   <button id="btn-check" type="button">Check</button>
   <button id="btn-elaborate" type="button">Elaborate</button>
   <button id="btn-run" type="button">Run</button>
-  <button id="btn-save" type="button" title="Download #aw-generated in the browser. Does not write the workspace.">Save</button>
+  <button id="btn-save-sv" type="button" title="Download the printed .sv text. Does not write the workspace.">Save SV</button>
+  <button id="btn-save-html" type="button" title="Download the live author HTML with aw-render stripped. Does not write the workspace.">Save HTML</button>
   <button id="btn-reset" type="button">Reset</button>
   <span id="aw-status" data-state="idle" role="status">idle</span>
 </header>

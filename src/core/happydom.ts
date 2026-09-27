@@ -28,8 +28,10 @@ import { connectXml, parseConnectXml } from "./connectxml.ts";
 import {
 	assertModuleNames,
 	assertPrintable,
+	flattenModules,
+	type PrintStyle,
 	parseSnapshot,
-	writeSvFiles,
+	printSv,
 } from "./printer.ts";
 import { writeIfChanged } from "./write.ts";
 
@@ -95,8 +97,9 @@ export async function loadLiveUnitDoc(
 	ws: WorkspaceConfig,
 	unit: ConnectUnit,
 ): Promise<{ win: ScriptHost; doc: Document }> {
-	const path = resolve(ws.root, unit.html);
-	if (!path.startsWith(ws.root))
+	const root = resolve(ws.root);
+	const path = resolve(root, unit.html);
+	if (!path.startsWith(root))
 		throw new Error(`unit "${unit.id}": html path escapes the workspace`);
 	const html = await readFile(path, "utf8");
 	const win = new Window({ url: "http://127.0.0.1/" }) as ScriptHost;
@@ -189,20 +192,25 @@ async function writeSnapshot(
 			force,
 		);
 	}
-	return writeSvFiles(
-		mods,
-		resolve(ws.root, unitDumpDir(ws, unit.kind)),
-		unit.id,
-		{
-			portAlign: ws.stylePortAlign,
-			paramAlign: ws.styleParamAlign,
-			instPortAlign: ws.styleInstPortAlign,
-			instParamAlign: ws.styleInstParamAlign,
-			instPortDir: ws.styleInstPortDir,
-			instPortDirFormat: ws.styleInstPortDirFormat,
-			instPortWidth: ws.styleInstPortWidth,
-			signalAlign: ws.styleSignalAlign,
-		},
-		force,
-	);
+	// Write each flattened module as <name>.sv (was printer.writeSvFiles;
+	// printer.ts is now pure so the page bundle can print too).
+	const style: PrintStyle = {
+		portAlign: ws.stylePortAlign,
+		paramAlign: ws.styleParamAlign,
+		instPortAlign: ws.styleInstPortAlign,
+		instParamAlign: ws.styleInstParamAlign,
+		instPortDir: ws.styleInstPortDir,
+		instPortDirFormat: ws.styleInstPortDirFormat,
+		instPortWidth: ws.styleInstPortWidth,
+		signalAlign: ws.styleSignalAlign,
+	};
+	const outDir = resolve(ws.root, unitDumpDir(ws, unit.kind));
+	await mkdir(outDir, { recursive: true });
+	const written: string[] = [];
+	for (const m of flattenModules(mods)) {
+		const path = join(outDir, `${m.name}.sv`);
+		if (await writeIfChanged(path, printSv(m, unit.id, style), force))
+			written.push(path);
+	}
+	return written;
 }

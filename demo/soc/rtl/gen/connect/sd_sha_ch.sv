@@ -165,6 +165,7 @@ module sd_sha_ch (
 		.o_irq            (o_dma_irq       )  // o
 	);
 	sha256wb u_sha (
+		.irq_o            (o_sha_irq       ), // o
 		.clk              (clk             ), // i
 		.rst_ni           (rst_ni          ), // i
 		.s_axis_tdata     (axis_tdata      ), // i [31:0]
@@ -172,7 +173,6 @@ module sd_sha_ch (
 		.s_axis_tlast     (axis_tlast      ), // i
 		.rg_soft_reset    (rg_soft_reset   ), // i
 		.p_rg_done_clear  (p_rg_done_clear ), // i
-		.irq_o            (o_sha_irq       ), // o
 		.s_axis_tready    (axis_tready     ), // o
 		.ro_busy          (ro_busy         ), // o
 		.ro_done          (ro_done         ), // o

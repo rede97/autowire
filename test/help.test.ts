@@ -48,7 +48,9 @@ test("each slice prints independently", () => {
 	expect(renderHelp("dont")).toContain("autowire.toml");
 	expect(renderHelp("web")).toContain("connect web");
 	expect(renderHelp("web")).toContain("does not write");
-	expect(renderHelp("web")).toContain("Check, Elaborate, Run, Save, Reset");
+	expect(renderHelp("web")).toContain(
+		"Check, Elaborate, Run, Save SV, Save HTML, Reset",
+	);
 	expect(renderHelp("web")).toContain("#aw-generated");
 	expect(renderHelp("connect")).toContain("docs/connect/check.md");
 	expect(renderHelp("connect")).toContain("same-name → identity");
