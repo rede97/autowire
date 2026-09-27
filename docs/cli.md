@@ -27,10 +27,11 @@ expand → before-instances → check → elaborate → before-dump → dump
 | 命令 | 行为 |
 |---|---|
 | `connect run [unit]` | happy-dom 跑 `<script type="module">`，走完上面的链并写 `.sv`。内容没变的文件不重写。`--force` 强制重写 |
-| `connect check [unit]` | 只做作者面和依赖的规则检查，打印错误和警告，不写盘 |
+| `connect check [unit]` | 脚本 + before-instances 之后，只做作者面和依赖的规则检查，打印错误和警告，不写盘 |
+| `connect elaborate [unit]` | 走到 elaborate + before-dump 为止（含维度合并/短路等展开期门禁），不写盘 |
 | `connect web [unit]` | 只起静态页。浏览器在页面里跑同一批脚本；不把结果交给 autowire 写盘 |
 
-`check` 是快速规则工具，不是半成品生成。`connect check` 和页面里的 Check 都只报告错误和警告。`connect run` 内部先做同样的 check，不通过就不写。没有 `connect elaborate`，也没有单独的 `connect dump`。
+`check` 是快速规则工具，不是半成品生成。`connect check` 和页面里的 Check 都只报告错误和警告。`connect run` 内部先做同样的 check，不通过就不写。没有单独的 `connect dump`；`connect elaborate` 覆盖展开期校验但不落盘，适合 CI 门禁。
 
 `connect web` 起一个有状态的页面会话，不写工作区。静态服务只提供页面、`aw.js` 和只读数据：单元列表、作者 HTML、RtlIndex、已有的 connect 快照。会话里的活 DOM 由前端接口推进，MCP 一次调用一步。
 

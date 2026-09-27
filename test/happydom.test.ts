@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
-import { renderUnit } from "../src/core/happydom.ts";
+import { check } from "../src/core/aw.ts";
+import { loadLiveUnitDoc, renderUnit } from "../src/core/happydom.ts";
 import { LeafDb } from "../src/rtl/leaf.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
@@ -72,6 +73,62 @@ describe("happy-dom render", () => {
 		expect(rendered.snapshot).toContain('name="probe"');
 		expect(rendered.snapshot).toContain('dir="output"');
 		expect(rendered.files.some((file) => file.endsWith("leaf.sv"))).toBe(true);
+	});
+
+	test("check covers script-generated rules (before-instances runs first)", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw-happy-"));
+		writeFileSync(
+			join(dir, "autowire.toml"),
+			`
+[dump]
+connect_dir = "out/connect"
+sim_dir = "out/sim"
+[analysis.index]
+dir = ".autowire/hdxml"
+[connect.leaf]
+html = "leaf.html"
+`,
+		);
+		// The script appends an illegal rule: aw-connect without a port. A
+		// static parse never sees it; the lifecycle (§3.1) puts the script
+		// before check, so check must flag it.
+		writeFileSync(
+			join(dir, "leaf.html"),
+			`<!doctype html>
+<html><body>
+<autowire>
+  <aw-mod name="leaf">
+    <aw-content>
+      <aw-ports></aw-ports>
+      <aw-insts>
+        <aw-inst id="u" mod="leaf">
+          <aw-template></aw-template>
+        </aw-inst>
+      </aw-insts>
+    </aw-content>
+    <aw-submods></aw-submods>
+    <aw-render></aw-render>
+  </aw-mod>
+</autowire>
+<script type="module">
+  const t = document.querySelector("aw-template");
+  t.appendChild(document.createElement("aw-connect"));
+</script>
+</body></html>
+`,
+		);
+		const ws = await loadWorkspace(join(dir, "autowire.toml"));
+		const unit = ws.connectUnits[0];
+		if (!unit) throw new Error("fixture unit missing");
+		const { win, doc } = await loadLiveUnitDoc(ws, unit);
+		try {
+			const res = check(doc as never, {});
+			expect(
+				res.errors.some((e) => e.includes("aw-connect missing port")),
+			).toBe(true);
+		} finally {
+			await win.happyDOM.close();
+		}
 	});
 
 	test("same HTML snapshot as Chromium", async () => {

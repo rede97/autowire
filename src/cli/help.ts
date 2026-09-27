@@ -75,8 +75,8 @@ Landed
   hdxml sidecar             analysis → RtlIndex XML
   aw.js                     engine: src/core/aw.ts → build:web → web/aw.js (generated; guarded)
   autowire connect web [unit]  static session; buttons; no workspace write
-  autowire connect check [unit] author-face legality + deps (no write)
-  autowire connect run [unit]   happy-dom: scripts → elaborate → write .sv (no browser)
+  autowire connect check [unit] scripts + before-instances → author-face legality + deps (no write)
+  autowire connect elaborate [unit] check + elaborate + before-dump (no write)
   Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
   Page session              window.aw.session: before-instances, check, elaborate,
                             before-dump, run, save, help. Source stays in #aw-generated.
@@ -113,7 +113,7 @@ Parallel (does not block connect)
     field .note() continues that Description cell after a newline;
     regfile .note() is the header Description comment;
     trunk columns; leaf offset; no empty A / ADDRWIDTH), c= C dir (layout .h + <bus>_map.h + wishbone.h umbrella),
-    uvm= uvm_reg dir (ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv) and RALF <bus>.ralf
+    uvm= uvm_reg dir (ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv; uvm_reg model only, no RALF)
     (one block per bus; TagFromAddr splits that level into one instance per copy;
     a pass-through child is not split again; broadcast windows are addresses);
     git-tracked showcase fw/gen/wishbone (do not delete);
@@ -183,7 +183,8 @@ Parallel (does not block connect)
     SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag?, broadcast?,
     broadcastBy? }): string window by span; broadcast emits broadcast_<name> and
     has no WB data port; broadcast and broadcastBy are mutually exclusive;
-    broadcastBy ORs that strobe into a region on WE only;
+    broadcast writes fan out to every subscriber, broadcast reads return the
+    bitwise OR of subscriber DAT (any-1 status readback);
     subscribers of one broadcast must share pipe depth;
     raw Slave cannot broadcast; ACK waits for every selected subscriber;
     Slave(name, desc, base, mask, ...) is a raw port (no overlap check);
@@ -227,7 +228,7 @@ Shared by deps / web / cli for the RTL universe:
                         RegfileDef and/or BusDef exports (types stay separate)
   [plugins.wishbone]    packed software: export= Excel (field sheets + one sheet per bus tree);
                         c= C dir (layout + <bus>_map.h + wishbone.h; TagFromAddr aliases
-                        and broadcast windows); uvm= uvm_reg dir plus <bus>.ralf
+                        and broadcast windows); uvm= uvm_reg dir (model only, no RALF)
   [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
                         sim_dir="gen/sim"          DV TB tops
@@ -491,6 +492,7 @@ function commandIndex(): string {
 		"  analysis info <module>    params and ports               → help analysis",
 		"  connect run [unit]       happy-dom check then write .sv  → help cli",
 		"  connect check [unit]     author-face rules, no write    → help check",
+		"  connect elaborate [unit] check + elaborate, no write    → help cli",
 		"  connect web [unit]       static session page            → help web",
 		"  plugin wishbone run      generate regfiles and buses    → help status",
 		"  docs unpack <dir>        write bundled docs/ and demo/  → help docs",

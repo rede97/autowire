@@ -86,6 +86,30 @@ function sessionFacts(dep: string, snapshot: string): WrapperFacts[] {
 }
 
 /**
+ * Load one unit's author HTML into happy-dom and run the author-face
+ * mutations: module scripts → before-instances. The returned DOM is what
+ * check/elaborate must see (lifecycle §3.1: mutations happen before check).
+ * Caller closes win.happyDOM.
+ */
+export async function loadLiveUnitDoc(
+	ws: WorkspaceConfig,
+	unit: ConnectUnit,
+): Promise<{ win: ScriptHost; doc: Document }> {
+	const path = resolve(ws.root, unit.html);
+	if (!path.startsWith(ws.root))
+		throw new Error(`unit "${unit.id}": html path escapes the workspace`);
+	const html = await readFile(path, "utf8");
+	const win = new Window({ url: "http://127.0.0.1/" }) as ScriptHost;
+	installGlobal(win as never);
+	win.document.write(html);
+	if (!win.document.querySelector("autowire"))
+		throw new Error(`unit "${unit.id}": author HTML has no <autowire> root`);
+	await runModuleScripts(win, unit.id);
+	runBeforeInstances(win.document as never, unit.id);
+	return { win, doc: win.document as unknown as Document };
+}
+
+/**
  * Render one unit in happy-dom. A dep rendered in this session overrides its
  * on-disk snapshot, matching the web page.
  */
@@ -95,18 +119,10 @@ export async function renderUnit(
 	leafDb: LeafDb,
 	session: Map<string, RenderedUnit>,
 	force = false,
+	write = true,
 ): Promise<RenderedUnit> {
-	const html = await readFile(resolve(ws.root, unit.html), "utf8");
-	const win = new Window({ url: "http://127.0.0.1/" }) as ScriptHost;
+	const { win, doc } = await loadLiveUnitDoc(ws, unit);
 	try {
-		installGlobal(win as never);
-		win.document.write(html);
-		if (!win.document.querySelector("autowire"))
-			throw new Error(`unit "${unit.id}": author HTML has no <autowire> root`);
-		await runModuleScripts(win, unit.id);
-		const doc = win.document;
-		runBeforeInstances(doc as never, unit.id);
-
 		const built = await buildEngineCtx(ws, unit, allUnits(ws), leafDb);
 		const sessionFactsByMod = new Map<string, WrapperFacts>();
 		for (const dep of unit.deps) {
@@ -141,7 +157,7 @@ export async function renderUnit(
 			throw new Error(`render failed for "${unit.id}": ${rendered.errors[0]}`);
 		runBeforeDump(doc as never, unit.id);
 		const snapshot = serializeSnapshot(doc as never);
-		const files = await writeSnapshot(ws, unit, snapshot, force);
+		const files = write ? await writeSnapshot(ws, unit, snapshot, force) : [];
 		return {
 			id: unit.id,
 			snapshot,

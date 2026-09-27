@@ -3,8 +3,12 @@
 
 import type { Command } from "commander";
 import { check as awCheck } from "../core/aw.ts";
-import { buildEngineCtx, loadUnitDoc, topoUnits } from "../core/connect.ts";
-import { renderUnit } from "../core/happydom.ts";
+import { buildEngineCtx, topoUnits } from "../core/connect.ts";
+import {
+	loadLiveUnitDoc,
+	type RenderedUnit,
+	renderUnit,
+} from "../core/happydom.ts";
 import { LeafDb } from "../rtl/leaf.ts";
 import { startWeb } from "../web/server.ts";
 import { allUnits, findUnit, type WorkspaceConfig } from "../workspace.ts";
@@ -34,10 +38,7 @@ export function registerConnect(program: Command): void {
 				const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
 				const selected = selectUnits(cfg, unit);
 				const leafDb = new LeafDb(cfg.indexDir);
-				const session = new Map<
-					string,
-					Awaited<ReturnType<typeof renderUnit>>
-				>();
+				const session = new Map<string, RenderedUnit>();
 				for (const u of selected) {
 					const rendered = await renderUnit(
 						cfg,
@@ -69,16 +70,62 @@ export function registerConnect(program: Command): void {
 			const all = allUnits(cfg);
 			let failed = false;
 			for (const u of units) {
-				const { doc } = await loadUnitDoc(cfg, u);
-				const built = await buildEngineCtx(cfg, u, all, leafDb);
-				await built.prewarm(doc);
-				const res = awCheck(doc as never, built.ctx);
-				const errors = [...built.errors, ...res.errors];
-				for (const w of res.warnings) console.warn(`${u.id}: warning: ${w}`);
-				for (const e of errors) console.error(`${u.id}: error: ${e}`);
-				if (errors.length > 0) failed = true;
-				else
-					console.log(`${u.id}: check ok (${res.warnings.length} warning(s))`);
+				// Live DOM: scripts + before-instances run before check
+				// (lifecycle §3.1), so hook-generated rules are checked too.
+				const { win, doc } = await loadLiveUnitDoc(cfg, u);
+				try {
+					const built = await buildEngineCtx(cfg, u, all, leafDb);
+					await built.prewarm(doc as never);
+					const res = awCheck(doc as never, built.ctx);
+					const errors = [...built.errors, ...res.errors];
+					for (const w of res.warnings) console.warn(`${u.id}: warning: ${w}`);
+					for (const e of errors) console.error(`${u.id}: error: ${e}`);
+					if (errors.length > 0) failed = true;
+					else
+						console.log(
+							`${u.id}: check ok (${res.warnings.length} warning(s))`,
+						);
+				} finally {
+					await win.happyDOM.close();
+				}
+			}
+			if (failed) process.exit(1);
+		});
+
+	connect
+		.command("elaborate")
+		.description(
+			"Scripts → before-instances → check → elaborate → before-dump; no write",
+		)
+		.argument("[unit]", "unit id (default: all units, deps first)")
+		.option(
+			"--workspace <path>",
+			"workspace dir or autowire.toml path (default: search upward from CWD)",
+		)
+		.action(async (unit: string | undefined, opts: { workspace?: string }) => {
+			const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
+			const selected = selectUnits(cfg, unit);
+			const leafDb = new LeafDb(cfg.indexDir);
+			const session = new Map<string, RenderedUnit>();
+			let failed = false;
+			for (const u of selected) {
+				try {
+					const rendered = await renderUnit(
+						cfg,
+						u,
+						leafDb,
+						session,
+						false,
+						false,
+					);
+					session.set(u.id, rendered);
+					for (const w of rendered.warnings)
+						console.warn(`${u.id}: warning: ${w}`);
+					console.log(`${u.id}: elaborate ok`);
+				} catch (error) {
+					failed = true;
+					console.error(error instanceof Error ? error.message : error);
+				}
 			}
 			if (failed) process.exit(1);
 		});

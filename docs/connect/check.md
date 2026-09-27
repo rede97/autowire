@@ -1,7 +1,7 @@
 # `autowire check` 契约（作者面规则检查）
 
-> 状态：**已实现**（`src/core/aw.ts` `check`；`connect check` 与页面 [Check] 同源）。  
-> 方言「合法 HTML」见 [`html.md`](./html.md) / [`rules.md`](./rules.md) / [`to-rules.md`](./to-rules.md)；**本文只定义哪一阶段、用什么上下文、报 error 还是 warn**。  
+> 状态：**已实现**（`src/core/aw.ts` `check`；`connect check` 与页面 [Check] 同源——CLI 同样先跑 `<script>` + `before-instances` 再检查，见 lifecycle.md §3.1）。  
+> 展开期门禁（维合并/短路等，§2 表）用 `connect elaborate`：同链跑到 before-dump，不落盘。
 > 摘要：`bun index.ts help check`。改检查项时同步改本文与 help。
 
 关键字「必须 / 应当 / 可以」按 RFC 2119。
