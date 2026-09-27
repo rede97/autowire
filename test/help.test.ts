@@ -72,7 +72,7 @@ test("each slice prints independently", () => {
 		"treat connect run as the only validation",
 	);
 	expect(renderHelp("status")).toContain("export= Excel");
-	expect(renderHelp("status")).toContain("not .ralf");
+	expect(renderHelp("status")).toContain("<bus>.ralf");
 	expect(renderHelp("status")).toContain("wide-field split");
 	expect(renderHelp("status")).toContain("ADDRWIDTH");
 	expect(renderHelp("workspace")).toContain("Excel");

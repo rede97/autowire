@@ -113,7 +113,9 @@ Parallel (does not block connect)
     field .note() continues that Description cell after a newline;
     regfile .note() is the header Description comment;
     trunk columns; leaf offset; no empty A / ADDRWIDTH), c= C dir (layout .h + <bus>_map.h + wishbone.h umbrella),
-    uvm= uvm_reg dir (ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv; not .ralf);
+    uvm= uvm_reg dir (ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv) and RALF <bus>.ralf
+    (one block per bus; TagFromAddr splits that level into one instance per copy;
+    a pass-through child is not split again; broadcast windows are addresses);
     git-tracked showcase fw/gen/wishbone (do not delete);
     generate: listed + attached-leaf SV, then fabric/wrapper; RTL → plugins_dir/wishbone/;
     demo/soc: one sha256_regfile RTL, one hang per sd_sha channel via SlaveRegfile;
@@ -147,7 +149,10 @@ Parallel (does not block connect)
       hoist ShadowDomain(name, copies, width) to its own shared export;
       Bus tags= declares TGA order + source — bare name = pass through from
       uplink, TagFromAddr/TagFromPin/TagFromReg = produced at this level;
-      one source per domain per path; TagFromAddr bits are stripped from slave
+      one source per domain per path; one TagFromAddr per decoder, occupying
+      the top address bits (low bits stay the address; no hole, no re-pack);
+      a second tag belongs on the next decoder; extra tags are ordered high
+      bit first and are not stable; TagFromAddr bits are stripped from slave
       decode (one window covers all aliases) and must not overlap any window;
       SlaveBus tag derives from the child bus, never hand-written;
     Access RC = ReadConst (reset= baked readback);
@@ -215,8 +220,9 @@ Shared by deps / web / cli for the RTL universe:
                         connect ids; dump → sim_dir (no .autowire/connect XML)
   [wishbone.<source>]   wishbone SoT file: ts=; optional exports=[]; omit = all
                         RegfileDef and/or BusDef exports (types stay separate)
-  [plugins.wishbone]    packed software: export= Excel (field sheets + MAP_*);
-                        c= C dir (layout + map + wishbone.h); uvm= uvm_reg dir
+  [plugins.wishbone]    packed software: export= Excel (field sheets + one sheet per bus tree);
+                        c= C dir (layout + <bus>_map.h + wishbone.h; TagFromAddr aliases
+                        and broadcast windows); uvm= uvm_reg dir plus <bus>.ralf
   [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
                         sim_dir="gen/sim"          DV TB tops

@@ -81,7 +81,7 @@
 | 写法 | 语义 |
 |---|---|
 | `pstate` | 透传：本层不产生；值来自 `Master("uplink")`（或普通 master 口）的 TGA |
-| `TagFromAddr(pstate, "22:21")` | 从本层 `ADR` 切片产生 |
+| `TagFromAddr(pstate, "31:30")` | 从地址最高位产生；剩下的低位是地址，不重新拼接 |
 | `TagFromPin(pstate)` | 本层出一个输入口（如全局 pstate 控制器）产生 |
 | `TagFromReg(pstate, cell.field)` | 由本 fabric 内挂接 regfile 的某个 regbit 产生（省掉「出叶子→绕总线→回来」） |
 
@@ -90,7 +90,7 @@
 ```ts
 // level 1: channel decoder —— 从地址产生
 export const hbm = Bus("hbm", "HBM channel decoder", {
-  tags: [TagFromAddr(pstate, "22:21")],
+  tags: [TagFromAddr(pstate, "31:30")],
   slaves: [SlaveBus(hbm_ch, 0x0000_0000, { id: "ch0", size: Size(0x1000) }) /* ...ch15 */],
 })
 
@@ -105,12 +105,13 @@ export const hbm_ch = Bus("hbm_ch", "aword + 2x dword", {
 规则：
 
 1. **单一来源**：同一域在一条 uplink 路径上 **必须**只被产生一次；子总线对已由父级产生的域再写 `TagFrom*` → **报错**。
-2. **`TagFromAddr` 必须剥位**：这些 ADR 位 **不参与** slave 译码——比较与转发（今天的 `adr & ~mask`）都先抹掉，于是**一条**窗口声明覆盖全部 `2^w` 个别名地址，**禁止**为每个 tag 值各写一个 slave。
-3. **`TagFromAddr` 撑开地址空间**：`[22:21]` ⇒ 别名步长 `0x20_0000`、共 4 份、整条总线译码空间到 `0x80_0000`。软件视角 = 「切 pstate 后按原地址访问」。
-4. **位不许重叠**：tag 位与**任何** slave 窗口（含 `SlaveBus` 的 channel 窗）重叠 → `Bus()` 构造期 **报错**，不得留到仿真。
-5. **`SlaveBus` 的 tag 由子总线推导**：父级 **不应当**手写 `tag:`（今天 `SlaveBus` 把 `opts.tag` 原样交给 `SlaveRegion`，16 次例化就有 16 次填错机会）。声明不一致 → 报错。
-6. 透传层 **不解释**位语义（与规则 5 一致）；`wb_cfg_pipe` 的 `{m_tga, m_adr}` 打包路径不变。
-7. `TagFromAddr` 与 `TagFromPin` / `TagFromReg` **禁止**同时作用于同一域（与规则 1 同源）。
+2. **`TagFromAddr` 必须占地址最高位**：一个 decoder **只产生一个** tag。这些位是本层译码跨度之上的最高连续位，剩下的低位原样是 slave 地址。**禁止**从地址中间取 tag，也 **禁止**把 tag 两侧的地址重新拼接。比较与转发都先抹掉这些位，于是**一条**窗口声明覆盖全部 `2^w` 个别名地址，**禁止**为每个 tag 值各写一个 slave。
+3. **一个 decoder 一个 tag**：第二个正交维度放到下一级 decoder，再从那一级的最高位取。一条总线上写了多个 `TagFromAddr` 时，按地址位从高到低排序后仍生成，但 **不保证稳定**（构造期会警告）。位必须连续且顶到最高位；中间留洞 → 报错。
+4. **`TagFromAddr` 撑开地址空间**：HBM 的 `pstate` 取 32 位地址的最高位 `[31:30]`，别名步长 `0x4000_0000`、共 4 份。`ADR[29:0]` 原样是地址。软件视角 = 「切 pstate 后按原地址访问」。
+5. **位不许落进窗口**：tag 位与**任何** slave 窗口（含 `SlaveBus` 的 channel 窗）重叠 → `Bus()` 构造期 **报错**，不得留到仿真。
+6. **`SlaveBus` 的 tag 由子总线推导**：父级 **不应当**手写 `tag:`（今天 `SlaveBus` 把 `opts.tag` 原样交给 `SlaveRegion`，16 次例化就有 16 次填错机会）。声明不一致 → 报错。
+7. 透传层 **不解释**位语义（与规则 6 一致）；`wb_cfg_pipe` 的 `{m_tga, m_adr}` 打包路径不变。
+8. `TagFromAddr` 与 `TagFromPin` / `TagFromReg` **禁止**同时作用于同一域（与规则 1 同源）。
 `ShadowDomain(...).remap({ [tga]: oneHotMask })` 是该域的 TGA→one-hot 规则。regfile 只写 `.shadow(domain)`，默认使用这份映射；未列出的 TGA 保持恒等映射。表级不得再写另一套 remap。`bank`、`pstate`、`pll_pstate` 这类正交维度属于不同层级：父 decoder 消费自己的域后，子 decoder 只看见剩余的那个域。两个域同时出现在同一张寄存器上是不合理设计。
 
 正交维度用地址层级拆开，不在叶子里做笛卡尔 shadow：
@@ -258,7 +259,11 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 - **`SlaveRegfile` = `SlaveRegion` 语法糖**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, size?, desc? })`。默认 `Size(layout span)` 再 2^N 对齐；`size=` 可放大窗口，**禁止**小于 span。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。  
 - **`SlaveBus` = `SlaveRegion` 语法糖**：`SlaveBus(child, base, { id?, pipe?, tag?, size?, desc?, uplink? })`。用于 **级联多级 decoder**（也允许子级是 interconnect）。`id` 缺省 = `BusDef.name`；同一 child 多挂用不同 `id`（demo：`sd_sha` ×2 → `ch0`/`ch1`）。默认 `Size(busByteSpan(child))`；`size=` 可放大，**禁止**小于 child span。子总线 **必须**声明 `Master("uplink")`（或 `uplink=`）：interconnect 上该 master 口在 Type-A wrapper 里 **remap** 成 `i_wb_*` / `o_wb_*`（父级 Slave 窗 identity）；decoder 子级 remap `m_*`。父级译码已下发窗内 offset（`adr & ~mask`），子地址是相对的。channel 内 DMA 的 SRC **必须**写相对地址。**禁止**假设子 DMA 能打到父级 SRAM/flash（没有自动 downlink）。generate **必须**对 child RTL 只打一份，HTML 例化 N 次。  
 - 若 bus 上有挂接的 regfile **或** `Master("uplink")`：generate **必须**再打一份 Type-A **wrapper** `<bus>_system`。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
-- 软件地址图由同一插件打包：`[plugins.wishbone] c=` → `<bus>_map.h` + 字段 `.h` + `wishbone.h`；`uvm=` → `ral_block_<bus>.sv` + `ral_<SHEET>.sv` + `ral_wishbone.sv`（`add_reg(base+offset)`）。叶子 C/`uvm_reg` **只**出字段 layout。  
+- 软件地址图由同一插件打包：`[plugins.wishbone] c=` → `<bus>_map.h` + 字段 `.h` + `wishbone.h`；`uvm=` → `ral_block_<bus>.sv` + `ral_<SHEET>.sv` + `ral_wishbone.sv`，以及真正的 RALF `<bus>.ralf`。叶子 C/`uvm_reg` **只**出字段 layout。
+
+  RTL 仍是一个窗口：`TagFromAddr` 把这些地址位从译码里剥掉，所以硬件只看见一份相对地址。软件图在**产生这个 tag 的那一层**按副本拆开，每个副本一条绝对地址。只透传该 tag 的子总线和叶子**不再拆**：它们的地址相对父级已经命名的那一份。`pin` / `reg` 来源不产生地址别名。广播窗口是一条真实地址，一次写打中所有订阅者；uvm_reg 里广播只作为注释，因为没有广播 frontdoor。
+
+   例如 HBM：`hbm` 的 `pstate` 来自 `ADR[31:30]`，所以 `ch0` 拆成 `ch0_pstate0`…`ch0_pstate3`，步长 `1<<30`。`hbm_ch` 只透传 `pstate`，`aword` / `dword0` / `dword1` 在每个副本里各出现一次，偏移仍是 `0x000` / `0x100` / `0x200`。`dword_all` 同样跟着每个 pstate 副本出现。`ch_bcast` 不带 tag，只有一条。
 - 地址图数据在 Table/端口模型里；**禁止**把 pin 级连线写进 `autowire.toml`。  
 - 产物进 `plugins_dir/<plugin-id>/`；软件 map **禁止**进 `plugins_dir`（与 regfile C/UVM 同纪律）。与 connect/sim dump 目录分家（[`README.md`](./README.md) §3）。
 
@@ -271,7 +276,7 @@ ts = "sot/wb_bus_soc.ts"
 
 [plugins.wishbone]
 c   = "fw/gen/wishbone"  # <name>_map.h（git-tracked showcase in demo/soc）
-uvm = "dv/ral"           # ral_block_<name>.sv
+uvm = "dv/ral"           # ral_block_<name>.sv and <name>.ralf
 
 # out → plugins_dir/wishbone/wb_cfg_pipe.sv
 #                      + <name>_decoder.sv | <name>_interconnect.sv

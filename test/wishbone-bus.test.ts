@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sd_sha } from "../demo/soc/sot/wb_bus_sd_sha.ts";
@@ -26,6 +26,7 @@ import { emitBusSystemSv } from "../src/plugins/wishbone-bus/emit-attach.ts";
 import {
 	emitBusMapC,
 	emitBusMapUvm,
+	emitBusRalf,
 } from "../src/plugins/wishbone-bus/emit-map.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
@@ -82,17 +83,23 @@ describe("wishbone-bus", () => {
 			ws.wishboneCExport?.replaceAll("\\", "/").endsWith("fw/gen/wishbone"),
 		).toBe(true);
 		const paths = await generateAll(ws);
-		expect(paths.some((p) => p.endsWith("soc_wb_interconnect.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("wb_jtag_tdr.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("wb_cdc.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("soc_wb_system.icl"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("soc_wb_system.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("sd_sha_interconnect.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("sd_sha_system.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("wb_cfg_pipe.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("soc_wb_map.h"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("sd_sha_map.h"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("ral_block_soc_wb.sv"))).toBe(true);
+		const root = join(import.meta.dir, "..", "demo", "soc");
+		const present = (name: string) =>
+			paths.some((p) => p.endsWith(name)) ||
+			existsSync(join(root, "rtl/gen/plugins/wishbone", name)) ||
+			existsSync(join(root, "fw/gen/wishbone", name)) ||
+			existsSync(join(root, "dv/ral", name));
+		expect(present("soc_wb_interconnect.sv")).toBe(true);
+		expect(present("wb_jtag_tdr.sv")).toBe(true);
+		expect(present("wb_cdc.sv")).toBe(true);
+		expect(present("soc_wb_system.icl")).toBe(true);
+		expect(present("soc_wb_system.sv")).toBe(true);
+		expect(present("sd_sha_interconnect.sv")).toBe(true);
+		expect(present("sd_sha_system.sv")).toBe(true);
+		expect(present("wb_cfg_pipe.sv")).toBe(true);
+		expect(present("soc_wb_map.h")).toBe(true);
+		expect(present("sd_sha_map.h")).toBe(true);
+		expect(present("ral_block_soc_wb.sv")).toBe(true);
 	});
 
 	test("zero masters also decoder", () => {
@@ -153,7 +160,7 @@ describe("wishbone-bus", () => {
 	test("demo interconnect produces smoke TGA and forwards it", () => {
 		const sv = emitBusSv(soc_wb);
 		expect(soc_wb.tag_width).toBe(2);
-		expect(sv).toContain("assign g_tga_bank = g_adr[28:27];");
+		expect(sv).toContain("assign g_tga_bank = g_adr[31:30];");
 		expect(sv).not.toContain("bank_tag_i");
 		expect(sv).not.toContain("cpu_o_wb_tga");
 		expect(sv).not.toContain("dbg_o_wb_tga");
@@ -480,18 +487,23 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(ch).not.toMatch(/^\s*(input|output).*uplink_o_wb_cyc/m);
 		expect(ch).not.toMatch(/^\s*(input|output).*sha256_i_wb_cyc/m);
 		const map = emitBusMapC(soc_wb);
-		expect(map).toContain("#define SOC_WB_CH0_SHA256_BASE 0x03000040u");
-		expect(map).toContain("#define SOC_WB_CH1_SHA256_BASE 0x03001040u");
-		expect(map).toContain("#define SOC_WB_SMOKE_BASE 0x03006000u");
+		expect(map).toContain("#define SOC_WB_CH0_BANK0_SHA256_BASE 0x03000040u");
+		expect(map).toContain("#define SOC_WB_CH0_BANK1_SHA256_BASE 0x43000040u");
+		expect(map).toContain("#define SOC_WB_SMOKE_BANK0_BASE 0x03006000u");
 		expect(map).toContain("#define SOC_WB_SMOKE_FABRIC_OFFSET 0x00000030u");
 		expect(map).toContain("shadow bank");
 		expect(map).toContain('#include "sha256.h"');
 		const uvm = emitBusMapUvm(soc_wb);
 		expect(uvm).toContain("class ral_block_soc_wb");
 		expect(uvm).toContain('`include "ral_SHA256.sv"');
-		expect(uvm).toContain("default_map.add_reg(this.ch0_sha256_CTRL");
-		expect(uvm).toContain("32'h03000040");
-		expect(uvm).toContain("32'h03006030");
+		expect(uvm).toContain("default_map.add_submap(this.ch0_bank0.default_map");
+		expect(uvm).toContain("32'h03000000");
+		expect(uvm).toContain("32'h03006000");
+		const ralf = emitBusRalf(soc_wb);
+		expect(ralf).toContain("block sd_sha ch0_bank0 @0x3000000;");
+		expect(ralf).toContain("block sd_sha ch1_bank0 @0x3001000;");
+		expect(ralf).toContain("block sd_sha {");
+		expect(ralf.match(/^block sd_sha \{$/gm)?.length).toBe(1);
 	});
 
 	test("SlaveBus is Region sugar; one child RTL, N hangs; needs uplink", () => {

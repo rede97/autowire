@@ -511,7 +511,7 @@ ts = "docs/examples/regfile/regfile.ts"
 - 省略某键 → 跳过该导出。键必须是非空字符串。  
 - Excel 工作表名来自 **有效 `sheet`**（缺省 = `name`），不是 HTML 属性。同 sheet 的多例化共用一份软件/文档产物。  
 - C / uvm_reg / Excel **禁止**进 `plugins_dir`（那是 SV 叶子）；也 **禁止**当 connect/sim dump。
-- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；channel bus `SlaveRegfile(sha256, 0x40)` 挂一次，两个 `SlaveBus` channel 例化同一 `sd_sha_system`；HTML **不再** `aw-inst mod="sha256_regfile"`。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`soc_wb_map.h` overlay `ch0_sha256` / `ch1_sha256` + `wishbone.h`）；`fw/common/soc_map.h` 只做别名。C 头 **入库展示**（`fw/gen/wishbone/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（**不是** `.ralf`）；`ral_block_soc_wb.sv` 与 `ral_wishbone.sv` 同套打包。
+- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；channel bus `SlaveRegfile(sha256, 0x40)` 挂一次，两个 `SlaveBus` channel 例化同一 `sd_sha_system`。父级 `TagFromAddr(bank)` 把每个 channel 和 smoke 拆成 bank0..3；`sd_sha` 只透传 `bank`，不再拆。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`soc_wb_map.h` overlay `ch0_bank0_sha256` … + `wishbone.h`）；`fw/common/soc_map.h` 只做别名（固件用 bank0）。C 头 **入库展示**（`fw/gen/wishbone/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`，同一目录还有 `<bus>.ralf`；`ral_block_soc_wb.sv` 与 `ral_wishbone.sv` 同套打包。
 
 ### 6.1 C 头、uvm_reg 与 Excel（已裁定；C / uvm_reg / Excel emit 已落地）
 

@@ -833,7 +833,8 @@ export function Bus(
 	}
 	assertNoRegionOverlap(name, slaves, addr_width);
 	assertBroadcasts(name, slaves);
-	const declared = normalizeTags(name, opts.tags ?? []);
+	const declared = orderAddrTags(name, normalizeTags(name, opts.tags ?? []));
+	assertAddrTagsTop(name, addr_width, declared);
 	const anonymous = anonymousTag(slaves, declared);
 	const tags = anonymous ? [...declared, anonymous] : declared;
 	const tag_width = opts.tagWidth ?? tagDomainsWidth(tags);
@@ -909,6 +910,66 @@ function anonymousTag(
 		},
 		"uplink",
 	);
+}
+
+/**
+ * `TagFromAddr` occupies the top of the fabric address. The remaining low
+ * bits are the slave address and are not re-packed around a hole.
+ * One decoder should produce one such tag. Extra tags are ordered from the
+ * high bit downward and are not a stable feature.
+ */
+function orderAddrTags(bus: string, tags: WbTagSource[]): WbTagSource[] {
+	const addr = tags.filter((t) => t.source === "addr");
+	if (addr.length <= 1) return tags;
+	console.warn(
+		`wishbone-bus: bus ${bus} has ${addr.length} TagFromAddr domains; a decoder should carry one tag and the next decoder should split the next one. Tags are ordered from the high address bit down. Multiple tags are not stable.`,
+	);
+	const ranked = [...addr].sort((a, b) => addrBitHi(b) - addrBitHi(a));
+	let i = 0;
+	return tags.map((t) => (t.source === "addr" ? (ranked[i++] ?? t) : t));
+}
+
+function addrBitHi(tag: WbTagSource): number {
+	return parseBits(`tag domain ${tag.domain.name}`, tag.addr_bits ?? "0:0").hi;
+}
+
+function assertAddrTagsTop(
+	bus: string,
+	addrWidth: number,
+	tags: readonly WbTagSource[],
+): void {
+	const ranges = tags.flatMap((t) => {
+		if (t.source !== "addr" || t.addr_bits === undefined) return [];
+		return [{ name: t.domain.name, ...parseBits(t.domain.name, t.addr_bits) }];
+	});
+	if (ranges.length === 0) return;
+	const top = addrWidth - 1;
+	const hi = Math.max(...ranges.map((r) => r.hi));
+	const lo = Math.min(...ranges.map((r) => r.lo));
+	if (hi !== top) {
+		const shown = ranges.map((r) => `${r.name}[${r.hi}:${r.lo}]`).join(", ");
+		throw new Error(
+			`wishbone-bus: bus ${bus} TagFromAddr (${shown}) must occupy the top of the ${addrWidth}-bit address, starting at bit ${top}. The remaining low bits are the address and are not re-packed.`,
+		);
+	}
+	const covered = new Set<number>();
+	for (const r of ranges) {
+		for (let b = r.lo; b <= r.hi; b++) {
+			if (covered.has(b)) {
+				throw new Error(
+					`wishbone-bus: bus ${bus} TagFromAddr bit ${b} is claimed by more than one domain`,
+				);
+			}
+			covered.add(b);
+		}
+	}
+	for (let b = lo; b <= hi; b++) {
+		if (!covered.has(b)) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} TagFromAddr bits [${hi}:${lo}] are not contiguous (bit ${b} is a hole). A hole would require re-packing the address, which is not supported.`,
+			);
+		}
+	}
 }
 
 /**

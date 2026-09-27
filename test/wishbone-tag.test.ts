@@ -41,11 +41,11 @@ describe("wishbone tag domains", () => {
 	test("producing level: tag comes from ADR and leaves the master face bare", () => {
 		const plan = tagPlan(hbm);
 		expect(plan.width).toBe(2);
-		expect(plan.addrMask).toBe(0x0060_0000);
+		expect(plan.addrMask).toBe(0xc000_0000);
 		expect(plan.inherited).toHaveLength(0);
 		const sv = emitBusSv(hbm);
-		expect(sv).toContain("assign g_tga_pstate = m_adr_i[22:21];");
-		expect(sv).toContain("assign g_adr_dec = g_adr & ~32'h00600000;");
+		expect(sv).toContain("assign g_tga_pstate = m_adr_i[31:30];");
+		expect(sv).toContain("assign g_adr_dec = g_adr & ~32'hc0000000;");
 		// Tag bits are stripped before compare and before forwarding.
 		expect(sv).toContain("if ((g_adr_dec & 32'hfffff000) == 32'h00000000)");
 		expect(sv).toContain(
@@ -74,17 +74,27 @@ describe("wishbone tag domains", () => {
 
 	test("a domain may be produced only once along a path", () => {
 		const child = Bus("child_dup", "re-derives pstate", {
-			tags: [TagFromAddr(pstate, "13:12")],
+			tags: [TagFromAddr(pstate, "31:30")],
 			masters: [Master("uplink", "from parent")],
 			slaves: [SlaveRegfile(aword, 0x000, { size: Size(0x100) })],
 		});
 		expect(() =>
 			Bus("parent_dup", "also produces pstate", {
-				tags: [TagFromAddr(pstate, "22:21")],
+				tags: [TagFromAddr(pstate, "31:30")],
 				masters: [Master("cfg", "cfg")],
 				slaves: [SlaveBus(child, 0, { size: Size(0x1000) })],
 			}),
 		).toThrow(/produced by bus "parent_dup" and again by "child_dup"/);
+	});
+
+	test("a tag taken from the middle of the address is rejected", () => {
+		expect(() =>
+			Bus("hole", "tag leaves a hole below the top", {
+				tags: [TagFromAddr(pstate, "22:21")],
+				masters: [Master("cfg", "cfg")],
+				slaves: [SlaveRegion("blk", "block", 0x0, Size(0x1000))],
+			}),
+		).toThrow(/top of the 32-bit address/);
 	});
 
 	test("tag address bits may not land inside a slave window", () => {
@@ -94,13 +104,13 @@ describe("wishbone tag domains", () => {
 				masters: [Master("cfg", "cfg")],
 				slaves: [SlaveRegion("blk", "block", 0x0, Size(0x1000))],
 			}),
-		).toThrow(/fall inside slave "blk" window/);
+		).toThrow(/top of the 32-bit address/);
 	});
 
 	test("one bus cannot declare the same domain twice", () => {
 		expect(() =>
 			Bus("twice", "duplicate domain", {
-				tags: [TagFromAddr(pstate, "22:21"), TagFromPin(pstate)],
+				tags: [TagFromAddr(pstate, "31:30"), TagFromPin(pstate)],
 				masters: [Master("cfg", "cfg")],
 				slaves: [SlaveRegion("blk", "block", 0x0, Size(0x100))],
 			}),
