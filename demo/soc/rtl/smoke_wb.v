@@ -84,6 +84,7 @@ module smoke_wb (
 		if (!rst_n || ext_data_rst) begin
 			fifo_wptr  <= 2'd0;
 			fifo_rptr  <= 2'd0;
+			fifo_count <= 3'd0;
 		end else begin
 			case ({fifo_push, fifo_pop})
 				2'b10: begin

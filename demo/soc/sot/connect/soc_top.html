@@ -49,6 +49,8 @@
             <aw-template name="ch" inst_name="u_${id}">
               <aw-rewrite match="^rst_n$" to="rst_ni"></aw-rewrite>
               <aw-rewrite match="^([io]_wb_.+)$" to="${id}_$1"></aw-rewrite>
+              <!-- Parent window forwards a full-width offset; child bus is 12-bit. -->
+              <aw-rewrite match="^i_wb_adr$" to="${id}_i_wb_adr" width="31:0" part="11:0"></aw-rewrite>
               <aw-connect port="rb_grant_en" to="rg_rb_grant_en"></aw-connect>
               <aw-rewrite match="^o_cs_n$" to="sd${idx}_cs_n"></aw-rewrite>
               <aw-rewrite match="^o_sck$" to="sd${idx}_sck"></aw-rewrite>

@@ -42,7 +42,9 @@ module spiflash_vl (
 	reg [3:0] bitcount;
 	reg [7:0] bytecount;
 	reg [2:0] mode;
-	reg [7:0] dummycount;
+	// Init required for 4-state simulators (VCS): X would mask every output
+	// enable (dummycount == 0 test fails on X). Verilator zero-inits anyway.
+	reg [7:0] dummycount = 0;
 	integer latency = 8;
 
 	task automatic spi_action;

@@ -49,3 +49,7 @@ gen/
 !demo/soc/fw/gen/
 
 # simulation build artifacts
+obj_dir*/
+demo/soc/sim/vcs/work/
+
+ucli.key

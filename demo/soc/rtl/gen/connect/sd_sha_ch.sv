@@ -3,7 +3,7 @@ module sd_sha_ch (
 	input  logic        rst_n,
 	input  logic        rb_grant_en,
 	input  logic        clk,
-	input  logic [31:0] i_wb_adr,
+	input  logic [11:0] i_wb_adr,
 	input  logic [31:0] i_wb_dat,
 	input  logic [3:0]  i_wb_sel,
 	input  logic [1:0]  i_wb_tga_bank,
@@ -23,7 +23,7 @@ module sd_sha_ch (
 	output wire         o_dma_irq,
 	output wire         o_sha_irq
 );
-	logic [31:0] eng_o_wb_adr;
+	logic [11:0] eng_o_wb_adr;
 	logic [31:0] eng_o_wb_dat;
 	logic [3:0]  eng_o_wb_sel;
 	logic        eng_o_wb_cyc;
@@ -45,13 +45,13 @@ module sd_sha_ch (
 	logic [31:0] ro_hash7;
 	logic [31:0] eng_i_wb_dat;
 	logic        eng_i_wb_ack;
-	logic [31:0] sd_i_wb_adr;
+	logic [11:0] sd_i_wb_adr;
 	logic [31:0] sd_i_wb_dat;
 	logic [3:0]  sd_i_wb_sel;
 	logic        sd_i_wb_cyc;
 	logic        sd_i_wb_stb;
 	logic        sd_i_wb_we;
-	logic [31:0] dma_i_wb_adr;
+	logic [11:0] dma_i_wb_adr;
 	logic [31:0] dma_i_wb_dat;
 	logic [3:0]  dma_i_wb_sel;
 	logic        dma_i_wb_cyc;
@@ -68,7 +68,7 @@ module sd_sha_ch (
 		.clk              (clk             ), // i
 		.rst_n            (rst_n           ), // i
 		.rb_grant_en      (rb_grant_en     ), // i
-		.eng_o_wb_adr     (eng_o_wb_adr    ), // i [31:0]
+		.eng_o_wb_adr     (eng_o_wb_adr    ), // i [11:0]
 		.eng_o_wb_dat     (eng_o_wb_dat    ), // i [31:0]
 		.eng_o_wb_sel     (eng_o_wb_sel    ), // i [3:0]
 		.eng_o_wb_tga_bank(2'd0            ), // i [1:0]
@@ -79,7 +79,7 @@ module sd_sha_ch (
 		.sd_o_wb_ack      (sd_o_wb_ack     ), // i
 		.dma_o_wb_dat     (dma_o_wb_dat    ), // i [31:0]
 		.dma_o_wb_ack     (dma_o_wb_ack    ), // i
-		.i_wb_adr         (i_wb_adr        ), // i [31:0]
+		.i_wb_adr         (i_wb_adr        ), // i [11:0]
 		.i_wb_dat         (i_wb_dat        ), // i [31:0]
 		.i_wb_sel         (i_wb_sel        ), // i [3:0]
 		.i_wb_tga_bank    (i_wb_tga_bank   ), // i [1:0]
@@ -98,13 +98,13 @@ module sd_sha_ch (
 		.ro_hash7         (ro_hash7        ), // i [31:0]
 		.eng_i_wb_dat     (eng_i_wb_dat    ), // o [31:0]
 		.eng_i_wb_ack     (eng_i_wb_ack    ), // o
-		.sd_i_wb_adr      (sd_i_wb_adr     ), // o [31:0]
+		.sd_i_wb_adr      (sd_i_wb_adr     ), // o [11:0]
 		.sd_i_wb_dat      (sd_i_wb_dat     ), // o [31:0]
 		.sd_i_wb_sel      (sd_i_wb_sel     ), // o [3:0]
 		.sd_i_wb_cyc      (sd_i_wb_cyc     ), // o
 		.sd_i_wb_stb      (sd_i_wb_stb     ), // o
 		.sd_i_wb_we       (sd_i_wb_we      ), // o
-		.dma_i_wb_adr     (dma_i_wb_adr    ), // o [31:0]
+		.dma_i_wb_adr     (dma_i_wb_adr    ), // o [11:0]
 		.dma_i_wb_dat     (dma_i_wb_dat    ), // o [31:0]
 		.dma_i_wb_sel     (dma_i_wb_sel    ), // o [3:0]
 		.dma_i_wb_cyc     (dma_i_wb_cyc    ), // o
@@ -136,13 +136,16 @@ module sd_sha_ch (
 		.o_int            (o_sd_irq        ), // o
 		.o_debug          (                )  // o [(32   // }}})-1:0]
 	);
-	sd_rd_dma u_eng (
+	sd_rd_dma #(
+		.AW               (12              ),
+		.SAW              (12              )
+	) u_eng (
 		.clk              (clk             ), // i
 		.rst_n            (rst_ni          ), // i
 		.i_wb_cyc         (dma_i_wb_cyc    ), // i
 		.i_wb_stb         (dma_i_wb_stb    ), // i
 		.i_wb_we          (dma_i_wb_we     ), // i
-		.i_wb_adr         (dma_i_wb_adr    ), // i [31:0]
+		.i_wb_adr         (dma_i_wb_adr    ), // i [11:0]
 		.i_wb_dat         (dma_i_wb_dat    ), // i [31:0]
 		.i_wb_sel         (dma_i_wb_sel    ), // i [3:0]
 		.wbm_ack_i        (eng_i_wb_ack    ), // i
@@ -153,7 +156,7 @@ module sd_sha_ch (
 		.wbm_cyc_o        (eng_o_wb_cyc    ), // o
 		.wbm_stb_o        (eng_o_wb_stb    ), // o
 		.wbm_we_o         (eng_o_wb_we     ), // o
-		.wbm_adr_o        (eng_o_wb_adr    ), // o [31:0]
+		.wbm_adr_o        (eng_o_wb_adr    ), // o [11:0]
 		.wbm_dat_o        (eng_o_wb_dat    ), // o [31:0]
 		.wbm_sel_o        (eng_o_wb_sel    ), // o [3:0]
 		.m_axis_tdata     (axis_tdata      ), // o [31:0]
@@ -162,7 +165,6 @@ module sd_sha_ch (
 		.o_irq            (o_dma_irq       )  // o
 	);
 	sha256wb u_sha (
-		.irq_o            (o_sha_irq       ), // o
 		.clk              (clk             ), // i
 		.rst_ni           (rst_ni          ), // i
 		.s_axis_tdata     (axis_tdata      ), // i [31:0]
@@ -170,6 +172,7 @@ module sd_sha_ch (
 		.s_axis_tlast     (axis_tlast      ), // i
 		.rg_soft_reset    (rg_soft_reset   ), // i
 		.p_rg_done_clear  (p_rg_done_clear ), // i
+		.irq_o            (o_sha_irq       ), // o
 		.s_axis_tready    (axis_tready     ), // o
 		.ro_busy          (ro_busy         ), // o
 		.ro_done          (ro_done         ), // o

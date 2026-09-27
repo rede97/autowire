@@ -47,7 +47,7 @@
 
             <aw-inst id="sd" mod="sdspi">
               <aw-template base="wb_slv" inst_name="u_sd">
-                <aw-rewrite match="^i_wb_addr$" to="sd_i_wb_adr" width="31:0" part="3:2"></aw-rewrite>
+                <aw-rewrite match="^i_wb_addr$" to="sd_i_wb_adr" width="11:0" part="3:2"></aw-rewrite>
                 <aw-rewrite match="^i_wb_data$" to="sd_i_wb_dat" width="31:0"></aw-rewrite>
                 <aw-rewrite match="^o_wb_data$" to="sd_o_wb_dat" width="31:0"></aw-rewrite>
                 <aw-rewrite match="^i_wb_sel$" to="sd_i_wb_sel" width="3:0"></aw-rewrite>
@@ -67,7 +67,11 @@
 
             <!-- Engine master "eng"; CSR slave keeps bus-slave name "dma". -->
             <aw-inst id="eng" mod="sd_rd_dma" idx="0">
-              <aw-template base="wb_mst" inst_name="u_dma"></aw-template>
+              <aw-template base="wb_mst" inst_name="u_dma">
+                <!-- Channel fabric address width (sd_sha addrWidth). -->
+                <aw-param name="AW" expr="12"></aw-param>
+                <aw-param name="SAW" expr="12"></aw-param>
+              </aw-template>
               <aw-template base="wb_slv">
                 <aw-rewrite match="^([io]_wb_.+)$" to="dma_$1"></aw-rewrite>
                 <aw-connect port="o_irq" to="o_dma_irq"></aw-connect>

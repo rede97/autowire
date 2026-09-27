@@ -151,19 +151,19 @@ int main(void)
 	for (i = 0; i < 4; i++) {
 		bank.all = 0;
 		bank.bit.CFG = 0x50u + i;
-		smoke_wr(SMOKE_OFF_BANK + (i << 27), bank.all);
+		smoke_wr(SMOKE_OFF_BANK + ((uint32_t)i << 26), bank.all); // tag bank = addr[27:26]
 	}
 	banksel.all = smoke_rd(SMOKE_OFF_BANKSEL);
 	expect_eq(banksel.bit.BANK_SEL, 0u);
 	active.all = smoke_rd(SMOKE_OFF_ACTIVE);
 	expect_eq(active.bit.VALUE, 0x50u);
 	for (i = 0; i < 4; i++) {
-		bank.all = smoke_rd(SMOKE_OFF_BANK + (i << 27));
+		bank.all = smoke_rd(SMOKE_OFF_BANK + ((uint32_t)i << 26));
 		expect_eq(bank.bit.CFG, 0x50u + i);
 	}
 	banksel.bit.BANK_SEL = 2;
 	smoke_wr(SMOKE_OFF_BANKSEL, banksel.all);
-	active.all = smoke_rd(SMOKE_OFF_ACTIVE + (1u << 27));
+	active.all = smoke_rd(SMOKE_OFF_ACTIVE + (1u << 26)); // alias bank 1, mux picks bank 2
 	expect_eq(active.bit.VALUE, 0x52u);
 
 	/* Wide key auto-split */

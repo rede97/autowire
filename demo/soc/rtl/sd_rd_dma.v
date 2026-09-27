@@ -20,7 +20,13 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module sd_rd_dma (
+module sd_rd_dma #(
+	// Master address width: the channel fabric (sd_sha) is 12-bit; the
+	// internal pointer math stays 32-bit and the port carries the low bits.
+	parameter AW = 32,
+	// Slave (CSR) address width; only the low 4 bits are decoded.
+	parameter SAW = 32
+) (
 	input wire clk,
 	input wire rst_n,
 
@@ -28,7 +34,7 @@ module sd_rd_dma (
 	input  wire        i_wb_cyc,
 	input  wire        i_wb_stb,
 	input  wire        i_wb_we,
-	input  wire [31:0] i_wb_adr,
+	input  wire [SAW-1:0] i_wb_adr,
 	input  wire [31:0] i_wb_dat,
 	input  wire [3:0]  i_wb_sel,
 	output reg         o_wb_ack,
@@ -38,7 +44,7 @@ module sd_rd_dma (
 	output reg         wbm_cyc_o,
 	output reg         wbm_stb_o,
 	output reg         wbm_we_o,
-	output reg  [31:0] wbm_adr_o,
+	output wire [AW-1:0] wbm_adr_o,
 	output reg  [31:0] wbm_dat_o,
 	output reg  [3:0]  wbm_sel_o,
 	input  wire        wbm_ack_i,
@@ -64,6 +70,10 @@ module sd_rd_dma (
 	reg [31:0] count;
 	reg        busy;
 	reg        done;
+
+	// Full-width pointer; the Wishbone master port carries the low AW bits.
+	reg [31:0] wbm_adr;
+	assign wbm_adr_o = wbm_adr[AW-1:0];
 
 	assign o_irq = done;
 
@@ -115,7 +125,7 @@ module sd_rd_dma (
 			wbm_cyc_o     <= 1'b0;
 			wbm_stb_o     <= 1'b0;
 			wbm_we_o      <= 1'b0;
-			wbm_adr_o     <= 32'h0;
+			wbm_adr       <= 32'h0;
 			wbm_dat_o     <= 32'h0;
 			wbm_sel_o     <= 4'h0;
 			m_axis_tdata  <= 32'h0;
@@ -138,7 +148,7 @@ module sd_rd_dma (
 				wbm_cyc_o <= 1'b1;
 				wbm_stb_o <= 1'b1;
 				wbm_we_o  <= 1'b0;
-				wbm_adr_o <= src_addr + (src_inc ? (count << 2) : 32'h0);
+				wbm_adr <= src_addr + (src_inc ? (count << 2) : 32'h0);
 				wbm_sel_o <= 4'hf;
 				if (wbm_cyc_o && wbm_stb_o && wbm_ack_i) begin
 					wbm_cyc_o     <= 1'b0;
