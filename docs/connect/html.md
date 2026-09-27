@@ -338,7 +338,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 ### 3.7 脚本
 
 - 常规连接用 `aw-template` / `aw-rewrite` / `aw-connect`。  
-- 高级处理挂生命周期钩子：[`lifecycle.md`](./lifecycle.md)——**仅** `before-instances`（写 `aw-content`）与 `on-template`（写展开中间态）；**`aw-render` 写满后冻结**；`before-dump` 只读。  
+- 高级处理挂生命周期钩子：[`lifecycle.md`](./lifecycle.md)——**仅** `before-instances`（写 `aw-content`）与 `on-template`（写展开中间态）；**`aw-render` 写满后冻结**；`before-dump` 只读。加载期直接改 DOM 与 `before-instances` 时序等价（合法，但应当优先挂钩子，见 lifecycle.md §4）。  
 - `<script type="module">` **必须**只用 DOM / `aw.*`；**禁止** layout / 对外 `fetch` / 写工作区磁盘。
 
 ### 3.8 可访问性

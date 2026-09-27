@@ -81,9 +81,11 @@
 4. `on-template` **应当**按例化触发（参数给出当前 `mod` / `inst` / 所用 `template`）；全局汇总若需要，也只碰未 commit 的中间态。  
 5. dump 前每个 `aw-render` 必须合法（无 template/rewrite），且与冻结后内容一致。
 
+加载期直接改 DOM（不挂 `aw.on`）与 `before-instances` 钩子时序等价——脚本总在 check 之前跑完，属合法作者面突变。**应当**优先挂 `before-instances`：钩子意图清晰、便于审阅与幂等管理；直接改写只留给一次性、无相位语义的准备（如建查找表）。
+
 ## 5. check / run / Playwright
 
-- 正式 **check** 走 **`autowire connect check`** 或页面 [Check]：校验 **作者面 `aw-content`** + deps（**不写盘**；**不以 `aw-render` 为 SoT**）；见 `help check` / [`check.md`](./check.md)。目标上 check 在 expand / `before-instances` **之后**（§3.1）。  
+- 正式 **check** 走 **`autowire connect check`** 或页面 [Check]：校验 **作者面 `aw-content`** + deps（**不写盘**；**不以 `aw-render` 为 SoT**）；见 `help check` / [`check.md`](./check.md)。CLI 与页面都在 expand / `before-instances` **之后**才 check（§3.1）。  
 - snapshot 是活 DOM（`aw-render` 为引擎写出后的冻结结果）。`connect run` 把它写成 `.sv`；页面把它放进 `#aw-generated`。  
 - 写回只走 `connect run`（全部相关 `aw-render`）；**应当**在 content check 无 error 且 render 可印后才写。页面不写。  
 - 对照只认 render，不认脚本源。  
