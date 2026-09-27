@@ -13,6 +13,7 @@ export const HELP_TOPICS = [
 	"cli",
 	"deps",
 	"dont",
+	"docs",
 ] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
@@ -444,6 +445,25 @@ Do not
   list same-name ports one-by-one in aw-connect (identity omits them; rename → one aw-rewrite RegExp)
   ship Playwright or Chromium in the production package (docs/dev/release.md: autowire + hdxml + lightpanda)
   link lightpanda into the autowire binary
+  ship the repo source as the production entry (use out/autowire.js or out/autowire)
+  docs unpack over a tree you did not mean to replace (it writes docs/ and demo/)
+`,
+
+	docs: `\
+autowire docs unpack
+
+  autowire docs unpack <dir>
+
+The release script contains the full docs/ tree and every demo/, gzip-compressed.
+This command writes that tree under <dir> so an agent can read the contract and
+the examples. Dev builds read the repo instead of the bundle.
+
+  <dir>/docs/...
+  <dir>/demo/soc/...
+  <dir>/demo/hbm/...
+
+Existing files at those paths are replaced. The bundle skips .autowire, firmware
+build/, and Verilator obj_dir. See docs/dev/release.md section 1.1.
 `,
 };
 
@@ -462,6 +482,7 @@ function commandIndex(): string {
 		"  connect check [unit]     author-face rules, no write    → help check",
 		"  connect web [unit]       static session page            → help web",
 		"  plugin wishbone run      generate regfiles and buses    → help status",
+		"  docs unpack <dir>        write bundled docs/ and demo/  → help docs",
 		"",
 		"Also: help status | connect | dont",
 		"Docs: docs/   (format constraints; keep in sync with help)",
@@ -486,6 +507,7 @@ function topicsIndex(): string {
 		"  cli        happy-dom render",
 		"  deps       dependency tree",
 		"  dont       forbidden items",
+		"  docs       unpack bundled docs and demos",
 		"",
 		"Default (no topic): command index.",
 		"",

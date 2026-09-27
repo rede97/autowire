@@ -1,6 +1,6 @@
 # 生产发布包
 
-> 状态：**暂时不做**（2026-09-27）。目标仍是三颗并排二进制，但这个阶段不写打包脚本，也不把开发调试改成依赖 Lightpanda。开发与 CI 继续用 Bun、Playwright 及其 Chromium。不要把本文里的包布局当成现网。
+> 状态：**产物规则已定，打包脚本与安装布局暂时不做**（2026-09-27）。开发与 CI 继续用 Bun 跑 `index.ts`，调试浏览器仍是 Playwright Chromium。不要把安装器或 Lightpanda 当成现网。
 > 开发与 CI 仍按仓库现况：Bun、Playwright 及其 Chromium、`bun test`。本文只规定**发给用户的生产包里有什么**。
 > Windows 开发环境见 [windows-msys2.md](./windows-msys2.md)，不由本包覆盖。
 
@@ -10,11 +10,32 @@
 
 | 二进制 | 职责 | 生产包 |
 |---|---|---|
-| `autowire` | CLI：`analysis` / `connect` / `plugin wishbone run`。由 `bun build --compile` 产出，happy-dom 打在里面 | 必需 |
+| `autowire` 或 `autowire.js` | CLI：`analysis` / `connect` / `plugin wishbone run`。两种产物见 §1.1，能力相同 | 二选一，必需 |
 | `hdxml` | RtlIndex sidecar（Rust） | 必需 |
-| `lightpanda` | 唯一捆绑的调试浏览器。同一文件的子命令 `mcp` 与 `serve` | 调试网页时带上；生成 RTL 不需要 |
+| `lightpanda` | 生产包唯一的调试浏览器。同一文件的子命令 `mcp` 与 `serve` | 调试网页时带上；生成 RTL 不需要 |
 
 `autowire connect run` 用包内的 happy-dom 完成脚本、check、elaborate 和写 `.sv`，不启动浏览器。
+
+### 1.1 autowire 的两种产物
+
+开发与测试用仓库里的 `bun index.ts`。生产环境不发 TypeScript 源码，也不要求用户安装 `node_modules`。`bun run build:bin` 打出两个等价入口，前端源码已经打进同一个文件：
+
+| 产物 | 是什么 | 怎么跑 |
+|---|---|---|
+| `out/autowire.js` | 单个脚本。`bun build index.ts --target bun`，依赖和 `web/aw.js`、`web/page.js` 都打进去 | 本机已有 Bun 时：`bun out/autowire.js help` |
+| `out/autowire` | 同上，再用 `bun build --compile` 把 Bun 运行时链进可执行文件 | 直接执行。Windows 上是 `autowire.exe` |
+
+两条命令都先跑 `build:web`，再把仓库的 `docs/` 和全部 `demo/` gzip 后嵌进同一个文件。页面脚本不会留在包外单独分发，文档和示例也不会。禁止让生产入口再去读仓库里的 `index.ts`、`src/` 或 `web/*.js`。hdxml 与 lightpanda 仍是旁边的独立进程，不链进这两个文件。
+
+打包跳过 `.autowire/`、固件 `build/` 和 Verilator 的 `obj_dir*`。Agent 要读契约或示例时：
+
+```text
+autowire docs unpack <dir>
+```
+
+解出 `<dir>/docs/` 和 `<dir>/demo/`。同名文件会被覆盖。开发时这条命令读的是仓库本身，不读包内压缩块。帮助是 `help docs`。
+
+开发与 CI 的帮助入口是 `bun index.ts help`。生产包里把同一组子命令交给 `autowire` 或 `bun autowire.js`。不要在生产文档里教用户跑 `index.ts`。
 
 ## 2. 浏览器分工
 
@@ -48,7 +69,7 @@ Lightpanda 自带协议服务，生产包不再附带 Chromium、Playwright 或 
 
 这个阶段不实现：
 
-- 打包脚本、版本钉、安装布局、PATH 约定。
+- 版本钉、安装布局、PATH 约定。`build:bin` 只把两种 autowire 产物写到 `out/`，不是安装器。
 - 把开发用 `.mcp.json` 换成生产包的 `lightpanda mcp`。
 
 有新的发布需求再打开。在此之前 `help status` 把本节放在 Not landed。

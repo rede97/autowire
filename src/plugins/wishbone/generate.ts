@@ -21,6 +21,7 @@ import {
 	generateMasterModules,
 	generatePipeModule,
 } from "../wishbone-bus/generate.ts";
+import { printBusTree } from "../wishbone-bus/print-tree.ts";
 import { isRegfileDef, type RegfileDef } from "../wishbone-regfile/dsl.ts";
 import { writeRegfileExcel } from "../wishbone-regfile/emit-excel.ts";
 import { swLayoutFingerprint } from "../wishbone-regfile/emit-sw.ts";
@@ -248,6 +249,7 @@ export async function generateAll(
 			);
 		}
 		paths.push(...(await generateBusDef(ws, def, force)));
+		printBusTree(def);
 	}
 	paths.push(...(await packSoftware(ws, excelBySheet, allBuses, force)));
 	return paths;

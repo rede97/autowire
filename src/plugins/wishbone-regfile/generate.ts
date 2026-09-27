@@ -4,6 +4,7 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import chalk from "chalk";
 import { writeIfChanged } from "../../core/write.ts";
 import type { WorkspaceConfig } from "../../workspace.ts";
 import { PLUGIN_ID } from "../wishbone/id.ts";
@@ -57,6 +58,7 @@ export async function generateDef(
 	const svPath = join(svDir, `${def.name.toLowerCase()}_regfile.sv`);
 	if (await writeIfChanged(svPath, emitRegfileSv(laid), force))
 		paths.push(svPath);
+	console.log(chalk.green(`regfile ${def.name} ${svPath}`));
 	const table = effectiveSheet(def);
 	const fp = swLayoutFingerprint(laid);
 	const prev = swSheets.get(table);
@@ -75,12 +77,14 @@ export async function generateDef(
 		const cPath = join(ws.wishboneCExport, `${table}.h`);
 		if (await writeIfChanged(cPath, emitRegfileC(laid), force))
 			paths.push(cPath);
+		console.log(chalk.green(`regfile ${def.name} ${cPath}`));
 	}
 	if (ws.wishboneUvmExport) {
 		await mkdir(ws.wishboneUvmExport, { recursive: true });
 		const uPath = join(ws.wishboneUvmExport, `ral_${table.toUpperCase()}.sv`);
 		if (await writeIfChanged(uPath, emitRegfileUvm(laid), force))
 			paths.push(uPath);
+		console.log(chalk.green(`regfile ${def.name} ${uPath}`));
 	}
 	return paths;
 }

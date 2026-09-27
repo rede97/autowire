@@ -492,7 +492,7 @@ effective_sel = wb_tga[tag-bits]
 ```toml
 # 全局：同一 SoT 的非 RTL 导出（文档 / 固件 / UVM）；均非 SoT
 [plugins.wishbone]
-export = "fw/gen/wishbone/wishbone.xlsx"  # field sheets + MAP_<bus>
+export = "fw/gen/wishbone/wishbone.xlsx"  # field sheets + one sheet per bus tree
 c      = "fw/gen/wishbone"                # <sheet>.h + <bus>_map.h + wishbone.h
 uvm    = "dv/ral"                         # ral_<SHEET>.sv + ral_block_* + ral_wishbone.sv
 

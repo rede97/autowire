@@ -129,6 +129,8 @@ export const hbm_ch = Bus("hbm_ch", "aword + 2x dword", {
 
 Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上：`plugin wishbone run` 写出通用模 [`wb_cfg_pipe`](./rtl/wb_cfg_pipe_template.sv) → `plugins_dir/wishbone/wb_cfg_pipe.sv`，每口 PIPE>0 例化一次。connect **不必**例化 `wb_cfg_pipe`。
 
+`plugin wishbone run` 写完一条总线后，在终端打一棵彩色地址树：绝对地址、窗口名、regfile 叶子、`broadcast` / `broadcast-by`、shadow 域名，以及 `tags`（`addr[hi:lo]`、`pin`、regbit，或透传的 `*`）。子总线只在第一次出现时展开。同一轮里每个 regfile 产物（SV、C、uvm）写出时立刻单独打印一行。
+
 ### 3.1 谁配置
 
 | 侧 | 配置 |

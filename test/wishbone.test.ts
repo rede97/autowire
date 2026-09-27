@@ -10,21 +10,31 @@ import { layoutRegfile } from "../src/plugins/wishbone-regfile/layout.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
 describe("wishbone pack", () => {
-	test("Excel packs field sheets and MAP_<bus>", () => {
+	test("Excel bus sheet lists address leaves, not every register", () => {
 		const wb = buildRegfileWorkbook([layoutRegfile(smoke)], [soc_wb]);
-		expect(wb.worksheets.map((s) => s.name)).toContain("smoke");
-		expect(wb.worksheets.map((s) => s.name)).toContain("MAP_soc_wb");
-		const map = wb.getWorksheet("MAP_soc_wb");
-		expect(map?.getCell(1, 1).value).toBe("Slave");
-		const slaves = new Set<string>();
+		const names = wb.worksheets.map((s) => s.name);
+		expect(names).toContain("smoke");
+		expect(names).toContain("soc_wb");
+		expect(names).not.toContain("MAP_soc_wb");
+		expect(names).not.toContain("sd_sha");
+		const map = wb.getWorksheet("soc_wb");
+		expect(map?.getCell(1, 1).value).toBe("Address");
+		expect(map?.getCell(1, 5).value).toBe("Bits");
+		const windows = new Set<string>();
 		map?.eachRow((row, n) => {
 			if (n === 1) return;
-			const v = row.getCell(1).value;
-			if (typeof v === "string") slaves.add(v);
+			const v = row.getCell(2).value;
+			if (typeof v === "string") windows.add(v);
 		});
-		expect(slaves.has("smoke")).toBe(true);
-		expect(slaves.has("ch0_sha256")).toBe(true);
-		expect(slaves.has("sram")).toBe(false);
+		expect(windows.has("smoke")).toBe(true);
+		expect(windows.has("ch0")).toBe(true);
+		expect(windows.has("sha256")).toBe(true);
+		expect(windows.has("sram")).toBe(true);
+		const smokeRow = map?.getColumn(2).values.indexOf("smoke");
+		expect(smokeRow).toBeGreaterThan(1);
+		const bits = String(map?.getCell(smokeRow, 5).value ?? "");
+		expect(bits).toContain("[");
+		expect(bits).not.toContain("\n");
 	});
 
 	test("bus source emits attached leaf SV without listing the leaf file", async () => {

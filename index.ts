@@ -9,6 +9,7 @@
 
 import { Command } from "commander";
 import { registerAnalysis } from "./src/cli/analysis.ts";
+import { registerDocs } from "./src/cli/docs.ts";
 import { renderHelp } from "./src/cli/help.ts";
 import { registerPlugin } from "./src/cli/plugin.ts";
 import { registerConnect } from "./src/cli/web.ts";
@@ -44,6 +45,7 @@ program
 registerAnalysis(program);
 registerConnect(program);
 registerPlugin(program);
+registerDocs(program);
 
 if (process.argv.slice(2).length === 0) {
 	console.log(renderHelp());

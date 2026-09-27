@@ -1,6 +1,12 @@
 # dependencies (bun install)
 node_modules
 
+# generated docs bundle (scripts/pack-docs.ts)
+src/cli/doc-pack.generated.ts
+
+# Excel lock files created while a workbook is open
+~$*
+
 # output
 out
 dist
