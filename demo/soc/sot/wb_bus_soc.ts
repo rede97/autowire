@@ -30,7 +30,8 @@ export const soc_wb = Bus(
 				pipe: 2,
 			}),
 		],
-		tags: [TagFromAddr(bank, "31:30")],
+		addrWidth: 32,
+		tags: [TagFromAddr(bank, "27:26")],
 		// Mixed slave PIPE depths (0/1/2/3/4) — cascade windows plus local pipes.
 		slaves: [
 			SlaveRegion("sram", "64 KiB SRAM", 0x0000_0000, Size(0x1_0000), {

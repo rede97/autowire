@@ -68,15 +68,21 @@ describe("wishbone master bridges", () => {
 	test("Bus rejects duplicate masters and a bridged cascade face", () => {
 		const slaves = [Slave("s", "s", 0, 0xffff0000)];
 		expect(() =>
-			Bus("b", "b", { masters: [Master("a", "a"), Master("a", "a")], slaves }),
+			Bus("b", "b", {
+				addrWidth: 16,
+				masters: [Master("a", "a"), Master("a", "a")],
+				slaves,
+			}),
 		).toThrow(/duplicate master/);
 		expect(() =>
 			Bus("b", "b", {
+				addrWidth: 16,
 				masters: [Master(UPLINK_MASTER, "u", { cdc: true })],
 				slaves,
 			}),
 		).toThrow(/cascade face/);
 		const child = Bus("child", "c", {
+			addrWidth: 16,
 			masters: [Master("up2", "u", { apb: true })],
 			slaves,
 		});
@@ -117,6 +123,7 @@ describe("wishbone master bridges", () => {
 
 	test("APB without cdc runs on fabric clk and ties ERR", () => {
 		const def = Bus("one", "single apb master", {
+			addrWidth: 16,
 			masters: [Master("host", "APB", { apb: true })],
 			slaves: [Slave("s", "s", 0, 0xffff0000)],
 		});
@@ -140,6 +147,7 @@ describe("wishbone master bridges", () => {
 		expect(pdl).toContain("iProcsForModule mb_system");
 		expect(pdl).toContain("iRunLoop 16 -tck");
 		const plain = Bus("p", "p", {
+			addrWidth: 16,
 			masters: [Master("host", "APB", { apb: true, cdc: true })],
 			slaves: [Slave("s", "s", 0, 0xffff0000)],
 		});

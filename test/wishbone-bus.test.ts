@@ -33,6 +33,7 @@ import { loadWorkspace } from "../src/workspace.ts";
 describe("wishbone-bus", () => {
 	test("single master degenerates to decoder", () => {
 		const def = Bus("demo", "one master", {
+			addrWidth: 32,
 			masters: [Master("cpu", "CPU")],
 			slaves: [Slave("csr", "regs", 0, 0xffff_ff00)],
 		});
@@ -104,6 +105,7 @@ describe("wishbone-bus", () => {
 
 	test("zero masters also decoder", () => {
 		const def = Bus("solo", "no masters listed", {
+			addrWidth: 32,
 			slaves: [Slave("a", "A", 0, 0xffff_ffff)],
 		});
 		expect(busModuleKind(def)).toBe("decoder");
@@ -111,6 +113,7 @@ describe("wishbone-bus", () => {
 
 	test("TGA decoder forwards tag to slave", () => {
 		const def = Bus("tgad", "tag decoder", {
+			addrWidth: 32,
 			masters: [Master("cpu", "CPU")],
 			slaves: [Slave("s0", "tagged", 0, 0xffff_ff00, 2)],
 		});
@@ -123,6 +126,7 @@ describe("wishbone-bus", () => {
 
 	test("TGA interconnect uses named master ports", () => {
 		const def = Bus("tgai", "tag interconnect", {
+			addrWidth: 32,
 			masters: [Master("m0", "M0"), Master("m1", "M1")],
 			slaves: [
 				Slave("s0", "plain", 0, 0xffff_ff00),
@@ -139,6 +143,7 @@ describe("wishbone-bus", () => {
 
 	test("tag-free bus emits no tga anywhere", () => {
 		const def = Bus("plain", "no tags", {
+			addrWidth: 32,
 			masters: [Master("m0", "M0"), Master("m1", "M1")],
 			slaves: [Slave("s0", "S0", 0, 0xffff_ff00)],
 		});
@@ -160,7 +165,8 @@ describe("wishbone-bus", () => {
 	test("demo interconnect produces smoke TGA and forwards it", () => {
 		const sv = emitBusSv(soc_wb);
 		expect(soc_wb.tag_width).toBe(2);
-		expect(sv).toContain("assign g_tga_bank = g_adr[31:30];");
+		expect(sv).toContain("assign g_tga_bank = g_adr[27:26];");
+		expect(sv).toContain("assign g_adr_dec = g_adr & 32'h03ffffff;");
 		expect(sv).not.toContain("bank_tag_i");
 		expect(sv).not.toContain("cpu_o_wb_tga");
 		expect(sv).not.toContain("dbg_o_wb_tga");
@@ -230,6 +236,7 @@ describe("wishbone-bus", () => {
 
 	test("master PIPE sits in front of the arbiter and holds the grant", () => {
 		const def = Bus("mp", "master pipe", {
+			addrWidth: 32,
 			masters: [Master("fast", "piped", { pipe: 2 }), Master("slow", "combo")],
 			slaves: [Slave("mem", "mem", 0, 0xffff_0000, { tag: 2 })],
 			tagWidth: 2,
@@ -262,6 +269,7 @@ describe("wishbone-bus", () => {
 
 	test("decoder master PIPE sits in front of decode", () => {
 		const def = Bus("dp", "decoder pipe", {
+			addrWidth: 32,
 			masters: [Master("cpu", "CPU", { pipe: 1 })],
 			slaves: [Slave("csr", "regs", 0, 0xffff_ff00)],
 		});
@@ -284,6 +292,7 @@ describe("wishbone-bus", () => {
 
 	test("slave PIPE instantiates wb_cfg_pipe; TGA ports connected only when tagged", () => {
 		const def = Bus("piped", "pipe", {
+			addrWidth: 32,
 			masters: [Master("cpu", "CPU")],
 			slaves: [
 				Slave("near", "combo", 0, 0xffff_ff00),
@@ -310,6 +319,7 @@ describe("wishbone-bus", () => {
 			`
 import { Bus, Master, Slave } from ${JSON.stringify(join(import.meta.dir, "../src/plugins/wishbone-bus/dsl.ts"))};
 export const tiny = Bus("tiny", "t", {
+  addrWidth: 32,
   masters: [Master("m", "m")],
   slaves: [Slave("s0", "s", 0, 0xfffffffc)],
 });
@@ -370,9 +380,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(
 			soc_wb.slaves.find((s) => s.name === "sram")?.regfile,
 		).toBeUndefined();
-		expect(sd_sha.slaves.find((s) => s.name === "sha256")?.mask).toBe(
-			0xffff_ffc0,
-		);
+		expect(sd_sha.slaves.find((s) => s.name === "sha256")?.mask).toBe(0xfc0);
 		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.mask).toBe(
 			0xffff_ffc0,
 		);
@@ -389,6 +397,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.size).toBeDefined();
 		expect(() => SlaveRegfile(smoke, 0, { size: Size(4) })).toThrow(/smaller/);
 		const twice = Bus("two_sha", "multi-hang", {
+			addrWidth: 32,
 			masters: [Master("cpu", "CPU")],
 			slaves: [
 				SlaveRegfile(sha256, 0x0, { id: "sha256_0" }),
@@ -417,6 +426,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 	test("broadcast subscribers must share pipe depth", () => {
 		expect(() =>
 			Bus("skew", "unequal pipes", {
+				addrWidth: 32,
 				masters: [Master("cfg", "cfg")],
 				slaves: [
 					SlaveRegion("a", "a", 0x000, Size(0x100), { broadcastBy: ["all"] }),
@@ -435,6 +445,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 	test("Bus checks region overlap; raw Slave(mask) is unchecked", () => {
 		expect(() =>
 			Bus("hit", "overlap", {
+				addrWidth: 32,
 				slaves: [
 					SlaveRegion("hi", "64K", 0, Size(0x1_0000)),
 					SlaveRegion("lo", "inside", 0x1000, Size(0x100)),
@@ -443,6 +454,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		).toThrow(/overlaps/);
 		expect(() =>
 			Bus("rfhit", "regfile vs region", {
+				addrWidth: 32,
 				slaves: [
 					SlaveRegfile(smoke, 0x0300_6000),
 					SlaveRegion("alias", "same win", 0x0300_6000, Size(0x40)),
@@ -451,6 +463,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		).toThrow(/overlaps/);
 		expect(() =>
 			Bus("rawok", "raw vs region", {
+				addrWidth: 32,
 				slaves: [
 					Slave("raw", "unchecked", 0, 0xffff_0000),
 					SlaveRegion("sram", "64K", 0, Size(0x1_0000)),
@@ -459,6 +472,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		).not.toThrow();
 		expect(() =>
 			Bus("raw2", "two raw", {
+				addrWidth: 32,
 				slaves: [
 					Slave("a", "A", 0, 0xffff_0000),
 					Slave("b", "B", 0, 0xffff_0000),
@@ -488,7 +502,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(ch).not.toMatch(/^\s*(input|output).*sha256_i_wb_cyc/m);
 		const map = emitBusMapC(soc_wb);
 		expect(map).toContain("#define SOC_WB_CH0_BANK0_SHA256_BASE 0x03000040u");
-		expect(map).toContain("#define SOC_WB_CH0_BANK1_SHA256_BASE 0x43000040u");
+		expect(map).toContain("#define SOC_WB_CH0_BANK1_SHA256_BASE 0x07000040u");
 		expect(map).toContain("#define SOC_WB_SMOKE_BANK0_BASE 0x03006000u");
 		expect(map).toContain("#define SOC_WB_SMOKE_FABRIC_OFFSET 0x00000030u");
 		expect(map).toContain("shadow bank");
@@ -520,6 +534,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(() =>
 			SlaveBus(
 				Bus("noup", "no uplink", {
+					addrWidth: 32,
 					masters: [Master("cpu", "CPU")],
 					slaves: [SlaveRegion("s0", "s", 0, Size(16))],
 				}),
@@ -530,10 +545,12 @@ ts = "${ts.replaceAll("\\", "/")}"
 			SlaveBus(sd_sha, 0x0300_0000, { id: "tiny", size: Size(16) }),
 		).toThrow(/smaller/);
 		const child = Bus("leafb", "decoder child", {
+			addrWidth: 8,
 			masters: [Master(UPLINK_MASTER, "cascade")],
 			slaves: [SlaveRegion("csr", "csr", 0, Size(16))],
 		});
 		const parent = Bus("par", "cascade", {
+			addrWidth: 16,
 			masters: [Master("cpu", "CPU")],
 			slaves: [
 				SlaveBus(child, 0x1000, { id: "a", size: Size(0x100) }),
@@ -547,5 +564,17 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(wrap).toContain("i_wb_cyc");
 		expect(wrap).toMatch(/\.m_cyc_i\s+\(i_wb_cyc\)/);
 		expect(wrap).not.toMatch(/^\s*(input|output).*m_adr_i/m);
+		const wide = Bus("wide_child", "wider than the window it is hung in", {
+			addrWidth: 16,
+			masters: [Master(UPLINK_MASTER, "cascade")],
+			slaves: [SlaveRegion("csr", "csr", 0, Size(16))],
+		});
+		expect(() =>
+			Bus("narrow_parent", "4 KiB windows", {
+				addrWidth: 32,
+				masters: [Master("cpu", "CPU")],
+				slaves: [SlaveBus(wide, 0, { size: Size(0x1000) })],
+			}),
+		).toThrow(/forwards 12 address bits/);
 	});
 });

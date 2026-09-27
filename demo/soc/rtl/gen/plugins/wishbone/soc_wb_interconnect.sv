@@ -250,14 +250,14 @@ module soc_wb_interconnect (
 	               | ({32{gsel[1]}} & m1_wdat_q);
 	assign g_sel   = ({4{gsel[0]}} & cpu_o_wb_sel)
 	               | ({4{gsel[1]}} & m1_sel_q);
-	assign g_tga_bank = g_adr[31:30];
+	assign g_tga_bank = g_adr[27:26];
 	assign g_cyc   = |(gsel & m_cyc);
 	assign g_stb   = |(gsel & m_stb);
 	assign g_we    = |(gsel & m_we);
 
 	logic [31:0] g_adr_dec;
-	// Tag address bits are not part of slave addressing (wishbone-bus.md 2.1)
-	assign g_adr_dec = g_adr & ~32'hc0000000;
+	// Tag and every bit above it are dropped (wishbone-bus.md 2.1)
+	assign g_adr_dec = g_adr & 32'h03ffffff;
 
 	//------------------------------------------------------------------------------
 	//  Address decode: lowest matching slave wins (mutually exclusive)

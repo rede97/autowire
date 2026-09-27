@@ -63,130 +63,130 @@ block hbm {
 	# ch0_pstate0: pstate=0
 	block hbm_ch ch0_pstate0 @0x0;
 	# ch0_pstate1: pstate=1
-	block hbm_ch ch0_pstate1 @0x40000000;
+	block hbm_ch ch0_pstate1 @0x20000;
 	# ch0_pstate2: pstate=2
-	block hbm_ch ch0_pstate2 @0x80000000;
+	block hbm_ch ch0_pstate2 @0x40000;
 	# ch0_pstate3: pstate=3
-	block hbm_ch ch0_pstate3 @0xc0000000;
+	block hbm_ch ch0_pstate3 @0x60000;
 	# ch1_pstate0: pstate=0
 	block hbm_ch ch1_pstate0 @0x1000;
 	# ch1_pstate1: pstate=1
-	block hbm_ch ch1_pstate1 @0x40001000;
+	block hbm_ch ch1_pstate1 @0x21000;
 	# ch1_pstate2: pstate=2
-	block hbm_ch ch1_pstate2 @0x80001000;
+	block hbm_ch ch1_pstate2 @0x41000;
 	# ch1_pstate3: pstate=3
-	block hbm_ch ch1_pstate3 @0xc0001000;
+	block hbm_ch ch1_pstate3 @0x61000;
 	# ch2_pstate0: pstate=0
 	block hbm_ch ch2_pstate0 @0x2000;
 	# ch2_pstate1: pstate=1
-	block hbm_ch ch2_pstate1 @0x40002000;
+	block hbm_ch ch2_pstate1 @0x22000;
 	# ch2_pstate2: pstate=2
-	block hbm_ch ch2_pstate2 @0x80002000;
+	block hbm_ch ch2_pstate2 @0x42000;
 	# ch2_pstate3: pstate=3
-	block hbm_ch ch2_pstate3 @0xc0002000;
+	block hbm_ch ch2_pstate3 @0x62000;
 	# ch3_pstate0: pstate=0
 	block hbm_ch ch3_pstate0 @0x3000;
 	# ch3_pstate1: pstate=1
-	block hbm_ch ch3_pstate1 @0x40003000;
+	block hbm_ch ch3_pstate1 @0x23000;
 	# ch3_pstate2: pstate=2
-	block hbm_ch ch3_pstate2 @0x80003000;
+	block hbm_ch ch3_pstate2 @0x43000;
 	# ch3_pstate3: pstate=3
-	block hbm_ch ch3_pstate3 @0xc0003000;
+	block hbm_ch ch3_pstate3 @0x63000;
 	# ch4_pstate0: pstate=0
 	block hbm_ch ch4_pstate0 @0x4000;
 	# ch4_pstate1: pstate=1
-	block hbm_ch ch4_pstate1 @0x40004000;
+	block hbm_ch ch4_pstate1 @0x24000;
 	# ch4_pstate2: pstate=2
-	block hbm_ch ch4_pstate2 @0x80004000;
+	block hbm_ch ch4_pstate2 @0x44000;
 	# ch4_pstate3: pstate=3
-	block hbm_ch ch4_pstate3 @0xc0004000;
+	block hbm_ch ch4_pstate3 @0x64000;
 	# ch5_pstate0: pstate=0
 	block hbm_ch ch5_pstate0 @0x5000;
 	# ch5_pstate1: pstate=1
-	block hbm_ch ch5_pstate1 @0x40005000;
+	block hbm_ch ch5_pstate1 @0x25000;
 	# ch5_pstate2: pstate=2
-	block hbm_ch ch5_pstate2 @0x80005000;
+	block hbm_ch ch5_pstate2 @0x45000;
 	# ch5_pstate3: pstate=3
-	block hbm_ch ch5_pstate3 @0xc0005000;
+	block hbm_ch ch5_pstate3 @0x65000;
 	# ch6_pstate0: pstate=0
 	block hbm_ch ch6_pstate0 @0x6000;
 	# ch6_pstate1: pstate=1
-	block hbm_ch ch6_pstate1 @0x40006000;
+	block hbm_ch ch6_pstate1 @0x26000;
 	# ch6_pstate2: pstate=2
-	block hbm_ch ch6_pstate2 @0x80006000;
+	block hbm_ch ch6_pstate2 @0x46000;
 	# ch6_pstate3: pstate=3
-	block hbm_ch ch6_pstate3 @0xc0006000;
+	block hbm_ch ch6_pstate3 @0x66000;
 	# ch7_pstate0: pstate=0
 	block hbm_ch ch7_pstate0 @0x7000;
 	# ch7_pstate1: pstate=1
-	block hbm_ch ch7_pstate1 @0x40007000;
+	block hbm_ch ch7_pstate1 @0x27000;
 	# ch7_pstate2: pstate=2
-	block hbm_ch ch7_pstate2 @0x80007000;
+	block hbm_ch ch7_pstate2 @0x47000;
 	# ch7_pstate3: pstate=3
-	block hbm_ch ch7_pstate3 @0xc0007000;
+	block hbm_ch ch7_pstate3 @0x67000;
 	# ch8_pstate0: pstate=0
 	block hbm_ch ch8_pstate0 @0x8000;
 	# ch8_pstate1: pstate=1
-	block hbm_ch ch8_pstate1 @0x40008000;
+	block hbm_ch ch8_pstate1 @0x28000;
 	# ch8_pstate2: pstate=2
-	block hbm_ch ch8_pstate2 @0x80008000;
+	block hbm_ch ch8_pstate2 @0x48000;
 	# ch8_pstate3: pstate=3
-	block hbm_ch ch8_pstate3 @0xc0008000;
+	block hbm_ch ch8_pstate3 @0x68000;
 	# ch9_pstate0: pstate=0
 	block hbm_ch ch9_pstate0 @0x9000;
 	# ch9_pstate1: pstate=1
-	block hbm_ch ch9_pstate1 @0x40009000;
+	block hbm_ch ch9_pstate1 @0x29000;
 	# ch9_pstate2: pstate=2
-	block hbm_ch ch9_pstate2 @0x80009000;
+	block hbm_ch ch9_pstate2 @0x49000;
 	# ch9_pstate3: pstate=3
-	block hbm_ch ch9_pstate3 @0xc0009000;
+	block hbm_ch ch9_pstate3 @0x69000;
 	# ch10_pstate0: pstate=0
 	block hbm_ch ch10_pstate0 @0xa000;
 	# ch10_pstate1: pstate=1
-	block hbm_ch ch10_pstate1 @0x4000a000;
+	block hbm_ch ch10_pstate1 @0x2a000;
 	# ch10_pstate2: pstate=2
-	block hbm_ch ch10_pstate2 @0x8000a000;
+	block hbm_ch ch10_pstate2 @0x4a000;
 	# ch10_pstate3: pstate=3
-	block hbm_ch ch10_pstate3 @0xc000a000;
+	block hbm_ch ch10_pstate3 @0x6a000;
 	# ch11_pstate0: pstate=0
 	block hbm_ch ch11_pstate0 @0xb000;
 	# ch11_pstate1: pstate=1
-	block hbm_ch ch11_pstate1 @0x4000b000;
+	block hbm_ch ch11_pstate1 @0x2b000;
 	# ch11_pstate2: pstate=2
-	block hbm_ch ch11_pstate2 @0x8000b000;
+	block hbm_ch ch11_pstate2 @0x4b000;
 	# ch11_pstate3: pstate=3
-	block hbm_ch ch11_pstate3 @0xc000b000;
+	block hbm_ch ch11_pstate3 @0x6b000;
 	# ch12_pstate0: pstate=0
 	block hbm_ch ch12_pstate0 @0xc000;
 	# ch12_pstate1: pstate=1
-	block hbm_ch ch12_pstate1 @0x4000c000;
+	block hbm_ch ch12_pstate1 @0x2c000;
 	# ch12_pstate2: pstate=2
-	block hbm_ch ch12_pstate2 @0x8000c000;
+	block hbm_ch ch12_pstate2 @0x4c000;
 	# ch12_pstate3: pstate=3
-	block hbm_ch ch12_pstate3 @0xc000c000;
+	block hbm_ch ch12_pstate3 @0x6c000;
 	# ch13_pstate0: pstate=0
 	block hbm_ch ch13_pstate0 @0xd000;
 	# ch13_pstate1: pstate=1
-	block hbm_ch ch13_pstate1 @0x4000d000;
+	block hbm_ch ch13_pstate1 @0x2d000;
 	# ch13_pstate2: pstate=2
-	block hbm_ch ch13_pstate2 @0x8000d000;
+	block hbm_ch ch13_pstate2 @0x4d000;
 	# ch13_pstate3: pstate=3
-	block hbm_ch ch13_pstate3 @0xc000d000;
+	block hbm_ch ch13_pstate3 @0x6d000;
 	# ch14_pstate0: pstate=0
 	block hbm_ch ch14_pstate0 @0xe000;
 	# ch14_pstate1: pstate=1
-	block hbm_ch ch14_pstate1 @0x4000e000;
+	block hbm_ch ch14_pstate1 @0x2e000;
 	# ch14_pstate2: pstate=2
-	block hbm_ch ch14_pstate2 @0x8000e000;
+	block hbm_ch ch14_pstate2 @0x4e000;
 	# ch14_pstate3: pstate=3
-	block hbm_ch ch14_pstate3 @0xc000e000;
+	block hbm_ch ch14_pstate3 @0x6e000;
 	# ch15_pstate0: pstate=0
 	block hbm_ch ch15_pstate0 @0xf000;
 	# ch15_pstate1: pstate=1
-	block hbm_ch ch15_pstate1 @0x4000f000;
+	block hbm_ch ch15_pstate1 @0x2f000;
 	# ch15_pstate2: pstate=2
-	block hbm_ch ch15_pstate2 @0x8000f000;
+	block hbm_ch ch15_pstate2 @0x4f000;
 	# ch15_pstate3: pstate=3
-	block hbm_ch ch15_pstate3 @0xc000f000;
+	block hbm_ch ch15_pstate3 @0x6f000;
 	# ch_bcast @0x10000 broadcast ch_all: one write at this window hits every subscriber
 }

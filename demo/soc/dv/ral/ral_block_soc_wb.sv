@@ -94,17 +94,17 @@ class ral_block_soc_wb extends uvm_reg_block;
 		this.ch0_bank1 = ral_block_sd_sha::type_id::create("ch0_bank1",, get_full_name());
 		this.ch0_bank1.configure(this, "");
 		this.ch0_bank1.build();
-		default_map.add_submap(this.ch0_bank1.default_map, 32'h43000000);
+		default_map.add_submap(this.ch0_bank1.default_map, 32'h07000000);
 		// ch0_bank2: bank=2
 		this.ch0_bank2 = ral_block_sd_sha::type_id::create("ch0_bank2",, get_full_name());
 		this.ch0_bank2.configure(this, "");
 		this.ch0_bank2.build();
-		default_map.add_submap(this.ch0_bank2.default_map, 32'h83000000);
+		default_map.add_submap(this.ch0_bank2.default_map, 32'h0b000000);
 		// ch0_bank3: bank=3
 		this.ch0_bank3 = ral_block_sd_sha::type_id::create("ch0_bank3",, get_full_name());
 		this.ch0_bank3.configure(this, "");
 		this.ch0_bank3.build();
-		default_map.add_submap(this.ch0_bank3.default_map, 32'hc3000000);
+		default_map.add_submap(this.ch0_bank3.default_map, 32'h0f000000);
 		// ch1_bank0: bank=0
 		this.ch1_bank0 = ral_block_sd_sha::type_id::create("ch1_bank0",, get_full_name());
 		this.ch1_bank0.configure(this, "");
@@ -114,17 +114,17 @@ class ral_block_soc_wb extends uvm_reg_block;
 		this.ch1_bank1 = ral_block_sd_sha::type_id::create("ch1_bank1",, get_full_name());
 		this.ch1_bank1.configure(this, "");
 		this.ch1_bank1.build();
-		default_map.add_submap(this.ch1_bank1.default_map, 32'h43001000);
+		default_map.add_submap(this.ch1_bank1.default_map, 32'h07001000);
 		// ch1_bank2: bank=2
 		this.ch1_bank2 = ral_block_sd_sha::type_id::create("ch1_bank2",, get_full_name());
 		this.ch1_bank2.configure(this, "");
 		this.ch1_bank2.build();
-		default_map.add_submap(this.ch1_bank2.default_map, 32'h83001000);
+		default_map.add_submap(this.ch1_bank2.default_map, 32'h0b001000);
 		// ch1_bank3: bank=3
 		this.ch1_bank3 = ral_block_sd_sha::type_id::create("ch1_bank3",, get_full_name());
 		this.ch1_bank3.configure(this, "");
 		this.ch1_bank3.build();
-		default_map.add_submap(this.ch1_bank3.default_map, 32'hc3001000);
+		default_map.add_submap(this.ch1_bank3.default_map, 32'h0f001000);
 		// smoke_bank0_ID: bank=0
 		this.smoke_bank0_ID = ral_reg_smoke_ID::type_id::create("smoke_bank0_ID",, get_full_name());
 		this.smoke_bank0_ID.configure(this);
@@ -199,212 +199,212 @@ class ral_block_soc_wb extends uvm_reg_block;
 		this.smoke_bank1_ID = ral_reg_smoke_ID::type_id::create("smoke_bank1_ID",, get_full_name());
 		this.smoke_bank1_ID.configure(this);
 		this.smoke_bank1_ID.build();
-		default_map.add_reg(this.smoke_bank1_ID, 32'h43006000, "RO");
+		default_map.add_reg(this.smoke_bank1_ID, 32'h07006000, "RO");
 		// smoke_bank1_STATUS: bank=1
 		this.smoke_bank1_STATUS = ral_reg_smoke_STATUS::type_id::create("smoke_bank1_STATUS",, get_full_name());
 		this.smoke_bank1_STATUS.configure(this);
 		this.smoke_bank1_STATUS.build();
-		default_map.add_reg(this.smoke_bank1_STATUS, 32'h43006004, "RO");
+		default_map.add_reg(this.smoke_bank1_STATUS, 32'h07006004, "RO");
 		// smoke_bank1_CFG: bank=1
 		this.smoke_bank1_CFG = ral_reg_smoke_CFG::type_id::create("smoke_bank1_CFG",, get_full_name());
 		this.smoke_bank1_CFG.configure(this);
 		this.smoke_bank1_CFG.build();
-		default_map.add_reg(this.smoke_bank1_CFG, 32'h43006008, "RW");
+		default_map.add_reg(this.smoke_bank1_CFG, 32'h07006008, "RW");
 		// smoke_bank1_FEED: bank=1
 		this.smoke_bank1_FEED = ral_reg_smoke_FEED::type_id::create("smoke_bank1_FEED",, get_full_name());
 		this.smoke_bank1_FEED.configure(this);
 		this.smoke_bank1_FEED.build();
-		default_map.add_reg(this.smoke_bank1_FEED, 32'h4300600c, "RW");
+		default_map.add_reg(this.smoke_bank1_FEED, 32'h0700600c, "RW");
 		// smoke_bank1_FIFO: bank=1
 		this.smoke_bank1_FIFO = ral_reg_smoke_FIFO::type_id::create("smoke_bank1_FIFO",, get_full_name());
 		this.smoke_bank1_FIFO.configure(this);
 		this.smoke_bank1_FIFO.build();
-		default_map.add_reg(this.smoke_bank1_FIFO, 32'h43006010, "RW");
+		default_map.add_reg(this.smoke_bank1_FIFO, 32'h07006010, "RW");
 		// smoke_bank1_CMD: bank=1
 		this.smoke_bank1_CMD = ral_reg_smoke_CMD::type_id::create("smoke_bank1_CMD",, get_full_name());
 		this.smoke_bank1_CMD.configure(this);
 		this.smoke_bank1_CMD.build();
-		default_map.add_reg(this.smoke_bank1_CMD, 32'h43006014, "RW");
+		default_map.add_reg(this.smoke_bank1_CMD, 32'h07006014, "RW");
 		// smoke_bank1_IRQ: bank=1
 		this.smoke_bank1_IRQ = ral_reg_smoke_IRQ::type_id::create("smoke_bank1_IRQ",, get_full_name());
 		this.smoke_bank1_IRQ.configure(this);
 		this.smoke_bank1_IRQ.build();
-		default_map.add_reg(this.smoke_bank1_IRQ, 32'h43006018, "RW");
+		default_map.add_reg(this.smoke_bank1_IRQ, 32'h07006018, "RW");
 		// smoke_bank1_BANK: bank=1; cell shadow bank, 4 copies; selected by the address alias, not by a second offset
 		this.smoke_bank1_BANK = ral_reg_smoke_BANK::type_id::create("smoke_bank1_BANK",, get_full_name());
 		this.smoke_bank1_BANK.configure(this);
 		this.smoke_bank1_BANK.build();
-		default_map.add_reg(this.smoke_bank1_BANK, 32'h4300601c, "RW");
+		default_map.add_reg(this.smoke_bank1_BANK, 32'h0700601c, "RW");
 		// smoke_bank1_BANKSEL: bank=1
 		this.smoke_bank1_BANKSEL = ral_reg_smoke_BANKSEL::type_id::create("smoke_bank1_BANKSEL",, get_full_name());
 		this.smoke_bank1_BANKSEL.configure(this);
 		this.smoke_bank1_BANKSEL.build();
-		default_map.add_reg(this.smoke_bank1_BANKSEL, 32'h4300602c, "RW");
+		default_map.add_reg(this.smoke_bank1_BANKSEL, 32'h0700602c, "RW");
 		// smoke_bank1_ACTIVE: bank=1
 		this.smoke_bank1_ACTIVE = ral_reg_smoke_ACTIVE::type_id::create("smoke_bank1_ACTIVE",, get_full_name());
 		this.smoke_bank1_ACTIVE.configure(this);
 		this.smoke_bank1_ACTIVE.build();
-		default_map.add_reg(this.smoke_bank1_ACTIVE, 32'h43006034, "RO");
+		default_map.add_reg(this.smoke_bank1_ACTIVE, 32'h07006034, "RO");
 		// smoke_bank1_FABRIC: bank=1
 		this.smoke_bank1_FABRIC = ral_reg_smoke_FABRIC::type_id::create("smoke_bank1_FABRIC",, get_full_name());
 		this.smoke_bank1_FABRIC.configure(this);
 		this.smoke_bank1_FABRIC.build();
-		default_map.add_reg(this.smoke_bank1_FABRIC, 32'h43006030, "RW");
+		default_map.add_reg(this.smoke_bank1_FABRIC, 32'h07006030, "RW");
 		// smoke_bank1_key_key_0: bank=1
 		this.smoke_bank1_key_key_0 = ral_reg_smoke_key_key_0::type_id::create("smoke_bank1_key_key_0",, get_full_name());
 		this.smoke_bank1_key_key_0.configure(this);
 		this.smoke_bank1_key_key_0.build();
-		default_map.add_reg(this.smoke_bank1_key_key_0, 32'h43006020, "RW");
+		default_map.add_reg(this.smoke_bank1_key_key_0, 32'h07006020, "RW");
 		// smoke_bank1_key_key_1: bank=1
 		this.smoke_bank1_key_key_1 = ral_reg_smoke_key_key_1::type_id::create("smoke_bank1_key_key_1",, get_full_name());
 		this.smoke_bank1_key_key_1.configure(this);
 		this.smoke_bank1_key_key_1.build();
-		default_map.add_reg(this.smoke_bank1_key_key_1, 32'h43006024, "RW");
+		default_map.add_reg(this.smoke_bank1_key_key_1, 32'h07006024, "RW");
 		// smoke_bank1_key_key_2: bank=1
 		this.smoke_bank1_key_key_2 = ral_reg_smoke_key_key_2::type_id::create("smoke_bank1_key_key_2",, get_full_name());
 		this.smoke_bank1_key_key_2.configure(this);
 		this.smoke_bank1_key_key_2.build();
-		default_map.add_reg(this.smoke_bank1_key_key_2, 32'h43006028, "RW");
+		default_map.add_reg(this.smoke_bank1_key_key_2, 32'h07006028, "RW");
 		// smoke_bank2_ID: bank=2
 		this.smoke_bank2_ID = ral_reg_smoke_ID::type_id::create("smoke_bank2_ID",, get_full_name());
 		this.smoke_bank2_ID.configure(this);
 		this.smoke_bank2_ID.build();
-		default_map.add_reg(this.smoke_bank2_ID, 32'h83006000, "RO");
+		default_map.add_reg(this.smoke_bank2_ID, 32'h0b006000, "RO");
 		// smoke_bank2_STATUS: bank=2
 		this.smoke_bank2_STATUS = ral_reg_smoke_STATUS::type_id::create("smoke_bank2_STATUS",, get_full_name());
 		this.smoke_bank2_STATUS.configure(this);
 		this.smoke_bank2_STATUS.build();
-		default_map.add_reg(this.smoke_bank2_STATUS, 32'h83006004, "RO");
+		default_map.add_reg(this.smoke_bank2_STATUS, 32'h0b006004, "RO");
 		// smoke_bank2_CFG: bank=2
 		this.smoke_bank2_CFG = ral_reg_smoke_CFG::type_id::create("smoke_bank2_CFG",, get_full_name());
 		this.smoke_bank2_CFG.configure(this);
 		this.smoke_bank2_CFG.build();
-		default_map.add_reg(this.smoke_bank2_CFG, 32'h83006008, "RW");
+		default_map.add_reg(this.smoke_bank2_CFG, 32'h0b006008, "RW");
 		// smoke_bank2_FEED: bank=2
 		this.smoke_bank2_FEED = ral_reg_smoke_FEED::type_id::create("smoke_bank2_FEED",, get_full_name());
 		this.smoke_bank2_FEED.configure(this);
 		this.smoke_bank2_FEED.build();
-		default_map.add_reg(this.smoke_bank2_FEED, 32'h8300600c, "RW");
+		default_map.add_reg(this.smoke_bank2_FEED, 32'h0b00600c, "RW");
 		// smoke_bank2_FIFO: bank=2
 		this.smoke_bank2_FIFO = ral_reg_smoke_FIFO::type_id::create("smoke_bank2_FIFO",, get_full_name());
 		this.smoke_bank2_FIFO.configure(this);
 		this.smoke_bank2_FIFO.build();
-		default_map.add_reg(this.smoke_bank2_FIFO, 32'h83006010, "RW");
+		default_map.add_reg(this.smoke_bank2_FIFO, 32'h0b006010, "RW");
 		// smoke_bank2_CMD: bank=2
 		this.smoke_bank2_CMD = ral_reg_smoke_CMD::type_id::create("smoke_bank2_CMD",, get_full_name());
 		this.smoke_bank2_CMD.configure(this);
 		this.smoke_bank2_CMD.build();
-		default_map.add_reg(this.smoke_bank2_CMD, 32'h83006014, "RW");
+		default_map.add_reg(this.smoke_bank2_CMD, 32'h0b006014, "RW");
 		// smoke_bank2_IRQ: bank=2
 		this.smoke_bank2_IRQ = ral_reg_smoke_IRQ::type_id::create("smoke_bank2_IRQ",, get_full_name());
 		this.smoke_bank2_IRQ.configure(this);
 		this.smoke_bank2_IRQ.build();
-		default_map.add_reg(this.smoke_bank2_IRQ, 32'h83006018, "RW");
+		default_map.add_reg(this.smoke_bank2_IRQ, 32'h0b006018, "RW");
 		// smoke_bank2_BANK: bank=2; cell shadow bank, 4 copies; selected by the address alias, not by a second offset
 		this.smoke_bank2_BANK = ral_reg_smoke_BANK::type_id::create("smoke_bank2_BANK",, get_full_name());
 		this.smoke_bank2_BANK.configure(this);
 		this.smoke_bank2_BANK.build();
-		default_map.add_reg(this.smoke_bank2_BANK, 32'h8300601c, "RW");
+		default_map.add_reg(this.smoke_bank2_BANK, 32'h0b00601c, "RW");
 		// smoke_bank2_BANKSEL: bank=2
 		this.smoke_bank2_BANKSEL = ral_reg_smoke_BANKSEL::type_id::create("smoke_bank2_BANKSEL",, get_full_name());
 		this.smoke_bank2_BANKSEL.configure(this);
 		this.smoke_bank2_BANKSEL.build();
-		default_map.add_reg(this.smoke_bank2_BANKSEL, 32'h8300602c, "RW");
+		default_map.add_reg(this.smoke_bank2_BANKSEL, 32'h0b00602c, "RW");
 		// smoke_bank2_ACTIVE: bank=2
 		this.smoke_bank2_ACTIVE = ral_reg_smoke_ACTIVE::type_id::create("smoke_bank2_ACTIVE",, get_full_name());
 		this.smoke_bank2_ACTIVE.configure(this);
 		this.smoke_bank2_ACTIVE.build();
-		default_map.add_reg(this.smoke_bank2_ACTIVE, 32'h83006034, "RO");
+		default_map.add_reg(this.smoke_bank2_ACTIVE, 32'h0b006034, "RO");
 		// smoke_bank2_FABRIC: bank=2
 		this.smoke_bank2_FABRIC = ral_reg_smoke_FABRIC::type_id::create("smoke_bank2_FABRIC",, get_full_name());
 		this.smoke_bank2_FABRIC.configure(this);
 		this.smoke_bank2_FABRIC.build();
-		default_map.add_reg(this.smoke_bank2_FABRIC, 32'h83006030, "RW");
+		default_map.add_reg(this.smoke_bank2_FABRIC, 32'h0b006030, "RW");
 		// smoke_bank2_key_key_0: bank=2
 		this.smoke_bank2_key_key_0 = ral_reg_smoke_key_key_0::type_id::create("smoke_bank2_key_key_0",, get_full_name());
 		this.smoke_bank2_key_key_0.configure(this);
 		this.smoke_bank2_key_key_0.build();
-		default_map.add_reg(this.smoke_bank2_key_key_0, 32'h83006020, "RW");
+		default_map.add_reg(this.smoke_bank2_key_key_0, 32'h0b006020, "RW");
 		// smoke_bank2_key_key_1: bank=2
 		this.smoke_bank2_key_key_1 = ral_reg_smoke_key_key_1::type_id::create("smoke_bank2_key_key_1",, get_full_name());
 		this.smoke_bank2_key_key_1.configure(this);
 		this.smoke_bank2_key_key_1.build();
-		default_map.add_reg(this.smoke_bank2_key_key_1, 32'h83006024, "RW");
+		default_map.add_reg(this.smoke_bank2_key_key_1, 32'h0b006024, "RW");
 		// smoke_bank2_key_key_2: bank=2
 		this.smoke_bank2_key_key_2 = ral_reg_smoke_key_key_2::type_id::create("smoke_bank2_key_key_2",, get_full_name());
 		this.smoke_bank2_key_key_2.configure(this);
 		this.smoke_bank2_key_key_2.build();
-		default_map.add_reg(this.smoke_bank2_key_key_2, 32'h83006028, "RW");
+		default_map.add_reg(this.smoke_bank2_key_key_2, 32'h0b006028, "RW");
 		// smoke_bank3_ID: bank=3
 		this.smoke_bank3_ID = ral_reg_smoke_ID::type_id::create("smoke_bank3_ID",, get_full_name());
 		this.smoke_bank3_ID.configure(this);
 		this.smoke_bank3_ID.build();
-		default_map.add_reg(this.smoke_bank3_ID, 32'hc3006000, "RO");
+		default_map.add_reg(this.smoke_bank3_ID, 32'h0f006000, "RO");
 		// smoke_bank3_STATUS: bank=3
 		this.smoke_bank3_STATUS = ral_reg_smoke_STATUS::type_id::create("smoke_bank3_STATUS",, get_full_name());
 		this.smoke_bank3_STATUS.configure(this);
 		this.smoke_bank3_STATUS.build();
-		default_map.add_reg(this.smoke_bank3_STATUS, 32'hc3006004, "RO");
+		default_map.add_reg(this.smoke_bank3_STATUS, 32'h0f006004, "RO");
 		// smoke_bank3_CFG: bank=3
 		this.smoke_bank3_CFG = ral_reg_smoke_CFG::type_id::create("smoke_bank3_CFG",, get_full_name());
 		this.smoke_bank3_CFG.configure(this);
 		this.smoke_bank3_CFG.build();
-		default_map.add_reg(this.smoke_bank3_CFG, 32'hc3006008, "RW");
+		default_map.add_reg(this.smoke_bank3_CFG, 32'h0f006008, "RW");
 		// smoke_bank3_FEED: bank=3
 		this.smoke_bank3_FEED = ral_reg_smoke_FEED::type_id::create("smoke_bank3_FEED",, get_full_name());
 		this.smoke_bank3_FEED.configure(this);
 		this.smoke_bank3_FEED.build();
-		default_map.add_reg(this.smoke_bank3_FEED, 32'hc300600c, "RW");
+		default_map.add_reg(this.smoke_bank3_FEED, 32'h0f00600c, "RW");
 		// smoke_bank3_FIFO: bank=3
 		this.smoke_bank3_FIFO = ral_reg_smoke_FIFO::type_id::create("smoke_bank3_FIFO",, get_full_name());
 		this.smoke_bank3_FIFO.configure(this);
 		this.smoke_bank3_FIFO.build();
-		default_map.add_reg(this.smoke_bank3_FIFO, 32'hc3006010, "RW");
+		default_map.add_reg(this.smoke_bank3_FIFO, 32'h0f006010, "RW");
 		// smoke_bank3_CMD: bank=3
 		this.smoke_bank3_CMD = ral_reg_smoke_CMD::type_id::create("smoke_bank3_CMD",, get_full_name());
 		this.smoke_bank3_CMD.configure(this);
 		this.smoke_bank3_CMD.build();
-		default_map.add_reg(this.smoke_bank3_CMD, 32'hc3006014, "RW");
+		default_map.add_reg(this.smoke_bank3_CMD, 32'h0f006014, "RW");
 		// smoke_bank3_IRQ: bank=3
 		this.smoke_bank3_IRQ = ral_reg_smoke_IRQ::type_id::create("smoke_bank3_IRQ",, get_full_name());
 		this.smoke_bank3_IRQ.configure(this);
 		this.smoke_bank3_IRQ.build();
-		default_map.add_reg(this.smoke_bank3_IRQ, 32'hc3006018, "RW");
+		default_map.add_reg(this.smoke_bank3_IRQ, 32'h0f006018, "RW");
 		// smoke_bank3_BANK: bank=3; cell shadow bank, 4 copies; selected by the address alias, not by a second offset
 		this.smoke_bank3_BANK = ral_reg_smoke_BANK::type_id::create("smoke_bank3_BANK",, get_full_name());
 		this.smoke_bank3_BANK.configure(this);
 		this.smoke_bank3_BANK.build();
-		default_map.add_reg(this.smoke_bank3_BANK, 32'hc300601c, "RW");
+		default_map.add_reg(this.smoke_bank3_BANK, 32'h0f00601c, "RW");
 		// smoke_bank3_BANKSEL: bank=3
 		this.smoke_bank3_BANKSEL = ral_reg_smoke_BANKSEL::type_id::create("smoke_bank3_BANKSEL",, get_full_name());
 		this.smoke_bank3_BANKSEL.configure(this);
 		this.smoke_bank3_BANKSEL.build();
-		default_map.add_reg(this.smoke_bank3_BANKSEL, 32'hc300602c, "RW");
+		default_map.add_reg(this.smoke_bank3_BANKSEL, 32'h0f00602c, "RW");
 		// smoke_bank3_ACTIVE: bank=3
 		this.smoke_bank3_ACTIVE = ral_reg_smoke_ACTIVE::type_id::create("smoke_bank3_ACTIVE",, get_full_name());
 		this.smoke_bank3_ACTIVE.configure(this);
 		this.smoke_bank3_ACTIVE.build();
-		default_map.add_reg(this.smoke_bank3_ACTIVE, 32'hc3006034, "RO");
+		default_map.add_reg(this.smoke_bank3_ACTIVE, 32'h0f006034, "RO");
 		// smoke_bank3_FABRIC: bank=3
 		this.smoke_bank3_FABRIC = ral_reg_smoke_FABRIC::type_id::create("smoke_bank3_FABRIC",, get_full_name());
 		this.smoke_bank3_FABRIC.configure(this);
 		this.smoke_bank3_FABRIC.build();
-		default_map.add_reg(this.smoke_bank3_FABRIC, 32'hc3006030, "RW");
+		default_map.add_reg(this.smoke_bank3_FABRIC, 32'h0f006030, "RW");
 		// smoke_bank3_key_key_0: bank=3
 		this.smoke_bank3_key_key_0 = ral_reg_smoke_key_key_0::type_id::create("smoke_bank3_key_key_0",, get_full_name());
 		this.smoke_bank3_key_key_0.configure(this);
 		this.smoke_bank3_key_key_0.build();
-		default_map.add_reg(this.smoke_bank3_key_key_0, 32'hc3006020, "RW");
+		default_map.add_reg(this.smoke_bank3_key_key_0, 32'h0f006020, "RW");
 		// smoke_bank3_key_key_1: bank=3
 		this.smoke_bank3_key_key_1 = ral_reg_smoke_key_key_1::type_id::create("smoke_bank3_key_key_1",, get_full_name());
 		this.smoke_bank3_key_key_1.configure(this);
 		this.smoke_bank3_key_key_1.build();
-		default_map.add_reg(this.smoke_bank3_key_key_1, 32'hc3006024, "RW");
+		default_map.add_reg(this.smoke_bank3_key_key_1, 32'h0f006024, "RW");
 		// smoke_bank3_key_key_2: bank=3
 		this.smoke_bank3_key_key_2 = ral_reg_smoke_key_key_2::type_id::create("smoke_bank3_key_key_2",, get_full_name());
 		this.smoke_bank3_key_key_2.configure(this);
 		this.smoke_bank3_key_key_2.build();
-		default_map.add_reg(this.smoke_bank3_key_key_2, 32'hc3006028, "RW");
+		default_map.add_reg(this.smoke_bank3_key_key_2, 32'h0f006028, "RW");
 	endfunction: build
 
 	`uvm_object_utils(ral_block_soc_wb)

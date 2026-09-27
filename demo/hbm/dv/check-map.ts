@@ -1,7 +1,7 @@
 // HBM software-map check.
 // Reads the generated C map, RALF, and uvm_reg block and checks them against
 // the address the fabric actually decodes: channel = ADR[15:12], pstate =
-// ADR[31:30] (top of the 32-bit address). A pass-through child is not split
+// ADR[18:17], directly above the windows. Bits above the tag are discarded.
 // again. Broadcast windows are real addresses. No UVM simulator is required.
 
 import { readFileSync } from "node:fs";
@@ -14,7 +14,7 @@ const uvm = readFileSync(resolve(root, "dv/ral/ral_block_hbm.sv"), "utf8");
 const ch = readFileSync(resolve(root, "dv/ral/ral_block_hbm_ch.sv"), "utf8");
 
 const CH = 0x1000;
-const PSTATE = 1 << 30;
+const PSTATE = 1 << 17;
 const errors: string[] = [];
 
 function fail(msg: string): void {

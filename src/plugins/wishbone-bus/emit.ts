@@ -270,17 +270,22 @@ function pushOrAssign(out: string[], lhs: string, terms: string[]): void {
 }
 
 /**
- * Address actually used for decode / slave forwarding. `TagFromAddr` bits are
- * carved out here, so one window declaration covers every tag alias.
+ * Address used for decode / slave forwarding. The tag and every bit above it
+ * are dropped, so only the low bits below the cut remain.
  */
 function emitTagStrip(def: BusDef, gPrefix: string): string[] {
 	const plan = tagPlan(def);
 	if (plan.addrMask === 0) return [];
 	const aw = def.addr_width;
+	// Lowest tag bit. Decode keeps only bits strictly below it.
+	let lo = 0;
+	while (((plan.addrMask >>> lo) & 1) === 0) lo++;
+	let keep = 0;
+	for (let b = 0; b < lo; b++) keep = (keep | (1 << b)) >>> 0;
 	return [
 		`\tlogic ${packedRange(aw).padEnd(7)}${gPrefix}adr_dec;`,
-		`\t// Tag address bits are not part of slave addressing (wishbone-bus.md 2.1)`,
-		`\tassign ${gPrefix}adr_dec = ${gPrefix}adr & ~${aw}'h${hex(plan.addrMask, aw)};`,
+		`\t// Tag and every bit above it are dropped (wishbone-bus.md 2.1)`,
+		`\tassign ${gPrefix}adr_dec = ${gPrefix}adr & ${aw}'h${hex(keep, aw)};`,
 		"",
 	];
 }

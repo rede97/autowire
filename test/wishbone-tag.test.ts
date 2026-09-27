@@ -41,13 +41,13 @@ describe("wishbone tag domains", () => {
 	test("producing level: tag comes from ADR and leaves the master face bare", () => {
 		const plan = tagPlan(hbm);
 		expect(plan.width).toBe(2);
-		expect(plan.addrMask).toBe(0xc000_0000);
+		expect(plan.addrMask).toBe(0x0006_0000);
 		expect(plan.inherited).toHaveLength(0);
 		const sv = emitBusSv(hbm);
-		expect(sv).toContain("assign g_tga_pstate = m_adr_i[31:30];");
-		expect(sv).toContain("assign g_adr_dec = g_adr & ~32'hc0000000;");
+		expect(sv).toContain("assign g_tga_pstate = m_adr_i[18:17];");
+		expect(sv).toContain("assign g_adr_dec = g_adr & 19'h1ffff;");
 		// Tag bits are stripped before compare and before forwarding.
-		expect(sv).toContain("if ((g_adr_dec & 32'hfffff000) == 32'h00000000)");
+		expect(sv).toContain("if ((g_adr_dec & 19'h7f000) == 19'h00000)");
 		expect(sv).toContain(
 			"ch0_i_wb_adr  = (slot_sel[SLOT_CH0] || broadcast_ch_all)",
 		);
@@ -74,51 +74,70 @@ describe("wishbone tag domains", () => {
 
 	test("a domain may be produced only once along a path", () => {
 		const child = Bus("child_dup", "re-derives pstate", {
-			tags: [TagFromAddr(pstate, "31:30")],
+			addrWidth: 12,
+			tags: [TagFromAddr(pstate, "9:8")],
 			masters: [Master("uplink", "from parent")],
 			slaves: [SlaveRegfile(aword, 0x000, { size: Size(0x100) })],
 		});
 		expect(() =>
 			Bus("parent_dup", "also produces pstate", {
-				tags: [TagFromAddr(pstate, "31:30")],
+				addrWidth: 16,
+				tags: [TagFromAddr(pstate, "13:12")],
 				masters: [Master("cfg", "cfg")],
 				slaves: [SlaveBus(child, 0, { size: Size(0x1000) })],
 			}),
 		).toThrow(/produced by bus "parent_dup" and again by "child_dup"/);
 	});
 
-	test("a tag taken from the middle of the address is rejected", () => {
+	test("a tag that does not sit on the window cut is rejected", () => {
 		expect(() =>
-			Bus("hole", "tag leaves a hole below the top", {
-				tags: [TagFromAddr(pstate, "22:21")],
+			Bus("high", "tag leaves unused bits below it", {
+				addrWidth: 32,
+				tags: [TagFromAddr(pstate, "31:30")],
 				masters: [Master("cfg", "cfg")],
 				slaves: [SlaveRegion("blk", "block", 0x0, Size(0x1000))],
 			}),
-		).toThrow(/top of the 32-bit address/);
+		).toThrow(/must start at bit 12/);
 	});
 
 	test("tag address bits may not land inside a slave window", () => {
 		expect(() =>
 			Bus("clash", "tag bit inside the window", {
+				addrWidth: 16,
 				tags: [TagFromAddr(pstate, "5:4")],
 				masters: [Master("cfg", "cfg")],
 				slaves: [SlaveRegion("blk", "block", 0x0, Size(0x1000))],
 			}),
-		).toThrow(/top of the 32-bit address/);
+		).toThrow(/must start at bit/);
 	});
 
 	test("one bus cannot declare the same domain twice", () => {
 		expect(() =>
 			Bus("twice", "duplicate domain", {
-				tags: [TagFromAddr(pstate, "31:30"), TagFromPin(pstate)],
+				addrWidth: 20,
+				tags: [TagFromAddr(pstate, "18:17"), TagFromPin(pstate)],
 				masters: [Master("cfg", "cfg")],
 				slaves: [SlaveRegion("blk", "block", 0x0, Size(0x100))],
 			}),
 		).toThrow(/declares tag domain "pstate" twice/);
 	});
 
+	test("a tag bit past addrWidth is rejected", () => {
+		// Window span 0x1000 cuts at bit 12, so [13:12] is on the cut.
+		// addrWidth 13 only reaches bit 12, so the tag's high bit is out of range.
+		expect(() =>
+			Bus("wide", "tag past the allocated space", {
+				addrWidth: 13,
+				tags: [TagFromAddr(pstate, "13:12")],
+				masters: [Master("cfg", "cfg")],
+				slaves: [SlaveRegion("blk", "block", 0x0, Size(0x1000))],
+			}),
+		).toThrow(/exceeds addrWidth 13/);
+	});
+
 	test("TagFromPin adds a fabric input port for the domain", () => {
 		const pinned = Bus("pinned", "pstate from a controller pin", {
+			addrWidth: 12,
 			tags: [TagFromPin(pstate)],
 			masters: [Master("cfg", "cfg")],
 			slaves: [SlaveRegfile(aword, 0x000, { size: Size(0x100) })],
@@ -147,7 +166,7 @@ describe("wishbone tag domains", () => {
 		);
 		expect(parent).toContain("broadcast_ch_all & ch0_o_wb_ack & ch1_o_wb_ack");
 		expect(parent).toContain(
-			"(({32{slot_sel[SLOT_CH0]}} & g_adr_dec) | ({32{broadcast_ch_all}} & (g_adr_dec - 32'h00010000))) & ~32'hfffff000",
+			"(({19{slot_sel[SLOT_CH0]}} & g_adr_dec) | ({19{broadcast_ch_all}} & (g_adr_dec - 19'h10000))) & ~19'h7f000",
 		);
 		expect(parent).not.toContain("ch_bcast_i_wb_");
 		expect(parent).not.toContain("ch_bcast_o_wb_");
@@ -158,7 +177,7 @@ describe("wishbone tag domains", () => {
 		);
 		expect(child).toContain("aword_i_wb_cyc  = slot_sel[SLOT_AWORD]");
 		expect(child).toContain(
-			"(({32{slot_sel[SLOT_DWORD0]}} & g_adr) | ({32{broadcast_dword_all}} & (g_adr - 32'h00000300))) & ~32'hffffff00",
+			"(({12{slot_sel[SLOT_DWORD0]}} & g_adr) | ({12{broadcast_dword_all}} & (g_adr - 12'h300))) & ~12'hf00",
 		);
 		expect(child).not.toContain("dword_bcast_i_wb_");
 		expect(child).not.toContain("dword_bcast_o_wb_");

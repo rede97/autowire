@@ -96,7 +96,7 @@ export function tagAddrMask(tags: readonly WbTagSource[]): number {
 	for (const t of tags) {
 		if (t.source !== "addr" || t.addr_bits === undefined) continue;
 		const { hi, lo } = parseBits(`tag domain ${t.domain.name}`, t.addr_bits);
-		for (let b = lo; b <= hi; b++) mask |= 1 << b;
+		for (let b = lo; b <= hi; b++) mask = (mask | (1 << b)) >>> 0;
 	}
 	return mask >>> 0;
 }
@@ -683,11 +683,6 @@ function resolveAttached(s: WbSlave, addrWidth: number): WbSlave {
 			`wishbone-bus: slave ${s.name} tag ${s.tag ?? 0} != regfile "${rf.name}" tga_width ${laid.tga_width}`,
 		);
 	}
-	if (rf.addr_width > addrWidth) {
-		throw new Error(
-			`wishbone-bus: slave ${s.name} regfile addr_width ${rf.addr_width} exceeds bus ${addrWidth}`,
-		);
-	}
 	const span = layoutByteSpan(laid);
 	const sizeBytes = s.size ?? span;
 	const mask = deriveWindowMask(sizeBytes, addrWidth);
@@ -796,7 +791,8 @@ export function Bus(
 	opts: {
 		masters?: readonly WbMaster[];
 		slaves: readonly WbSlave[];
-		addrWidth?: number;
+		/** Fabric ADR width. Required: the allocated address space, not a default of 32. */
+		addrWidth: number;
 		tagWidth?: number;
 		/** Tag domains, low slice first. Bare domain = pass through from uplink. */
 		tags?: readonly (ShadowDomainDef | WbTagSource)[];
@@ -819,9 +815,11 @@ export function Bus(
 	if (opts.slaves.length === 0) {
 		throw new Error(`wishbone-bus: bus ${name} needs at least one slave`);
 	}
-	const addr_width = opts.addrWidth ?? 32;
-	if (addr_width < 2 || addr_width > 64) {
-		throw new Error(`wishbone-bus: addr_width out of range`);
+	const addr_width = opts.addrWidth;
+	if (!Number.isInteger(addr_width) || addr_width < 2 || addr_width > 64) {
+		throw new Error(
+			`wishbone-bus: bus ${name} addrWidth must be an integer 2..64`,
+		);
 	}
 	const slaves = opts.slaves.map((s) => resolveAttached(s, addr_width));
 	const seen = new Set<string>();
@@ -834,7 +832,8 @@ export function Bus(
 	assertNoRegionOverlap(name, slaves, addr_width);
 	assertBroadcasts(name, slaves);
 	const declared = orderAddrTags(name, normalizeTags(name, opts.tags ?? []));
-	assertAddrTagsTop(name, addr_width, declared);
+	assertAddrTagsCut(name, addr_width, declared, slaves);
+	assertChildAddrWidth(name, addr_width, slaves);
 	const anonymous = anonymousTag(slaves, declared);
 	const tags = anonymous ? [...declared, anonymous] : declared;
 	const tag_width = opts.tagWidth ?? tagDomainsWidth(tags);
@@ -913,8 +912,9 @@ function anonymousTag(
 }
 
 /**
- * `TagFromAddr` occupies the top of the fabric address. The remaining low
- * bits are the slave address and are not re-packed around a hole.
+ * `TagFromAddr` sits directly above the slave windows. Bits above the tag
+ * are discarded; decode uses only the low bits that remain. The address is
+ * not re-packed around a hole.
  * One decoder should produce one such tag. Extra tags are ordered from the
  * high bit downward and are not a stable feature.
  */
@@ -933,25 +933,29 @@ function addrBitHi(tag: WbTagSource): number {
 	return parseBits(`tag domain ${tag.domain.name}`, tag.addr_bits ?? "0:0").hi;
 }
 
-function assertAddrTagsTop(
+/** Highest byte address a slave window reaches, plus one. */
+function slaveSpanEnd(slaves: readonly WbSlave[]): number {
+	let end = 0;
+	for (const s of slaves) {
+		const size = s.size ?? windowBytes(s.mask, 32);
+		end = Math.max(end, (s.base + size) >>> 0);
+	}
+	return end;
+}
+
+function assertAddrTagsCut(
 	bus: string,
 	addrWidth: number,
 	tags: readonly WbTagSource[],
+	slaves: readonly WbSlave[],
 ): void {
 	const ranges = tags.flatMap((t) => {
 		if (t.source !== "addr" || t.addr_bits === undefined) return [];
 		return [{ name: t.domain.name, ...parseBits(t.domain.name, t.addr_bits) }];
 	});
 	if (ranges.length === 0) return;
-	const top = addrWidth - 1;
 	const hi = Math.max(...ranges.map((r) => r.hi));
 	const lo = Math.min(...ranges.map((r) => r.lo));
-	if (hi !== top) {
-		const shown = ranges.map((r) => `${r.name}[${r.hi}:${r.lo}]`).join(", ");
-		throw new Error(
-			`wishbone-bus: bus ${bus} TagFromAddr (${shown}) must occupy the top of the ${addrWidth}-bit address, starting at bit ${top}. The remaining low bits are the address and are not re-packed.`,
-		);
-	}
 	const covered = new Set<number>();
 	for (const r of ranges) {
 		for (let b = r.lo; b <= r.hi; b++) {
@@ -967,6 +971,43 @@ function assertAddrTagsTop(
 		if (!covered.has(b)) {
 			throw new Error(
 				`wishbone-bus: bus ${bus} TagFromAddr bits [${hi}:${lo}] are not contiguous (bit ${b} is a hole). A hole would require re-packing the address, which is not supported.`,
+			);
+		}
+	}
+	const span = slaveSpanEnd(slaves);
+	const need = span <= 1 ? 0 : Math.ceil(Math.log2(span));
+	if (lo !== need) {
+		const shown = ranges.map((r) => `${r.name}[${r.hi}:${r.lo}]`).join(", ");
+		throw new Error(
+			`wishbone-bus: bus ${bus} TagFromAddr (${shown}) must start at bit ${need}, directly above the slave windows (span 0x${span.toString(16)}). Bits above the tag are discarded; decode keeps only the low bits.`,
+		);
+	}
+	if (hi >= addrWidth) {
+		const shown = ranges.map((r) => `${r.name}[${r.hi}:${r.lo}]`).join(", ");
+		throw new Error(
+			`wishbone-bus: bus ${bus} TagFromAddr (${shown}) exceeds addrWidth ${addrWidth} (highest bit ${addrWidth - 1})`,
+		);
+	}
+}
+
+/** A child fabric sees only the bits its parent window forwards. */
+function assertChildAddrWidth(
+	bus: string,
+	addrWidth: number,
+	slaves: readonly WbSlave[],
+): void {
+	for (const s of slaves) {
+		if (!s.bus) continue;
+		if (s.bus.addr_width > addrWidth) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} child "${s.bus.name}" addrWidth ${s.bus.addr_width} exceeds parent addrWidth ${addrWidth}`,
+			);
+		}
+		const win = windowBytes(s.mask, addrWidth);
+		const forwarded = win <= 1 ? 1 : Math.ceil(Math.log2(win));
+		if (s.bus.addr_width > forwarded) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} forwards ${forwarded} address bits into "${s.name}", but child "${s.bus.name}" addrWidth is ${s.bus.addr_width}`,
 			);
 		}
 	}

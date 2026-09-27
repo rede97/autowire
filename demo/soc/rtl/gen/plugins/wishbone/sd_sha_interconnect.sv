@@ -9,9 +9,9 @@
 //  Slave PIPE: wb_cfg_pipe per port (posted write / blocking read)
 //------------------------------------------------------------------------------
 //  Address map:
-//    0x00000000  size=0x00000010  mask=0xfffffff0  sd — sdspi CSR  pipe=2
-//    0x00000010  size=0x00000010  mask=0xfffffff0  dma — sd_rd_dma CSR  pipe=3
-//    0x00000040  size=0x00000024  mask=0xffffffc0  sha256 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane  pipe=2
+//    0x00000000  size=0x00000010  mask=0x00000ff0  sd — sdspi CSR  pipe=2
+//    0x00000010  size=0x00000010  mask=0x00000ff0  dma — sd_rd_dma CSR  pipe=3
+//    0x00000040  size=0x00000024  mask=0x00000fc0  sha256 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane  pipe=2
 //------------------------------------------------------------------------------
 
 module sd_sha_interconnect (
@@ -19,7 +19,7 @@ module sd_sha_interconnect (
 	input  logic        rst_n,
 	input  logic        rb_grant_en,
 	// Master uplink — Parent decoder cascade,
-	input  logic [31:0] uplink_o_wb_adr,
+	input  logic [11:0] uplink_o_wb_adr,
 	input  logic [31:0] uplink_o_wb_dat,
 	input  logic [3:0]  uplink_o_wb_sel,
 	input  logic [1:0]  uplink_o_wb_tga_bank,
@@ -29,7 +29,7 @@ module sd_sha_interconnect (
 	output logic [31:0] uplink_i_wb_dat,
 	output logic        uplink_i_wb_ack,
 	// Master eng — sd_rd_dma engine,
-	input  logic [31:0] eng_o_wb_adr,
+	input  logic [11:0] eng_o_wb_adr,
 	input  logic [31:0] eng_o_wb_dat,
 	input  logic [3:0]  eng_o_wb_sel,
 	input  logic [1:0]  eng_o_wb_tga_bank,
@@ -39,8 +39,8 @@ module sd_sha_interconnect (
 	output logic [31:0] eng_i_wb_dat,
 	output logic        eng_i_wb_ack,
 	// Slave sd — sdspi CSR,
-	//   base=0x00000000  size=0x00000010  mask=0xfffffff0  pipe=2,
-	output logic [31:0] sd_i_wb_adr,
+	//   base=0x00000000  size=0x00000010  mask=0x00000ff0  pipe=2,
+	output logic [11:0] sd_i_wb_adr,
 	output logic [31:0] sd_i_wb_dat,
 	output logic [3:0]  sd_i_wb_sel,
 	output logic        sd_i_wb_cyc,
@@ -49,8 +49,8 @@ module sd_sha_interconnect (
 	input  logic [31:0] sd_o_wb_dat,
 	input  logic        sd_o_wb_ack,
 	// Slave dma — sd_rd_dma CSR,
-	//   base=0x00000010  size=0x00000010  mask=0xfffffff0  pipe=3,
-	output logic [31:0] dma_i_wb_adr,
+	//   base=0x00000010  size=0x00000010  mask=0x00000ff0  pipe=3,
+	output logic [11:0] dma_i_wb_adr,
 	output logic [31:0] dma_i_wb_dat,
 	output logic [3:0]  dma_i_wb_sel,
 	output logic        dma_i_wb_cyc,
@@ -59,8 +59,8 @@ module sd_sha_interconnect (
 	input  logic [31:0] dma_o_wb_dat,
 	input  logic        dma_o_wb_ack,
 	// Slave sha256 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane,
-	//   base=0x00000040  size=0x00000024  mask=0xffffffc0  pipe=2,
-	output logic [31:0] sha256_i_wb_adr,
+	//   base=0x00000040  size=0x00000024  mask=0x00000fc0  pipe=2,
+	output logic [11:0] sha256_i_wb_adr,
 	output logic [31:0] sha256_i_wb_dat,
 	output logic [3:0]  sha256_i_wb_sel,
 	output logic        sha256_i_wb_cyc,
@@ -130,7 +130,7 @@ module sd_sha_interconnect (
 	logic [1:0] gsel;
 	assign gsel = grant & {2{busy}};
 
-	logic [31:0] g_adr;
+	logic [11:0] g_adr;
 	logic [31:0] g_wdata;
 	logic [3:0]  g_sel;
 	logic [1:0]  g_up_bank;
@@ -139,8 +139,8 @@ module sd_sha_interconnect (
 	logic        g_stb;
 	logic        g_we;
 
-	assign g_adr   = ({32{gsel[0]}} & uplink_o_wb_adr)
-	               | ({32{gsel[1]}} & eng_o_wb_adr);
+	assign g_adr   = ({12{gsel[0]}} & uplink_o_wb_adr)
+	               | ({12{gsel[1]}} & eng_o_wb_adr);
 	assign g_wdata = ({32{gsel[0]}} & uplink_o_wb_dat)
 	               | ({32{gsel[1]}} & eng_o_wb_dat);
 	assign g_sel   = ({4{gsel[0]}} & uplink_o_wb_sel)
@@ -164,15 +164,15 @@ module sd_sha_interconnect (
 	always_comb begin
 		slot_sel = 3'b0;
 		unmapped = 1'b1;
-		if ((g_adr & 32'hffffffc0) == 32'h00000040) begin
+		if ((g_adr & 12'hfc0) == 12'h040) begin
 			slot_sel = 3'd1 << SLOT_SHA256;
 			unmapped = 1'b0;
 		end
-		if ((g_adr & 32'hfffffff0) == 32'h00000010) begin
+		if ((g_adr & 12'hff0) == 12'h010) begin
 			slot_sel = 3'd1 << SLOT_DMA;
 			unmapped = 1'b0;
 		end
-		if ((g_adr & 32'hfffffff0) == 32'h00000000) begin
+		if ((g_adr & 12'hff0) == 12'h000) begin
 			slot_sel = 3'd1 << SLOT_SD;
 			unmapped = 1'b0;
 		end
@@ -186,13 +186,13 @@ module sd_sha_interconnect (
 	//------------------------------------------------------------------------------
 	logic        sd_pipe_ack;
 	logic [31:0] sd_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sd_pipe (
+	wb_cfg_pipe #(.PIPE(2), .AW(12), .TW(0)) u_sd_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_SD] & g_cyc),
 		.m_stb(slot_sel[SLOT_SD] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_SD] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_adr(slot_sel[SLOT_SD] ? g_adr & ~12'hff0 : 12'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(sd_pipe_ack),
@@ -212,13 +212,13 @@ module sd_sha_interconnect (
 	//------------------------------------------------------------------------------
 	logic        dma_pipe_ack;
 	logic [31:0] dma_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(0)) u_dma_pipe (
+	wb_cfg_pipe #(.PIPE(3), .AW(12), .TW(0)) u_dma_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_DMA] & g_cyc),
 		.m_stb(slot_sel[SLOT_DMA] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_DMA] ? g_adr & ~32'hfffffff0 : 32'd0),
+		.m_adr(slot_sel[SLOT_DMA] ? g_adr & ~12'hff0 : 12'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(dma_pipe_ack),
@@ -238,13 +238,13 @@ module sd_sha_interconnect (
 	//------------------------------------------------------------------------------
 	logic        sha256_pipe_ack;
 	logic [31:0] sha256_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sha256_pipe (
+	wb_cfg_pipe #(.PIPE(2), .AW(12), .TW(0)) u_sha256_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_SHA256] & g_cyc),
 		.m_stb(slot_sel[SLOT_SHA256] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_SHA256] ? g_adr & ~32'hffffffc0 : 32'd0),
+		.m_adr(slot_sel[SLOT_SHA256] ? g_adr & ~12'hfc0 : 12'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_ack(sha256_pipe_ack),

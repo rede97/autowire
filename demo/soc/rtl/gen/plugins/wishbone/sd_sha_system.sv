@@ -7,7 +7,7 @@
 //  Desc:   SD + DMA + SHA256 channel interconnect (uplink + engine)
 //  Fabric: sd_sha_interconnect
 //  Attached regfile hangs:
-//    sha256  sha256_regfile  base=0x00000040  mask=0xffffffc0
+//    sha256  sha256_regfile  base=0x00000040  mask=0x00000fc0
 //------------------------------------------------------------------------------
 
 module sd_sha_system (
@@ -15,7 +15,7 @@ module sd_sha_system (
 	input  logic        rst_n,
 	input  logic        rb_grant_en,
 	// Master eng — sd_rd_dma engine
-	input  logic [31:0] eng_o_wb_adr,
+	input  logic [11:0] eng_o_wb_adr,
 	input  logic [31:0] eng_o_wb_dat,
 	input  logic [3:0]  eng_o_wb_sel,
 	input  logic [1:0]  eng_o_wb_tga_bank,
@@ -25,7 +25,7 @@ module sd_sha_system (
 	output logic [31:0] eng_i_wb_dat,
 	output logic        eng_i_wb_ack,
 	// Slave sd — sdspi CSR
-	output logic [31:0] sd_i_wb_adr,
+	output logic [11:0] sd_i_wb_adr,
 	output logic [31:0] sd_i_wb_dat,
 	output logic [3:0]  sd_i_wb_sel,
 	output logic        sd_i_wb_cyc,
@@ -34,7 +34,7 @@ module sd_sha_system (
 	input  logic [31:0] sd_o_wb_dat,
 	input  logic        sd_o_wb_ack,
 	// Slave dma — sd_rd_dma CSR
-	output logic [31:0] dma_i_wb_adr,
+	output logic [11:0] dma_i_wb_adr,
 	output logic [31:0] dma_i_wb_dat,
 	output logic [3:0]  dma_i_wb_sel,
 	output logic        dma_i_wb_cyc,
@@ -43,7 +43,7 @@ module sd_sha_system (
 	input  logic [31:0] dma_o_wb_dat,
 	input  logic        dma_o_wb_ack,
 	// Cascade uplink (slave face toward parent decoder)
-	input  logic [31:0] i_wb_adr,
+	input  logic [11:0] i_wb_adr,
 	input  logic [31:0] i_wb_dat,
 	input  logic [3:0]  i_wb_sel,
 	input  logic [1:0]  i_wb_tga_bank,
@@ -81,7 +81,7 @@ module sd_sha_system (
 );
 
 	// Internal WB: fabric slave sha256 ↔ sha256_regfile
-	logic [31:0] sha256_i_wb_adr;
+	logic [11:0] sha256_i_wb_adr;
 	logic [31:0] sha256_i_wb_dat;
 	logic [3:0]  sha256_i_wb_sel;
 	logic        sha256_i_wb_cyc;

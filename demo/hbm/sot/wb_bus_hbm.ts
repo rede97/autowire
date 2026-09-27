@@ -1,11 +1,11 @@
 // HBM two-level fabric SoT.
 //
-//   level 1  hbm     channel decoder; pstate is PRODUCED here from ADR[31:30]
+//   level 1  hbm     channel decoder; pstate is PRODUCED here from ADR[18:17]
 //   level 2  hbm_ch  aword + dword0 + dword1; pstate PASSES THROUGH (bare name)
 //
-// Address map (byte ADR): channel = ADR[15:12], pstate = ADR[31:30].
-// The tag is the top of the 32-bit address. ADR[29:0] is the address and is
-// not re-packed around a hole.
+// Address map (byte ADR): channel = ADR[15:12], pstate = ADR[18:17].
+// The tag sits directly above the windows (span 0x11000). Bits above it are
+// discarded; decode keeps ADR[16:0].
 // Contract: docs/plugins/wishbone-bus.md 2.1.
 
 import {
@@ -26,6 +26,7 @@ const CH_COUNT = 16;
 
 /** Level 2: one channel. Bare `pstate` = inherit the tag from the uplink. */
 export const hbm_ch = Bus("hbm_ch", "HBM channel: aword + 2x dword", {
+	addrWidth: 12,
 	tags: [pstate],
 	masters: [Master("uplink", "From the channel decoder")],
 	slaves: [
@@ -48,7 +49,8 @@ export const hbm_ch = Bus("hbm_ch", "HBM channel: aword + 2x dword", {
 
 /** Level 1: channel decoder. `TagFromAddr` produces pstate and strips the bits. */
 export const hbm = Bus("hbm", "HBM channel decoder (16 channels)", {
-	tags: [TagFromAddr(pstate, "31:30")],
+	addrWidth: 19,
+	tags: [TagFromAddr(pstate, "18:17")],
 	masters: [Master("cfg", "Configuration port")],
 	slaves: Array.from({ length: CH_COUNT }, (_, i) =>
 		SlaveBus(hbm_ch, i * CH_SIZE, {

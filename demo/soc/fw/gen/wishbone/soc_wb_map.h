@@ -11,17 +11,17 @@
 #include "smoke.h"
 
 #define SOC_WB_CH0_BANK0_SHA256_BASE 0x03000040u /* bank=0 */
-#define SOC_WB_CH0_BANK1_SHA256_BASE 0x43000040u /* bank=1 */
-#define SOC_WB_CH0_BANK2_SHA256_BASE 0x83000040u /* bank=2 */
-#define SOC_WB_CH0_BANK3_SHA256_BASE 0xc3000040u /* bank=3 */
+#define SOC_WB_CH0_BANK1_SHA256_BASE 0x07000040u /* bank=1 */
+#define SOC_WB_CH0_BANK2_SHA256_BASE 0x0b000040u /* bank=2 */
+#define SOC_WB_CH0_BANK3_SHA256_BASE 0x0f000040u /* bank=3 */
 #define SOC_WB_CH1_BANK0_SHA256_BASE 0x03001040u /* bank=0 */
-#define SOC_WB_CH1_BANK1_SHA256_BASE 0x43001040u /* bank=1 */
-#define SOC_WB_CH1_BANK2_SHA256_BASE 0x83001040u /* bank=2 */
-#define SOC_WB_CH1_BANK3_SHA256_BASE 0xc3001040u /* bank=3 */
+#define SOC_WB_CH1_BANK1_SHA256_BASE 0x07001040u /* bank=1 */
+#define SOC_WB_CH1_BANK2_SHA256_BASE 0x0b001040u /* bank=2 */
+#define SOC_WB_CH1_BANK3_SHA256_BASE 0x0f001040u /* bank=3 */
 #define SOC_WB_SMOKE_BANK0_BASE 0x03006000u /* bank=0 */
-#define SOC_WB_SMOKE_BANK1_BASE 0x43006000u /* bank=1 */
-#define SOC_WB_SMOKE_BANK2_BASE 0x83006000u /* bank=2 */
-#define SOC_WB_SMOKE_BANK3_BASE 0xc3006000u /* bank=3 */
+#define SOC_WB_SMOKE_BANK1_BASE 0x07006000u /* bank=1 */
+#define SOC_WB_SMOKE_BANK2_BASE 0x0b006000u /* bank=2 */
+#define SOC_WB_SMOKE_BANK3_BASE 0x0f006000u /* bank=3 */
 
 #define SOC_WB_SHA256_CTRL_OFFSET 0x00000000u
 #define SOC_WB_SHA256_HASH0_OFFSET 0x00000004u
@@ -200,7 +200,7 @@ struct soc_wb_ch0_bank0_sha256 {
 	union SHA256_HASH7 hash7; /* +0x00000020u */
 };
 
-/* Overlay ch0_bank1_sha256 @ 0x43000040u (sha256; bank=1) */
+/* Overlay ch0_bank1_sha256 @ 0x07000040u (sha256; bank=1) */
 struct soc_wb_ch0_bank1_sha256 {
 	union SHA256_CTRL ctrl; /* +0x00000000u */
 	union SHA256_HASH0 hash0; /* +0x00000004u */
@@ -213,7 +213,7 @@ struct soc_wb_ch0_bank1_sha256 {
 	union SHA256_HASH7 hash7; /* +0x00000020u */
 };
 
-/* Overlay ch0_bank2_sha256 @ 0x83000040u (sha256; bank=2) */
+/* Overlay ch0_bank2_sha256 @ 0x0b000040u (sha256; bank=2) */
 struct soc_wb_ch0_bank2_sha256 {
 	union SHA256_CTRL ctrl; /* +0x00000000u */
 	union SHA256_HASH0 hash0; /* +0x00000004u */
@@ -226,7 +226,7 @@ struct soc_wb_ch0_bank2_sha256 {
 	union SHA256_HASH7 hash7; /* +0x00000020u */
 };
 
-/* Overlay ch0_bank3_sha256 @ 0xc3000040u (sha256; bank=3) */
+/* Overlay ch0_bank3_sha256 @ 0x0f000040u (sha256; bank=3) */
 struct soc_wb_ch0_bank3_sha256 {
 	union SHA256_CTRL ctrl; /* +0x00000000u */
 	union SHA256_HASH0 hash0; /* +0x00000004u */
@@ -252,7 +252,7 @@ struct soc_wb_ch1_bank0_sha256 {
 	union SHA256_HASH7 hash7; /* +0x00000020u */
 };
 
-/* Overlay ch1_bank1_sha256 @ 0x43001040u (sha256; bank=1) */
+/* Overlay ch1_bank1_sha256 @ 0x07001040u (sha256; bank=1) */
 struct soc_wb_ch1_bank1_sha256 {
 	union SHA256_CTRL ctrl; /* +0x00000000u */
 	union SHA256_HASH0 hash0; /* +0x00000004u */
@@ -265,7 +265,7 @@ struct soc_wb_ch1_bank1_sha256 {
 	union SHA256_HASH7 hash7; /* +0x00000020u */
 };
 
-/* Overlay ch1_bank2_sha256 @ 0x83001040u (sha256; bank=2) */
+/* Overlay ch1_bank2_sha256 @ 0x0b001040u (sha256; bank=2) */
 struct soc_wb_ch1_bank2_sha256 {
 	union SHA256_CTRL ctrl; /* +0x00000000u */
 	union SHA256_HASH0 hash0; /* +0x00000004u */
@@ -278,7 +278,7 @@ struct soc_wb_ch1_bank2_sha256 {
 	union SHA256_HASH7 hash7; /* +0x00000020u */
 };
 
-/* Overlay ch1_bank3_sha256 @ 0xc3001040u (sha256; bank=3) */
+/* Overlay ch1_bank3_sha256 @ 0x0f001040u (sha256; bank=3) */
 struct soc_wb_ch1_bank3_sha256 {
 	union SHA256_CTRL ctrl; /* +0x00000000u */
 	union SHA256_HASH0 hash0; /* +0x00000004u */
@@ -309,7 +309,7 @@ struct soc_wb_smoke_bank0 {
 	union SMOKE_ACTIVE active; /* +0x00000034u */
 };
 
-/* Overlay smoke_bank1 @ 0x43006000u (smoke; bank=1) */
+/* Overlay smoke_bank1 @ 0x07006000u (smoke; bank=1) */
 struct soc_wb_smoke_bank1 {
 	union SMOKE_ID id; /* +0x00000000u */
 	union SMOKE_STATUS status; /* +0x00000004u */
@@ -327,7 +327,7 @@ struct soc_wb_smoke_bank1 {
 	union SMOKE_ACTIVE active; /* +0x00000034u */
 };
 
-/* Overlay smoke_bank2 @ 0x83006000u (smoke; bank=2) */
+/* Overlay smoke_bank2 @ 0x0b006000u (smoke; bank=2) */
 struct soc_wb_smoke_bank2 {
 	union SMOKE_ID id; /* +0x00000000u */
 	union SMOKE_STATUS status; /* +0x00000004u */
@@ -345,7 +345,7 @@ struct soc_wb_smoke_bank2 {
 	union SMOKE_ACTIVE active; /* +0x00000034u */
 };
 
-/* Overlay smoke_bank3 @ 0xc3006000u (smoke; bank=3) */
+/* Overlay smoke_bank3 @ 0x0f006000u (smoke; bank=3) */
 struct soc_wb_smoke_bank3 {
 	union SMOKE_ID id; /* +0x00000000u */
 	union SMOKE_STATUS status; /* +0x00000004u */

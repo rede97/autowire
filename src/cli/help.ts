@@ -149,8 +149,13 @@ Parallel (does not block connect)
       hoist ShadowDomain(name, copies, width) to its own shared export;
       Bus tags= declares TGA order + source — bare name = pass through from
       uplink, TagFromAddr/TagFromPin/TagFromReg = produced at this level;
-      one source per domain per path; one TagFromAddr per decoder, occupying
-      the top address bits (low bits stay the address; no hole, no re-pack);
+      one source per domain per path;
+      Bus addrWidth is required (the allocated address space, no default 32);
+      a child addrWidth may not exceed its parent, nor the bits the parent
+      window actually forwards;
+      one TagFromAddr per decoder, sitting directly above the slave windows
+      and not past addrWidth-1 (bits above the tag and inside addrWidth are
+      discarded; decode keeps only the low bits; no hole, no re-pack);
       a second tag belongs on the next decoder; extra tags are ordered high
       bit first and are not stable; TagFromAddr bits are stripped from slave
       decode (one window covers all aliases) and must not overlap any window;
