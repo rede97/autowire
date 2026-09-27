@@ -31,6 +31,7 @@ describe("wishbone pack", () => {
 		expect(windows.has("sha256")).toBe(true);
 		expect(windows.has("sram")).toBe(true);
 		const smokeRow = map?.getColumn(2).values.indexOf("smoke");
+		if (smokeRow === undefined) throw new Error("MAP sheet missing");
 		expect(smokeRow).toBeGreaterThan(1);
 		const bits = String(map?.getCell(smokeRow, 5).value ?? "");
 		expect(bits).toContain("[");

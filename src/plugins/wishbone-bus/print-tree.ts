@@ -12,7 +12,7 @@ import {
 
 type Dye = (text: string) => string;
 
-const paint: Record<string, Dye> = {
+const paint = {
 	blue: chalk.blue,
 	bold: chalk.bold,
 	cyan: chalk.cyan,
@@ -21,7 +21,7 @@ const paint: Record<string, Dye> = {
 	magenta: chalk.magenta,
 	red: chalk.red,
 	yellow: chalk.yellow,
-};
+} satisfies Record<string, Dye>;
 
 function color(name: keyof typeof paint, text: string): string {
 	return paint[name](text);

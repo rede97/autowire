@@ -1,7 +1,7 @@
 # 工作区配置 `autowire.toml`（实现约束）
 
 > 状态：**已实现**（`init` / `analysis run` / `connect web` / `connect check` / `connect run`）。`connect run` 写 `.sv`。页面不写工作区。  
-> **产出三分目录 + `[sim.<id>]`**：文档已定（§4.0 / §4.1.1）；实现仍兼容旧 `[dump] dir`——迁移未完成前以代码为准，改实现时同步 help。  
+> **产出三分目录 + `[sim.<id>]`**：已落地（§4.0 / §4.1.1）。`connect_dir` / `sim_dir` / `plugins_dir` 优先；旧 `[dump] dir` 单槽仍兼容并告警，新配置不要再写。改实现时同步 help。
 > 摘要切片：`bun index.ts help workspace`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
 > 关联：[`../connect/html.md`](../connect/html.md)、[`../connect/tb-mod-proposal.md`](../connect/tb-mod-proposal.md)、[`hdxml/cli.md`](../hdxml/cli.md)、[`hdxml/rtlindex-xml.md`](../hdxml/rtlindex-xml.md)。

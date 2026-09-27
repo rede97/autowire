@@ -235,7 +235,10 @@ function leafBits(slave: WbSlave): string {
 		.cells.map((cell) => {
 			const fields = fieldsWithReserved(cell)
 				.filter((bit) => !bit.reserved)
-				.map((bit) => `${bit.name}[${bit.hi}:${bit.lo}]`)
+				.map(
+					(bit) =>
+						`${bit.name}[${bit.bit_offset + bit.width - 1}:${bit.bit_offset}]`,
+				)
 				.join(" ");
 			return `${cell.name}@0x${cell.byte_offset.toString(16)} ${fields}`;
 		})

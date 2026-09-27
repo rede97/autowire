@@ -613,7 +613,7 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		expect(
 			ws.wishboneCExport?.replaceAll("\\", "/").endsWith("fw/gen/wishbone"),
 		).toBe(true);
-		const paths = await generateAll(ws);
+		const paths = await generateAll(ws, undefined, true);
 		expect(paths.filter((p) => p.endsWith("sha256_regfile.sv"))).toHaveLength(
 			1,
 		);

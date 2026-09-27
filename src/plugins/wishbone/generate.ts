@@ -252,7 +252,14 @@ export async function generateAll(
 			const rf = slave.regfile;
 			if (!rf) continue;
 			paths.push(
-				...(await emitRegfile(ws, rf, leafNames, swSheets, excelBySheet)),
+				...(await emitRegfile(
+					ws,
+					rf,
+					leafNames,
+					swSheets,
+					excelBySheet,
+					force,
+				)),
 			);
 		}
 		paths.push(...(await generateBusDef(ws, def, force)));
