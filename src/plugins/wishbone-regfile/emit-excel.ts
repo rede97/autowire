@@ -179,11 +179,17 @@ function appendCellBlock(
 	}
 }
 
+/** Excel field-sheet tab: "regfile_" + sheet, clamped to Excel's 31-char limit. */
+function regfileSheetName(def: LaidRegfile["def"]): string {
+	return `regfile_${effectiveSheet(def)}`.slice(0, 31);
+}
+
 function addSheet(wb: ExcelJS.Workbook, laid: LaidRegfile): void {
-	const name = effectiveSheet(laid.def);
+	const name = regfileSheetName(laid.def);
 	const ws = wb.addWorksheet(name);
 	ws.addRow([...HEADER]);
-	ws.getRow(1).height = 30;
+	// Header cells are 2-line labels; leave the row height unset so Excel
+	// auto-fits the wrapped text (a fixed height clips wider-wrapping columns).
 	for (let col = 1; col <= HEADER.length; col++) {
 		const cell = ws.getCell(1, col);
 		cell.font = HEADER_FONT;
@@ -201,6 +207,7 @@ function addSheet(wb: ExcelJS.Workbook, laid: LaidRegfile): void {
 	ws.getColumn(COL.defaultVal).width = dataWidth;
 	ws.getColumn(COL.name).width = 30;
 	ws.getColumn(COL.desc).width = 40;
+	ws.getColumn(COL.resetDec).width = dataWidth;
 	ws.getColumn(COL.resetHex).width = dataWidth;
 	ws.getColumn(COL.resetSum).width = dataWidth;
 	ws.getColumn(COL.shadow).width = dataWidth;
@@ -256,11 +263,10 @@ function mapFill(argb: string): ExcelJS.FillPattern {
 }
 
 export function busMapSheetName(def: BusDef): string {
-	const name = def.name.slice(0, 31);
-	if (name.length === 0) {
+	if (def.name.length === 0) {
 		throw new Error("wishbone: Excel bus sheet name is empty");
 	}
-	return name;
+	return `bus_map_${def.name}`.slice(0, 31);
 }
 
 function hexWin(n: number, addrWidth = 32): string {
@@ -492,7 +498,7 @@ export function buildRegfileWorkbook(
 	wb.lastModifiedBy = "autowire";
 	wb.created = new Date(0);
 	wb.modified = new Date(0);
-	const fieldNames = new Set(tables.map((t) => effectiveSheet(t.def)));
+	const fieldNames = new Set(tables.map((t) => regfileSheetName(t.def)));
 	for (const bus of busRoots(buses)) {
 		const mapName = busMapSheetName(bus);
 		if (fieldNames.has(mapName)) {

@@ -652,6 +652,9 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 			`\t// Broadcast ${s.broadcast}: no WB data port; writes fan out, reads OR subscriber DAT`,
 			`\tlogic broadcast_${s.broadcast};`,
 			`\tassign broadcast_${s.broadcast} = (${adr} & ${aw}'h${hex(s.mask, aw)}) == ${aw}'h${hex(s.base, aw)};`,
+			`\t// Window offset shared by every ${s.broadcast} subscriber`,
+			`\tlogic ${packedRange(aw)} ${s.broadcast}_off;`,
+			`\tassign ${s.broadcast}_off = ${adr} - ${aw}'h${hex(s.base, aw)};`,
 			"",
 		);
 	}
@@ -706,9 +709,7 @@ function emitSlaveCombo(
 					`({${aw}{${slot.trim()}}} & ${adr})`,
 					...bcast.map((name) => {
 						const src = def.slaves.find((item) => item.broadcast === name);
-						return src
-							? `({${aw}{broadcast_${name}}} & (${adr} - ${aw}'h${hex(src.base, aw)}))`
-							: "";
+						return src ? `({${aw}{broadcast_${name}}} & ${name}_off)` : "";
 					}),
 				]
 					.filter((term) => term !== "")
@@ -853,9 +854,7 @@ function emitSlavePipe(
 					`({${aw}{${slot}}} & ${adr})`,
 					...bcast.map((name) => {
 						const src = def.slaves.find((item) => item.broadcast === name);
-						return src
-							? `({${aw}{broadcast_${name}}} & (${adr} - ${aw}'h${hex(src.base, aw)}))`
-							: "";
+						return src ? `({${aw}{broadcast_${name}}} & ${name}_off)` : "";
 					}),
 				]
 					.filter((term) => term !== "")

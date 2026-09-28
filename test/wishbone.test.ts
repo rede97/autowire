@@ -13,11 +13,11 @@ describe("wishbone pack", () => {
 	test("Excel Address Map indents 2-row blocks and stops at regfile leaves", () => {
 		const wb = buildRegfileWorkbook([layoutRegfile(smoke)], [soc_wb]);
 		const names = wb.worksheets.map((s) => s.name);
-		expect(names).toContain("smoke");
-		expect(names).toContain("soc_wb");
+		expect(names).toContain("regfile_smoke");
+		expect(names).toContain("bus_map_soc_wb");
 		expect(names).not.toContain("MAP_soc_wb");
 		expect(names).not.toContain("sd_sha");
-		const map = wb.getWorksheet("soc_wb");
+		const map = wb.getWorksheet("bus_map_soc_wb");
 		if (!map) throw new Error("Address Map sheet missing");
 		// Two header rows: address column plus one 3-column group per level.
 		expect(map.getCell(1, 1).value).toBe("Abs Addr");
