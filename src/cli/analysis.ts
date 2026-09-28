@@ -2,7 +2,7 @@
 // analysis run writes the RtlIndex. deps, search, and info only read it.
 
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Command } from "commander";
 import { LeafDb } from "../rtl/leaf.ts";
@@ -42,8 +42,13 @@ export function registerAnalysis(program: Command): void {
 			}
 			await Bun.write(tomlTarget, defaultToml(name));
 			await Bun.write(agentsTarget, contract.bytes);
+			// RtlIndex lives here (fixed location); pre-create so first analysis
+			// run has no surprise mkdir.
+			const indexDir = join(process.cwd(), ".autowire", "hdxml");
+			await mkdir(indexDir, { recursive: true });
 			console.log(`created ${tomlTarget}`);
 			console.log(`created ${agentsTarget}`);
+			console.log(`created ${indexDir}/`);
 		});
 
 	const analysis = program

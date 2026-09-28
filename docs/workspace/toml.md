@@ -68,9 +68,8 @@ exclude_dirs = []          # 按目录名排除（任一路径分量命中即剪
 # 带值 = 展开（经 hdxml -D 传入）；保原文宏不写在这里，列入上方 keep_raw
 SYNTHESIS = "1"
 
-[analysis.index]
-# RtlIndex XML 目录；固定在工作区生成临时目录 .autowire 下（见下方说明）
-dir = ".autowire/hdxml"
+# RtlIndex 目录固定为 .autowire/hdxml（init 时创建；可删缓存）。
+# [analysis.index] dir 不再可配：写成别的值会直接报错。
 
 [workspace.dump]
 # 产物目录三分（DE / DV / 插件）；相对工作区根。

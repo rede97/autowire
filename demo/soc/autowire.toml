@@ -13,9 +13,7 @@ exclude_filenames = []
 
 [analysis.defines]
 
-[analysis.index]
-# RtlIndex XML dir; fixed generated temp dir (deletable)
-dir = ".autowire/hdxml"
+# RtlIndex: fixed at .autowire/hdxml (created by init; deletable cache)
 
 [workspace.dump]
 connect_dir = "rtl/gen/connect"

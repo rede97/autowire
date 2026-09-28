@@ -2,6 +2,12 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.1.0] - 2026-09-28
+
+- 打包的 `autowire.js` 可以脱离仓库工作：wishbone 模板从文档包读取（不再依赖源码树路径），`hdxml` 查找在仓库外回退到 `HDXML_BIN`/PATH。`loadPack` 进程内缓存。
+- RtlIndex 目录强制固定为 `.autowire/hdxml`：`[analysis.index] dir` 写成其他值直接报错。`autowire init <name>` 会创建该目录。
+- `init` 的 toml 模板风格对齐 demo/soc：`filelists = ["rtl/<name>.f"]`、`rtl/gen/` 产物三分目录、完整 `[workspace.style]` 对齐块。
+
 ## [2.0.2] - 2026-09-28
 
 - `help agent`（`Reference (top priority)`）与仓库根 `AGENTS.md` 明确：项目最佳实践以 `docs/`（契约/约束）与 `demo/`（可运行范例）为准，改动行为前先读这两处，作为第一优先级参考。

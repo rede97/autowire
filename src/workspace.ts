@@ -269,6 +269,11 @@ export async function loadWorkspace(
 	const analysis = isObj(doc.analysis) ? doc.analysis : {};
 	const rtl = isObj(analysis.rtl) ? analysis.rtl : {};
 	const index = isObj(analysis.index) ? analysis.index : {};
+	// RtlIndex location is fixed at .autowire/hdxml (init creates it; deletable cache).
+	if (index.dir !== undefined && index.dir !== ".autowire/hdxml")
+		throw new Error(
+			`autowire.toml: [analysis.index] dir is fixed at .autowire/hdxml (got ${JSON.stringify(index.dir)}); remove the key`,
+		);
 	if (doc.dump !== undefined)
 		throw new Error("autowire.toml: [dump] is moved under [workspace.dump]");
 	if (doc.style !== undefined)
@@ -422,9 +427,7 @@ export async function loadWorkspace(
 			analysis.define_headers,
 			"analysis.define_headers",
 		).map(rel),
-		indexDir: rel(
-			typeof index.dir === "string" ? index.dir : ".autowire/hdxml",
-		),
+		indexDir: rel(".autowire/hdxml"),
 		dumpDir: rel(legacyDir ?? connectDirRel),
 		connectDir: rel(connectDirRel),
 		simDir: rel(simDirRel),
@@ -535,7 +538,7 @@ export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
 	return args;
 }
 
-/** Default config written by init (aligned with docs/workspace/toml.md §4) */
+/** Default config written by init (aligned with docs/workspace/toml.md §4; style mirrors demo/soc) */
 export function defaultToml(name: string): string {
 	return `# autowire workspace config (contract: docs/workspace/toml.md)
 # hdxml never reads this file: autowire analysis maps it to hdxml CLI args.
@@ -547,20 +550,13 @@ name = "${name}"
 # hdxml binary path (relative to this file). Unset = default lookup:
 # --hdxml CLI > $HDXML_BIN > repo hdxml/target/{release,debug} > PATH
 # hdxml_bin = "hdxml/target/release/hdxml"
-# Macro define headers (same as hdxml --define-headers): replaces the traditional EDA
-# ".f-head .svh" global-macro trick — per-file parallel preprocessing cannot carry
-# macros across files. Extracted macros stay RAW (sentinel) by default; override
-# per-name with an expanding entry in [analysis.defines].
-# define_headers = ["rtl/include/project_defines.svh"]
-
-# Raw macros (port expressions keep \`NAME verbatim, \`ifdef stays true,
-# restored at dump; passed as --keep-raw)
-# keep_raw = ["WIDTH", "ENV_MACRO"]
+# Macro define headers (same as hdxml --define-headers); raw macros:
+# keep_raw = ["WIDTH"]
 
 [analysis.rtl]
 # All three sources may coexist; union-deduplicated
-filelists = []
-walk_dirs = ["rtl"]
+filelists = ["rtl/${name}.f"]
+walk_dirs = []
 sources = []
 # include search paths (+incdir)
 incdirs = []
@@ -569,45 +565,44 @@ exclude_filenames = []
 exclude_dirs = []
 
 [analysis.defines]
-# With value = expand (same as -D); do NOT put raw macros here — use keep_raw above
+# With value = expand (same as -D); raw macros go to keep_raw above
 # SYNTHESIS = "1"
 
-[analysis.index]
-# RtlIndex XML dir; lives under the fixed generated temp dir .autowire
-dir = ".autowire/hdxml"
+# RtlIndex is fixed at .autowire/hdxml (created by init; deletable cache).
 
 [workspace.dump]
-# Product dirs (docs/workspace/toml.md §4.0). Prefer these over legacy dir=.
-connect_dir = "gen/connect"
-sim_dir = "gen/sim"
-plugins_dir = "gen/plugins"
-# dir = "gen"  # deprecated single sink (compat only)
+# Product dirs (docs/workspace/toml.md §4.0)
+connect_dir = "rtl/gen/connect"
+sim_dir = "rtl/gen/sim"
+plugins_dir = "rtl/gen/plugins"
 
 # Type-A wishbone (RegfileDef + BusDef stay separate types).
 # [plugins.wishbone]
 # export = "fw/gen/wishbone/bus_regfiles.xlsx"
-# c = "fw/gen/wishbone"   # regfile/<sheet>.h + bus/<bus>_map.h + ${name}.h umbrella
-# uvm = "dv/ral"          # regfile/ral_<SHEET>.sv + bus/ral_block_<bus>.sv + ral_${name}.sv umbrella
-# [wishbone.soc]
-# ts = "sot/wb_bus_soc.ts"
+# c = "fw/gen/wishbone"
+# uvm = "dv/ral"
+# [wishbone.${name}]
+# ts = "sot/wb_bus_${name}.ts"
 
 [workspace.style]
-# Param overrides: param_inline = true (default) writes simple overrides into
-# the instance (#(.W(8))); false folds each override into Mod__Inst__Param.
-# inst_port_dir = true appends "// input" to each instance port-map row
-# (inst_port_dir_format = "short" prints "// i" / "// o" / "// io");
-# inst_port_width = true adds the port width after it ("// input [31:0]").
+# Code style like demo/soc: aligned declarations/inst ports/params/signals
+port_align = true
+param_align = true
+inst_port_align = true
+inst_param_align = true
+# port-map comments: short direction + port width, e.g. // o [31:0]
+inst_port_dir = true
+inst_port_dir_format = "short"
+inst_port_width = true
+signal_align = true
+localparam_upper = true
 
-# Named DE units (DAG). Do not use flat [connect] html = [...].
-# [connect.sha256wb]
-# html = "sot/connect/sha256wb.html"
-# [connect.soc_top]
-# html = "sot/connect/soc_top.html"
-# deps = ["sha256wb"]
+# [connect.<unit>]
+# html = "sot/connect/<unit>.html"
+# deps = ["<other-unit>"]
 
-# DV TB tops (aw-tb-mod); dump → sim_dir. May deps= connect ids.
-# [sim.soc_tb]
-# html = "sim/soc_tb.html"
-# deps = ["soc_top"]
+# [sim.<tb>]   # DV TB top (aw-tb-mod) — dump goes to sim_dir
+# html = "sim/<tb>.html"
+# deps = ["<unit>"]
 `;
 }

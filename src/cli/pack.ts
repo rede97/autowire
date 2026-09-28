@@ -82,10 +82,17 @@ export function decodePack(packed: Uint8Array): PackedFile[] {
 	return files;
 }
 
-export async function loadPack(): Promise<PackedFile[]> {
-	const { DOC_PACK } = await import("./doc-pack.generated.ts");
-	if (DOC_PACK.byteLength > 0) return decodePack(DOC_PACK);
-	return collectPackFiles(join(import.meta.dir, "..", ".."));
+let packCache: Promise<PackedFile[]> | null = null;
+
+/** Docs pack for this process. Cached: the pack cannot change mid-run, and the
+ *  dev fallback walks the whole docs/+demo/ tree (too slow to repeat per call). */
+export function loadPack(): Promise<PackedFile[]> {
+	packCache ??= (async () => {
+		const { DOC_PACK } = await import("./doc-pack.generated.ts");
+		if (DOC_PACK.byteLength > 0) return decodePack(DOC_PACK);
+		return collectPackFiles(join(import.meta.dir, "..", ".."));
+	})();
+	return packCache;
 }
 
 export async function unpackPack(

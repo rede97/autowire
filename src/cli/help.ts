@@ -316,7 +316,7 @@ analysis run: load toml (upward from CWD, or --workspace) and run hdxml with map
       → -f / -s / -w / --exclude-filenames / --exclude-dirs
   [analysis.defines] NAME="v" → -D NAME=v
   [analysis] keep_raw = [...] → --keep-raw
-  [analysis.index] dir → -o/--output-dir (default .autowire/hdxml)
+  RtlIndex dir is fixed: .autowire/hdxml → -o/--output-dir (init creates it)
   [analysis] hdxml_bin → binary path only (not an hdxml arg; must exist if set)
 
 hdxml binary lookup: --hdxml > toml [analysis] hdxml_bin > $HDXML_BIN

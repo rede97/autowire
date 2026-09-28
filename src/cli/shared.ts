@@ -1,12 +1,24 @@
 // Shared CLI helpers: hdxml binary resolution, sidecar analysis, workspace loading.
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { WorkspaceConfig } from "../workspace.js";
 import { findWorkspace, loadWorkspace } from "../workspace.js";
 
 /** Repo root (this file lives in src/cli/). */
-export const REPO_ROOT = join(import.meta.dir, "..", "..");
+/** Repo checkout root, found by walking up for hdxml/Cargo.toml; null inside a
+ *  standalone bundle (no repo candidates, hdxml comes from PATH/HDXML_BIN). */
+function findRepoRoot(): string | null {
+	let dir = import.meta.dir;
+	for (let i = 0; i < 8; i++) {
+		if (existsSync(join(dir, "hdxml", "Cargo.toml"))) return dir;
+		const parent = dirname(dir);
+		if (parent === dir) return null;
+		dir = parent;
+	}
+	return null;
+}
+export const REPO_ROOT: string | null = findRepoRoot();
 
 const EXE = process.platform === "win32" ? ".exe" : "";
 
@@ -20,8 +32,12 @@ export function findHdxml(explicit?: string, tomlBin?: string | null): string {
 		explicit,
 		tomlBin ?? undefined,
 		process.env.HDXML_BIN,
-		join(REPO_ROOT, `hdxml/target/release/hdxml${EXE}`),
-		join(REPO_ROOT, `hdxml/target/debug/hdxml${EXE}`),
+		...(REPO_ROOT
+			? [
+					join(REPO_ROOT, `hdxml/target/release/hdxml${EXE}`),
+					join(REPO_ROOT, `hdxml/target/debug/hdxml${EXE}`),
+				]
+			: []),
 	].filter((c): c is string => typeof c === "string" && c.length > 0);
 	for (const c of candidates) {
 		if (existsSync(c)) return c;
@@ -35,6 +51,12 @@ export function analyzeWithSidecar(
 	hdxmlBin: string,
 	incdirs: string[],
 ): string {
+	if (!REPO_ROOT) {
+		console.error(
+			"analyzeWithSidecar: needs a repo checkout (standalone bundle has no hdxml target dir)",
+		);
+		process.exit(1);
+	}
 	const outDir = join(REPO_ROOT, ".autowire/hdxml");
 	const args = ["-w", rtlDir, "-o", outDir];
 	for (const i of incdirs) args.push("-I", i);
