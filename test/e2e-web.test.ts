@@ -284,8 +284,9 @@ describe("autowire web e2e", () => {
 					?.getAttribute("id"),
 				liveId: document.querySelector("#aw-live aw-inst")?.getAttribute("id"),
 				hookOnSource:
-					document.querySelector("#aw-source aw-port[name='probe_from_hook']") !==
-					null,
+					document.querySelector(
+						"#aw-source aw-port[name='probe_from_hook']",
+					) !== null,
 				hookOnLive:
 					document.querySelector("#aw-live aw-port[name='probe_from_hook']") !==
 					null,
