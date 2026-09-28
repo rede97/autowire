@@ -130,6 +130,6 @@ wishbone 可以登记自己的相位和参数，例如只印 regfile、只印某
 
 ## 5. 不改的边界
 
-- `init <name>` 留在顶层。它创建 `autowire.toml`（带 `[workspace] name`，风格对齐 demo/soc）、`AGENTS-AUTOWIRE.md`（仓库根目录 `AGENTS.md` 的副本）、`.autowire/hdxml/`（RtlIndex 固定目录）和 `dsl/`（wishbone DSL 源码，独立工作区 SoT 从这里 import）；toml 或 AGENTS-AUTOWIRE.md 已存在则都不写。
+- `init <name>` 留在顶层。它创建 `autowire.toml`（带 `[workspace] name`，风格对齐 demo/soc）、`AGENTS-AUTOWIRE.md`（仓库根目录 `AGENTS.md` 的副本）、`.autowire/hdxml/`（RtlIndex 固定目录）和 `.autowire/dsl/`（wishbone DSL 源码，独立工作区 SoT 从这里 import；属可删缓存，`plugin wishbone run` 缺失时自动补回）；toml 或 AGENTS-AUTOWIRE.md 已存在则都不写。
 - `plugin wishbone run` 不调用 `connect run`。生成出的 SV 仍要再经 `analysis run`，connect 才能把它当叶子例化。
 - 类型 B 若落地，展开仍是 connect 相位链里 check 之前的一步，不另做一个顶层 `run`。

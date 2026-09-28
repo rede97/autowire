@@ -2,6 +2,7 @@
 
 import type { Command } from "commander";
 import { generateAll, PLUGIN_ID } from "../plugins/wishbone/generate.ts";
+import { ensureWishboneDsl } from "./pack.ts";
 import { requireWorkspace } from "./shared.ts";
 
 export function registerPlugin(program: Command): void {
@@ -25,6 +26,10 @@ export function registerPlugin(program: Command): void {
 		.action(
 			async (opts: { workspace?: string; force?: boolean; only?: string }) => {
 				const ws = await requireWorkspace(opts.workspace ?? process.cwd());
+				// .autowire is a deletable cache: re-materialize the DSL SoT imports
+				const healed = await ensureWishboneDsl(ws.root);
+				if (healed.length > 0)
+					console.log(`restored .autowire/dsl/ (${healed.length} files)`);
 				if (ws.wishboneSources.length === 0) {
 					console.error(
 						`autowire.toml: no [wishbone.<source_id>] ts= for ${PLUGIN_ID}`,

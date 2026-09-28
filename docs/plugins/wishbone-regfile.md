@@ -69,7 +69,7 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 **toml**
 
 - `[wishbone.<source_id>] ts = "sot/wb_reg_foo.ts"`（总线为 `sot/wb_bus_foo.ts`）指向含 **一个或多个** `Regfile(...)` / `Bus(...)` 导出的模块（类型仍分立）。  
-- SoT 的 DSL 导入：仓库内从 `src/plugins/wishbone-{bus,regfile}/dsl.ts` 引；**独立工作区**（只有 autowire.js）用 `init` 写出的 `dsl/`：`import { Regfile } from "../dsl/wishbone-regfile/dsl.ts"`、`import { Bus } from "../dsl/wishbone-bus/dsl.ts"`。`dsl/` 随发布版本走，不要手改。  
+- SoT 的 DSL 导入：仓库内从 `src/plugins/wishbone-{bus,regfile}/dsl.ts` 引；**独立工作区**（只有 autowire.js）用 `init` 写出的 `.autowire/dsl/`：`import { Regfile } from "../.autowire/dsl/wishbone-regfile/dsl.ts"`、`import { Bus } from "../.autowire/dsl/wishbone-bus/dsl.ts"`。`.autowire` 是可删缓存：`plugin wishbone run` 发现缺失会自动补回；不要手改。  
 - 省略 `exports` → generate **该文件内全部** `RegfileDef` 导出；可选 `exports = ["a", "b"]` 只生成列出的绑定。  
 - **禁止** `html=` 充当 SoT。  
 - **禁止**把 regfile 源登记为 `[connect.<id>]` / `[sim.<id>]`（生成走 `plugin wishbone run`，不走 connect 相位）。

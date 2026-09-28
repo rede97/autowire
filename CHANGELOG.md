@@ -4,7 +4,7 @@
 
 ## [2.2.0] - 2026-09-28
 
-- `autowire init <name>` 同时写出 `dsl/`（wishbone-bus/wishbone-regfile 的 DSL 源码三件套）。独立工作区的 SoT 用 `../dsl/wishbone-bus/dsl.ts`、`../dsl/wishbone-regfile/dsl.ts` 导入，不再依赖仓库源码树。DSL 随发布版本走。
+- `autowire init <name>` 同时写出 `.autowire/dsl/`（wishbone-bus/wishbone-regfile 的 DSL 源码三件套）。独立工作区的 SoT 用 `../.autowire/dsl/wishbone-bus/dsl.ts`、`../.autowire/dsl/wishbone-regfile/dsl.ts` 导入，不再依赖仓库源码树。DSL 随发布版本走；`.autowire` 被删后 `plugin wishbone run` 自动补回。DSL 判定为结构式（无 instanceof），bundle 内置副本与外部文件不会重复定义冲突。
 
 ## [2.1.0] - 2026-09-28
 

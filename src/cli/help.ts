@@ -309,8 +309,9 @@ autowire init / analysis (docs/cli.md)
   autowire analysis info <module>
 
 init <name>: create default autowire.toml (with [workspace] name), AGENTS-AUTOWIRE.md
-(the bundled AGENTS.md copy), .autowire/hdxml/ (fixed RtlIndex dir) and dsl/ (wishbone
-DSL sources for standalone SoT imports). Refuses to overwrite an existing toml/AGENTS file.
+(the bundled AGENTS.md copy), .autowire/hdxml/ (fixed RtlIndex dir) and .autowire/dsl/
+(wishbone DSL sources for standalone SoT imports; self-healed by plugin wishbone run).
+Refuses to overwrite an existing toml/AGENTS file.
 analysis run: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
 (docs/workspace/toml.md):
   [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames / exclude_dirs
@@ -557,7 +558,7 @@ function commandIndex(): string {
 		"Autowire — commands",
 		"",
 		"  help [topic]              topic reference (see help topics)",
-		"  init <name>               create autowire.toml + AGENTS-AUTOWIRE.md in CWD",
+		"  init <name>               toml + AGENTS-AUTOWIRE.md + .autowire/{hdxml,dsl}",
 		"  analysis run              hdxml from autowire.toml       → help analysis",
 		"  analysis deps [module]    RTL dependency trees           → help deps",
 		"  analysis search <pattern> fuzzy or regex index search    → help analysis",
