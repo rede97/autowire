@@ -4,13 +4,12 @@
 
 ## [2.0.1] - 2026-09-28
 
-- `autowire.toml` 新增顶层 `[workspace]` 表，`name` 必填（C 标识符）。wishbone 顶层伞文件名与 include 卫兵改为按它生成（C 伞 `<name>.h` / 卫兵 `<NAME>_H`；UVM 伞 `ral_<name>.sv` / 卫兵 `RAL_<NAME>_SV`），避免跨工作区撞名。`init` 改为 `init <name>`。
-- 产出目录与打印风格移到 `[workspace.dump]` / `[workspace.style]`；`[hdxml] bin` 折进 `[analysis] hdxml_bin`；仍写旧顶层 `[dump]` / `[style]` / `[hdxml]` 会报迁移错误。
-- `[analysis.rtl]` 新增 `exclude_dirs`（映射 hdxml `--exclude-dirs`，按目录名剪整棵子树）。
-- Wishbone Excel：字段 sheet 更名 `regfile_<sheet>`、地址图 sheet 更名 `bus_map_<bus>`；表头行不再写死高度，按换行自动撑高。
-- Wishbone 总线：每个广播组只发射一根共享 `<group>_off` 偏移 wire，订阅者不再各自重复 `(adr - base)`。
-- connect web：源（source）与处理后（processed）以 DevTools 风格树呈现。
-- CI：发布前检查会构建 hdxml、跑 RtlIndex 与 Chromium 测试；demo 的 VCS 回归转绿。
+- `[analysis.rtl]` 新增 `exclude_dirs`，映射 hdxml `--exclude-dirs`（按目录名剪整棵子树，任一路径分量命中即排除）。此前 hdxml 已支持该能力，但 autowire.toml 未透出、文档也未说明。
+
+## [2.0.0] - 2026-09-28
+
+- hdxml 支持 VCS 风格 filelist 的最小子集：`.vc` 扩展名、`+incdir+DIR`、`+define+NAME[=VALUE]`、`-F`（子列表内容相对该子列表所在目录）。库搜索（`-y`/`+libext+`/`-v`）与仿真器开关不实现，遇到即报错。hdxml 自身版本升为 0.2.0，与 autowire 版本相互独立。
+- 主线代码源切换为 GitHub `main`；Gitee 分支线不再合入。
 
 ## [0.9.1] - 2026-09-28
 

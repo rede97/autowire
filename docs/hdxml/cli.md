@@ -16,7 +16,7 @@
 
 | 选项 | 说明 |
 |---|---|
-| `-f, --filelist FILE...` | 列表（`.f` / `.lst` / `.flst` / `.list`；`#`/`//` 注释、`-f` 嵌套、`$ENV` 整段展开——按 `/` 分段，整段以 `$` 开头时替换）。**`.svh` 条目不识别**：直接跳过并给警告——宏头文件只能源内 `` `include `` 或 `--define-headers` 独立加载，保证与 EDA 行为一致（降级方案：EDA 用 `eda_load.f` 头部加载 svh，与分析器共享纯源码 `rtl.f`） |
+| `-f, --filelist FILE...` | 列表（`.f` / `.vc` / `.lst` / `.flst` / `.list`；`#`/`//` 注释、`-f` 嵌套、`$ENV` 整段展开——按 `/` 分段，整段以 `$` 开头时替换）。**VCS 风格最小子集**：`+incdir+DIR`（并入 `-I`，可 `+` 串多段）、`+define+NAME[=VALUE]`（并入 `-D`，裸名 =1）、`-F`（子列表内容相对该子列表所在目录；`-f` 内容仍相对 CWD）。**其余开关一律报错**：库搜索 `-y`/`+libext+`/`-v` 与仿真器开关（`-sverilog`/`-timescale`/`-full64` 等）不实现。**`.svh` 条目不识别**：直接跳过并给警告——宏头文件只能源内 `` `include `` 或 `--define-headers` 独立加载，保证与 EDA 行为一致（降级方案：EDA 用 `eda_load.f` 头部加载 svh，与分析器共享纯源码 `rtl.f`） |
 | `-s, --sources FILE...` | 散文件 |
 | `-w, --walk-dirs DIR...` | 递归收集 `*.sv/*.v` |
 | `--exclude-filenames NAME...` | 按文件名（不含目录）排除 |
