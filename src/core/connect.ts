@@ -146,14 +146,20 @@ export async function buildEngineCtx(
 		leaf,
 		wrapper: (mod) => wrappers.get(mod) ?? null,
 	};
-	const prewarm = async (doc: Document) => {
-		const wanted = new Set<string>();
-		for (const el of doc.querySelectorAll("aw-inst")) {
-			const mod = el.getAttribute("mod") ?? "";
-			if (mod && !wrappers.has(mod) && unitMods.get(mod) !== unit.id)
-				wanted.add(mod);
+	const prewarm = async (_doc: Document) => {
+		// Every leaf, not only names already written in the HTML. on-init may
+		// instantiate a module the static text never mentioned.
+		try {
+			for (const mod of await leafDb.all()) cache.set(mod.name, mod);
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				"code" in error &&
+				(error as NodeJS.ErrnoException).code === "ENOENT"
+			)
+				return;
+			throw error;
 		}
-		for (const mod of wanted) cache.set(mod, await leafDb.get(mod));
 	};
 	return { ctx, errors, prewarm };
 }

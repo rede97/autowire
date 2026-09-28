@@ -3,7 +3,7 @@
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 // Browser assets embedded as text: same source in dev (`bun index.ts`) and in
 // the compiled binary (`bun build --compile`); web/aw.js is the built bundle.
 // @ts-expect-error Bun text import (typed via src/assets.d.ts for editors that resolve it)
@@ -21,8 +21,6 @@ interface WebState {
 	ws: WorkspaceConfig;
 	leafDb: LeafDb;
 	defaultUnit: string | null;
-	/** Ephemeral hook sources. Obscura cannot load data: module URLs. */
-	hookScripts: Map<string, string>;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -124,6 +122,19 @@ async function handleApi(
 		if (!leaf) return json({ error: `unknown module "${name}"` }, 404);
 		return json(leaf);
 	}
+	if (req.method === "GET" && path === "/api/leaves") {
+		try {
+			return json({ modules: await leafDb.all() });
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				"code" in error &&
+				(error as NodeJS.ErrnoException).code === "ENOENT"
+			)
+				return json({ error: "no RtlIndex" }, 404);
+			throw error;
+		}
+	}
 	if (req.method === "GET" && path === "/api/author") {
 		const id = url.searchParams.get("id") ?? "";
 		const unit = findUnit(ws, id);
@@ -146,25 +157,6 @@ async function handleApi(
 		}
 		return new Response(await readFile(file, "utf8"), {
 			headers: { "content-type": "application/xml; charset=utf-8" },
-		});
-	}
-	if (req.method === "POST" && path === "/api/hook-script") {
-		const body = (await req.json()) as { text?: string };
-		const id = crypto.randomUUID();
-		state.hookScripts.set(id, typeof body.text === "string" ? body.text : "");
-		while (state.hookScripts.size > 64) {
-			const oldest = state.hookScripts.keys().next().value;
-			if (oldest === undefined) break;
-			state.hookScripts.delete(oldest);
-		}
-		return json({ id, url: `/api/hook-script/${id}.js` });
-	}
-	if (req.method === "GET" && path.startsWith("/api/hook-script/")) {
-		const id = path.slice("/api/hook-script/".length).replace(/\.js$/, "");
-		const src = state.hookScripts.get(id);
-		if (src === undefined) return json({ error: "unknown hook script" }, 404);
-		return new Response(src, {
-			headers: { "content-type": "text/javascript; charset=utf-8" },
 		});
 	}
 	return json({ error: `no route ${req.method} ${path}` }, 404);
@@ -235,7 +227,7 @@ const PAGE_HTML = `<!doctype html>
   #author-tabs button[aria-selected="true"] { box-shadow: inset 0 -2px #57c; }
   #col-author { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
   #author-source, #author-processed { overflow: auto; min-height: 0; }
-  #aw-hooks script[type="aw/hook"] { display: block; white-space: pre-wrap; border-left: 3px solid #b6b; margin: .2em 0; padding: .2em .4em; color: #b6b; }
+  #aw-source script, #aw-live script { display: block; white-space: pre-wrap; border-left: 3px solid #b6b; margin: .2em 0; padding: .2em .4em; color: #b6b; }
   #aw-source autowire, #aw-live autowire,
   #aw-source aw-mod, #aw-live aw-mod,
   #aw-source aw-tb-mod, #aw-live aw-tb-mod,
@@ -347,7 +339,6 @@ const PAGE_HTML = `<!doctype html>
           <button id="atab-proc" type="button" aria-selected="false">Processed</button>
         </nav>
         <div id="author-source">
-          <div id="aw-hooks" aria-label="hook scripts"></div>
           <div id="aw-source" aria-label="unmodified author HTML"></div>
         </div>
         <div id="author-processed" hidden>
@@ -384,7 +375,7 @@ const MIN_HTML = `<!doctype html>
   body { margin: 0; font-family: ui-monospace, monospace; }
   header { padding: .4em .8em; border-bottom: 1px solid #8885; }
   header button, header span, header strong { display: inline-block; margin: .15em .3em; font: inherit; }
-  #aw-source, #aw-hooks, #aw-live, #db-summary, #right-body, #aw-generated { display: block; clear: both; }
+  #aw-source, #aw-live, #db-summary, #right-body, #aw-generated { display: block; clear: both; }
   #aw-status[data-state="done"] { color: #4a4; }
   #aw-status[data-state="error"] { color: #c44; }
   #aw-status[data-state="running"] { color: #cb4; }
@@ -414,7 +405,6 @@ const MIN_HTML = `<!doctype html>
 <div id="error-list" hidden></div>
 <pre id="aw-generated" aria-label="generated source"></pre>
 <h2>source</h2>
-<div id="aw-hooks" aria-label="hook scripts"></div>
 <div id="aw-source" aria-label="unmodified author HTML"></div>
 <h2>processed</h2>
 <div id="aw-live" aria-label="post-script author HTML"></div>
@@ -434,7 +424,6 @@ export async function startWeb(
 		ws,
 		leafDb,
 		defaultUnit,
-		hookScripts: new Map(),
 	};
 	const server = Bun.serve({
 		hostname: "127.0.0.1",
@@ -457,6 +446,15 @@ export async function startWeb(
 					return new Response(pageJs, {
 						headers: { "content-type": "text/javascript; charset=utf-8" },
 					});
+				}
+				if (url.pathname.startsWith("/raw/")) {
+					const rel = decodeURIComponent(url.pathname.slice("/raw/".length));
+					const root = resolve(ws.root);
+					const abs = resolve(root, rel);
+					if (abs !== root && !abs.startsWith(root + sep))
+						return json({ error: "path escapes the workspace" }, 403);
+					if (!existsSync(abs)) return json({ error: "not found" }, 404);
+					return new Response(Bun.file(abs));
 				}
 				if (url.pathname === "/") {
 					const minimal = url.searchParams.get("ui") === "min";

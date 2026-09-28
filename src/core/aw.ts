@@ -45,17 +45,25 @@ export interface EngineCtx {
 	wrapper?: (mod: string) => ModFacts | null;
 }
 
-/** Lifecycle hook payloads (docs/connect/lifecycle.md). */
-export interface HookArgs {
-	mod?: Element;
-	doc?: Document;
-	inst?: Element;
-	template?: Element | null;
-	connects?: Record<string, unknown>[];
+/** One unit's query root. happy-dom passes its Document; the page passes the
+ *  processed container. Author functions resolve on that document's window. */
+export type UnitRoot = ParentNode;
+
+/** Read-only module facts handed to `on-init` / `on-template`. */
+export interface AuthorMod {
+	name: string;
+	params: { name: string; value: string }[];
+	ports: {
+		name: string;
+		dir: string;
+		packed: string | null;
+		unpacked: string | null;
+	}[];
+	imports: { package: string; symbol: string }[];
 }
 
-export type HookFn = (args: HookArgs) => void;
-export type HookPhase = "before-instances" | "on-template" | "before-dump";
+/** Lookup of modules already created when `on-init` runs. Unknown names are null. */
+export type AuthorMods = (name: string) => AuthorMod | null;
 
 /** Minimal structural window for installGlobal (works in Bun/linkedom/ Chromium). */
 export interface AwWindow {
@@ -289,11 +297,6 @@ const RENDER_GROUPS = [
 	"aw-signals",
 	"aw-insts",
 ];
-const HOOK_PHASES: HookPhase[] = [
-	"before-instances",
-	"on-template",
-	"before-dump",
-];
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const LITERAL = /^(\d+('[bodhBODH][0-9a-fA-F_xXzZ?]+)?|\d+("[^"]*")?|"[^"]*")$/;
 
@@ -324,7 +327,7 @@ function classifyTo(text: string, scope?: ModScope): "net" | "const" | null {
 }
 
 /** Direct element children with the given (lowercase) tag name. */
-function children(el: Element | Document, tag: string): Element[] {
+function children(el: ParentNode, tag: string): Element[] {
 	const out = [];
 	for (const c of el.children ?? []) {
 		if ((c.tagName ?? "").toLowerCase() === tag) out.push(c);
@@ -350,7 +353,7 @@ function splitIncludes(raw: string | null): string[] {
 }
 
 /** First direct child with the given tag, or null. */
-function child(el: Element | Document, tag: string): Element | null {
+function child(el: ParentNode, tag: string): Element | null {
 	for (const c of el.children ?? []) {
 		if ((c.tagName ?? "").toLowerCase() === tag) return c;
 	}
@@ -358,7 +361,7 @@ function child(el: Element | Document, tag: string): Element | null {
 }
 
 /** Element descendants with the given tag (document order). */
-function all(el: Element | Document, tag: string): Element[] {
+function all(el: ParentNode, tag: string): Element[] {
 	return [...el.querySelectorAll(tag)];
 }
 
@@ -367,67 +370,190 @@ function attr(el: Element, name: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Hook registry. Author <script type="module"> registers via aw.on(phase, fn).
-// Registries are per connect unit: the page brackets script execution with
-// beginUnitHooks(id) / endUnitHooks() so dep units never leak hooks into
-// each other's documents.
+// Author functions. Classic scripts put them on window. Attributes name one
+// each: aw-content@on-init, aw-inst@on-template (docs/connect/lifecycle.md).
 // ---------------------------------------------------------------------------
 
-const unitHooks = new Map<string, Record<HookPhase, HookFn[]>>(); // unitId → {phase: [fn]}
-let currentUnit = "";
+type AuthorFn = (...args: unknown[]) => unknown;
 
-export function beginUnitHooks(unitId: string): void {
-	currentUnit = unitId;
-	if (!unitHooks.has(unitId)) {
-		unitHooks.set(unitId, {
-			"before-instances": [],
-			"on-template": [],
-			"before-dump": [],
-		});
-	}
+function authorModOf(facts: ModFacts): AuthorMod {
+	return {
+		name: facts.name ?? "",
+		params: (facts.params ?? []).map((p) => ({
+			name: p.name,
+			value: p.value ?? p.defaultText ?? "",
+		})),
+		ports: (facts.ports ?? []).map((p) => ({
+			name: p.name,
+			dir: p.dir,
+			packed: p.packed ?? null,
+			unpacked: p.unpacked ?? null,
+		})),
+		imports: (facts.imports ?? []).map((i) => ({
+			package: i.package,
+			symbol: i.symbol,
+		})),
+	};
 }
 
-export function endUnitHooks(): void {
-	currentUnit = "";
+function modsLookup(ctx: EngineCtx, known: Map<string, ModFacts>): AuthorMods {
+	return (name: string) => {
+		const facts =
+			known.get(name) ?? ctx.leaf?.(name) ?? ctx.wrapper?.(name) ?? null;
+		return facts ? authorModOf(facts) : null;
+	};
 }
 
-export function clearUnitHooks(unitId: string): void {
-	unitHooks.delete(unitId);
-}
-
-export function on(phase: HookPhase, fn: HookFn): void {
-	if (!HOOK_PHASES.includes(phase)) {
-		throw new Error(
-			`aw.on: unknown phase "${phase}" (expected ${HOOK_PHASES.join(" | ")})`,
-		);
-	}
-	if (typeof fn !== "function")
-		throw new Error("aw.on: callback must be a function");
-	if (!currentUnit)
-		throw new Error(
-			"aw.on: no active unit (scripts run inside a connect unit)",
-		);
-	unitHooks.get(currentUnit)?.[phase].push(fn);
-	if (!unitHooks.has(currentUnit)) {
-		// Defensive: beginUnitHooks normally ran first.
-		beginUnitHooks(currentUnit);
-		unitHooks.get(currentUnit)![phase].push(fn);
-	}
-}
-
-function hooksFor(unitId: string): Record<HookPhase, HookFn[]> {
-	return (
-		unitHooks.get(unitId) ?? {
-			"before-instances": [],
-			"on-template": [],
-			"before-dump": [],
+function authorWindow(el: Element): Record<string, unknown> | null {
+	const view = (
+		el.ownerDocument as Document & {
+			defaultView?: Record<string, unknown> | null;
 		}
-	);
+	).defaultView;
+	return view ?? null;
 }
 
-/** Public: run a unit's before-dump hooks (read-only by contract). */
-export function runBeforeDump(doc: Document, unitId?: string): void {
-	for (const fn of hooksFor(unitId ?? "")["before-dump"]) fn({ doc });
+function resolveAuthorFn(
+	el: Element,
+	attrName: string,
+	res: CheckResult,
+	where: string,
+): AuthorFn | null {
+	const name = attr(el, attrName);
+	if (name == null) return null;
+	if (!IDENT.test(name)) {
+		res.errors.push(`${where}: "${name}" is not a function name`);
+		return null;
+	}
+	const fn = authorWindow(el)?.[name];
+	if (typeof fn !== "function") {
+		res.errors.push(`${where}: "${name}" is not a function on window`);
+		return null;
+	}
+	return fn as AuthorFn;
+}
+
+function callAuthorFn(
+	fn: AuthorFn,
+	host: Element,
+	args: unknown[],
+	res: CheckResult,
+	where: string,
+): void {
+	let result: unknown;
+	try {
+		result = fn.call(host, ...args);
+	} catch (e) {
+		res.errors.push(
+			`${where} threw: ${e instanceof Error ? e.message : String(e)}`,
+		);
+		return;
+	}
+	if (
+		result != null &&
+		typeof (result as { then?: unknown }).then === "function"
+	) {
+		res.errors.push(`${where}: function must be synchronous`);
+	}
+}
+
+/** Attribute bag for the author helpers. `onTemplate` writes `on-template`. */
+export type AuthorAttrs = Record<
+	string,
+	string | number | boolean | null | undefined
+>;
+
+function putAttrs(el: Element, attrs: AuthorAttrs): void {
+	for (const [key, value] of Object.entries(attrs)) {
+		if (value == null || value === false) continue;
+		const name = key === "onTemplate" ? "on-template" : key;
+		el.setAttribute(name, String(value));
+	}
+}
+
+function ensureChild(parent: Element, tag: string): Element {
+	const found = child(parent, tag);
+	if (found) return found;
+	const el = parent.ownerDocument.createElement(tag);
+	parent.appendChild(el);
+	return el;
+}
+
+/** Last direct `<aw-template>` on an instance. Creates one when missing. */
+function ownTemplate(inst: Element): Element {
+	const templates = children(inst, "aw-template");
+	const last = templates[templates.length - 1];
+	if (last) return last;
+	const el = inst.ownerDocument.createElement("aw-template");
+	inst.appendChild(el);
+	return el;
+}
+
+function requireTag(el: Element, tags: string[], what: string): void {
+	const tag = (el.tagName ?? "").toLowerCase();
+	if (!tags.includes(tag))
+		throw new Error(`${what}: expected <${tags.join("|")}>, got <${tag}>`);
+}
+
+function appendRule(inst: Element, tag: string, attrs: AuthorAttrs): Element {
+	requireTag(inst, ["aw-inst"], `aw.${tag.slice(3)}`);
+	const el = inst.ownerDocument.createElement(tag);
+	putAttrs(el, attrs);
+	ownTemplate(inst).appendChild(el);
+	return el;
+}
+
+/** Append one `aw-inst` under this content. Creates `aw-insts` when missing. */
+export function inst(content: Element, attrs: AuthorAttrs = {}): Element {
+	requireTag(content, ["aw-content"], "aw.inst");
+	const el = content.ownerDocument.createElement("aw-inst");
+	putAttrs(el, attrs);
+	ensureChild(content, "aw-insts").appendChild(el);
+	return el;
+}
+
+/** Append one `aw-connect` on this instance's own template. */
+export function connect(instEl: Element, attrs: AuthorAttrs = {}): Element {
+	return appendRule(instEl, "aw-connect", attrs);
+}
+
+/** Append one `aw-rewrite` on this instance's own template. */
+export function rewrite(instEl: Element, attrs: AuthorAttrs = {}): Element {
+	return appendRule(instEl, "aw-rewrite", attrs);
+}
+
+/** Append `aw-param`: on an instance, a template override; on content, a module param. */
+export function param(host: Element, attrs: AuthorAttrs = {}): Element {
+	const tag = (host.tagName ?? "").toLowerCase();
+	const parent =
+		tag === "aw-inst"
+			? ownTemplate(host)
+			: tag === "aw-content"
+				? ensureChild(host, "aw-params")
+				: null;
+	if (!parent) throw new Error("aw.param: expected <aw-inst> or <aw-content>");
+	const el = host.ownerDocument.createElement("aw-param");
+	putAttrs(el, attrs);
+	parent.appendChild(el);
+	return el;
+}
+
+/** Append one `aw-port` under this content. Creates `aw-ports` when missing. */
+export function port(content: Element, attrs: AuthorAttrs = {}): Element {
+	requireTag(content, ["aw-content"], "aw.port");
+	const el = content.ownerDocument.createElement("aw-port");
+	putAttrs(el, attrs);
+	ensureChild(content, "aw-ports").appendChild(el);
+	return el;
+}
+
+/** Append one `aw-localparam` under this content. */
+export function localparam(content: Element, attrs: AuthorAttrs = {}): Element {
+	requireTag(content, ["aw-content"], "aw.localparam");
+	const el = content.ownerDocument.createElement("aw-localparam");
+	putAttrs(el, attrs);
+	ensureChild(content, "aw-localparams").appendChild(el);
+	return el;
 }
 
 // ---------------------------------------------------------------------------
@@ -438,15 +564,6 @@ export function runBeforeDump(doc: Document, unitId?: string): void {
 
 const CAPTURE_RE = /\$\d|\$&|\$</;
 
-/** Prepass: run every aw-mod's before-instances hooks (they mutate aw-content).
- *  Callers run this BEFORE pre-fetching leaf tables so generated instances are
- *  visible to ctx. Elaboration itself does not invoke these hooks. */
-export function runBeforeInstances(doc: Document, unitId?: string): void {
-	const hooks = hooksFor(unitId ?? "");
-	for (const mod of all(doc, "aw-mod")) {
-		for (const fn of hooks["before-instances"]) fn({ mod, doc });
-	}
-}
 function substVars(
 	text: string,
 	vars: Record<string, string>,
@@ -601,7 +718,7 @@ function templateLib(content: Element): Map<string, Element> {
 // consults aw-render. ctx = { leaf(mod), wrapper(mod), unitMods: Map, unitDeps: [] }
 // ---------------------------------------------------------------------------
 
-export function check(doc: Document, ctx: EngineCtx = {}): CheckResult {
+export function check(doc: UnitRoot, ctx: EngineCtx = {}): CheckResult {
 	const res: CheckResult = { errors: [], warnings: [] };
 	const roots = all(doc, "autowire").filter(
 		(e) => !e.closest("aw-mod") && !e.closest("aw-tb-mod"),
@@ -634,7 +751,7 @@ export function check(doc: Document, ctx: EngineCtx = {}): CheckResult {
 	return res;
 }
 
-function checkUnitRefs(doc: Document, ctx: EngineCtx, res: CheckResult): void {
+function checkUnitRefs(doc: UnitRoot, ctx: EngineCtx, res: CheckResult): void {
 	if (!ctx.unitMods) return;
 	const section = ctx.unitKind === "sim" ? "sim" : "connect";
 	const deps = new Set(ctx.unitDeps ?? []);
@@ -1100,10 +1217,9 @@ function checkNetName(
 }
 
 // ---------------------------------------------------------------------------
-// elaboration. Caller guarantees check() passed. Order (connect-html §5,
-// corrected): before-instances → params → submods (deps topo) → template
-// expand (+ on-template) → wires → frozen aw-render. Children before parent
-// wires because aw-inst@mod may target a child wrapper's render ports.
+// elaboration. check() is static and does not run scripts. This walk is the
+// full pass: children first, then on-init, then each instance's on-template
+// before its template rules. aw-render is written here and frozen. No file I/O.
 // ---------------------------------------------------------------------------
 
 const frozen = new WeakSet();
@@ -1112,7 +1228,7 @@ export function isFrozen(renderEl: Element): boolean {
 	return frozen.has(renderEl);
 }
 
-export function elaborate(doc: Document, ctx: EngineCtx = {}): CheckResult {
+export function elaborate(doc: UnitRoot, ctx: EngineCtx = {}): CheckResult {
 	const res: CheckResult = { errors: [], warnings: [] };
 	const root = all(doc, "autowire").filter(
 		(e) => !e.closest("aw-mod") && !e.closest("aw-tb-mod"),
@@ -1121,9 +1237,8 @@ export function elaborate(doc: Document, ctx: EngineCtx = {}): CheckResult {
 		res.errors.push("document: missing <autowire> root");
 		return res;
 	}
-	const hooks = hooksFor(ctx.unitId ?? "");
 	for (const mod of topMods(root)) {
-		elaborateMod(mod, ctx, res, [], hooks, new Map());
+		elaborateMod(mod, ctx, res, [], new Map());
 	}
 	return res;
 }
@@ -1134,7 +1249,6 @@ function elaborateMod(
 	ctx: EngineCtx,
 	res: CheckResult,
 	path: string[],
-	hooks: Record<HookPhase, HookFn[]>,
 	sibRenders: Map<string, ModFacts>,
 ): ModFacts | null {
 	const tb = isTbMod(mod);
@@ -1147,7 +1261,6 @@ function elaborateMod(
 		res.errors.push(`${where}: missing aw-content`);
 		return null;
 	}
-	const scope = moduleScope(content);
 
 	// Children first (deps topological order among siblings).
 	const submods = tb ? null : child(mod, "aw-submods");
@@ -1162,14 +1275,29 @@ function elaborateMod(
 		);
 		for (const s of topoOrder(depsOf)) {
 			const el = sibs.find((x) => attr(x, "name") === s)!;
-			const facts = elaborateMod(el, ctx, res, here, hooks, childRenders);
+			const facts = elaborateMod(el, ctx, res, here, childRenders);
 			if (facts) childRenders.set(s, facts);
 		}
 	}
 	for (const [k, v] of sibRenders)
 		if (!childRenders.has(k)) childRenders.set(k, v);
 
-	// Instances: params → inst_name → template expand → wires.
+	// on-init sees completed children, earlier siblings, leaves, and dep wrappers.
+	const initFn = resolveAuthorFn(content, "on-init", res, `${where} on-init`);
+	if (initFn) {
+		const before = res.errors.length;
+		callAuthorFn(
+			initFn,
+			content,
+			[content, modsLookup(ctx, childRenders)],
+			res,
+			`${where} on-init`,
+		);
+		if (res.errors.length > before) return null;
+	}
+
+	// Instances: on-template may add rules, then params → inst_name → expand.
+	const scope = moduleScope(content);
 	const lib = templateLib(content);
 	const instsGroup = child(content, "aw-insts");
 	const instEls = instsGroup ? children(instsGroup, "aw-inst") : [];
@@ -1188,6 +1316,34 @@ function elaborateMod(
 		const id = attr(inst, "id") ?? "?";
 		const target = attr(inst, "mod") ?? "";
 		const iwhere = `${where} aw-inst "${id}"`;
+		const targetFacts =
+			ctx.leaf?.(target) ??
+			childRenders.get(target) ??
+			ctx.wrapper?.(target) ??
+			null;
+		if (!targetFacts) {
+			res.errors.push(
+				`${iwhere}: unknown module "${target}" (no RtlIndex leaf and no elaborated wrapper)`,
+			);
+			continue;
+		}
+		const tplFn = resolveAuthorFn(
+			inst,
+			"on-template",
+			res,
+			`${iwhere} on-template`,
+		);
+		if (tplFn) {
+			const before = res.errors.length;
+			callAuthorFn(
+				tplFn,
+				inst,
+				[inst, authorModOf(targetFacts)],
+				res,
+				`${iwhere} on-template`,
+			);
+			if (res.errors.length > before) continue;
+		}
 		const vars: Record<string, string> = {
 			id,
 			idx: attr(inst, "idx") ?? "0",
@@ -1264,18 +1420,6 @@ function elaborateMod(
 				forParam: pname,
 			});
 		}
-		// Port table for the target (leaf RtlIndex or elaborated wrapper).
-		const targetFacts =
-			ctx.leaf?.(target) ??
-			childRenders.get(target) ??
-			ctx.wrapper?.(target) ??
-			null;
-		if (!targetFacts) {
-			res.errors.push(
-				`${iwhere}: unknown module "${target}" (no RtlIndex leaf and no elaborated wrapper)`,
-			);
-			continue;
-		}
 		const ports = targetFacts.ports ?? [];
 		const leafParams = new Map(
 			(targetFacts?.params ?? []).map((p) => [p.name, p]),
@@ -1343,23 +1487,6 @@ function elaborateMod(
 					}
 				}
 			}
-		}
-		// on-template hooks see and may edit the intermediate connect list.
-		const intermediate = [...connects.entries()].map(([port, c]) => ({
-			port,
-			...c,
-		}));
-		for (const fn of hooks["on-template"])
-			fn({
-				mod,
-				inst,
-				template: chain[chain.length - 1] ?? null,
-				connects: intermediate,
-			});
-		connects.clear();
-		for (const c of intermediate) {
-			const { port, ...rest } = c;
-			connects.set(port, rest);
 		}
 		// Uncovered ports auto-connect to a same-named net (authoring rule:
 		// identity connections are inferred, not written — the author only
@@ -1999,7 +2126,7 @@ function serializeModSnapshot(
 }
 
 /** Whole-document snapshot: <autowire> + every top-level aw-mod / aw-tb-mod render. */
-export function serializeSnapshot(doc: Document): string {
+export function serializeSnapshot(doc: UnitRoot): string {
 	const out = [];
 	const root = all(doc, "autowire").filter(
 		(e) => !e.closest("aw-mod") && !e.closest("aw-tb-mod"),
@@ -2056,16 +2183,16 @@ export function installGlobal(win: AwWindow): unknown {
 		}
 	}
 	win.aw = {
-		on,
 		check,
 		elaborate,
 		serializeSnapshot,
-		runBeforeDump,
-		runBeforeInstances,
-		beginUnitHooks,
-		endUnitHooks,
-		clearUnitHooks,
-		HOOK_PHASES,
+		isFrozen,
+		inst,
+		connect,
+		rewrite,
+		param,
+		port,
+		localparam,
 	};
 	return win.aw;
 }

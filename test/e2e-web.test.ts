@@ -233,20 +233,20 @@ describe("autowire web e2e", () => {
 				window as unknown as { aw: { session: (s: string) => Promise<string> } }
 			).aw;
 			try {
-				await aw.session("elaborate");
+				await aw.session("before-dump");
 				return "";
 			} catch (e) {
 				return (e as Error).message;
 			}
 		});
-		expect(skipped).toContain("requires a clean check");
+		expect(skipped).toContain("requires elaborate");
 		const help = await page.evaluate(async () => {
 			const aw = (
 				window as unknown as { aw: { session: (s: string) => Promise<string> } }
 			).aw;
 			return aw.session("help");
 		});
-		expect(help).toContain("before-instances");
+		expect(help).toContain("does not run scripts");
 		expect(help).toContain("write a file");
 		const ran = await page.evaluate(async () => {
 			const aw = (
@@ -267,24 +267,16 @@ describe("autowire web e2e", () => {
 			const liveInst = document.querySelector("#aw-live aw-inst");
 			if (!srcInst || !liveInst) return { error: "missing inst" };
 			srcInst.setAttribute("id", "u_cdp_edit");
-			const hooks = document.querySelector('#aw-hooks [data-unit="sha256wb"]');
+			const content = document.querySelector("#aw-source aw-content");
+			content?.setAttribute("on-init", "addProbe");
 			const script = document.createElement("script");
-			script.type = "aw/hook";
-			script.textContent = `
-				window.aw.on("before-instances", ({ mod }) => {
-					const insts = mod.querySelector(":scope > aw-content > aw-insts");
-					if (!insts) return;
-					const inst = document.createElement("aw-inst");
-					inst.setAttribute("id", "u_from_hook");
-					inst.setAttribute("mod", "sha256");
-					insts.appendChild(inst);
-				});
-			`;
-			hooks?.appendChild(script);
+			script.textContent =
+				"function addProbe(content) { aw.port(content, { name: 'probe_from_hook', dir: 'output' }); }";
+			document.querySelector("#aw-source")?.appendChild(script);
 			const aw = (
 				window as unknown as { aw: { session: (s: string) => Promise<string> } }
 			).aw;
-			await aw.session("before-instances");
+			await aw.session("elaborate");
 			return {
 				sameNode: srcInst === liveInst,
 				sourceId: document
@@ -292,10 +284,11 @@ describe("autowire web e2e", () => {
 					?.getAttribute("id"),
 				liveId: document.querySelector("#aw-live aw-inst")?.getAttribute("id"),
 				hookOnSource:
-					document.querySelector("#aw-source aw-inst[id='u_from_hook']") !==
+					document.querySelector("#aw-source aw-port[name='probe_from_hook']") !==
 					null,
 				hookOnLive:
-					document.querySelector("#aw-live aw-inst[id='u_from_hook']") !== null,
+					document.querySelector("#aw-live aw-port[name='probe_from_hook']") !==
+					null,
 			};
 		});
 		expect("error" in edited).toBe(false);
@@ -305,6 +298,60 @@ describe("autowire web e2e", () => {
 		expect(edited.liveId).toBe("u_cdp_edit");
 		expect(edited.hookOnSource).toBe(false);
 		expect(edited.hookOnLive).toBe(true);
+		await page.close();
+	});
+
+	test("pipeline steps hide every unit except the one being compiled", async () => {
+		const page = await ctx.newPage();
+		await page.goto(pageUrl("unit=sha256wb"));
+		await page.waitForSelector("#aw-live aw-mod");
+		const seen = await page.evaluate(async () => {
+			const live = document.querySelector("#aw-live");
+			const source = document.querySelector("#aw-source");
+			if (!live || !source) return { error: "missing panes" };
+			const other = document.createElement("div");
+			other.dataset.unit = "other_unit";
+			const hidden = document.createElement("aw-mod");
+			hidden.setAttribute("name", "should_be_hidden");
+			other.appendChild(hidden);
+			live.appendChild(other);
+			const extra = document.createElement("div");
+			extra.dataset.unit = "source_extra";
+			const secret = document.createElement("aw-mod");
+			secret.setAttribute("name", "source_secret");
+			extra.appendChild(secret);
+			source.appendChild(extra);
+			const inst = document.querySelector("#aw-source aw-inst");
+			inst?.setAttribute("on-template", "seeMods");
+			const script = document.createElement("script");
+			script.textContent = `
+				function seeMods() {
+					const names = [...document.querySelectorAll("aw-mod")].map((m) => m.getAttribute("name"));
+					if (!window.__seenTpl) window.__seenTpl = names;
+				}
+			`;
+			source.appendChild(script);
+			const aw = (
+				window as unknown as { aw: { session: (s: string) => Promise<string> } }
+			).aw;
+			await aw.session("elaborate");
+			const w = window as unknown as { __seenTpl?: string[] };
+			return {
+				tpl: w.__seenTpl ?? [],
+				restored:
+					document.querySelector("#aw-live [data-unit='other_unit'] aw-mod") !==
+						null &&
+					document.querySelector(
+						"#aw-source [data-unit='source_extra'] aw-mod",
+					) !== null,
+			};
+		});
+		expect("error" in seen).toBe(false);
+		if ("error" in seen) return;
+		expect(seen.tpl).not.toContain("should_be_hidden");
+		expect(seen.tpl).not.toContain("source_secret");
+		expect(seen.tpl.length).toBeGreaterThan(0);
+		expect(seen.restored).toBe(true);
 		await page.close();
 	});
 

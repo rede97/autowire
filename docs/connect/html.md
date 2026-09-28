@@ -9,7 +9,7 @@
 
 ## 1. 目标与边界
 
-连接描述是一份或多份 **HTML**（可选 `<script type="module">`）。
+连接描述是一份或多份 **HTML**（可选普通 `<script>`，见 [`lifecycle.md`](./lifecycle.md)）。
 
 | 阶段 | 名称 | 内容 |
 |---|---|---|
@@ -338,8 +338,8 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 ### 3.7 脚本
 
 - 常规连接用 `aw-template` / `aw-rewrite` / `aw-connect`。  
-- 高级处理挂生命周期钩子：[`lifecycle.md`](./lifecycle.md)——**仅** `before-instances`（写 `aw-content`）与 `on-template`（写展开中间态）；**`aw-render` 写满后冻结**；`before-dump` 只读。加载期直接改 DOM 与 `before-instances` 时序等价（合法，但应当优先挂钩子，见 lifecycle.md §4）。  
-- `<script type="module">` **必须**只用 DOM / `aw.*`；**禁止** layout / 对外 `fetch` / 写工作区磁盘。
+- 高级处理见 [`lifecycle.md`](./lifecycle.md)：普通 `<script>` 定义全局函数；`aw-content@on-init` 在 check 前改这棵 content；`aw-inst@on-template` 在展开前改这个实例自己的模板规则。**`aw-render` 写满后冻结**。  
+- 脚本 **禁止** `type="module"`，**禁止**写盘、对外 `fetch`。
 
 ### 3.8 可访问性
 
@@ -374,14 +374,14 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ## 5. Elaboration 顺序
 
-1. **`before-instances` 钩子**（可选）：只改本模 `aw-content`（动态 inst / template）。见 [`lifecycle.md`](./lifecycle.md)。  
+1. **子模块先整段 elaborate**，再可选 **`aw-content@on-init(content, mods)`**：只改本模这棵 `aw-content`。`check` 不跑脚本。见 [`lifecycle.md`](./lifecycle.md)。  
 2. **顶 → 底（param）**  
    求值本模内部 localparam 与例化 `aw-param`（常量 / 继承本模 param / 匹配本模内部 localparam → 折叠；表达式与宏不折）；求值 `inst_name`；写入 `aw-localparams`。  
-3. **展开 template**（`match`+`to` → connect）+ **`on-template` 钩子**（可选）：按例化改中间态，**禁止**写已完成的 `aw-render`。  
+3. **每个 `aw-inst`**：先跑可选的 **`on-template`**（改这个实例自己的模板规则），再展开 template（`match`+`to` → connect）。**禁止**写已完成的 `aw-render`。  
 4. **递归 `aw-submods` 先 elaborate**（按 `aw-mod@deps` DAG；实现裁定：父模例化子包装模需要子模 render 端口表，故子模先于父模连线）  
 5. **底 → 顶（连线）**  
    生成 `aw-connect`；应用 `packed`/`unpacked`/`width`/`part`/`nettype`（§3.5.1–3.5.2）写入 `aw-signals`；宽度 deps 形参换成 `Mod__Inst__Param`；填 `aw-ports`（按 §4.1）；写 `aw-render` 后 **冻结**。  
-6. **`before-dump`**（可选钩子只读）→ dump（dump 门禁验 render 可印；作者面 check 见流水线，不在此把 `aw-render` 当 check SoT）。
+6. dump（没有作者侧 dump 钩子；dump 门禁验 render 可印；作者面 check 见流水线，不在此把 `aw-render` 当 check SoT）。
 
 ```text
 autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
@@ -432,7 +432,7 @@ autowire.toml（.f + svh/宏 + [connect.<id>] deps DAG）
 ## 9. 渲染生命周期
 
 高级 / 不规则处理：[`lifecycle.md`](./lifecycle.md)。  
-两写一冻：`before-instances` → `on-template` → 引擎写 `aw-render`（冻结）→ `before-dump` 只读。产物 **必须**只来自引擎写出的 `aw-render`，**禁止**脚本事后改 render。
+`on-init` 改 content → check → `on-template` 改本实例模板规则 → 引擎展开并写 `aw-render`（冻结）。产物 **必须**只来自引擎写出的 `aw-render`，**禁止**脚本事后改 render。
 
 ## 10. 暂时不做
 

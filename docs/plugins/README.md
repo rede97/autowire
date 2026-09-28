@@ -50,7 +50,7 @@
 plugin id          唯一名（如 wishbone）
 kind               generator | elaborate
 tags[]             自定义元素名（类型 B；现在不用）
-hooks              类型 B：expand / before-instances / on-template / before-dump
+hooks              类型 B（暂时不做）：expand
 toml section       [plugins.wishbone] / [wishbone.<source>]
 ```
 
@@ -78,14 +78,12 @@ toml section       [plugins.wishbone] / [wishbone.<source>]
 ```text
 plugin wishbone run (A)        ← 流水线外；→ plugins_dir → analysis run → RtlIndex
 connect / sim 单元：
-  → before-instances（脚本钩子；改作者面）
-  → check（作者面 + deps）
-  → elaborate（只认 aw-*；写 aw-render）
-  → before-dump（只读）
+  → check（静态作者面 + deps，不跑脚本）
+  → elaborate（经典脚本、on-init、on-template；只认 aw-*；写 aw-render）
   → connect run 写 .sv
 ```
 
-类型 B 的 expand 若以后落地，插在 `before-instances` 之前，并且必须在 check 之前。现在没有这条步骤。elaborate **仍然只懂核心 `aw-*`**。
+类型 B 的 expand 若以后落地，必须在 check 之前。现在没有这条步骤。elaborate **仍然只懂核心 `aw-*`**。
 
 ```text
 A（已落地）: plugin wishbone run → plugins_dir/wishbone/*.sv → analysis run → leaf

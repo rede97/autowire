@@ -27,15 +27,16 @@ await browser.close();
 
 ## 2. 页面会话 = 调试界面
 
-`window.aw.session(step)` 逐步推进：`before-instances → check → elaborate → before-dump → run`；`save-sv` / `save-html` 各给一份下载文本（语义见 web-ui.md）。无头打开 `/?ui=min`（前端是 `/?unit=<id>`）。
+`window.aw.session(step)` 逐步推进：`check → elaborate → before-dump → run`；`save-sv` / `save-html` 各给一份下载文本（语义见 web-ui.md）。无头打开 `/?ui=min`（前端是 `/?unit=<id>`）。
 
 输入和产物是两条工作区，不是就地覆盖：
 
-- `#aw-source`：未改过的作者 HTML。CDP 直接改这些节点。
-- `#aw-hooks`：`script[type="aw/hook"]`。CDP 改 `textContent` 就是改钩子脚本。
-- `#aw-live`：编译结果（脚本 / `before-instances` / elaborate）。下次 `before-instances` 或 Check 会整段换掉它。
+- `#aw-source`：作者 HTML，含经典 `<script>`。CDP 直接改这些节点和脚本文本。
+- `#aw-live`：编译结果（脚本 / `on-init` / `on-template` / elaborate）。下次 elaborate 会整段换掉它。
 
-改输入后调用 `before-instances`（或点 Check）再编译。钩子不会写回 `#aw-source`。`save-html` 下载的是 Processed 作者面（`aw-render` 已剥空）。
+改输入后调用 `elaborate` 再编译。钩子不会写回 `#aw-source`。`save-html` 下载的是 Processed 作者面（`aw-render` 已剥空）。
+
+elaborate 期间，别的 `[data-unit]` 会摘掉。`document.querySelector("aw-mod")` 只看到当前单元。
 
 ## 3. 轻量浏览器的坑（obscura 实测）
 
@@ -46,7 +47,7 @@ await browser.close();
 | 点击下载链接触发导航，evaluate 上下文销毁 | 只取文本时先存根 `HTMLAnchorElement.prototype.click = () => {}` |
 | `text/xml` 的 DOMParser 可能套 HTML 骨架、`tagName` 大写 | 解析用 `querySelector` + `localName`（`src/core/printer.ts` `parseSnapshot` 已按此写） |
 | 回环/内网地址默认被 SSRF 防护拦截 | 启动加 `--allow-private-network` |
-| 内联 `type="module"` 被改写成 `data:` 后拒绝加载 | 作者钩子由页面 POST 到 `/api/hook-script`，再以 http 模块执行。索引页用普通 script |
+| 内联 `type="module"` 被改写成 `data:` 后拒绝加载 | 作者脚本必须是经典 `<script>`，由页面直接执行。`src` 走 `/raw/`。索引页用普通 script |
 | 坐标点击打在自定义元素上，按钮的 `getBoundingClientRect` 与命中不一致 | 无头页用 `element.click()` 或 `window.aw.session`，不要用坐标点击 |
 
 ## 4. 测试的浏览器回退

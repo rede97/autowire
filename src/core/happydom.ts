@@ -1,9 +1,9 @@
 // happy-dom connect render. Same pipeline as the web page:
-// module scripts → before-instances → check → elaborate → before-dump,
-// then write the snapshot as .sv. The web session does not call this.
+// classic scripts → static check → elaborate (on-init / on-template) → .sv.
+// The web session does not call this. Scripts are classic <script> only.
 
 import { mkdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { Window } from "happy-dom";
 import type { LeafDb } from "../rtl/leaf.ts";
 import {
@@ -12,17 +12,7 @@ import {
 	unitDumpDir,
 	type WorkspaceConfig,
 } from "../workspace.ts";
-import {
-	beginUnitHooks,
-	check,
-	clearUnitHooks,
-	elaborate,
-	endUnitHooks,
-	installGlobal,
-	runBeforeDump,
-	runBeforeInstances,
-	serializeSnapshot,
-} from "./aw.ts";
+import { check, elaborate, installGlobal, serializeSnapshot } from "./aw.ts";
 import { buildEngineCtx, connectDir, type WrapperFacts } from "./connect.ts";
 import { connectXml, parseConnectXml } from "./connectxml.ts";
 import {
@@ -44,32 +34,57 @@ export interface RenderedUnit {
 
 interface ScriptHost extends Window {}
 
-/** Execute author module scripts while this unit owns the hook registry. */
-async function runModuleScripts(
-	win: ScriptHost,
-	unitId: string,
-): Promise<void> {
-	const scripts = [
-		...new Set(win.document.querySelectorAll('script[type="module"]')),
-	];
-	clearUnitHooks(unitId);
-	beginUnitHooks(unitId);
-	try {
-		for (const script of scripts) {
-			const AsyncFunction = Object.getPrototypeOf(async () => {})
-				.constructor as new (
-				...args: string[]
-			) => (...values: unknown[]) => Promise<void>;
-			const fn = new AsyncFunction(
-				"window",
-				"document",
-				"aw",
-				script.textContent ?? "",
-			);
-			await fn(win, win.document, (win as unknown as { aw: unknown }).aw);
+/** Document URL for one author HTML file, rooted at the workspace.
+ *  Relative module src/import resolve against this URL. */
+function authorModuleUrl(root: string, file: string): string {
+	const parts = relative(root, file)
+		.split(sep)
+		.filter((seg) => seg.length > 0 && seg !== ".")
+		.map((seg) => encodeURIComponent(seg));
+	return `http://127.0.0.1/${parts.join("/")}`;
+}
+
+function isClassicScript(script: {
+	getAttribute(name: string): string | null;
+}): boolean {
+	const type = (script.getAttribute("type") ?? "").trim().toLowerCase();
+	return (
+		type === "" ||
+		type === "text/javascript" ||
+		type === "application/javascript"
+	);
+}
+
+/** Run classic <script> elements in document order.
+ *  happy-dom does not put a classic `function name` onto `window` when the
+ *  script is inserted as an element, and an inline script never fires load.
+ *  Evaluating the source does both: declarations become window properties,
+ *  and a relative src is fetched from the workspace virtual server. */
+async function runClassicScripts(win: ScriptHost): Promise<void> {
+	const scripts = [...win.document.querySelectorAll("script")];
+	for (const script of scripts) script.remove();
+	const modules = scripts.filter(
+		(s) => (s.getAttribute("type") ?? "").trim().toLowerCase() === "module",
+	);
+	if (modules.length > 0)
+		throw new Error(
+			'author script must be a classic <script> (type="module" is not allowed)',
+		);
+	const classic = scripts.filter(isClassicScript);
+	if (classic.length === 0) return;
+	win.happyDOM.settings.enableJavaScriptEvaluation = true;
+	for (const script of classic) {
+		const src = script.getAttribute("src");
+		const inline = script.textContent ?? "";
+		if (!src && !inline.trim()) continue;
+		let code = inline;
+		if (src) {
+			const url = new URL(src, win.location.href).href;
+			const res = await win.fetch(url);
+			if (!res.ok) throw new Error(`script failed to load ${src}`);
+			code = await res.text();
 		}
-	} finally {
-		endUnitHooks();
+		win.eval(code);
 	}
 }
 
@@ -88,27 +103,35 @@ function sessionFacts(dep: string, snapshot: string): WrapperFacts[] {
 }
 
 /**
- * Load one unit's author HTML into happy-dom and run the author-face
- * mutations: module scripts → before-instances. The returned DOM is what
- * check/elaborate must see (lifecycle §3.1: mutations happen before check).
- * Caller closes win.happyDOM.
+ * Load one unit's author HTML into happy-dom. `scripts` runs classic
+ * <script> elements so window functions exist for elaborate. check passes
+ * false: it does not execute scripts. Caller closes win.happyDOM.
  */
 export async function loadLiveUnitDoc(
 	ws: WorkspaceConfig,
 	unit: ConnectUnit,
+	opts: { scripts?: boolean } = {},
 ): Promise<{ win: ScriptHost; doc: Document }> {
 	const root = resolve(ws.root);
 	const path = resolve(root, unit.html);
 	if (!path.startsWith(root))
 		throw new Error(`unit "${unit.id}": html path escapes the workspace`);
 	const html = await readFile(path, "utf8");
-	const win = new Window({ url: "http://127.0.0.1/" }) as ScriptHost;
+	const win = new Window({
+		url: authorModuleUrl(root, path),
+		settings: {
+			enableJavaScriptEvaluation: false,
+			suppressInsecureJavaScriptEnvironmentWarning: true,
+			fetch: {
+				virtualServers: [{ url: "http://127.0.0.1", directory: root }],
+			},
+		},
+	}) as ScriptHost;
 	installGlobal(win as never);
 	win.document.write(html);
 	if (!win.document.querySelector("autowire"))
 		throw new Error(`unit "${unit.id}": author HTML has no <autowire> root`);
-	await runModuleScripts(win, unit.id);
-	runBeforeInstances(win.document as never, unit.id);
+	if (opts.scripts !== false) await runClassicScripts(win);
 	return { win, doc: win.document as unknown as Document };
 }
 
@@ -158,7 +181,6 @@ export async function renderUnit(
 		const rendered = elaborate(doc as never, ctx);
 		if (rendered.errors.length > 0)
 			throw new Error(`render failed for "${unit.id}": ${rendered.errors[0]}`);
-		runBeforeDump(doc as never, unit.id);
 		const snapshot = serializeSnapshot(doc as never);
 		const files = write ? await writeSnapshot(ws, unit, snapshot, force) : [];
 		return {

@@ -76,11 +76,11 @@ Landed
   hdxml sidecar             analysis → RtlIndex XML
   aw.js                     engine: src/core/aw.ts → build:web → web/aw.js (generated; guarded)
   autowire connect web [unit]  static session; buttons; no workspace write
-  autowire connect check [unit] scripts + before-instances → author-face legality + deps (no write)
-  autowire connect elaborate [unit] check + elaborate + before-dump (no write)
+  autowire connect check [unit] static author-face legality + deps; no scripts, no write
+  autowire connect elaborate [unit] classic scripts + on-init / on-template + aw-render (no write)
   Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
-  Page session              window.aw.session: before-instances, check, elaborate,
-                            before-dump, run, save / save-sv, save-html, help.
+  Page session              window.aw.session: check, elaborate, before-dump, run,
+                            save / save-sv, save-html, help.
                             Run shows the .sv text (same as connect run writes).
                             Saves are browser downloads. The page does not write files.
   aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir
@@ -341,8 +341,10 @@ aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlI
   to is net name only — no [] suffix. See docs/connect/html.md §3.5.1–3.5.2;
   multidim example: docs/examples/connect/04-author-multidim.html.
 Lifecycle scripts: docs/connect/lifecycle.md —
-  target order: [B expand] → before-instances → check → elaborate (on-template) → aw-render frozen;
-  before-dump read-only; type-A plugin wishbone run stays outside this pipeline (docs/plugins/).
+  classic <script>; aw-content@on-init(content, mods); aw-inst@on-template(inst, mod).
+  Helpers: aw.inst / aw.connect / aw.rewrite / aw.param / aw.port / aw.localparam.
+  check is static (no scripts). elaborate runs scripts and hooks, then freezes aw-render.
+  No author before-dump. Type-A plugin wishbone run stays outside this pipeline (docs/plugins/).
 Templates are per-aw-mod only. Connected nets → aw-signals; identity/export may auto-export ports.
 aw-imports → SV import at module head (deduped).
 
@@ -361,8 +363,8 @@ aw-port: dir=input|output|inout|interface; interface requires interface=, option
 aw-param → Mod__Inst__Param; fold constants / inherited params / internal localparams;
            do not fold expressions or macros.
 
-Elaboration: before-instances → params → on-template → identity nets → wires → frozen aw-render → before-dump.
-  (Author-face mutators run before check when orchestration is aligned; docs/connect/lifecycle.md §3.1.)
+Elaboration: children first → on-init → each inst on-template → expand rules → identity nets → wires → frozen aw-render.
+  check does not run scripts. elaborate does not write files (docs/connect/lifecycle.md).
 `,
 
 	web: `\
@@ -375,14 +377,15 @@ Buttons: Check, Elaborate, Run, Save SV, Save HTML, Reset. After Run,
 #aw-generated shows the printed .sv (the same text connect run writes).
 Save SV downloads that .sv; Save HTML downloads the processed author face
 with aw-render stripped. MCP calls window.aw.session(step):
-  before-instances, check, elaborate, before-dump, run, save / save-sv, save-html, help.
-None of those steps write a file. connect run writes .sv.
+  check, elaborate, before-dump, run, save / save-sv, save-html, help.
+check does not run scripts. elaborate does. None of those steps write a file.
+connect run writes .sv.
 
-/?unit=<id> is the frontend. Source (#aw-source, hook scripts in #aw-hooks)
+/?unit=<id> is the frontend. Source (#aw-source, classic <script> included)
 is the input workspace. Processed (#aw-live) is the pipeline output, like a
-.c compiled to a .o: hooks and before-instances write only the output.
-CDP may edit input nodes and hook script text; the next before-instances
-or Check compiles again and does not write the input back.
+.c compiled to a .o: on-init and on-template write only the output.
+CDP may edit source nodes and script text; the next elaborate compiles again
+and does not write the input back.
 /?ui=min is the headless page: same workspaces and buttons, no tree chrome.
 / with no query is the unit index.
 
@@ -396,6 +399,7 @@ autowire connect check
   autowire connect check [unit]
 
 Validate author-face connect HTML (aw-content + aw-submods) and dependency graphs.
+Static only: does not run <script>, on-init, or on-template.
 Does NOT inspect aw-render as SoT. Does NOT write .sv. Does NOT require a browser.
 Full checklist: docs/connect/check.md.
 
@@ -430,10 +434,10 @@ autowire connect run (happy-dom, no browser)
 Runs the settled-design pipeline and writes .sv. Unchanged files are skipped.
 --force rewrites them. The same flag on analysis run and plugin wishbone run
 forces those outputs too.
-  HTML module scripts (aw.on) → before-instances → check → elaborate
-  → before-dump → write .sv
+  classic <script> → elaborate (on-init / on-template) → write .sv
 
-Module scripts must be type="module" and use only DOM / aw.*.
+Scripts are classic <script> (not type="module"). Functions live on window.
+src resolves next to the author HTML. aw.inst / aw.connect / aw.port build nodes.
 happy-dom and Chromium must produce the same snapshot for the same HTML.
 Playwright remains the debug path. No browser is required to write RTL.
 `,
@@ -461,7 +465,7 @@ Do not
   copy a per-chip connect prompt (edit help agent / src/cli/help.ts instead)
   make README a second contract without updating help
   put wiring into autowire.toml ([connect.<id>] allows only html= + deps= — no top, no wiring)
-  patch aw-render after it is filled (lifecycle: only before-instances + on-template may write; before-dump is read-only)
+  patch aw-render after it is filled (lifecycle: on-init edits aw-content, on-template edits that inst's template; the engine alone writes aw-render)
   rely on document-order "forward" sibling refs inside aw-submods (use aw-mod@deps; visible set accumulates down the path)
   treat connect run as the only validation (use connect check on aw-content + deps)
   generate regfile/cfgbus from connect aw-submods custom tags (use: plugin wishbone run; docs/plugins/)

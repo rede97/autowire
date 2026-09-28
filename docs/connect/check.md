@@ -1,7 +1,7 @@
 # `autowire check` 契约（作者面规则检查）
 
-> 状态：**已实现**（`src/core/aw.ts` `check`；`connect check` 与页面 [Check] 同源——CLI 同样先跑 `<script>` + `before-instances` 再检查，见 lifecycle.md §3.1）。  
-> 展开期门禁（维合并/短路等，§2 表）用 `connect elaborate`：同链跑到 before-dump，不落盘。
+> 状态：**已实现**（`src/core/aw.ts` `check`；`connect check` 与页面 [Check] 同源——只做静态作者面，不跑 `<script>` / `on-init` / `on-template`）。  
+> 展开期门禁（维合并/短路等，§2 表）用 `connect elaborate`：跑脚本和钩子，不落盘。
 > 摘要：`bun index.ts help check`。改检查项时同步改本文与 help。
 
 关键字「必须 / 应当 / 可以」按 RFC 2119。
@@ -49,7 +49,7 @@ connect run（可印性）──error──▶ 拒绝写盘
 | 类型 B 展开后的核心 aw-* | **check**（expand 之后） | 同核心 | DOM |
 | 类型 A 字段/地址等插件自检 | **generate**（非 aw.check） | error | 插件 |
 
-> 插件口表：**禁止**第四条旁路；类型 A = RtlIndex `leaf`，类型 B = 展开后像 submods。见 [`../plugins/README.md`](../plugins/README.md) §3、§6。目标编排：expand → before-instances → **check** → elaborate（[`lifecycle.md`](./lifecycle.md) §3.1）。
+> 插件口表：**禁止**第四条旁路；类型 A = RtlIndex `leaf`，类型 B = 展开后像 submods。见 [`../plugins/README.md`](../plugins/README.md) §3、§6。目标编排：静态 check → elaborate（[`lifecycle.md`](./lifecycle.md)）。
 
 ## 3. check 必须覆盖（对照实现）
 
@@ -103,5 +103,5 @@ visible(M) = { M 的直接子 aw-mod name }
 - `autowire connect check`、页内 [Check]、GET `?check=1` **同一** `check()`。页面没有 `POST /api/check`。  
 - [Elaborate] / `?elaborate=1` **必须**先过 check（无 error）；elaborate 仍可再报 error。  
 - [Run] 只把源码放进 `#aw-generated`。写盘是 `connect run`。  
-- 目标编排：作者面突变（插件 B expand / `before-instances`）在 check **之前**（[`lifecycle.md`](./lifecycle.md) §3.1；web 已对齐）。  
+- 目标编排：`on-init` 在 elaborate 里、本层展开之前；`check` 不跑脚本（[`lifecycle.md`](./lifecycle.md)）。  
 - 详见 [`../workspace/web-ui.md`](../workspace/web-ui.md) §3.1。

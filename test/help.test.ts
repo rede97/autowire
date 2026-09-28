@@ -112,7 +112,7 @@ test("each slice prints independently", () => {
 	expect(renderHelp("status")).toContain("type A = generate");
 	expect(renderHelp("status")).toContain("no plugin-private port API");
 	expect(renderHelp("status")).toContain("Workspace HTML edit");
-	expect(renderHelp("connect")).toContain("target order");
+	expect(renderHelp("connect")).toContain("aw-content@on-init");
 	expect(renderHelp("connect")).toContain("docs/plugins/");
 	for (const topic of HELP_TOPICS) {
 		expect(renderHelp(topic).trim().length).toBeGreaterThan(20);

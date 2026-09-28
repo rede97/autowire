@@ -3,8 +3,10 @@
 // Check has no prerequisite. Elaborate depends on a clean check. Run implies both.
 // Nothing here writes the workspace. Save SV downloads the printed .sv text;
 // Save HTML downloads the processed author face with aw-render stripped.
-// #aw-source + #aw-hooks are the input workspace (CDP-editable). #aw-live is
-// the pipeline output, replaced on each compile — hooks do not write back.
+// #aw-source is the author HTML, including classic <script>. #aw-live is the
+// pipeline output, replaced on each elaborate — scripts do not write back.
+// check is static and does not run scripts. elaborate runs scripts, on-init,
+// and on-template on the processed clone only.
 
 // The engine is served as a bundle at /aw.js (runtime URL); tsc cannot resolve
 // rooted specifiers, so we import it untyped and re-type it from the source.
@@ -32,13 +34,10 @@ interface UnitMeta {
 interface UnitEntry {
 	/** Input workspace. Pipeline steps clone this; they never write it back. */
 	source: HTMLElement;
-	/** `<script type="aw/hook">` elements. Edited in place; re-read on compile. */
-	hooks: HTMLElement;
-	/** Processed workspace (clone after scripts / before-instances / elaborate). */
+	/** Processed workspace (clone after scripts / elaborate). */
 	doc: HTMLElement;
 	container: HTMLElement;
 	rendered: boolean;
-	hooksRan?: boolean;
 }
 
 interface WrapperFacts {
@@ -60,9 +59,6 @@ interface ChainActions {
 	run?: boolean;
 }
 
-/** window extension: script-settle sentinel queue (loadUnit). */
-const win = window as unknown as { __awScriptDone?: (() => void)[] };
-
 AW.installGlobal(window);
 
 const $ = <T extends Element = HTMLElement>(sel: string): T => {
@@ -80,11 +76,9 @@ const state: {
 	current: string | null; // current unit id
 	docs: Map<string, UnitEntry>;
 	leafCache: Map<string, AwEngine.ModFacts | null>;
+	leavesLoaded: boolean;
 	/** Last successful session step for the current unit. `run` is not stored. */
-	phase: Map<
-		string,
-		"before-instances" | "check" | "elaborate" | "before-dump"
-	>;
+	phase: Map<string, "check" | "elaborate" | "before-dump">;
 	/** Input edits since the last compile of that unit. */
 	dirty: Set<string>;
 	svText: string;
@@ -97,6 +91,7 @@ const state: {
 	current: null,
 	docs: new Map(),
 	leafCache: new Map(),
+	leavesLoaded: false,
 	phase: new Map(),
 	dirty: new Set(),
 	svText: "",
@@ -141,7 +136,37 @@ function watchInputs(): void {
 		characterData: true,
 	};
 	obs.observe($("#aw-source"), opts);
-	obs.observe($("#aw-hooks"), opts);
+}
+
+/** Park every unit tree except the processed container for `id`. */
+function parkOtherUnits(id: string): () => void {
+	const parked: { node: Element; parent: Node; next: ChildNode | null }[] = [];
+	for (const pane of ["#aw-source", "#aw-live"]) {
+		const root = document.querySelector(pane);
+		if (!root) continue;
+		for (const el of [...root.children]) {
+			if (!(el instanceof HTMLElement) || !el.dataset.unit) continue;
+			if (pane === "#aw-live" && el.dataset.unit === id) continue;
+			parked.push({ node: el, parent: root, next: el.nextSibling });
+			el.remove();
+		}
+	}
+	return () => {
+		// Reverse: a node's next sibling may itself be parked.
+		for (const item of parked.reverse())
+			item.parent.insertBefore(item.node, item.next);
+	};
+}
+
+function withCurrentUnit<T>(id: string, fn: () => T): T {
+	holdObs();
+	const restore = parkOtherUnits(id);
+	try {
+		return fn();
+	} finally {
+		restore();
+		releaseObs();
+	}
 }
 
 function setAuthorTab(which: "source" | "processed"): void {
@@ -326,7 +351,7 @@ function markProcessed(names: string[]): void {
 function snapshotOf(id: string): string {
 	const entry = state.docs.get(id);
 	if (!entry?.doc) return "";
-	return AW.serializeSnapshot(entry.doc as unknown as Document);
+	return AW.serializeSnapshot(entry.doc);
 }
 
 function showErrors(errors: string[]): void {
@@ -403,10 +428,9 @@ function saveHtml(): string {
 }
 
 const SESSION_HELP = [
-	"before-instances: compile #aw-source + #aw-hooks into #aw-live (does not write the input back)",
-	"check: rule report; requires before-instances in this session",
-	"elaborate: freeze aw-render; requires a clean check in this session",
-	"before-dump: read-only hook; requires elaborate in this session",
+	"check: static author-face rules; does not run scripts",
+	"elaborate: classic scripts, then on-init / on-template, then freeze aw-render (does not write the input back)",
+	"before-dump: snapshot of the frozen render; requires elaborate in this session",
 	"run: the whole chain; same result as connect run, no file write; shows .sv",
 	"save / save-sv: download the printed .sv text (browser download)",
 	"save-html: download the live author HTML with aw-render stripped",
@@ -418,17 +442,7 @@ async function sessionStep(step: string): Promise<string> {
 	if (!id) throw new Error("no unit selected");
 	const phase = state.phase.get(id) ?? "none";
 	if (step === "help") return SESSION_HELP;
-	if (step === "before-instances") {
-		const entry = await loadUnit(id);
-		await compileUnit(entry, id, true);
-		state.phase.set(id, "before-instances");
-		setAuthorTab("processed");
-		showGenerated($("#aw-live").textContent ?? "");
-		return "before-instances";
-	}
 	if (step === "check") {
-		if (phase === "none")
-			throw new Error('session: run "before-instances" before "check"');
 		const res = await runCheck(id);
 		const text = [...res.errors, ...res.warnings].join("\n") || "check ok";
 		if (res.errors.length === 0) {
@@ -439,12 +453,6 @@ async function sessionStep(step: string): Promise<string> {
 		return text;
 	}
 	if (step === "elaborate") {
-		if (state.dirty.has(id))
-			throw new Error(
-				'session: input workspace changed; run "before-instances" and "check" again',
-			);
-		if (phase !== "check" && phase !== "elaborate" && phase !== "before-dump")
-			throw new Error('session: "elaborate" requires a clean check');
 		const res = await runRender(id);
 		if (res.errors.length > 0) throw new Error(res.errors[0]);
 		state.phase.set(id, "elaborate");
@@ -453,10 +461,6 @@ async function sessionStep(step: string): Promise<string> {
 		return "elaborate";
 	}
 	if (step === "before-dump") {
-		if (state.dirty.has(id))
-			throw new Error(
-				'session: input workspace changed; run "before-instances" and "check" again',
-			);
 		if (phase !== "elaborate" && phase !== "before-dump")
 			throw new Error('session: "before-dump" requires elaborate');
 		const res = await runBeforeDumpOnly(id);
@@ -522,100 +526,76 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Unit loading: author HTML → live DOM; module scripts execute under a
-// per-unit hook registry (aw.js beginUnitHooks/endUnitHooks).
+// Unit loading: author HTML → source workspace. Classic scripts stay in the
+// source tree and run only on the processed clone.
 // ---------------------------------------------------------------------------
 
-async function execHookScripts(id: string, hooks: HTMLElement): Promise<void> {
-	AW.beginUnitHooks(id);
-	try {
-		for (const h of hooks.querySelectorAll('script[type="aw/hook"]')) {
-			const inline = h.textContent ?? "";
-			const srcAttr = h.getAttribute("src");
-			if (!inline.trim() && !srcAttr) continue;
-			const el = document.createElement("script");
-			el.type = "module";
-			el.dataset.awInjected = id;
-			let src = srcAttr ? new URL(srcAttr, location.href).href : "";
-			if (inline.trim()) {
-				// Obscura rejects data:/blob: module URLs. Serve the text from
-				// an ephemeral loopback URL (not a workspace file).
-				const posted = await fetch("/api/hook-script", {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify({
-						text: `${inline}\n;window.__awScriptDone?.shift()?.();`,
-					}),
-				});
-				if (!posted.ok) {
-					const err = (await posted.json()) as { error?: string };
-					throw new Error(err.error ?? "hook script upload failed");
-				}
-				const meta = (await posted.json()) as { url: string };
-				src = new URL(meta.url, location.href).href;
-			}
-			const sentinel = new Promise<void>((res) => {
-				const q = win.__awScriptDone ?? [];
-				win.__awScriptDone = q;
-				q.push(res);
-			});
-			const loaded = new Promise<void>((res, rej) => {
-				el.addEventListener("load", () => res());
+function isClassicScript(script: Element): boolean {
+	const type = (script.getAttribute("type") ?? "").trim().toLowerCase();
+	return (
+		type === "" ||
+		type === "text/javascript" ||
+		type === "application/javascript"
+	);
+}
+
+/** Run classic scripts from the processed clone so functions land on window.
+ *  `src` resolves relative to the author HTML via /raw/. */
+async function runClassicScripts(
+	root: ParentNode,
+	unitHtml: string,
+): Promise<void> {
+	const scripts = [...root.querySelectorAll("script")];
+	for (const script of scripts) {
+		const type = (script.getAttribute("type") ?? "").trim().toLowerCase();
+		if (type === "module")
+			throw new Error(
+				'author script must be a classic <script> (type="module" is not allowed)',
+			);
+		if (!isClassicScript(script)) continue;
+		const srcAttr = script.getAttribute("src");
+		const inline = script.textContent ?? "";
+		if (!srcAttr && !inline.trim()) continue;
+		const el = document.createElement("script");
+		el.dataset.awInjected = "1";
+		if (srcAttr) {
+			const base = new URL(unitHtml, `${location.origin}/raw/`);
+			el.src = new URL(srcAttr, base).href;
+			await new Promise<void>((resolve, reject) => {
+				el.addEventListener("load", () => resolve());
 				el.addEventListener("error", () =>
-					rej(new Error(`hook script failed to load ${src}`)),
+					reject(new Error(`script failed to load ${srcAttr}`)),
 				);
+				document.body.appendChild(el);
 			});
-			el.src = src;
+		} else {
+			el.textContent = inline;
 			document.body.appendChild(el);
-			// One script at a time so aw.on registration stays in source order.
-			await Promise.race([sentinel, loaded]);
 		}
-	} finally {
-		AW.endUnitHooks();
-		for (const el of document.querySelectorAll(
-			`script[data-aw-injected="${id}"]`,
-		))
-			el.remove();
+		el.remove();
 	}
 }
 
-/** Clone the input workspace into #aw-live and run scripts there.
- *  `runHooks` also runs before-instances. Source is detached while scripts
- *  run so they cannot write the input tree. */
+/** Clone the input workspace into #aw-live. Scripts run only when asked. */
 async function compileUnit(
 	entry: UnitEntry,
 	id: string,
-	runHooks: boolean,
+	runScripts: boolean,
 ): Promise<void> {
 	holdObs();
-	// Hide every input tree while scripts run. Otherwise a hook's
-	// document.querySelector("aw-mod") can write the source workspace.
-	const sourceRoot = $("#aw-source");
-	const sourceParent = sourceRoot.parentElement;
-	const sourceNext = sourceRoot.nextSibling;
-	sourceRoot.remove();
 	try {
 		if (entry.doc !== entry.source) entry.doc.remove();
-		AW.clearUnitHooks(id);
 		const container = document.createElement("div");
 		container.dataset.unit = id;
-		const root = entry.source.querySelector(":scope > autowire");
-		if (!root)
-			throw new Error(`unit "${id}": source workspace has no <autowire>`);
-		container.appendChild(root.cloneNode(true));
+		for (const child of [...entry.source.children])
+			container.appendChild(child.cloneNode(true));
 		$("#aw-live").appendChild(container);
 		entry.doc = container;
 		entry.container = container;
 		entry.rendered = false;
-		entry.hooksRan = false;
-		await execHookScripts(id, entry.hooks);
-		if (runHooks) {
-			AW.runBeforeInstances(container as unknown as Document, id);
-			entry.hooksRan = true;
-		}
+		if (runScripts) await runClassicScripts(container, unitOf(id)?.html ?? "");
 		state.dirty.delete(id);
 	} finally {
-		sourceParent?.insertBefore(sourceRoot, sourceNext);
 		releaseObs();
 	}
 }
@@ -635,22 +615,14 @@ async function loadUnit(id: string): Promise<UnitEntry> {
 			throw new Error(`unit "${id}": author HTML has no <autowire> root`);
 		const source = document.createElement("div");
 		source.dataset.unit = id;
-		source.appendChild(document.importNode(root, true));
-		$("#aw-source").appendChild(source);
-		const hooks = document.createElement("div");
-		hooks.dataset.unit = id;
-		for (const s of parsed.querySelectorAll('script[type="module"]')) {
-			const el = document.createElement("script");
-			el.type = "aw/hook";
-			const src = s.getAttribute("src");
-			if (src) el.setAttribute("src", src);
-			el.textContent = s.textContent ?? "";
-			hooks.appendChild(el);
+		for (const child of [...parsed.body.children]) {
+			const tag = child.tagName.toLowerCase();
+			if (tag === "script" || tag === "autowire")
+				source.appendChild(document.importNode(child, true));
 		}
-		$("#aw-hooks").appendChild(hooks);
+		$("#aw-source").appendChild(source);
 		const entry: UnitEntry = {
 			source,
-			hooks,
 			doc: document.createElement("div"),
 			container: source,
 			rendered: false,
@@ -754,7 +726,7 @@ async function buildCtx(
 ): Promise<{ errors: string[]; ctx: AwEngine.EngineCtx }> {
 	const unit = unitOf(id);
 	if (!unit) throw new Error(`unknown unit "${id}"`);
-	const { doc } = await loadUnit(id);
+	await loadUnit(id);
 	const wrappers = new Map<string, WrapperFacts>();
 	const missing: string[] = [];
 	for (const dep of unit.deps) {
@@ -762,18 +734,16 @@ async function buildCtx(
 		if (r.missing) missing.push(r.missing);
 		for (const f of r.facts ?? []) wrappers.set(f.name ?? "", f);
 	}
-	// Pre-fetch leaf facts for every instantiated target that is not a wrapper.
-	const wanted = new Set<string>();
-	for (const inst of doc.querySelectorAll("aw-inst")) {
-		const mod = inst.getAttribute("mod") ?? "";
-		if (mod && !wrappers.has(mod) && state.unitMods.get(mod) !== id)
-			wanted.add(mod);
-	}
-	for (const mod of wanted) {
-		if (!state.leafCache.has(mod)) {
-			const res = await fetch(`/api/module?name=${encodeURIComponent(mod)}`);
-			state.leafCache.set(mod, res.ok ? await res.json() : null);
+	// Every leaf, so on-init can instantiate a module the HTML never named.
+	if (!state.leavesLoaded) {
+		const res = await fetch("/api/leaves");
+		if (res.ok) {
+			const data = (await res.json()) as { modules: AwEngine.ModFacts[] };
+			for (const mod of data.modules) {
+				if (mod.name) state.leafCache.set(mod.name, mod);
+			}
 		}
+		state.leavesLoaded = true;
 	}
 	const errors = missing.map(
 		(d) =>
@@ -798,32 +768,21 @@ async function buildCtx(
 // Actions (shared by buttons and GET params).
 // ---------------------------------------------------------------------------
 
-/** Compile source → processed when hooks have not run, or the input changed.
- *  before-instances writes only the processed clone. */
-async function ensureAuthorMutations(
-	entry: UnitEntry,
-	id: string,
-): Promise<void> {
-	if (entry.hooksRan && !state.dirty.has(id)) return;
-	await compileUnit(entry, id, true);
-	setAuthorTab("processed");
-}
-
 async function runCheck(id: string): Promise<AwEngine.CheckResult> {
 	const entry = await loadUnit(id);
-	// lifecycle §3.1: author-face mutators before check (hook-generated insts visible).
-	await ensureAuthorMutations(entry, id);
 	const { errors: ctxErrors, ctx } = await buildCtx(id);
-	const res = AW.check(entry.doc as unknown as Document, ctx);
+	// Static rules on the author HTML. Scripts and on-init are not run.
+	const res = AW.check(entry.source, ctx);
 	return { errors: [...ctxErrors, ...res.errors], warnings: res.warnings };
 }
 
 async function runRender(id: string): Promise<AwEngine.CheckResult> {
 	const entry = await loadUnit(id);
-	await ensureAuthorMutations(entry, id);
+	await compileUnit(entry, id, true);
+	setAuthorTab("processed");
 	const { errors: ctxErrors, ctx } = await buildCtx(id);
 	if (ctxErrors.length > 0) return { errors: ctxErrors, warnings: [] };
-	const res = AW.elaborate(entry.doc as unknown as Document, ctx);
+	const res = withCurrentUnit(id, () => AW.elaborate(entry.doc, ctx));
 	if (res.errors.length === 0) entry.rendered = true;
 	return res;
 }
@@ -849,10 +808,9 @@ async function runView(id: string): Promise<{ files: string[]; sv: string }> {
 		}
 		const entry = state.docs.get(uid);
 		if (!entry) throw new Error(`unit "${uid}" not loaded`);
-		AW.runBeforeDump(entry.doc as unknown as Document, uid);
 		files.push({
 			uid,
-			text: AW.serializeSnapshot(entry.doc as unknown as Document),
+			text: AW.serializeSnapshot(entry.doc),
 		});
 	}
 	// Show and return the same .sv text connect run writes (page rule:
@@ -875,8 +833,7 @@ async function runView(id: string): Promise<{ files: string[]; sv: string }> {
 async function runBeforeDumpOnly(id: string): Promise<{ files: string[] }> {
 	const entry = state.docs.get(id);
 	if (!entry?.rendered) throw new Error(`session: "${id}" is not elaborated`);
-	AW.runBeforeDump(entry.doc as unknown as Document, id);
-	const text = AW.serializeSnapshot(entry.doc as unknown as Document);
+	const text = AW.serializeSnapshot(entry.doc);
 	showGenerated(text);
 	return { files: [text] };
 }
@@ -1116,7 +1073,6 @@ function refreshRightIfRendered(): void {
 async function resetAll(): Promise<void> {
 	holdObs();
 	try {
-		for (const [id] of state.docs) AW.clearUnitHooks(id);
 		state.docs.clear();
 		state.phase.clear();
 		state.dirty.clear();
@@ -1124,7 +1080,6 @@ async function resetAll(): Promise<void> {
 		state.htmlText = "";
 		$("#aw-live").innerHTML = "";
 		$("#aw-source").innerHTML = "";
-		$("#aw-hooks").innerHTML = "";
 		const gen = $("#aw-generated");
 		gen.hidden = false;
 		gen.textContent = "";

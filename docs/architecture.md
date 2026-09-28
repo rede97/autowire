@@ -79,7 +79,7 @@ Rust sidecar，唯一子命令 `analysis`：只读分析，产出 RtlIndex XML �
 autowire connect run [unit]
 ```
 
-顺序与页面一致：执行作者 HTML 的 `<script type="module">`（`aw.on`）→ `before-instances` → check → elaborate → `before-dump` → 写 `.sv` 与 connect XML。不经过浏览器。同一份 HTML 在 happy-dom 与 Chromium 中的快照必须一致。开发与 CI 的调试浏览器仍是 Playwright Chromium。页面会话不调用这条写路径。
+顺序与页面一致：普通 `<script>` 定义全局函数 → 各 `aw-content@on-init` → check → elaborate（每个 `aw-inst@on-template` 先改本实例模板规则，再展开）→ 写 `.sv` 与 connect XML。契约见 [`connect/lifecycle.md`](./connect/lifecycle.md)。不经过浏览器。同一份 HTML 在 happy-dom 与 Chromium 中的快照必须一致。开发与 CI 的调试浏览器仍是 Playwright Chromium。页面会话不调用这条写路径。
 
 ### 2.7 生产发布包（目标）
 
@@ -125,6 +125,6 @@ A 只打浏览器调试工作区；B 只改作者面/索引。页面不写文件
 - **插件**：类型 A 已落地，类型 B 暂时不做。见 [plugins/](./plugins/)。  
   - **类型 A**（Wishbone）：`plugin wishbone run` → `plugins_dir` → **analysis / RtlIndex 黑盒叶子**；connect 只 `aw-inst`。  
   - **类型 B**（自定义标签展开成 `aw-*`）：裁定保留，当前没有这类标签，不实现。  
-  - 现网编排：`plugin wishbone run`(外) → before-instances → **check** → elaborate → `connect run` 写 `.sv`。页面不写。  
+  - 现网编排：`plugin wishbone run`(外) → 静态 check → elaborate（`on-init` / `on-template`）→ `connect run` 写 `.sv`。页面不写。  
 - **寄存器 / Wishbone**：叶子 [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md)；块内配置树 [plugins/wishbone-bus.md](./plugins/wishbone-bus.md)。开放项暂时不动。  
 - 叶子 RTL：Rust sidecar 出 RtlIndex，连接页只读端口表。

@@ -18,17 +18,17 @@ connect 的最后一步就是写 `.sv`，所以最终入口只有 `run`，不再
 
 ## 2. connect
 
-本地和浏览器是同一条 connect 相位链，差别只是作者脚本跑在哪里。`elaborate` 仍是链上的内部步骤，但没有自己的命令：它停在 check 之后，既不写 `.sv`，也不产生规则报告。
+本地和浏览器走同一套作者脚本。`check` 只做静态检查，不跑脚本。`elaborate` 跑经典脚本、`on-init` / `on-template`，写出 `aw-render`，不写 `.sv`。
 
 ```text
-expand → before-instances → check → elaborate → before-dump → dump
+check（静态）    elaborate（脚本 + on-init + on-template + aw-render）    connect run 写 .sv
 ```
 
 | 命令 | 行为 |
 |---|---|
-| `connect run [unit]` | happy-dom 跑 `<script type="module">`，走完上面的链并写 `.sv`。内容没变的文件不重写。`--force` 强制重写 |
-| `connect check [unit]` | 脚本 + before-instances 之后，只做作者面和依赖的规则检查，打印错误和警告，不写盘 |
-| `connect elaborate [unit]` | 走到 elaborate + before-dump 为止（含维度合并/短路等展开期门禁），不写盘 |
+| `connect run [unit]` | happy-dom 跑经典 `<script>`，elaborate 后写 `.sv`。内容没变的文件不重写。`--force` 强制重写 |
+| `connect check [unit]` | 不跑脚本。只做作者面和依赖的规则检查，打印错误和警告，不写盘 |
+| `connect elaborate [unit]` | 跑脚本和 `on-init` / `on-template`，含展开期门禁，不写盘 |
 | `connect web [unit]` | 只起静态页。浏览器在页面里跑同一批脚本；不把结果交给 autowire 写盘 |
 
 `check` 是快速规则工具，不是半成品生成。`connect check` 和页面里的 Check 都只报告错误和警告。`connect run` 内部先做同样的 check，不通过就不写。没有单独的 `connect dump`；`connect elaborate` 覆盖展开期校验但不落盘，适合 CI 门禁。
@@ -36,16 +36,15 @@ expand → before-instances → check → elaborate → before-dump → dump
 `connect web` 起一个有状态的页面会话，不写工作区。静态服务只提供页面、`aw.js` 和只读数据：单元列表、作者 HTML、RtlIndex、已有的 connect 快照。会话里的活 DOM 由前端接口推进，MCP 一次调用一步。
 
 ```text
-before-instances → check → elaborate → before-dump
+check → elaborate → before-dump
 ```
 
 | 会话接口 | 作用 | 前序 |
 |---|---|---|
-| `before-instances` | 跑作者脚本，改当前会话的作者面 | 无 |
-| `check` | 规则检查，返回错误和警告 | 本会话已跑过 `before-instances` |
-| `elaborate` | 在本会话写出冻结的 `aw-render` | 本会话 `check` 无 error |
-| `before-dump` | 只读钩子，返回可交付的快照 | 本会话已 `elaborate` |
-| `run` | 按上面的顺序走完，行为与 `connect run` 相同 | 无；内部包含 check |
+| `check` | 静态规则检查，不跑脚本 | 无 |
+| `elaborate` | 跑经典脚本和 `on-init` / `on-template`，写出冻结的 `aw-render` | 无。按钮链会先做静态 check |
+| `before-dump` | 返回已冻结快照，没有作者钩子 | 本会话已 `elaborate` |
+| `run` | 静态 check 通过后 elaborate，行为与 `connect run` 相同 | 无 |
 | `save` | 返回当前会话里 MCP 可以落盘的文本 | 至少完成所要保存的那一步 |
 | `help` | 返回上述接口的说明：顺序、前序、返回什么、不写哪些文件 | 无 |
 

@@ -70,9 +70,10 @@ export function registerConnect(program: Command): void {
 			const all = allUnits(cfg);
 			let failed = false;
 			for (const u of units) {
-				// Live DOM: scripts + before-instances run before check
-				// (lifecycle §3.1), so hook-generated rules are checked too.
-				const { win, doc } = await loadLiveUnitDoc(cfg, u);
+				// Static check: do not run scripts and do not call on-init.
+				const { win, doc } = await loadLiveUnitDoc(cfg, u, {
+					scripts: false,
+				});
 				try {
 					const built = await buildEngineCtx(cfg, u, all, leafDb);
 					await built.prewarm(doc as never);
@@ -95,7 +96,7 @@ export function registerConnect(program: Command): void {
 	connect
 		.command("elaborate")
 		.description(
-			"Scripts → before-instances → check → elaborate → before-dump; no write",
+			"Classic scripts, then elaborate (on-init / on-template); no write",
 		)
 		.argument("[unit]", "unit id (default: all units, deps first)")
 		.option(

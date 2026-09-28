@@ -1,13 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { parseHTML } from "linkedom";
 import {
-	beginUnitHooks,
+	type AuthorMod,
+	type AuthorMods,
 	check,
-	clearUnitHooks,
 	elaborate,
-	endUnitHooks,
-	on as hookOn,
-	runBeforeInstances,
+	installGlobal,
 	serializeSnapshot,
 } from "../../src/core/aw.ts";
 
@@ -540,34 +538,115 @@ describe("elaborate (render)", () => {
 		expect(ports).toContain("outside");
 	});
 
-	test("before-instances prepass generates instances; snapshot carries render only", () => {
+	test("on-init creates instances after children exist", () => {
 		const doc = docOf(
-			`<aw-mod name="m"><aw-content><aw-insts></aw-insts></aw-content></aw-mod>`,
+			`<aw-mod name="top"><aw-content on-init="build"><aw-insts></aw-insts></aw-content>
+			<aw-submods><aw-mod name="kid"><aw-content>
+				<aw-ports><aw-port dir="output" name="q"></aw-port></aw-ports>
+				<aw-insts><aw-inst id="i" mod="leaf"><aw-template>
+					<aw-connect port="clk_i" to="c"></aw-connect>
+				</aw-template></aw-inst></aw-insts>
+			</aw-content></aw-mod></aw-submods></aw-mod>`,
 		);
-		// hook registered via the same aw.on API authors use in module scripts
-		beginUnitHooks("t1");
-		hookOn("before-instances", ({ mod }) => {
-			if (!mod) throw new Error("hook without mod");
-			const insts = mustQuery(mod, "aw-content aw-insts");
-			const inst = mod.ownerDocument.createElement("aw-inst");
+		const view = doc.defaultView as unknown as Record<string, unknown>;
+		view.build = (content: Element, mods: AuthorMods) => {
+			const kid = mods("kid");
+			if (!kid?.ports.some((p) => p.name === "q"))
+				throw new Error("child facts missing");
+			const insts = mustQuery(content, ":scope > aw-insts");
+			const inst = content.ownerDocument.createElement("aw-inst");
 			inst.setAttribute("id", "gen");
-			inst.setAttribute("mod", "leaf");
-			const tpl = mod.ownerDocument.createElement("aw-template");
-			const c = mod.ownerDocument.createElement("aw-connect");
-			c.setAttribute("port", "clk_i");
-			c.setAttribute("to", "gen_clk");
+			inst.setAttribute("mod", "kid");
+			const tpl = content.ownerDocument.createElement("aw-template");
+			const c = content.ownerDocument.createElement("aw-connect");
+			c.setAttribute("port", "q");
+			c.setAttribute("to", "gen_q");
 			tpl.appendChild(c);
 			inst.appendChild(tpl);
 			insts.appendChild(inst);
-		});
-		endUnitHooks();
-		runBeforeInstances(doc, "t1");
+		};
 		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
 		expect(res.errors).toEqual([]);
 		const snap = serializeSnapshot(doc);
 		expect(snap).toContain('id="gen"');
 		expect(snap).not.toContain("aw-template");
-		clearUnitHooks("t1");
+	});
+
+	test("on-template edits this instance from its attributes and the target module", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="leaf" idx="3" on-template="wire"></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const view = doc.defaultView as unknown as Record<string, unknown>;
+		view.wire = (inst: Element, mod: AuthorMod) => {
+			if (mod.params[0]?.name !== "Width") throw new Error("params missing");
+			if (!mod.ports.some((p) => p.name === "clk_i"))
+				throw new Error("ports missing");
+			const tpl = inst.ownerDocument.createElement("aw-template");
+			const c = inst.ownerDocument.createElement("aw-connect");
+			c.setAttribute("port", "clk_i");
+			c.setAttribute(
+				"to",
+				`${inst.getAttribute("id")}_${inst.getAttribute("idx")}`,
+			);
+			tpl.appendChild(c);
+			inst.appendChild(tpl);
+		};
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors).toEqual([]);
+		expect(serializeSnapshot(doc)).toContain('to="u_3"');
+	});
+
+	test("a missing on-init function is an error and does not freeze a render", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content on-init="missing"><aw-insts></aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors.some((e) => e.includes("not a function on window"))).toBe(
+			true,
+		);
+		expect(serializeSnapshot(doc)).not.toContain("aw-render");
+	});
+
+	test("aw.inst and aw.connect build rules, then on-template runs", () => {
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content on-init="build"></aw-content></aw-mod>`,
+		);
+		const view = doc.defaultView as unknown as {
+			aw: {
+				inst: (el: Element, attrs: Record<string, string>) => Element;
+				connect: (el: Element, attrs: Record<string, string>) => Element;
+				port: (el: Element, attrs: Record<string, string>) => Element;
+				rewrite: (el: Element, attrs: Record<string, string>) => Element;
+			};
+			build?: (content: Element) => void;
+			wire?: (inst: Element, mod: AuthorMod) => void;
+		};
+		installGlobal(view as never);
+		view.wire = (el, mod) => {
+			if (!mod.ports.some((port) => port.name === "clk_i"))
+				throw new Error("target module missing");
+			view.aw.rewrite(el, { match: "clk_i", to: "clk_renamed" });
+		};
+		view.build = (content) => {
+			view.aw.port(content, { name: "probe", dir: "output" });
+			const created = view.aw.inst(content, {
+				id: "u",
+				mod: "leaf",
+				onTemplate: "wire",
+			});
+			view.aw.connect(created, { port: "d_i", to: "data" });
+		};
+		const res = elaborate(doc, ctxWith({ leaf: counterLeaf }));
+		expect(res.errors).toEqual([]);
+		const snap = serializeSnapshot(doc);
+		expect(snap).toContain('name="probe"');
+		expect(snap).toContain('to="data"');
+		expect(snap).toContain('to="clk_renamed"');
+		expect(
+			mustQuery(doc, "aw-content aw-inst").getAttribute("on-template"),
+		).toBe("wire");
 	});
 });
 

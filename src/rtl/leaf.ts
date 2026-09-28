@@ -74,6 +74,18 @@ export class LeafDb {
 		return this.files.has(name);
 	}
 
+	/** Every module in the index. Elaborate uses this so on-init can name a leaf
+	 *  that the author HTML did not mention. */
+	async all(): Promise<LeafModule[]> {
+		await this.ensure();
+		const out: LeafModule[] = [];
+		for (const name of this.files.keys()) {
+			const mod = await this.get(name);
+			if (mod) out.push(mod);
+		}
+		return out;
+	}
+
 	async get(name: string): Promise<LeafModule | null> {
 		await this.ensure();
 		if (this.cache.has(name)) return this.cache.get(name) ?? null;

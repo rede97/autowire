@@ -125,11 +125,6 @@ var RENDER_GROUPS = [
   "aw-signals",
   "aw-insts"
 ];
-var HOOK_PHASES = [
-  "before-instances",
-  "on-template",
-  "before-dump"
-];
 var IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 var LITERAL = /^(\d+('[bodhBODH][0-9a-fA-F_xXzZ?]+)?|\d+("[^"]*")?|"[^"]*")$/;
 function classifyTo(text, scope) {
@@ -180,57 +175,137 @@ function all(el, tag) {
 function attr(el, name) {
   return el.getAttribute(name);
 }
-var unitHooks = new Map;
-var currentUnit = "";
-function beginUnitHooks(unitId) {
-  currentUnit = unitId;
-  if (!unitHooks.has(unitId)) {
-    unitHooks.set(unitId, {
-      "before-instances": [],
-      "on-template": [],
-      "before-dump": []
-    });
-  }
-}
-function endUnitHooks() {
-  currentUnit = "";
-}
-function clearUnitHooks(unitId) {
-  unitHooks.delete(unitId);
-}
-function on(phase, fn) {
-  if (!HOOK_PHASES.includes(phase)) {
-    throw new Error(`aw.on: unknown phase "${phase}" (expected ${HOOK_PHASES.join(" | ")})`);
-  }
-  if (typeof fn !== "function")
-    throw new Error("aw.on: callback must be a function");
-  if (!currentUnit)
-    throw new Error("aw.on: no active unit (scripts run inside a connect unit)");
-  unitHooks.get(currentUnit)?.[phase].push(fn);
-  if (!unitHooks.has(currentUnit)) {
-    beginUnitHooks(currentUnit);
-    unitHooks.get(currentUnit)[phase].push(fn);
-  }
-}
-function hooksFor(unitId) {
-  return unitHooks.get(unitId) ?? {
-    "before-instances": [],
-    "on-template": [],
-    "before-dump": []
+function authorModOf(facts) {
+  return {
+    name: facts.name ?? "",
+    params: (facts.params ?? []).map((p) => ({
+      name: p.name,
+      value: p.value ?? p.defaultText ?? ""
+    })),
+    ports: (facts.ports ?? []).map((p) => ({
+      name: p.name,
+      dir: p.dir,
+      packed: p.packed ?? null,
+      unpacked: p.unpacked ?? null
+    })),
+    imports: (facts.imports ?? []).map((i) => ({
+      package: i.package,
+      symbol: i.symbol
+    }))
   };
 }
-function runBeforeDump(doc, unitId) {
-  for (const fn of hooksFor(unitId ?? "")["before-dump"])
-    fn({ doc });
+function modsLookup(ctx, known) {
+  return (name) => {
+    const facts = known.get(name) ?? ctx.leaf?.(name) ?? ctx.wrapper?.(name) ?? null;
+    return facts ? authorModOf(facts) : null;
+  };
 }
-var CAPTURE_RE = /\$\d|\$&|\$</;
-function runBeforeInstances(doc, unitId) {
-  const hooks = hooksFor(unitId ?? "");
-  for (const mod of all(doc, "aw-mod")) {
-    for (const fn of hooks["before-instances"])
-      fn({ mod, doc });
+function authorWindow(el) {
+  const view = el.ownerDocument.defaultView;
+  return view ?? null;
+}
+function resolveAuthorFn(el, attrName, res, where) {
+  const name = attr(el, attrName);
+  if (name == null)
+    return null;
+  if (!IDENT.test(name)) {
+    res.errors.push(`${where}: "${name}" is not a function name`);
+    return null;
+  }
+  const fn = authorWindow(el)?.[name];
+  if (typeof fn !== "function") {
+    res.errors.push(`${where}: "${name}" is not a function on window`);
+    return null;
+  }
+  return fn;
+}
+function callAuthorFn(fn, host, args, res, where) {
+  let result;
+  try {
+    result = fn.call(host, ...args);
+  } catch (e) {
+    res.errors.push(`${where} threw: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  if (result != null && typeof result.then === "function") {
+    res.errors.push(`${where}: function must be synchronous`);
   }
 }
+function putAttrs(el, attrs) {
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value == null || value === false)
+      continue;
+    const name = key === "onTemplate" ? "on-template" : key;
+    el.setAttribute(name, String(value));
+  }
+}
+function ensureChild(parent, tag) {
+  const found = child(parent, tag);
+  if (found)
+    return found;
+  const el = parent.ownerDocument.createElement(tag);
+  parent.appendChild(el);
+  return el;
+}
+function ownTemplate(inst) {
+  const templates = children(inst, "aw-template");
+  const last = templates[templates.length - 1];
+  if (last)
+    return last;
+  const el = inst.ownerDocument.createElement("aw-template");
+  inst.appendChild(el);
+  return el;
+}
+function requireTag(el, tags, what) {
+  const tag = (el.tagName ?? "").toLowerCase();
+  if (!tags.includes(tag))
+    throw new Error(`${what}: expected <${tags.join("|")}>, got <${tag}>`);
+}
+function appendRule(inst, tag, attrs) {
+  requireTag(inst, ["aw-inst"], `aw.${tag.slice(3)}`);
+  const el = inst.ownerDocument.createElement(tag);
+  putAttrs(el, attrs);
+  ownTemplate(inst).appendChild(el);
+  return el;
+}
+function inst(content, attrs = {}) {
+  requireTag(content, ["aw-content"], "aw.inst");
+  const el = content.ownerDocument.createElement("aw-inst");
+  putAttrs(el, attrs);
+  ensureChild(content, "aw-insts").appendChild(el);
+  return el;
+}
+function connect(instEl, attrs = {}) {
+  return appendRule(instEl, "aw-connect", attrs);
+}
+function rewrite(instEl, attrs = {}) {
+  return appendRule(instEl, "aw-rewrite", attrs);
+}
+function param(host, attrs = {}) {
+  const tag = (host.tagName ?? "").toLowerCase();
+  const parent = tag === "aw-inst" ? ownTemplate(host) : tag === "aw-content" ? ensureChild(host, "aw-params") : null;
+  if (!parent)
+    throw new Error("aw.param: expected <aw-inst> or <aw-content>");
+  const el = host.ownerDocument.createElement("aw-param");
+  putAttrs(el, attrs);
+  parent.appendChild(el);
+  return el;
+}
+function port(content, attrs = {}) {
+  requireTag(content, ["aw-content"], "aw.port");
+  const el = content.ownerDocument.createElement("aw-port");
+  putAttrs(el, attrs);
+  ensureChild(content, "aw-ports").appendChild(el);
+  return el;
+}
+function localparam(content, attrs = {}) {
+  requireTag(content, ["aw-content"], "aw.localparam");
+  const el = content.ownerDocument.createElement("aw-localparam");
+  putAttrs(el, attrs);
+  ensureChild(content, "aw-localparams").appendChild(el);
+  return el;
+}
+var CAPTURE_RE = /\$\d|\$&|\$</;
 function substVars(text, vars, res, where) {
   return text.replace(/\$\{([^}]*)\}/g, (_m, name) => {
     const key = name.trim();
@@ -727,13 +802,12 @@ function elaborate(doc, ctx = {}) {
     res.errors.push("document: missing <autowire> root");
     return res;
   }
-  const hooks = hooksFor(ctx.unitId ?? "");
   for (const mod of topMods(root)) {
-    elaborateMod(mod, ctx, res, [], hooks, new Map);
+    elaborateMod(mod, ctx, res, [], new Map);
   }
   return res;
 }
-function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
+function elaborateMod(mod, ctx, res, path, sibRenders) {
   const tb = isTbMod(mod);
   const name = attr(mod, "name") ?? "?";
   const here = [...path, name];
@@ -744,7 +818,6 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
     res.errors.push(`${where}: missing aw-content`);
     return null;
   }
-  const scope = moduleScope(content);
   const submods = tb ? null : child(mod, "aw-submods");
   const childRenders = new Map;
   if (submods) {
@@ -755,7 +828,7 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
     ]));
     for (const s of topoOrder(depsOf)) {
       const el = sibs.find((x) => attr(x, "name") === s);
-      const facts = elaborateMod(el, ctx, res, here, hooks, childRenders);
+      const facts = elaborateMod(el, ctx, res, here, childRenders);
       if (facts)
         childRenders.set(s, facts);
     }
@@ -763,6 +836,14 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
   for (const [k, v] of sibRenders)
     if (!childRenders.has(k))
       childRenders.set(k, v);
+  const initFn = resolveAuthorFn(content, "on-init", res, `${where} on-init`);
+  if (initFn) {
+    const before = res.errors.length;
+    callAuthorFn(initFn, content, [content, modsLookup(ctx, childRenders)], res, `${where} on-init`);
+    if (res.errors.length > before)
+      return null;
+  }
+  const scope = moduleScope(content);
   const lib = templateLib(content);
   const instsGroup = child(content, "aw-insts");
   const instEls = instsGroup ? children(instsGroup, "aw-inst") : [];
@@ -781,6 +862,18 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
     const id = attr(inst, "id") ?? "?";
     const target = attr(inst, "mod") ?? "";
     const iwhere = `${where} aw-inst "${id}"`;
+    const targetFacts = ctx.leaf?.(target) ?? childRenders.get(target) ?? ctx.wrapper?.(target) ?? null;
+    if (!targetFacts) {
+      res.errors.push(`${iwhere}: unknown module "${target}" (no RtlIndex leaf and no elaborated wrapper)`);
+      continue;
+    }
+    const tplFn = resolveAuthorFn(inst, "on-template", res, `${iwhere} on-template`);
+    if (tplFn) {
+      const before = res.errors.length;
+      callAuthorFn(tplFn, inst, [inst, authorModOf(targetFacts)], res, `${iwhere} on-template`);
+      if (res.errors.length > before)
+        continue;
+    }
     const vars = {
       id,
       idx: attr(inst, "idx") ?? "0",
@@ -842,11 +935,6 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
         forParam: pname
       });
     }
-    const targetFacts = ctx.leaf?.(target) ?? childRenders.get(target) ?? ctx.wrapper?.(target) ?? null;
-    if (!targetFacts) {
-      res.errors.push(`${iwhere}: unknown module "${target}" (no RtlIndex leaf and no elaborated wrapper)`);
-      continue;
-    }
     const ports = targetFacts.ports ?? [];
     const leafParams = new Map((targetFacts?.params ?? []).map((p) => [p.name, p]));
     for (const pname of instParams.keys()) {
@@ -902,22 +990,6 @@ function elaborateMod(mod, ctx, res, path, hooks, sibRenders) {
           }
         }
       }
-    }
-    const intermediate = [...connects.entries()].map(([port, c]) => ({
-      port,
-      ...c
-    }));
-    for (const fn of hooks["on-template"])
-      fn({
-        mod,
-        inst,
-        template: chain[chain.length - 1] ?? null,
-        connects: intermediate
-      });
-    connects.clear();
-    for (const c of intermediate) {
-      const { port, ...rest } = c;
-      connects.set(port, rest);
     }
     for (const p of ports) {
       if (connects.has(p.name) || p.dir === "interface")
@@ -1426,29 +1498,29 @@ function installGlobal(win) {
     }
   }
   win.aw = {
-    on,
     check,
     elaborate,
     serializeSnapshot,
-    runBeforeDump,
-    runBeforeInstances,
-    beginUnitHooks,
-    endUnitHooks,
-    clearUnitHooks,
-    HOOK_PHASES
+    isFrozen,
+    inst,
+    connect,
+    rewrite,
+    param,
+    port,
+    localparam
   };
   return win.aw;
 }
 export {
-  beginUnitHooks,
   check,
-  clearUnitHooks,
+  connect,
   elaborate,
-  endUnitHooks,
+  inst,
   installGlobal,
   isFrozen,
-  on,
-  runBeforeDump,
-  runBeforeInstances,
+  localparam,
+  param,
+  port,
+  rewrite,
   serializeSnapshot
 };

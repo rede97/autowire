@@ -20,15 +20,16 @@
 │ header：工作区 / 单元  [Check] [Elaborate] [Run] [Save SV] [Save HTML] [Reset] │
 ├──────────────┬───────────────────────────────────────────────┤
 │ 侧栏         │ 作者面（两个 tab，两条流水线，互不覆盖）        │
-│ RtlIndex     │  Source：#aw-source 未改作者 HTML + #aw-hooks  │
-│  摘要+搜索   │  Processed：#aw-live 脚本/钩子之后的 HTML       │
+│ RtlIndex     │  Source：#aw-source 作者 HTML（含经典 script） │
+│  摘要+搜索   │  Processed：#aw-live elaborate 之后的 HTML      │
 │ Connect      │ 右：有 error 则列表；否则 SV / HTML 快照        │
 │  单元链接    │  #aw-generated                                  │
 └──────────────┴───────────────────────────────────────────────┘
 ```
 
-- **Source 与 Processed 是独立工作区**，关系像 `.c` 编译成 `.o`。脚本、`before-instances`、elaborate **只写** `#aw-live`。**禁止**把钩子结果回写 `#aw-source`。下一次编译从当前输入重新克隆，替换 Processed，不改 Source。
-- CDP **可以**改 `#aw-source` 里的 autowire 节点，也可以改 `#aw-hooks` 里 `script[type="aw/hook"]` 的文本。改完后 `before-instances` 或 [Check] 再编译。Reset 从作者文件重新装入，丢掉这两处编辑。
+- **Source 与 Processed 是独立工作区**，关系像 `.c` 编译成 `.o`。脚本、`on-init`、`on-template`、elaborate **只写** `#aw-live`。**禁止**把结果回写 `#aw-source`。下一次编译从当前输入重新克隆，替换 Processed，不改 Source。
+- elaborate 期间，当前单元以外的 `[data-unit]` 从文档摘掉。`document.querySelector("aw-mod")` 只能看到正在编译的单元。
+- CDP **可以**改 `#aw-source` 里的作者节点和经典 `<script>` 文本。改完后 [Elaborate] 再编译。Reset 从作者文件重新装入，丢掉这些编辑。
 - 侧栏 RtlIndex **必须**只读 index（`/api/rtlindex`、`/api/modules`、`/api/module`）；**禁止**在页面重解析 RTL。
 - header **必须**提供 **[Check] [Elaborate] [Run] [Save SV] [Save HTML] [Reset]**；无 GET 时靠按钮触发（见 §2–§3）。**[Save SV]** 下载本次 Run 的 `.sv` 文本（与 `connect run` 写盘同一份，不含 render XML）；**[Save HTML]** 下载 Processed 作者面（`aw-render` 已剥空）。两者都走浏览器保存，**不**写工作区。Save **不**进入 §3 的 GET 动作链。
 - 生成源码 **必须**出现在 `#aw-generated`。无头页是纯文本；前端页用 SV / HTML 两个 tab 着色，Save SV 仍下载 `.sv` 字符串，不下载着色后的 HTML。
@@ -54,7 +55,7 @@
 | **Elaborate** | 写出 / 刷新 `aw-render` | **必须先 Check 无 error** | **自动先跑 Check**；check 有 error 则 **中止**，**禁止**对未通过 check 的 content 出 render |
 | **Run** | 读 **冻结的 `aw-render`**，把源码放进 `#aw-generated` | **必须先有有效 elaborate**（因而也已过 check） | **自动** `check → elaborate`；任一步 error 则中止；另验 render 可印（无残留 template/rewrite）。**不写文件** |
 
-`window.aw.session(step)` 给 MCP 单步用，比按钮更严：`check` 要求本会话已跑 `before-instances`；`elaborate` 要求本会话 check 无 error；`before-dump` 要求本会话已 elaborate。`run` 自己走完整条链，不要求事先单步。`help` 返回这段说明。
+`window.aw.session(step)` 给 MCP 单步用。`check` 是静态检查，无前置。`elaborate` 自己跑脚本，不要求事先 check。`before-dump` 要求本会话已 elaborate。`run` 自己走静态 check 再 elaborate。`help` 返回这段说明。
 
 依赖链：
 

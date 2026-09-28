@@ -1,103 +1,126 @@
 # 渲染生命周期与嵌入脚本（高级）
 
-> 状态：**已实现**（`web/aw.js`；钩子 API 为 `aw.on(phase, fn)`）。  
+> 状态：**已实现**。普通 `<script>` 定义全局函数；`aw-content@on-init` 与 `aw-inst@on-template` 点名调用。`window.aw` 提供加实例、加规则的辅助函数。  
 > 常规连接：[`html.md`](./html.md) / [`rules.md`](./rules.md)。  
 > 摘要：`bun index.ts help connect`。改本文时同步改 help。
 
 ## 1. 用途
 
 声明式 `aw-template` / `aw-rewrite` / `aw-connect` 覆盖常规改名与连线。  
-超出时：在 **elaboration 生命周期**上挂 `<script type="module">`，只改 **作者面 / template 展开中间态**；引擎再单向写入各 `aw-mod` 的 `<aw-render>`。
+超出时用普通脚本定义函数，再用属性把函数挂到元素上，和按钮的 `onclick` 一样。引擎再单向写入各 `aw-mod` 的 `<aw-render>`。
 
 打印机、`connect run`、页面上的 `#aw-generated` **只认** `aw-render`。  
-**`aw-render` 一旦写满即冻结**：钩子 **禁止**再改渲染结果。
+**`aw-render` 一旦写满即冻结**：脚本 **禁止**再改渲染结果。
 
-## 2. 常规 vs 高级
+作者 **应当**先穷尽常规路径；**禁止**用脚本替代一条 `match`+`to` 即可完成的改名。
 
-| 路径 | 适用 | 载体 |
-|---|---|---|
-| 常规 | 精确连线、RegExp 改名、template 复用 / overwrite、param 折叠 | `aw-content` 标签 |
-| 高级 | 不规则生成例化/模板、按模+例化深度改 template 展开 | 两写钩子 + DOM |
+## 2. 脚本
 
-作者 **应当**先穷尽常规路径；**禁止**用脚本替代一条 `match`+`to` 即可完成的改名。  
-**禁止**用脚本在 render 完成后「补丁」signals / ports / connect。
-
-## 3. 钩子挂点（两写一冻）
-
-与 [`html.md`](./html.md) §5 对齐。实现可钉死为 `aw.on(phase, …)` 或等价 CustomEvent（API 形态见 §6）。
-
-```text
-(per aw-mod)
-  before-instances     # 写：aw-content —— 动态插入/改 aw-inst、aw-template、引用
-      → 引擎：param 折叠 + inst_name + aw-localparams
-  on-template          # 写：按每个 aw-inst / template 展开上下文，深度改中间 connect 列表
-      → 引擎：wires / signals / ports → 写入 aw-render（冻结）
-(document)
-  before-dump          # 只读：校验、调试元数据；禁止改 netlist DOM
-```
-
-| 阶段 | 作用面 | 可以 | 禁止 |
-|---|---|---|---|
-| `before-instances` | `aw-content` | 用 JS 增删改合法作者面 `aw-inst` / `aw-template` / 引用关系 | 直接写或手搓完整 `aw-render` 当 SoT；跳过后续阶段 |
-| `on-template` | template → connect **中间态**（尚未 commit 到 render） | 按当前模块与例化信息增删改即将落入 render 的 `aw-connect` / rewrite 展开结果 | 在 render 留下 rewrite/template；改已经冻结的 `aw-render` |
-| （引擎）写 `aw-render` | 产物面 | — | 此后任何钩子改 render |
-| `before-dump` | 活 DOM / 元数据 | **只读**校验、补非 netlist 元数据 | 改 `aw-render` 内 instances/signals/ports/connects；写工作区磁盘；对外 `fetch` |
-
-### 3.1 编排（含插件；web 已落地）
-
-作者面突变（类型 B 标签 expand、脚本 `before-instances`）**必须**发生在 **check 之前**，否则 Check 绿无法覆盖钩子/插件产物。类型 A `generate` **在连接流水线外**（见 [`../plugins/README.md`](../plugins/README.md) §6）。
-
-```text
-[可选] plugin wishbone run (A) → plugins_dir → analysis run → RtlIndex
-单元内：
-  → [B] expand 自定义标签 → 核心 aw-*
-  → before-instances（脚本）
-  → check（作者面 + deps；help check / check.md）
-  → elaborate（params → on-template → identity/wires → 冻结 aw-render）
-  → before-dump（只读）→ connect run 写 .sv
-```
-
-页面会话走同一条链，但停在可见源码：`window.aw.session` 的 `run` 与 `connect run` 得到同一份快照，不写文件。
-
-同一 HTML → 同一 `aw-render`（钩子 **应当**幂等）。elaborate **仅在本模（含子树）无新增 error 时** write/freeze `aw-render`（失败不留下半成品冻结面）。
-
-## 4. 嵌入方式
+脚本是普通 HTML `<script>`，用来把函数放进全局作用域。脚本本身没有相位。
 
 ```html
-<script type="module">
-  // aw.on("before-instances", ({ mod }) => {
-  //   // mutate mod.querySelector(":scope > aw-content") …
-  // });
-  // aw.on("on-template", ({ mod, inst, template }) => {
-  //   // mutate expand intermediate for this inst …
-  // });
-  // aw.on("before-dump", () => { /* validate only */ });
+<script>
+  function buildProbe(content, mods) {
+    aw.port(content, { name: "probe", dir: "output" });
+    const leaf = mods("leaf");
+    for (const p of leaf?.ports ?? []) {
+      const u = aw.inst(content, {
+        id: p.name, mod: "leaf", onTemplate: "renameClk",
+      });
+      aw.connect(u, { port: "clk", to: p.name + "_clk" });
+    }
+  }
+  function renameClk(inst, mod) {
+    aw.rewrite(inst, { match: "(.+)_i", to: inst.getAttribute("id") + "_$1" });
+    aw.param(inst, { name: "Width", expr: mod.params[0]?.value ?? "8" });
+  }
 </script>
+<autowire>
+  <aw-mod name="leaf">
+    <aw-content on-init="buildProbe">
+      <aw-ports></aw-ports>
+      <aw-insts>
+        <aw-inst id="u" mod="leaf" on-template="renameClk"></aw-inst>
+      </aw-insts>
+    </aw-content>
+  </aw-mod>
+</autowire>
 ```
 
-1. **必须** `type="module"`；与 `aw.js` 同页。  
-2. **必须**只通过 DOM / 文档化 `aw.*`；禁止写盘、对外网 `fetch`。  
-3. 回调 **应当**幂等。  
-4. `on-template` **应当**按例化触发（参数给出当前 `mod` / `inst` / 所用 `template`）；全局汇总若需要，也只碰未 commit 的中间态。  
-5. dump 前每个 `aw-render` 必须合法（无 template/rewrite），且与冻结后内容一致。
+1. **必须**是经典脚本。**禁止** `type="module"`。  
+2. 可以内联，也可以 `src`。`src` 相对作者 HTML 解析。  
+3. 函数 **必须**落在 `window` 上。经典脚本里用 `function 名字`，或 `window.名字 = function …`。`const` / `let` 不会变成 `window` 的属性，属性解析不到。  
+4. **禁止** `phase` 属性，**禁止** `aw.on` 注册。  
+5. **禁止**写盘、对外网 `fetch`、改界面。建作者面节点用 §8 的 `aw.*` 辅助函数；它们覆盖不了的才用 `ownerDocument.createElement`。
 
-加载期直接改 DOM（不挂 `aw.on`）与 `before-instances` 钩子时序等价——脚本总在 check 之前跑完，属合法作者面突变。**应当**优先挂 `before-instances`：钩子意图清晰、便于审阅与幂等管理；直接改写只留给一次性、无相位语义的准备（如建查找表）。
+宿主先按文档顺序执行这些脚本，再按下面的属性调用。
 
-## 5. check / run / Playwright
+## 3. 两个属性
 
-- 正式 **check** 走 **`autowire connect check`** 或页面 [Check]：校验 **作者面 `aw-content`** + deps（**不写盘**；**不以 `aw-render` 为 SoT**）；见 `help check` / [`check.md`](./check.md)。CLI 与页面都在 expand / `before-instances` **之后**才 check（§3.1）。  
-- snapshot 是活 DOM（`aw-render` 为引擎写出后的冻结结果）。`connect run` 把它写成 `.sv`；页面把它放进 `#aw-generated`。  
-- 写回只走 `connect run`（全部相关 `aw-render`）；**应当**在 content check 无 error 且 render 可印后才写。页面不写。  
-- 对照只认 render，不认脚本源。  
-- **禁止**在写盘前用脚本改 render 来「对齐」期望。  
-- 插件：类型 A 的 `plugin wishbone run` 在流水线外；类型 B expand 见 [`../plugins/README.md`](../plugins/README.md)。
-- `autowire connect run` 用 happy-dom 执行本节脚本并走同一流水线，快照必须与 Chromium 一致，然后写 `.sv`。不需要浏览器。
+属性值是**一个**全局函数名，不是内联代码，不是函数表达式。一个属性一个函数；多个步骤写在这个函数里面。
 
-## 6. 裁定（随 aw.js 落地）
+| 属性 | 写在 | 何时调用 | 参数 | 返回值 |
+|---|---|---|---|---|
+| `on-init` | `aw-content` | 本层 elaborate 里，子模块整段完成之后、展开本层实例之前。每个 `aw-content` 一次 | `(content, mods)`。`mods(name)` 是已完成模块的只读事实，没有则 `null` | **忽略** |
+| `on-template` | `aw-inst` | 该例化展开模板规则**之前**。目标模块（子模块、叶子或依赖单元）已经有完整事实 | `(inst, mod)`。`mod` 是目标模块的只读事实：`name` / `params` / `ports` / `imports` | **忽略** |
 
-1. 稳定 API：**`aw.on(phase, fn)`**（`window.aw`；无 CustomEvent）。  
-2. 钩子作用域：**按连接单元**（单元 id 注册表）；回调收到 `{ mod }` / `{ mod, inst, template, connects }` / `{ doc }`，自行按模过滤。  
-3. 文档序：**子模整段 elaborate 完成后父模才连线**（父模可例化子包装模）。`before-instances` 是引擎前置 prepass（`runBeforeInstances`），跑完后才取叶子端口表——钩子生成的例化同样可见。  
-4. **`async` 钩子不支持**（引擎同步；回调不要返回 Promise）。插件类型 B 同此裁定（[`../plugins/README.md`](../plugins/README.md)）。
+名字缺失、不是标识符、或 `window` 上没有这个函数：**报错**，不静默跳过。
 
-已裁定（勿再打开）：**仅两写相位**；**render 完成后不可改**；`before-dump` **只读**；**作者面突变（expand / before-instances）在 check 前**（§3.1）。
+函数 **必须**同步。**禁止** `async`，**禁止**返回 Promise。要失败就 `throw`。
+
+## 4. 调用顺序
+
+```text
+普通 <script>（定义全局函数）
+check        静态作者面，不跑脚本，不调用 on-init / on-template
+elaborate    不写盘。按依赖自底向上，对每个 aw-mod：
+               子模块整段完成
+               → on-init(content, mods)
+               → 每个 aw-inst：on-template(inst, mod)
+                    → 展开 aw-connect / aw-rewrite
+                    → 未覆盖端口同名自动连接
+               → 引擎写 aw-render 并冻结
+connect run  写 .sv
+```
+
+子模的 `on-init`、`on-template`、规则展开和 `aw-render` 都结束后，父模才调用 `on-init`。`check` 看不见脚本之后才出现的实例；要覆盖那些实例，跑 `elaborate`（它不写文件）。
+
+没有作者侧的 `before-dump` 挂点。dump 前引擎只读冻结后的 `aw-render`。
+
+同一 HTML → 同一 `aw-render`。两个函数都 **应当**幂等。elaborate **仅在本模（含子树）无新增 error 时**写 `aw-render`。
+
+## 5. `on-init`
+
+第二个参数 `mods(name)` 读取已经完成的子模块、兄弟模块、依赖单元或叶子。没有这个名字时返回 `null`。只许改**传入的那一个** `aw-content`：增删改其中的 `aw-inst`、`aw-template`、`aw-port`、`aw-param` 等作者面节点。
+
+**禁止**写 `aw-render`。**禁止**改别的模块的 content，**禁止**改 `aw-submods` 里别的模块。嵌套模块各自的 `aw-content` 有自己的 `on-init`。
+
+## 6. `on-template`
+
+在引擎读取规则之前调用。函数直接改这个 `aw-inst` **自己的** `<aw-template>`（`aw-connect` / `aw-rewrite` / `aw-param`），和 `onclick` 改元素一样。没有 `<aw-template>` 时，函数可以在这个实例上补一个。
+
+引擎随后按 [`html.md`](./html.md) §5 展开这些规则：`base` 链在前，实例自己的规则在后，同名端口后写覆盖先写。没有被规则覆盖的非 interface 端口仍自动连到同名网。
+
+**禁止**改库里共享的 `<aw-template name="…">`。那一份会被别的例化复用。要改规则，写到当前实例自己的模板上。  
+**禁止**改已经展开的 connect 数组，也 **禁止**写 `aw-render`。函数不接收、不返回连线表。
+
+## 7. 辅助函数
+
+`window.aw` 上有一组同步函数。一次调用追加一个作者面节点，缺的分组（`aw-insts`、`aw-ports`、实例自己的 `aw-template`）会补上。返回新建的元素。
+
+| 调用 | 写到 | 作用 |
+|---|---|---|
+| `aw.inst(content, { id, mod, idx, onTemplate })` | 这棵 `aw-content` | 追加 `aw-inst`。`onTemplate` 写成 `on-template` |
+| `aw.connect(inst, { port, to, type, packed, width, unpacked, part, nettype })` | 该实例自己的 `aw-template` | 追加一条连线 |
+| `aw.rewrite(inst, { match, to, flags, type })` | 同上 | 追加一条改名 |
+| `aw.param(inst, { name, expr })` | 同上 | 追加参数覆盖 |
+| `aw.param(content, { name, expr })` | 这棵 `aw-content` | 追加模块 parameter |
+| `aw.port(content, { name, dir, packed, unpacked })` | 这棵 `aw-content` | 追加端口 |
+| `aw.localparam(content, { name, expr })` | 这棵 `aw-content` | 追加内部 localparam |
+
+键就是属性名。值是字符串或数字；`null` / `undefined` 不写。函数只改传入的这一个 `aw-content` 或 `aw-inst`，不改库模板，不写 `aw-render`。
+
+## 8. 页面
+
+`#aw-source` 里的作者 HTML 包含这些 `<script>` 和属性。CDP 改脚本正文或属性，下一次编译再跑。  
+编译在 Processed 克隆上调用 `on-init` / `on-template`，**不**把结果写回 Source。

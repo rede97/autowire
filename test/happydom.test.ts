@@ -8,24 +8,18 @@ import { loadLiveUnitDoc, renderUnit } from "../src/core/happydom.ts";
 import { LeafDb } from "../src/rtl/leaf.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
-const SCRIPT = `aw.on("before-instances", ({ mod }) => {
-  const ports = mod.querySelector(":scope > aw-content > aw-ports");
-  const port = document.createElement("aw-port");
-  port.setAttribute("name", "probe");
-  port.setAttribute("dir", "output");
-  ports.appendChild(port);
-});
-aw.on("before-dump", ({ doc }) => {
-  if (doc.querySelector("aw-render aw-connect"))
-    throw new Error("before-dump must stay read-only");
-});
+const SCRIPT = `function buildProbe(content) {
+  aw.port(content, { name: "probe", dir: "output" });
+}
 `;
 
 const HTML = `<!doctype html>
 <html><body>
+<script>
+${SCRIPT}</script>
 <autowire>
   <aw-mod name="leaf">
-    <aw-content>
+    <aw-content on-init="buildProbe">
       <aw-ports>
         <aw-port name="clk" dir="input"></aw-port>
       </aw-ports>
@@ -35,8 +29,6 @@ const HTML = `<!doctype html>
     <aw-render></aw-render>
   </aw-mod>
 </autowire>
-<script type="module">
-${SCRIPT}</script>
 </body></html>
 `;
 
@@ -59,7 +51,7 @@ html = "leaf.html"
 }
 
 describe("happy-dom render", () => {
-	test("module script mutates the author face before elaborate", async () => {
+	test("classic script on-init mutates the author face during elaborate", async () => {
 		const dir = await workspace();
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
 		const unit = ws.connectUnits[0];
@@ -75,7 +67,7 @@ describe("happy-dom render", () => {
 		expect(rendered.files.some((file) => file.endsWith("leaf.sv"))).toBe(true);
 	});
 
-	test("check covers script-generated rules (before-instances runs first)", async () => {
+	test("check does not run scripts", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "aw-happy-"));
 		writeFileSync(
 			join(dir, "autowire.toml"),
@@ -89,43 +81,20 @@ dir = ".autowire/hdxml"
 html = "leaf.html"
 `,
 		);
-		// The script appends an illegal rule: aw-connect without a port. A
-		// static parse never sees it; the lifecycle (§3.1) puts the script
-		// before check, so check must flag it.
 		writeFileSync(
 			join(dir, "leaf.html"),
-			`<!doctype html>
-<html><body>
-<autowire>
-  <aw-mod name="leaf">
-    <aw-content>
-      <aw-ports></aw-ports>
-      <aw-insts>
-        <aw-inst id="u" mod="leaf">
-          <aw-template></aw-template>
-        </aw-inst>
-      </aw-insts>
-    </aw-content>
-    <aw-submods></aw-submods>
-    <aw-render></aw-render>
-  </aw-mod>
-</autowire>
-<script type="module">
-  const t = document.querySelector("aw-template");
-  t.appendChild(document.createElement("aw-connect"));
-</script>
-</body></html>
-`,
+			HTML.replace(
+				"<script>",
+				"<script>\nthrow new Error('script boom');\n",
+			),
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
 		const unit = ws.connectUnits[0];
 		if (!unit) throw new Error("fixture unit missing");
-		const { win, doc } = await loadLiveUnitDoc(ws, unit);
+		const { win, doc } = await loadLiveUnitDoc(ws, unit, { scripts: false });
 		try {
 			const res = check(doc as never, {});
-			expect(
-				res.errors.some((e) => e.includes("aw-connect missing port")),
-			).toBe(true);
+			expect(res.errors).toEqual([]);
 		} finally {
 			await win.happyDOM.close();
 		}
@@ -133,8 +102,6 @@ html = "leaf.html"
 
 	test("same HTML snapshot as the CDP browser", async () => {
 		const { browser, close } = await launchBrowser();
-		// Minimal static host: setContent/addScriptTag hang on browsers without
-		// lifecycle events (obscura); goto + import("/aw.js") works everywhere.
 		const host = Bun.serve({
 			port: 0,
 			fetch(req) {
@@ -169,30 +136,20 @@ html = "leaf.html"
 					document.open();
 					document.write(html);
 					document.close();
+					const el = document.createElement("script");
+					el.textContent = script;
+					document.body.appendChild(el);
 					const aw = (
 						window as unknown as {
 							aw: {
-								beginUnitHooks: (id: string) => void;
-								endUnitHooks: () => void;
-								runBeforeInstances: (doc: Document, id: string) => void;
-								check: (doc: Document, ctx: unknown) => { errors: string[] };
 								elaborate: (
 									doc: Document,
 									ctx: unknown,
 								) => { errors: string[] };
-								runBeforeDump: (doc: Document, id: string) => void;
 								serializeSnapshot: (doc: Document) => string;
 							};
 						}
 					).aw;
-					const fn = new Function("window", "document", "aw", script);
-					aw.beginUnitHooks("leaf");
-					try {
-						fn(window, document, aw);
-					} finally {
-						aw.endUnitHooks();
-					}
-					aw.runBeforeInstances(document, "leaf");
 					const ctx = {
 						style: { paramInline: true, localparamUpper: false },
 						unitId: "leaf",
@@ -202,14 +159,14 @@ html = "leaf.html"
 						leaf: () => null,
 						wrapper: () => null,
 					};
-					const checked = aw.check(document, ctx);
-					if (checked.errors.length) throw new Error(checked.errors[0]);
 					const rendered = aw.elaborate(document, ctx);
 					if (rendered.errors.length) throw new Error(rendered.errors[0]);
-					aw.runBeforeDump(document, "leaf");
 					return aw.serializeSnapshot(document);
 				},
-				{ html: HTML.replace(/<script[\s\S]*<\/script>/, ""), script: SCRIPT },
+				{
+					html: HTML.replace(/<script>[\s\S]*<\/script>/, ""),
+					script: SCRIPT,
+				},
 			);
 			const dir = await workspace();
 			const ws = await loadWorkspace(join(dir, "autowire.toml"));
@@ -228,17 +185,63 @@ html = "leaf.html"
 		}
 	});
 
-	test("a failing module script rejects the render", async () => {
+	test("script src runs relative to the author HTML", async () => {
+		const dir = await workspace();
+		writeFileSync(
+			join(dir, "gen.js"),
+			`function buildProbe(content) {
+  const ports = content.querySelector(":scope > aw-ports");
+  const port = document.createElement("aw-port");
+  port.setAttribute("name", "from_src");
+  port.setAttribute("dir", "output");
+  ports.appendChild(port);
+}
+`,
+		);
+		writeFileSync(
+			join(dir, "leaf.html"),
+			HTML.replace(/<script>[\s\S]*<\/script>/, `<script src="./gen.js"></script>`),
+		);
+		const ws = await loadWorkspace(join(dir, "autowire.toml"));
+		const unit = ws.connectUnits[0];
+		if (!unit) throw new Error("fixture unit missing");
+		const rendered = await renderUnit(
+			ws,
+			unit,
+			new LeafDb(ws.indexDir),
+			new Map(),
+		);
+		expect(rendered.snapshot).toContain('name="from_src"');
+	});
+
+	test("a failing classic script rejects the render", async () => {
 		const dir = await workspace();
 		writeFileSync(
 			join(dir, "leaf.html"),
-			HTML.replace("aw.on", "throw new Error('script boom'); aw.on"),
+			HTML.replace("<script>", "<script>\nthrow new Error('script boom');\n"),
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
 		const unit = ws.connectUnits[0];
 		if (!unit) throw new Error("fixture unit missing");
 		await expect(
 			renderUnit(ws, unit, new LeafDb(ws.indexDir), new Map()),
-		).rejects.toThrow(/script boom|module script/);
+		).rejects.toThrow(/script boom/);
+	});
+
+	test("a missing on-init function rejects the render", async () => {
+		const dir = await workspace();
+		writeFileSync(
+			join(dir, "leaf.html"),
+			HTML.replace(/<script>[\s\S]*<\/script>/, "").replace(
+				'on-init="buildProbe"',
+				'on-init="missing"',
+			),
+		);
+		const ws = await loadWorkspace(join(dir, "autowire.toml"));
+		const unit = ws.connectUnits[0];
+		if (!unit) throw new Error("fixture unit missing");
+		await expect(
+			renderUnit(ws, unit, new LeafDb(ws.indexDir), new Map()),
+		).rejects.toThrow(/not a function on window/);
 	});
 });
