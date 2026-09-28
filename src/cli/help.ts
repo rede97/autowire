@@ -61,7 +61,7 @@ Rules of engagement
   Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
   Windows: MSYS2 UCRT64 toolchain, ucrt64/bin on PATH, LF checkout (docs/dev/windows-msys2.md).
   Production package is parked (docs/dev/release.md): do not add an installer
-    or switch dev/CI debug to Lightpanda. Dev/CI stays Playwright + Chromium.
+    or switch dev/CI debug to obscura. Dev/CI stays Playwright + Chromium.
   Connect authoring (docs/connect/html.md §3.5.5): same-name → identity (omit);
     rename batch → one aw-rewrite RegExp — never list identity ports one-by-one.
 `,
@@ -87,7 +87,7 @@ Landed
   plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/ (docs/cli.md)
 
 Not landed (parked; do not implement until a later ask)
-  Production package        three sibling binaries: autowire, hdxml, lightpanda
+  Production package        three sibling binaries: autowire, hdxml, obscura
                             (docs/dev/release.md). Parked. Dev/CI stays Playwright.
   Workspace HTML edit       no node-edit MCP. This stage: the agent drives the
                             browser, then saves locally. Direct HTML-node edit is
@@ -460,8 +460,8 @@ Do not
   treat Excel / C headers / uvm_reg as register SoT, or reverse-generate TS from them
   treat Workspace MCP html_write as elaborate (must still run web check/render/dump for netlist)
   list same-name ports one-by-one in aw-connect (identity omits them; rename → one aw-rewrite RegExp)
-  ship Playwright or Chromium in the production package (docs/dev/release.md: autowire + hdxml + lightpanda)
-  link lightpanda into the autowire binary
+  ship Playwright or Chromium in the production package (docs/dev/release.md: autowire + hdxml + obscura)
+  link obscura into the autowire binary
   ship the repo source as the production entry (use out/autowire.js or out/autowire)
   docs unpack over a tree you did not mean to replace (it writes docs/ and demo/)
 `,
@@ -487,7 +487,7 @@ build/, and Verilator obj_dir. See docs/dev/release.md section 1.1.
 CDP browsers — driving connect web from any CDP client
 
 Playwright is only the CDP client here. Any CDP-speaking headless browser works:
-Playwright Chromium (dev/CI default), obscura, lightpanda (production, parked).
+Playwright Chromium (dev/CI default), obscura (CDP, CentOS 7-compatible; production, parked).
 
   obscura_c7 serve --port 9222 --allow-private-network   # CDP endpoint
   bun index.ts connect web soc_top --port 4173           # page session (demo/soc)

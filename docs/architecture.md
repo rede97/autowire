@@ -83,7 +83,7 @@ autowire connect run [unit]
 
 ### 2.7 生产发布包（目标）
 
-发给用户的生产包目标仍是三颗并排二进制：`autowire`、`hdxml`、`lightpanda`。这个阶段不写打包脚本，开发与 CI 仍用 Playwright Chromium。约束见 [dev/release.md](./dev/release.md)。
+发给用户的生产包目标仍是三颗并排二进制：`autowire`、`hdxml`、`obscura`（CDP 协议、CentOS 7 兼容的调试浏览器）。这个阶段不写打包脚本，开发与 CI 仍用 Playwright Chromium。约束见 [dev/release.md](./dev/release.md)。
 
 ## 3. Agent MCP：工具边界与双途径
 

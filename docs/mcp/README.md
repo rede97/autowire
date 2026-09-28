@@ -35,7 +35,7 @@
 | 污染边界？ | 否：调试会话与作者 SoT 默认隔离 | 否：只动作者面；不 Reload/不跑 web 则运行时不变 |
 | 状态 | **已落地**（开发 / CI：Playwright MCP + `.mcp.json`） | **暂时不做**。检索用 `analysis search` / `info` / `deps`。节点编辑等以后有需求再定 |
 
-生产包里的调试浏览器目标是 Lightpanda 自带的 `mcp` / `serve`，不携带 Playwright。这是发布目标，不是当前开发配置。见 [`../dev/release.md`](../dev/release.md)。
+生产包里的调试浏览器目标是 obscura 自带的 `mcp` / `serve`（CDP，CentOS 7 兼容），不携带 Playwright。这是发布目标，不是当前开发配置。见 [`../dev/release.md`](../dev/release.md)。
 
 旧禁令「connection-specific MCP」针对的是 **糊边界的一体机**（MCP 内完成连线生成），**不是**禁止 B，也不是禁止 A。
 

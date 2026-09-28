@@ -1,6 +1,6 @@
 # 生产发布包
 
-> 状态：**产物规则已定，打包脚本与安装布局暂时不做**（2026-09-27）。开发与 CI 继续用 Bun 跑 `index.ts`，调试浏览器仍是 Playwright Chromium。不要把安装器或 Lightpanda 当成现网。
+> 状态：**产物规则已定，打包脚本与安装布局暂时不做**（2026-09-27）。开发与 CI 继续用 Bun 跑 `index.ts`，调试浏览器仍是 Playwright Chromium。不要把安装器或 obscura 当成现网。
 > 开发与 CI 仍按仓库现况：Bun、Playwright 及其 Chromium、`bun test`。本文只规定**发给用户的生产包里有什么**。
 > Windows 开发环境见 [windows-msys2.md](./windows-msys2.md)，不由本包覆盖。
 
@@ -12,7 +12,7 @@
 |---|---|---|
 | `autowire` 或 `autowire.js` | CLI：`analysis` / `connect` / `plugin wishbone run`。两种产物见 §1.1，能力相同 | 二选一，必需 |
 | `hdxml` | RtlIndex sidecar（Rust） | 必需 |
-| `lightpanda` | 生产包唯一的调试浏览器。同一文件的子命令 `mcp` 与 `serve` | 调试网页时带上；生成 RTL 不需要 |
+| `obscura` | 生产包唯一的调试浏览器（CDP 协议，CentOS 7 兼容构建）。同一文件的子命令 `mcp` 与 `serve` | 调试网页时带上；生成 RTL 不需要 |
 
 `autowire connect run` 用包内的 happy-dom 完成脚本、check、elaborate 和写 `.sv`，不启动浏览器。
 
@@ -25,7 +25,7 @@
 | `out/autowire.js` | 单个脚本。`bun build index.ts --target bun`，依赖和 `web/aw.js`、`web/page.js` 都打进去 | 本机已有 Bun 时：`bun out/autowire.js help` |
 | `out/autowire` | 同上，再用 `bun build --compile` 把 Bun 运行时链进可执行文件 | 直接执行。Windows 上是 `autowire.exe` |
 
-两条命令都先跑 `build:web`，再把仓库的 `docs/` 和全部 `demo/` gzip 后嵌进同一个文件。页面脚本不会留在包外单独分发，文档和示例也不会。禁止让生产入口再去读仓库里的 `index.ts`、`src/` 或 `web/*.js`。hdxml 与 lightpanda 仍是旁边的独立进程，不链进这两个文件。
+两条命令都先跑 `build:web`，再把仓库的 `docs/` 和全部 `demo/` gzip 后嵌进同一个文件。页面脚本不会留在包外单独分发，文档和示例也不会。禁止让生产入口再去读仓库里的 `index.ts`、`src/` 或 `web/*.js`。hdxml 与 obscura 仍是旁边的独立进程，不链进这两个文件。
 
 打包跳过 `.autowire/`、固件 `build/` 和 Verilator 的 `obj_dir*`。Agent 要读契约或示例时：
 
@@ -41,28 +41,27 @@ autowire docs unpack <dir>
 
 | | 生产包 | 开发 / CI |
 |---|---|---|
-| 调试网页 | Lightpanda | Playwright + `bunx playwright install chromium` 得到的 Chromium |
+| 调试网页 | obscura（CDP） | Playwright + `bunx playwright install chromium` 得到的 Chromium |
 | 写 RTL | happy-dom（在 `autowire` 内） | 同左 |
 | 快照黄金 | 不携带 Playwright | headless Chromium；须与 happy-dom 同一份 HTML 的快照一致 |
 
-Lightpanda 自带协议服务，生产包不再附带 Chromium、Playwright 或 chromedriver。
+obscura 自带协议服务，生产包不再附带 Chromium、Playwright 或 chromedriver。
 
-- `lightpanda mcp`：MCP，默认 stdio。HTTP 用 `--port`（客户端 POST `/mcp`，用 `Mcp-Session-Id` 区分会话）。
-- `lightpanda serve --host 127.0.0.1 --port 9222`：CDP。外部客户端可以 `connectOverCDP`；该客户端不属于生产包。
-- `lightpanda mcp --cdp-port <n>` 可在同一次进程里同时开 MCP 与 CDP。它与 `--port` 不能合用（共用一个监听端口）。
-- 启动时设置 `LIGHTPANDA_DISABLE_TELEMETRY=true`。
+- `obscura mcp`：MCP，默认 stdio。
+- `obscura serve --port 9222 --allow-private-network`：CDP（回环访问必须 `--allow-private-network`）。外部客户端可以 `connectOverCDP`；该客户端不属于生产包。
+- obscura 面向 CentOS 7（glibc 2.17）兼容构建，官方 Lightpanda 构建因 glibc 要求过高已从支持列表移除。
 
-开发机上的 `.mcp.json` 继续是 Playwright MCP。换成生产包里的 `lightpanda mcp` 属于打包落地时的事，现在不改。
+开发机上的 `.mcp.json` 继续是 Playwright MCP。换成生产包里的 `obscura mcp` 属于打包落地时的事，现在不改。
 
 ## 3. 平台
 
 - Linux x86_64、Linux aarch64、macOS。
-- Linux 官方 Lightpanda 构建依赖 glibc，不覆盖 musl（如 Alpine）。
+- obscura 以 CentOS 7（glibc 2.17）为基线，覆盖老发行版；musl（如 Alpine）不在支持列表。
 - 无原生 Windows 构建。Windows 上开发、测试、跑 demo 继续走 [windows-msys2.md](./windows-msys2.md)。
 
 ## 4. 许可证与版本
 
-- Lightpanda 以 **AGPL-3.0** 分发。生产包附带其许可证，并提供**该次构建所对应源码**的获取方式。
+- obscura 的许可证以其构建来源为准，生产包附带对应许可证文本。
 - 发布物钉住一次具体构建。不用会移动的 `nightly` 标签充当版本号。
 
 ## 5. 暂时不做
@@ -70,6 +69,6 @@ Lightpanda 自带协议服务，生产包不再附带 Chromium、Playwright 或 
 这个阶段不实现：
 
 - 版本钉、安装布局、PATH 约定。`build:bin` 只把两种 autowire 产物写到 `out/`，不是安装器。
-- 把开发用 `.mcp.json` 换成生产包的 `lightpanda mcp`。
+- 把开发用 `.mcp.json` 换成生产包的 `obscura mcp`。
 
 有新的发布需求再打开。在此之前 `help status` 把本节放在 Not landed。

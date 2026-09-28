@@ -59,8 +59,8 @@
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [dev/windows-msys2.md](./dev/windows-msys2.md) | Windows：MSYS2 UCRT64 工具链、PATH、LF 行尾、原生 vs UCRT64 分工 | 已实现 |
-| [dev/release.md](./dev/release.md) | 生产包目标：`autowire` + `hdxml` + `lightpanda` | 暂时不做 |
-| [dev/cdp-debug.md](./dev/cdp-debug.md) | CDP 无头浏览器驱动 connect 页面（obscura/lightpanda/Chromium 通用范式 + 坑位） | 已实现 |
+| [dev/release.md](./dev/release.md) | 生产包目标：`autowire` + `hdxml` + `obscura`（CDP，CentOS 7 兼容） | 暂时不做 |
+| [dev/cdp-debug.md](./dev/cdp-debug.md) | CDP 无头浏览器驱动 connect 页面（obscura/Chromium 通用范式 + 坑位） | 已实现 |
 
 ## 实战与报告
 

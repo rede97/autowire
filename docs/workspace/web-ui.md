@@ -27,7 +27,7 @@
 - header **必须**提供人工按钮 **[Check] [Elaborate] [Run] [Save SV] [Save HTML] [Reset]**；无 GET 时靠按钮触发（见 §2–§3）。**[Save SV]** 下载 `#aw-generated` 里可见的 `.sv` 文本（与 `connect run` 写盘同一份，不含 render XML）；**[Save HTML]** 下载当前单元活作者面（`aw-render` 已剥空）——agent 调试改完作者面后取中间成果用。两者都走浏览器保存，**不**向 autowire 提交路径，**不**写作者 HTML。Save **不**进入 §3 的 GET 动作链。
 - 生成源码 **必须**出现在 `#aw-generated`，供人阅读，也供浏览器驱动打印。MCP 读这块文本再自己落盘。
 - 节点 **应当**带可访问名字（docs/connect/html.md §3.8），便于 Playwright snapshot。
-- CDP 驱动（obscura / lightpanda / Chromium 通用）：[`../dev/cdp-debug.md`](../dev/cdp-debug.md)（`bun index.ts help cdp`）。
+- CDP 驱动（obscura / Chromium 等讲 CDP 的浏览器通用）：[`../dev/cdp-debug.md`](../dev/cdp-debug.md)（`bun index.ts help cdp`）。
 
 ## 2. 两种模式
 

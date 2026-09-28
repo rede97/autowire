@@ -4,7 +4,7 @@
 > 辅助函数集：[`scripts/cdp-helper.ts`](../../scripts/cdp-helper.ts)。  
 > 相关：[`../workspace/web-ui.md`](../workspace/web-ui.md)（页面契约）、[`../mcp/README.md`](../mcp/README.md)（途径 A）。
 
-任何讲 CDP 协议的无头浏览器都可以驱动 `connect web` 页面：Playwright Chromium、obscura、lightpanda。手段统一为 **Playwright `chromium.connectOverCDP`**——Playwright 只做 CDP 客户端，不启动自己的浏览器。
+任何讲 CDP 协议的无头浏览器都可以驱动 `connect web` 页面：Playwright Chromium、obscura。手段统一为 **Playwright `chromium.connectOverCDP`**——Playwright 只做 CDP 客户端，不启动自己的浏览器。
 
 ## 1. 最小链路
 

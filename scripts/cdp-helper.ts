@@ -1,5 +1,5 @@
 // CDP driver helpers for headless browsers that speak CDP (Playwright
-// Chromium, obscura, lightpanda). Pattern doc: docs/dev/cdp-debug.md.
+// Chromium, obscura). Pattern doc: docs/dev/cdp-debug.md.
 //
 // Hard-won quirks encoded here (obscura 0.2.x):
 // - No page lifecycle events: use goto(domcontentloaded); setContent /
@@ -86,7 +86,7 @@ export async function launchBrowser(): Promise<TestBrowser> {
 	}
 }
 
-/** Connect to a CDP endpoint (`obscura_c7 serve`, lightpanda, or Chromium
+/** Connect to a CDP endpoint (`obscura_c7 serve` or Chromium
  *  --remote-debugging-port) and open one tab. */
 export async function connectCdp(
 	endpoint = "http://127.0.0.1:9222",
