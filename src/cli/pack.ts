@@ -40,6 +40,20 @@ export async function collectPackFiles(root: string): Promise<PackedFile[]> {
 	const contract = Bun.file(join(root, "AGENTS.md"));
 	if (await contract.exists())
 		out.push({ path: "AGENTS.md", bytes: await contract.bytes() });
+	// DSL sources for standalone SoT authoring (init writes them under dsl/;
+	// relative imports between them stay valid). Closure of wishbone-bus/dsl.ts.
+	for (const dsl of [
+		"src/plugins/wishbone-bus/dsl.ts",
+		"src/plugins/wishbone-regfile/dsl.ts",
+		"src/plugins/wishbone-regfile/layout.ts",
+	]) {
+		const f = Bun.file(join(root, dsl));
+		if (await f.exists())
+			out.push({
+				path: dsl.replace(/^src\/plugins\//, "dsl/"),
+				bytes: await f.bytes(),
+			});
+	}
 	out.sort((a, b) => a.path.localeCompare(b.path));
 	return out;
 }

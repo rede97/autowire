@@ -3,7 +3,7 @@
 
 import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Command } from "commander";
 import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex, type RtlIndex } from "../rtl/rtlindex.ts";
@@ -46,9 +46,18 @@ export function registerAnalysis(program: Command): void {
 			// run has no surprise mkdir.
 			const indexDir = join(process.cwd(), ".autowire", "hdxml");
 			await mkdir(indexDir, { recursive: true });
+			// DSL sources so standalone SoT can import from ./dsl/ instead of a
+			// repo checkout (version travels with the bundle).
+			const dslFiles = pack.filter((f) => f.path.startsWith("dsl/"));
+			for (const f of dslFiles) {
+				const target = join(process.cwd(), f.path);
+				await mkdir(dirname(target), { recursive: true });
+				await Bun.write(target, f.bytes);
+			}
 			console.log(`created ${tomlTarget}`);
 			console.log(`created ${agentsTarget}`);
 			console.log(`created ${indexDir}/`);
+			console.log(`created dsl/ (${dslFiles.length} files)`);
 		});
 
 	const analysis = program
