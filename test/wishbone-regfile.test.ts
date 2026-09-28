@@ -229,7 +229,7 @@ describe("wishbone-regfile smoke features", () => {
 		});
 	}
 
-	test("wide field slices document logical bit range in desc", () => {
+	test("wide field slices document logical bit range in desc", async () => {
 		const laid = layoutRegfile(smoke_block_wide);
 		expect(laid.cells.map((c) => c.fields[0]?.field.desc)).toEqual([
 			"96-bit key auto-split (key[31:0] of [95:0])",
@@ -250,7 +250,7 @@ describe("wishbone-regfile smoke features", () => {
 		expect(c).toContain("key[63:32] of [95:0]");
 		const uvm = emitRegfileUvm(laid);
 		expect(uvm).toContain("key[95:64] of [95:0]");
-		const wb = buildRegfileWorkbook([laid]);
+		const wb = await buildRegfileWorkbook([laid]);
 		const ws = wb.getWorksheet("regfile_smoke_block_wide");
 		const descs: string[] = [];
 		ws?.eachRow((row, n) => {
@@ -511,8 +511,8 @@ describe("wishbone-regfile Excel export", () => {
 		return "";
 	};
 
-	test("trunk columns minus empty A and ADDRWIDTH; MSB-first reserved", () => {
-		const wb = buildRegfileWorkbook([layoutRegfile(smoke_rw)]);
+	test("trunk columns minus empty A and ADDRWIDTH; MSB-first reserved", async () => {
+		const wb = await buildRegfileWorkbook([layoutRegfile(smoke_rw)]);
 		const ws = wb.getWorksheet("regfile_smoke_rw");
 		expect(ws).toBeDefined();
 		const headers = ((ws?.getRow(1).values as unknown[]) ?? [])
@@ -539,8 +539,8 @@ describe("wishbone-regfile Excel export", () => {
 		expect(topField?.getCell(12).value).toBe("");
 	});
 
-	test("SHADOW on cell row only; reset dict uses copy 0", () => {
-		const wb = buildRegfileWorkbook([layoutRegfile(smoke_shadow)]);
+	test("SHADOW on cell row only; reset dict uses copy 0", async () => {
+		const wb = await buildRegfileWorkbook([layoutRegfile(smoke_shadow)]);
 		const ws = wb.getWorksheet("regfile_smoke_shadow");
 		expect(ws).toBeDefined();
 		expect(ws?.getRow(2).getCell(7).value).toBe("CFG");
@@ -565,7 +565,7 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		expect(ctrl?.fields.map((f) => f.bit_offset)).toEqual([0, 1, 8, 9]);
 	});
 
-	test("note is Excel-only: same Description cell, not RTL or C", () => {
+	test("note is Excel-only: same Description cell, not RTL or C", async () => {
 		const noteOf = (cell: { note?: unknown }): string => {
 			const note = cell.note;
 			if (!note) return "";
@@ -578,7 +578,7 @@ describe("wishbone-regfile demo/soc sha256", () => {
 			return "";
 		};
 		const laid = layoutRegfile(sha256);
-		const wb = buildRegfileWorkbook([laid]);
+		const wb = await buildRegfileWorkbook([laid]);
 		expect(wb.getWorksheet("NOTES")).toBeUndefined();
 		const ws = wb.getWorksheet("regfile_sha256");
 		const headerNote = noteOf(ws?.getRow(1).getCell(8) ?? {});
