@@ -21,6 +21,8 @@ export interface WorkspaceConfig {
 	sources: string[];
 	incdirs: string[];
 	excludeFilenames: string[];
+	/** Directory names to prune ([analysis.rtl] exclude_dirs) → --exclude-dirs */
+	excludeDirs: string[];
 	/** Expanding macros ([analysis.defines] with values) → -D NAME=VALUE */
 	defines: Record<string, string>;
 	/** Raw macros ([analysis].keep_raw) → --keep-raw */
@@ -413,6 +415,7 @@ export async function loadWorkspace(
 			rtl.exclude_filenames,
 			"analysis.rtl.exclude_filenames",
 		),
+		excludeDirs: strList(rtl.exclude_dirs, "analysis.rtl.exclude_dirs"),
 		defines,
 		keepRaw: strList(analysis.keep_raw, "analysis.keep_raw"),
 		defineHeaders: strList(
@@ -518,6 +521,7 @@ export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
 	group("-s", cfg.sources);
 	group("-w", cfg.walkDirs);
 	group("--exclude-filenames", cfg.excludeFilenames);
+	group("--exclude-dirs", cfg.excludeDirs);
 	group("-I", cfg.incdirs);
 	group("--define-headers", cfg.defineHeaders);
 	group(
@@ -561,6 +565,8 @@ sources = []
 # include search paths (+incdir)
 incdirs = []
 exclude_filenames = []
+# directory names to prune (any path component match); e.g. ["dv", "tb"]
+exclude_dirs = []
 
 [analysis.defines]
 # With value = expand (same as -D); do NOT put raw macros here — use keep_raw above

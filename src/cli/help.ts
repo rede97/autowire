@@ -306,8 +306,8 @@ init <name>: create default autowire.toml (with [workspace] name) and AGENTS-AUT
 in CWD (refuses to overwrite either; AGENTS-AUTOWIRE.md is the bundled AGENTS.md copy).
 analysis run: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
 (docs/workspace/toml.md):
-  [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames
-      → -f / -s / -w / --exclude-filenames
+  [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames / exclude_dirs
+      → -f / -s / -w / --exclude-filenames / --exclude-dirs
   [analysis.defines] NAME="v" → -D NAME=v
   [analysis] keep_raw = [...] → --keep-raw
   [analysis.index] dir → -o/--output-dir (default .autowire/hdxml)

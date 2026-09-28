@@ -141,6 +141,7 @@ define_headers = ["include/defs.svh"]
 walk_dirs = ["rtl"]
 incdirs = ["rtl/include"]
 exclude_filenames = ["tb_top.sv"]
+exclude_dirs = ["dv"]
 
 [analysis.defines]
 SYNTHESIS = "1"
@@ -154,6 +155,8 @@ DEPTH = 16
 			join(dir, "rtl"),
 			"--exclude-filenames",
 			"tb_top.sv",
+			"--exclude-dirs",
+			"dv",
 			"-I",
 			join(dir, "rtl/include"),
 			"--define-headers",

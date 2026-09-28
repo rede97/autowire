@@ -62,6 +62,7 @@ walk_dirs = []
 sources = []
 incdirs = ["rtl/include"]  # include 搜索路径（+incdir）
 exclude_filenames = []
+exclude_dirs = []          # 按目录名排除（任一路径分量命中即剪整棵子树，如 dv/tb）
 
 [analysis.defines]
 # 带值 = 展开（经 hdxml -D 传入）；保原文宏不写在这里，列入上方 keep_raw
