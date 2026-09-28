@@ -67,8 +67,9 @@ run("init refuses overwrite", ["init", "smokechip"], scratch, 1);
 const soc = join(root, "demo", "soc");
 run("demo/soc analysis run", ["analysis", "run"], soc);
 run("demo/soc plugin wishbone run", ["plugin", "wishbone", "run"], soc);
-run("demo/soc connect check", ["connect", "check"], soc);
+// run before check: a fresh checkout has no .autowire/connect snapshots yet
 run("demo/soc connect run", ["connect", "run"], soc);
+run("demo/soc connect check", ["connect", "check"], soc);
 // Excel embeds a timestamp (always-rewrite policy); everything else must be stable.
 const diff = spawnSync(
 	"git",
