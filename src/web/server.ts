@@ -168,7 +168,7 @@ const INDEX_HTML = `<!doctype html>
 <meta charset="utf-8" />
 <title>autowire — units</title>
 <style>
-  :root { color-scheme: light dark; font-family: ui-monospace, monospace; }
+  :root { color-scheme: light dark; font-family: Consolas, "Cascadia Mono", "SF Mono", Menlo, "DejaVu Sans Mono", ui-monospace, monospace; }
   body { margin: 2em auto; max-width: 44em; padding: 0 1em; }
   h1 { font-size: 1.2em; }
   li { margin: .3em 0; }
@@ -207,16 +207,18 @@ const PAGE_HTML = `<!doctype html>
 <meta charset="utf-8" />
 <title>autowire web</title>
 <style>
-  :root { color-scheme: light dark; font-family: ui-monospace, monospace; }
+  :root { color-scheme: light dark; font-family: Consolas, "Cascadia Mono", "SF Mono", Menlo, "DejaVu Sans Mono", ui-monospace, monospace; }
   body { margin: 0; display: grid; grid-template-rows: auto 1fr; height: 100vh; }
   header { display: flex; gap: .6em; align-items: center; padding: .4em .8em; border-bottom: 1px solid #8885; }
   header h1 { font-size: 1em; margin: 0; }
-  header button { font: inherit; padding: .15em .8em; }
+  header button { font: inherit; padding: .15em .8em; border: 1px solid #8885; border-radius: 4px; background: none; color: inherit; }
   header a { color: inherit; }
-  #aw-status { margin-left: auto; padding: .1em .6em; border: 1px solid #8885; border-radius: 4px; }
-  #aw-status[data-state="done"] { border-color: #4a4; color: #4a4; }
-  #aw-status[data-state="error"] { border-color: #c44; color: #c44; }
-  #aw-status[data-state="running"] { border-color: #cb4; color: #cb4; }
+  /* Per-action status shows on the buttons themselves (docs/workspace/web-ui.md §1/§4). */
+  #btn-check[data-state="done"], #btn-elaborate[data-state="done"], #btn-run[data-state="done"] { border-color: #4a4; color: #4a4; }
+  #btn-check[data-state="error"], #btn-elaborate[data-state="error"], #btn-run[data-state="error"] { border-color: #c44; color: #c44; }
+  #btn-check[data-state="running"], #btn-elaborate[data-state="running"], #btn-run[data-state="running"] { border-color: #cb4; color: #cb4; }
+  /* Machine sync signal: kept in the DOM for Playwright, hidden from view. */
+  #aw-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); margin: -1px; padding: 0; border: 0; }
   #layout { display: grid; grid-template-columns: minmax(14em, 18em) 1fr; min-height: 0; }
   #sidebar { border-right: 1px solid #8885; display: grid; grid-template-rows: auto 1fr; min-height: 0; }
   #side-tabs { display: flex; border-bottom: 1px solid #8885; }
@@ -226,40 +228,49 @@ const PAGE_HTML = `<!doctype html>
   #author-tabs button { font: inherit; border: 0; background: none; padding: .3em .8em; cursor: pointer; }
   #author-tabs button[aria-selected="true"] { box-shadow: inset 0 -2px #57c; }
   #col-author { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
-  #author-source, #author-processed { overflow: auto; min-height: 0; }
-  #aw-source script, #aw-live script { display: block; white-space: pre-wrap; border-left: 3px solid #b6b; margin: .2em 0; padding: .2em .4em; color: #b6b; }
-  #aw-source autowire, #aw-live autowire,
-  #aw-source aw-mod, #aw-live aw-mod,
-  #aw-source aw-tb-mod, #aw-live aw-tb-mod,
-  #aw-source aw-content, #aw-live aw-content,
-  #aw-source aw-submods, #aw-live aw-submods,
-  #aw-source aw-render, #aw-live aw-render,
-  #aw-source aw-imports, #aw-live aw-imports,
-  #aw-source aw-params, #aw-live aw-params,
-  #aw-source aw-localparams, #aw-live aw-localparams,
-  #aw-source aw-ports, #aw-live aw-ports,
-  #aw-source aw-templates, #aw-live aw-templates,
-  #aw-source aw-insts, #aw-live aw-insts,
-  #aw-source aw-signals, #aw-live aw-signals,
-  #aw-source aw-template, #aw-live aw-template,
-  #aw-source aw-inst, #aw-live aw-inst { display: block; margin-left: .8em; border-left: 1px dotted #8885; padding-left: .45em; }
-  #aw-source aw-mod::before, #aw-live aw-mod::before { content: "mod " attr(name); color: #57c; font-weight: bold; }
-  #aw-source aw-tb-mod::before, #aw-live aw-tb-mod::before { content: "tb " attr(name); color: #57c; font-weight: bold; }
-  #aw-source aw-template::before, #aw-live aw-template::before { content: "template " attr(name) " " attr(base); color: #2a9d8f; }
-  #aw-source aw-inst::before, #aw-live aw-inst::before { content: "inst " attr(id) " : " attr(mod); color: #36c; }
-  #aw-source aw-port[dir="input"]::before, #aw-live aw-port[dir="input"]::before { content: "in " attr(name) " " attr(packed); color: #4a4; }
-  #aw-source aw-port[dir="output"]::before, #aw-live aw-port[dir="output"]::before { content: "out " attr(name) " " attr(packed); color: #d73; }
-  #aw-source aw-port[dir="inout"]::before, #aw-live aw-port[dir="inout"]::before { content: "inout " attr(name); color: #b6b; }
-  #aw-source aw-param::before, #aw-live aw-param::before { content: "param " attr(name) " = " attr(expr); color: #8a6d3b; }
-  #aw-source aw-localparam::before, #aw-live aw-localparam::before { content: "localparam " attr(name) " = " attr(expr); color: #8a6d3b; }
-  #aw-source aw-connect::before, #aw-live aw-connect::before { content: "." attr(port) " → " attr(to) " " attr(type); }
-  #aw-source aw-rewrite::before, #aw-live aw-rewrite::before { content: "re " attr(match) " → " attr(to) " " attr(type); color: #960; }
-  #aw-source aw-signal::before, #aw-live aw-signal::before { content: "net " attr(name); color: #888; }
-  #aw-source aw-connect[type="const"]::before, #aw-live aw-connect[type="const"]::before,
-  #aw-source aw-rewrite[type="const"]::before, #aw-live aw-rewrite[type="const"]::before { color: #a4a; }
-  #aw-source aw-connect[type="open"]::before, #aw-live aw-connect[type="open"]::before,
-  #aw-source aw-rewrite[type="open"]::before, #aw-live aw-rewrite[type="open"]::before { color: #c44; }
-  #aw-live .tn-err { outline: 1px solid #c44; background: #c442; }
+  #author-source, #author-processed, #author-rtl { overflow: auto; min-height: 0; }
+  /* The real aw-* trees stay in the DOM for the engine and Playwright, but the
+     page never paints them. A sibling view tree is the only thing on screen. */
+  #aw-source, #aw-live { display: none; }
+  #aw-source-view, #aw-live-view, #aw-rtl { font-family: inherit; padding: .3em .5em; line-height: 1.45; }
+  /* Elements-panel look: one tag per line, tag / attribute / value in three
+     colors, a disclosure triangle only on nodes that really have children. */
+  .aw-tree details { margin-left: 1em; }
+  .aw-tree > details { margin-left: 0; }
+  .aw-tree summary { cursor: pointer; list-style: none; white-space: nowrap; }
+  .aw-tree summary::-webkit-details-marker { display: none; }
+  .aw-tree summary::before { content: "\\25b8"; display: inline-block; width: 1em; margin-left: -1em; color: #888; text-align: center; }
+  .aw-tree details[open] > summary::before { content: "\\25be"; }
+  .aw-tree summary:hover, .aw-tree .leaf:hover { background: #8882; }
+  .aw-tree .leaf { margin-left: 1em; white-space: nowrap; }
+  .aw-tree .tg { color: #881280; }
+  .aw-tree .an { color: #994500; }
+  .aw-tree .av { color: #1a1aa6; }
+  .aw-tree .punct { color: #888; }
+  .aw-tree .close { color: #888; }
+  .aw-tree details:not([open]) > summary .close { display: none; }
+  .aw-tree details:not([open]) > summary .ellipsis { display: inline; }
+  .aw-tree .ellipsis { display: none; color: #888; }
+  .aw-tree .script-body { display: block; white-space: pre; color: #6a7; border-left: 2px solid #8885; margin: 0 0 .1em 1em; padding: 0 .4em; }
+  /* Template rules keep their type / content / target columns. */
+  .aw-tree .rules { display: grid; grid-template-columns: max-content minmax(6em, 1.2fr) minmax(6em, 1.4fr) max-content; column-gap: .9em; align-items: baseline; }
+  .aw-tree .rules > .leaf { display: contents; }
+  .aw-tree .rules .col { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  .aw-tree .rules .col:nth-child(1) { color: #881280; }
+  .aw-tree .rules .col:nth-child(2) { color: #994500; }
+  .aw-tree .rules .col:nth-child(3) { color: #1a1aa6; }
+  .aw-tree .rules .col:nth-child(4) { color: #888; }
+  .aw-tree .err > summary, .aw-tree .leaf.err { outline: 1px solid #c44; background: #c442; }
+  .aw-tree .rtl-title { color: #881280; margin: .2em 0 .4em; }
+  @media (prefers-color-scheme: dark) {
+    .aw-tree .tg { color: #5db0d7; }
+    .aw-tree .an { color: #9bbbdc; }
+    .aw-tree .av { color: #f29766; }
+    .aw-tree .rules .col:nth-child(1) { color: #5db0d7; }
+    .aw-tree .rules .col:nth-child(2) { color: #9bbbdc; }
+    .aw-tree .rules .col:nth-child(3) { color: #f29766; }
+    .aw-tree .rtl-title { color: #5db0d7; }
+  }
   .pane { overflow: auto; padding: .4em .6em; min-height: 0; }
   #rtl-search { width: 100%; box-sizing: border-box; font: inherit; margin: .2em 0 .4em; }
   #rtl-list div { display: block; padding: .1em .3em; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -279,28 +290,9 @@ const PAGE_HTML = `<!doctype html>
   #result-tabs button[aria-selected="true"] { box-shadow: inset 0 -2px #57c; }
   #error-list { color: #c44; white-space: pre-wrap; }
   #aw-generated { margin: 0; white-space: pre; }
-  #author-tree details { margin-left: .9em; }
-  #author-tree summary { cursor: pointer; }
-  .tn { white-space: nowrap; }
-  .tn .mk { display: inline-block; min-width: 1.4em; text-align: center; border-radius: 3px; margin-right: .35em; font-weight: bold; }
-  .tn-script .mk { background: #b6b; color: #fff; } .tn-script { color: #b6b; }
-  .tn-mod .mk { background: #57c; color: #fff; } .tn-mod { color: #57c; }
-  .tn-template .mk { background: #2a9d8f; color: #fff; } .tn-template { color: #2a9d8f; }
-  .tn-param .mk { background: #8a6d3b; color: #fff; } .tn-param { color: #8a6d3b; }
-  .tn-port-in .mk { background: #4a4; color: #fff; }
-  .tn-port-out .mk { background: #d73; color: #fff; }
-  .tn-port-io .mk { background: #b6b; color: #fff; }
-  .tn-signal .mk { background: #888; color: #fff; } .tn-signal { color: #888; }
-  .tn-inst .mk { background: #36c; color: #fff; } .tn-inst { color: #36c; }
-  .tn-connect .mk { background: #666; color: #fff; }
-  .tn-rewrite .mk { background: #c90; color: #fff; } .tn-rewrite { color: #960; }
-  .tn-const { color: #a4a; } .tn-open { color: #c44; }
-  .tn-err > summary, .tn-err > .tn { outline: 1px solid #c44; background: #c442; }
-  .badge { border: 1px solid #8885; border-radius: 3px; padding: 0 .3em; margin-left: .3em; font-size: .85em; }
   .sv-kw { color: #07c; } .sv-cmt { color: #6a7; font-style: italic; }
   .sv-num { color: #a4a; } .sv-str { color: #a40; } .sv-dir { color: #b6b; }
   .xml-tag { color: #07c; } .xml-attr { color: #a40; } .xml-cmt { color: #6a7; font-style: italic; }
-  #module-view { padding: .4em .8em; }
 </style>
 </head>
 <body>
@@ -337,26 +329,28 @@ const PAGE_HTML = `<!doctype html>
         <nav id="author-tabs">
           <button id="atab-source" type="button" aria-selected="true">Source</button>
           <button id="atab-proc" type="button" aria-selected="false">Processed</button>
+          <button id="atab-rtl" type="button" aria-selected="false">RtlIndex</button>
         </nav>
         <div id="author-source">
           <div id="aw-source" aria-label="unmodified author HTML"></div>
+          <div id="aw-source-view" class="aw-tree" aria-label="source tree"></div>
         </div>
         <div id="author-processed" hidden>
           <div id="aw-live" aria-label="post-script author HTML"></div>
+          <div id="aw-live-view" class="aw-tree" aria-label="processed tree"></div>
+        </div>
+        <div id="author-rtl" hidden>
+          <div id="aw-rtl" aria-label="RtlIndex module detail"></div>
         </div>
       </div>
       <div id="col-result" aria-label="errors and generated source">
         <nav id="result-tabs" hidden>
-          <button id="rtab-sv" type="button" aria-selected="true">SV</button>
-          <button id="rtab-html" type="button" aria-selected="false">HTML</button>
+          <button id="rtab-render" type="button" aria-selected="false">Rendered</button>
+          <button id="rtab-sv" type="button" aria-selected="true">SystemVerilog</button>
         </nav>
         <div id="error-list" hidden></div>
         <pre id="aw-generated" aria-label="generated source"></pre>
       </div>
-    </section>
-    <section id="module-view" hidden>
-      <h2 id="right-title">(no module selected)</h2>
-      <div id="right-body"></div>
     </section>
   </main>
 </div>
@@ -371,8 +365,8 @@ const MIN_HTML = `<!doctype html>
 <meta charset="utf-8" />
 <title>autowire web</title>
 <style>
-  :root { color-scheme: light dark; font-family: ui-monospace, monospace; }
-  body { margin: 0; font-family: ui-monospace, monospace; }
+  :root { color-scheme: light dark; font-family: Consolas, "Cascadia Mono", "SF Mono", Menlo, "DejaVu Sans Mono", ui-monospace, monospace; }
+  body { margin: 0; font-family: inherit; }
   header { padding: .4em .8em; border-bottom: 1px solid #8885; }
   header button, header span, header strong { display: inline-block; margin: .15em .3em; font: inherit; }
   #aw-source, #aw-live, #db-summary, #right-body, #aw-generated { display: block; clear: both; }
