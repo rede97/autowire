@@ -149,6 +149,43 @@ fn svh_in_filelist_skipped_with_warning() {
     assert!(text.contains("modules: 1"), "only top is analyzed: {text}");
 }
 
+#[test]
+fn vc_filelist_incdir_define_and_frel() {
+    let c = Case::new("vc");
+    c.write("inc/defs.svh", "`define W 8\n");
+    let top = c.write(
+        "top.sv",
+        "`include \"defs.svh\"\n`ifdef SYNTH\nmodule top(output logic [`W-1:0] o);\n  leaf u(.a(o));\nendmodule\n`endif\n",
+    );
+    // -F 子列表：leaf.sv 相对该子列表所在目录解析
+    c.write("ip/leaf/leaf.sv", "module leaf(input logic [7:0] a);\nendmodule\n");
+    c.write("ip/leaf/leaf.vc", "leaf.sv\n");
+    let vc = c.write(
+        "top.vc",
+        &format!(
+            "+incdir+{}\n+define+SYNTH\n-F {}\n{}\n",
+            s(&c.dir.join("inc")),
+            s(&c.dir.join("ip/leaf/leaf.vc")),
+            s(&top),
+        ),
+    );
+    let (code, text) = c.run(&["-f".into(), s(&vc), "--tree".into()]);
+    assert_eq!(code, 0, "vc drives incdir/define/-F: {text}");
+    assert!(text.contains("modules: 2"), "top + leaf: {text}");
+    assert!(text.contains("blackbox: 0"), "leaf must resolve: {text}");
+}
+
+#[test]
+fn vc_unsupported_option_is_an_error() {
+    let c = Case::new("vcbad");
+    let top = c.write("top.sv", "module top; endmodule\n");
+    let vc = c.write("bad.vc", &format!("-y {}\n{}\n", s(&c.dir), s(&top)));
+    let (code, text) = c.run(&["-f".into(), s(&vc), "--tree".into()]);
+    assert_eq!(code, 1, "library search is not implemented: {text}");
+    assert!(text.contains("unsupported option"), "{text}");
+    assert!(text.contains("-y"), "{text}");
+}
+
 // ---------------------------------------------------------------------------
 // 宏（cli.md §2 / module-info.md §3）
 

@@ -21,7 +21,13 @@ fn main() -> Result<()> {
 }
 
 fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter) -> Result<()> {
-    let defines = db::build_defines(&a.input.defines, &a.input.define_headers, &a.input.expand_headers, &a.input.keep_raw, &a.input.incdirs)?;
+    let fs = FilesSet::collect(&a.input)?;
+    // filelist 内 +incdir+ / +define+ 并入分析输入（CLI -I/-D 在前，filelist 在后）
+    let mut incdirs = a.input.incdirs.clone();
+    incdirs.extend(fs.incdirs.iter().cloned());
+    let mut define_args = a.input.defines.clone();
+    define_args.extend(fs.defines.iter().cloned());
+    let defines = db::build_defines(&define_args, &a.input.define_headers, &a.input.expand_headers, &a.input.keep_raw, &incdirs)?;
     // 供 index.xml 记录：排序的 (名称, 值文本) 列表；宏变更 → 指纹变 → 整库作废
     let mut define_pairs: Vec<(String, Option<String>)> = defines
         .iter()
@@ -42,7 +48,6 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
         })
         .collect();
     define_pairs.sort();
-    let fs = FilesSet::collect(&a.input)?;
     for w in &fs.warnings {
         pc.println(&format!("warning: {w}"));
     }
@@ -55,7 +60,7 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
     let drive = db::Drive {
         files: &files,
         defines: &defines,
-        incdirs: &a.input.incdirs,
+        incdirs: &incdirs,
         pool,
         pc,
         sub_bars: a.sub_bars,
@@ -99,7 +104,7 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
 
     // XML 导出（-o/--output-dir）
     if let Some(dir) = &a.output_dir {
-        let stats = XmlExport::new(&db, &files, &define_pairs, &stamps, &a.input.incdirs).write(dir)?;
+        let stats = XmlExport::new(&db, &files, &define_pairs, &stamps, &incdirs).write(dir)?;
         pc.println(&format!(
             "XML written: {} (files {}, modules {})",
             dir.display(),
