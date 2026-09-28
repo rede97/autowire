@@ -47,7 +47,7 @@ describe("wishbone tag domains", () => {
 		expect(sv).toContain("assign g_tga_pstate = g_adr[18:17];");
 		expect(sv).toContain("assign g_adr_dec = g_adr & 19'h1ffff;");
 		// Tag bits are stripped before compare and before forwarding.
-		expect(sv).toContain("if ((g_adr_dec & 19'h7f000) == 19'h00000)");
+		expect(sv).toContain("if ((g_adr_dec & 19'h7f000) == 19'h01000)");
 		expect(sv).toContain(
 			"ch0_i_wb_adr    = (slot_sel[SLOT_CH0] || broadcast_ch_all)",
 		);

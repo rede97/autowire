@@ -17,10 +17,18 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
       - run: bun install --frozen-lockfile
       - run: bun scripts/check-version.ts
       - run: bun run lint
+      - run: cargo build
+        working-directory: hdxml
+      - run: bun ../../index.ts analysis run
+        working-directory: demo/soc
+      - run: bunx playwright install chromium --with-deps
       - run: bun test
 
   autowire-js:
@@ -28,6 +36,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run build:js

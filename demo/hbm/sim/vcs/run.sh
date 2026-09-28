@@ -17,6 +17,7 @@ if [ $# -ge 1 ]; then TESTS="$*"; fi
 
 vcs -sverilog -full64 -ntb_opts uvm-1.2 -timescale=1ns/1ps \
 	+incdir+"$HBM/dv/ral" \
+	+incdir+"$HBM/dv/ral/bus" \
 	+incdir+"$HBM/dv/uvm" \
 	-f hbm_abs.f \
 	"$HBM/dv/uvm/hbm_wb_if.sv" \

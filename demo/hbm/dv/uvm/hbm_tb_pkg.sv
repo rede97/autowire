@@ -380,13 +380,19 @@ package hbm_tb_pkg;
 			super.new(name);
 		endfunction
 
-		// Sub-blocks are created ch-major, pstate-minor: q[ch*4 + ps].
+		// Look up ch<ch>_pstate<ps> by name; block order is not guaranteed
+		// (the fabric also hangs a center block).
 		function ral_block_hbm_ch chan(int ch, int ps);
 			uvm_reg_block q[$];
 			ral_block_hbm_ch b;
 			ral.get_blocks(q, UVM_NO_HIER);
-			if (!$cast(b, q[ch*4 + ps])) `uvm_fatal("RAL/CAST", "sub-block is not ral_block_hbm_ch")
-			return b;
+			foreach (q[i]) begin
+				if (q[i].get_name() == $sformatf("ch%0d_pstate%0d", ch, ps)) begin
+					if (!$cast(b, q[i])) `uvm_fatal("RAL/CAST", "sub-block is not ral_block_hbm_ch")
+					return b;
+				end
+			end
+			`uvm_fatal("RAL/LOOKUP", $sformatf("no sub-block ch%0d_pstate%0d", ch, ps))
 		endfunction
 
 		task check_reg(uvm_reg rg, bit [31:0] exp, string what);

@@ -115,7 +115,7 @@ describe("autowire web e2e", () => {
 	test("buttons: [Elaborate] auto-runs check; [Reset] restores author face", async () => {
 		const page = await ctx.newPage();
 		await page.goto(pageUrl());
-		await page.waitForSelector("#aw-live aw-mod");
+		await page.waitForSelector("#aw-live aw-mod", { state: "attached" });
 		// Obscura's box model does not match hit testing, so a coordinate
 		// click lands on the author tree. Dispatch the button's own click.
 		await page.locator("#btn-elaborate").evaluate((el: HTMLButtonElement) => {
@@ -227,7 +227,7 @@ describe("autowire web e2e", () => {
 	test("session refuses a step whose predecessor was not run", async () => {
 		const page = await ctx.newPage();
 		await page.goto(pageUrl("unit=sha256wb"));
-		await page.waitForSelector("#aw-live aw-mod");
+		await page.waitForSelector("#aw-live aw-mod", { state: "attached" });
 		const skipped = await page.evaluate(async () => {
 			const aw = (
 				window as unknown as { aw: { session: (s: string) => Promise<string> } }
@@ -261,7 +261,7 @@ describe("autowire web e2e", () => {
 	test("source and processed stay independent across a compile", async () => {
 		const page = await ctx.newPage();
 		await page.goto(pageUrl("unit=sha256wb"));
-		await page.waitForSelector("#aw-live aw-mod");
+		await page.waitForSelector("#aw-live aw-mod", { state: "attached" });
 		const edited = await page.evaluate(async () => {
 			const srcInst = document.querySelector("#aw-source aw-inst");
 			const liveInst = document.querySelector("#aw-live aw-inst");
@@ -284,8 +284,9 @@ describe("autowire web e2e", () => {
 					?.getAttribute("id"),
 				liveId: document.querySelector("#aw-live aw-inst")?.getAttribute("id"),
 				hookOnSource:
-					document.querySelector("#aw-source aw-port[name='probe_from_hook']") !==
-					null,
+					document.querySelector(
+						"#aw-source aw-port[name='probe_from_hook']",
+					) !== null,
 				hookOnLive:
 					document.querySelector("#aw-live aw-port[name='probe_from_hook']") !==
 					null,
@@ -304,7 +305,7 @@ describe("autowire web e2e", () => {
 	test("pipeline steps hide every unit except the one being compiled", async () => {
 		const page = await ctx.newPage();
 		await page.goto(pageUrl("unit=sha256wb"));
-		await page.waitForSelector("#aw-live aw-mod");
+		await page.waitForSelector("#aw-live aw-mod", { state: "attached" });
 		const seen = await page.evaluate(async () => {
 			const live = document.querySelector("#aw-live");
 			const source = document.querySelector("#aw-source");
