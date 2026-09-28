@@ -8,7 +8,7 @@
 import uvm_pkg::*;
 `include "uvm_macros.svh"
 
-`include "ral_SHA256.sv"
+`include "../regfile/ral_SHA256.sv"
 
 class ral_block_sd_sha extends uvm_reg_block;
 	rand ral_block_sha256 sha256;

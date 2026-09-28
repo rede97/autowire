@@ -1,21 +1,23 @@
 // Excel docs export for the wishbone plugin pack.
 // Field sheets follow master gen_excel_doc.py, minus unused columns
-// (leading empty, Selection ADDRWIDTH). A bus sheet lists address leaves the
-// way the terminal tree does: one row per window, bit fields of a regfile
-// leaf summarized on that row. Independent trees are separate sheets.
-// No reverse import to TS.
+// (leading empty, Selection ADDRWIDTH). An Address Map sheet per independent
+// bus tree shows the same information as the terminal tree: absolute address in
+// column A, one 2-row x 3-column block per item indented 3 columns per level,
+// leaves stopping at a regfile or an empty port. No reverse import to TS.
 
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import ExcelJS from "exceljs";
-import type { BusDef, WbSlave } from "../wishbone-bus/dsl.ts";
+import type { BusDef, WbSlave, WbTagSource } from "../wishbone-bus/dsl.ts";
 import { windowBytes } from "../wishbone-bus/dsl.ts";
 import { effectiveSheet } from "./dsl.ts";
 import { fieldsWithReserved } from "./emit-sw.ts";
 import type { LaidCell, LaidRegfile } from "./layout.ts";
-import { layoutRegfile } from "./layout.ts";
 
 const CELL_BITS = 32;
+
+/** Whole workbook is monospace: hex offsets and identifiers line up. */
+const MONO_FONT = "Consolas";
 
 const HEADER = [
 	"Sub-Addr\n(Hex)",
@@ -69,7 +71,7 @@ const THIN: Partial<ExcelJS.Borders> = {
 	right: { style: "thin", color: { argb: "FF000000" } },
 };
 const HEADER_FONT: Partial<ExcelJS.Font> = {
-	name: "Calibri",
+	name: MONO_FONT,
 	bold: true,
 };
 const HEADER_ALIGN: Partial<ExcelJS.Alignment> = {
@@ -205,16 +207,53 @@ function addSheet(wb: ExcelJS.Workbook, laid: LaidRegfile): void {
 	for (const cell of laid.cells) appendCellBlock(ws, laid, cell);
 }
 
-const MAP_HEADER = [
-	"Address",
-	"Window",
-	"Size",
-	"Leaf",
-	"Bits",
-	"Broadcast",
-	"Shadow",
-	"Description",
-] as const;
+// Address Map sheet: one 2-row x 3-column block per item, indented 3 columns
+// per level. Column A is the absolute address, merged over the two rows.
+const MAP_HEADER_1 = ["Abs Addr", "Offset", "Size", "Tag / Broadcast"] as const;
+const MAP_HEADER_2 = ["Name", "Type", "Description"] as const;
+const MAP_COLS = 3;
+
+/** Low-contrast pastel fills: address column plus one per item type. */
+const MAP_FILL = {
+	addr: "FFDCE9F5",
+	bus: "FFE4EEDC",
+	regfile: "FFFDF3D8",
+	broadcast: "FFEDE2F3",
+	port: "FFECECEC",
+	repeat: "FFF2E0DC",
+	header: "FFE8E8E8",
+} as const;
+
+const MAP_BORDER: Partial<ExcelJS.Borders> = {
+	top: { style: "hair", color: { argb: "FFBFBFBF" } },
+	left: { style: "hair", color: { argb: "FFBFBFBF" } },
+	bottom: { style: "hair", color: { argb: "FFBFBFBF" } },
+	right: { style: "hair", color: { argb: "FFBFBFBF" } },
+};
+
+/** Outline around one 2-row x 3-column block; inner edges stay hair. */
+const MAP_EDGE: ExcelJS.Border = {
+	style: "thin",
+	color: { argb: "FF9AA0A6" },
+};
+
+function blockBorder(
+	top: boolean,
+	bottom: boolean,
+	left: boolean,
+	right: boolean,
+): Partial<ExcelJS.Borders> {
+	return {
+		top: top ? MAP_EDGE : MAP_BORDER.top,
+		bottom: bottom ? MAP_EDGE : MAP_BORDER.bottom,
+		left: left ? MAP_EDGE : MAP_BORDER.left,
+		right: right ? MAP_EDGE : MAP_BORDER.right,
+	};
+}
+
+function mapFill(argb: string): ExcelJS.FillPattern {
+	return { type: "pattern", pattern: "solid", fgColor: { argb } };
+}
 
 export function busMapSheetName(def: BusDef): string {
 	const name = def.name.slice(0, 31);
@@ -224,54 +263,98 @@ export function busMapSheetName(def: BusDef): string {
 	return name;
 }
 
-function hexWin(n: number): string {
-	return `0x${(n >>> 0).toString(16).padStart(8, "0")}`;
+function hexWin(n: number, addrWidth = 32): string {
+	const digits = Math.max(2, Math.ceil(addrWidth / 4));
+	return `0x${(n >>> 0).toString(16).padStart(digits, "0")}`;
 }
 
-function leafBits(slave: WbSlave): string {
-	const rf = slave.regfile;
-	if (!rf) return "";
-	return layoutRegfile(rf)
-		.cells.map((cell) => {
-			const fields = fieldsWithReserved(cell)
-				.filter((bit) => !bit.reserved)
-				.map(
-					(bit) =>
-						`${bit.name}[${bit.bit_offset + bit.width - 1}:${bit.bit_offset}]`,
-				)
-				.join(" ");
-			return `${cell.name}@0x${cell.byte_offset.toString(16)} ${fields}`;
-		})
-		.join("; ");
+function tagText(tag: WbTagSource): string {
+	const at = tag.domain.name;
+	if (tag.source === "addr") return `${at}=ADR[${tag.addr_bits}]`;
+	if (tag.source === "pin") return `${at}=pin`;
+	if (tag.source === "reg") return `${at}=${tag.reg_field ?? "reg"}`;
+	return `${at}=uplink`;
 }
 
-function addLeafRow(
+/** Row-1 third cell: tag domains of a child fabric, broadcast and shadow marks. */
+function marksText(slave: WbSlave, repeat: boolean): string {
+	const parts: string[] = [];
+	if (slave.bus && repeat) parts.push(`repeat of ${slave.bus.name}`);
+	if (slave.bus && !repeat && slave.bus.tags.length > 0) {
+		parts.push(slave.bus.tags.map(tagText).join(", "));
+	}
+	if (slave.broadcast) parts.push(`broadcast ${slave.broadcast}`);
+	if (slave.broadcastBy && slave.broadcastBy.length > 0) {
+		parts.push(`broadcast-by: ${slave.broadcastBy.join("|")}`);
+	}
+	const shadows = slave.regfile?.shadows.map((s) => s.name) ?? [];
+	if (shadows.length > 0) parts.push(`shadow: ${shadows.join("|")}`);
+	return parts.join("  ");
+}
+
+type MapKind = keyof typeof MAP_FILL;
+
+function slaveKind(slave: WbSlave, repeat: boolean): MapKind {
+	if (slave.broadcast) return "broadcast";
+	if (slave.bus) return repeat ? "repeat" : "bus";
+	if (slave.regfile) return "regfile";
+	return "port";
+}
+
+function slaveType(slave: WbSlave, repeat: boolean): string {
+	if (slave.broadcast) return "broadcast";
+	if (slave.bus) {
+		const shape = slave.bus.masters.length > 1 ? "interconnect" : "bus";
+		return repeat ? `${shape} (repeat)` : shape;
+	}
+	if (slave.regfile) return "regfile";
+	return "port";
+}
+
+/**
+ * One item: absolute address in column A, then 3 columns x 2 rows at `depth`,
+ * outlined as a block. `top` reuses an existing row pair (offset 0 keeps the
+ * item on its parent's two rows instead of moving down); otherwise a new pair
+ * is appended. Returns the top row of the block.
+ */
+function addMapBlock(
 	ws: ExcelJS.Worksheet,
-	slave: WbSlave,
-	abs: number,
-	width: number,
-): void {
-	const span = slave.size ?? windowBytes(slave.mask, width);
-	const r = (ws.lastRow?.number ?? 0) + 1;
-	const broadcast = [
-		slave.broadcast ? slave.broadcast : "",
-		slave.broadcastBy && slave.broadcastBy.length > 0
-			? `by ${slave.broadcastBy.join("|")}`
-			: "",
-	]
-		.filter((part) => part !== "")
-		.join(" ");
-	ws.addRow([
-		hexWin(abs),
-		slave.name,
-		hexWin(span),
-		slave.regfile?.name ?? slave.bus?.name ?? "",
-		leafBits(slave),
-		broadcast,
-		slave.regfile?.shadows.map((shadow) => shadow.name).join("|") ?? "",
-		slave.desc,
-	]);
-	styleRange(ws, r, MAP_HEADER.length, CELL_FILL, FIELD_ALIGN);
+	depth: number,
+	abs: string,
+	kind: MapKind,
+	row1: readonly [string, string, string],
+	row2: readonly [string, string, string],
+	top?: number,
+): number {
+	const first = 2 + depth * MAP_COLS;
+	if (top === undefined) {
+		const at = (ws.lastRow?.number ?? 0) + 1;
+		const addr = ws.getCell(at, 1);
+		addr.value = abs;
+		addr.fill = mapFill(MAP_FILL.addr);
+		addr.alignment = { horizontal: "left", vertical: "middle" };
+		ws.getCell(at + 1, 1).fill = mapFill(MAP_FILL.addr);
+		ws.mergeCells(at, 1, at + 1, 1);
+		ws.getCell(at, 1).border = blockBorder(true, false, true, true);
+		ws.getCell(at + 1, 1).border = blockBorder(false, true, true, true);
+		top = at;
+	}
+	const fill = mapFill(MAP_FILL[kind]);
+	for (const [offset, values] of [row1, row2].entries()) {
+		for (const [i, text] of values.entries()) {
+			const cell = ws.getCell(top + offset, first + i);
+			cell.value = text;
+			cell.fill = fill;
+			cell.border = blockBorder(
+				offset === 0,
+				offset === 1,
+				i === 0,
+				i === values.length - 1,
+			);
+			cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+		}
+	}
+	return top;
 }
 
 /** Roots are listed buses that no other listed bus hangs. */
@@ -288,34 +371,115 @@ function busRoots(buses: readonly BusDef[]): BusDef[] {
 	return buses.filter((bus) => !hung.has(bus.name));
 }
 
-function addBusMapSheet(wb: ExcelJS.Workbook, def: BusDef): void {
-	const name = busMapSheetName(def);
-	const ws = wb.addWorksheet(name);
-	ws.addRow([...MAP_HEADER]);
-	ws.getRow(1).height = 20;
-	for (let col = 1; col <= MAP_HEADER.length; col++) {
-		const cell = ws.getCell(1, col);
-		cell.font = HEADER_FONT;
-		cell.fill = HEADER_FILL;
-		cell.border = THIN as ExcelJS.Borders;
-		cell.alignment = HEADER_ALIGN;
+function busSpan(bus: BusDef): number {
+	let end = 0;
+	for (const slave of bus.slaves) {
+		const span = slave.size ?? windowBytes(slave.mask, bus.addr_width);
+		end = Math.max(end, (slave.base + span) >>> 0);
 	}
-	ws.getColumn(2).width = 16;
-	ws.getColumn(4).width = 16;
-	ws.getColumn(5).width = 48;
-	ws.getColumn(8).width = 40;
+	return end || windowBytes(0, bus.addr_width);
+}
+
+/** Deepest level reached; repeated subtrees and broadcast ports stay closed. */
+function busDepth(bus: BusDef, seen: Set<string>): number {
+	let depth = 0;
+	for (const slave of bus.slaves) {
+		if (!slave.bus || slave.broadcast || seen.has(slave.bus.name)) {
+			depth = Math.max(depth, 1);
+			continue;
+		}
+		seen.add(slave.bus.name);
+		depth = Math.max(depth, 1 + busDepth(slave.bus, seen));
+	}
+	return depth;
+}
+
+function addMapHeader(ws: ExcelJS.Worksheet, groups: number): void {
+	const cols = 1 + groups * MAP_COLS;
+	for (let c = 1; c <= cols; c++) {
+		for (const r of [1, 2]) {
+			const cell = ws.getCell(r, c);
+			cell.font = HEADER_FONT;
+			cell.fill = mapFill(MAP_FILL.header);
+			cell.border = MAP_BORDER as ExcelJS.Borders;
+			cell.alignment = HEADER_ALIGN;
+		}
+	}
+	MAP_HEADER_1.forEach((text, i) => {
+		ws.getCell(1, 1 + i).value = text;
+	});
+	MAP_HEADER_2.forEach((text, i) => {
+		ws.getCell(2, 2 + i).value = text;
+	});
+	ws.mergeCells(1, 1, 2, 1);
+	ws.getColumn(1).width = 14;
+	for (let g = 0; g < groups; g++) {
+		ws.getColumn(2 + g * MAP_COLS).width = 18;
+		ws.getColumn(3 + g * MAP_COLS).width = 16;
+		ws.getColumn(4 + g * MAP_COLS).width = 34;
+	}
+}
+
+function addBusMapSheet(wb: ExcelJS.Workbook, def: BusDef): void {
+	const ws = wb.addWorksheet(busMapSheetName(def));
+	addMapHeader(ws, 1 + busDepth(def, new Set([def.name])));
+	const width = def.addr_width;
+	const rootTop = addMapBlock(
+		ws,
+		0,
+		hexWin(0, width),
+		"bus",
+		[
+			hexWin(0, width),
+			hexWin(busSpan(def), width),
+			def.tags.map(tagText).join(", "),
+		],
+		[def.name, def.masters.length > 1 ? "interconnect" : "bus", def.desc],
+	);
 	const seen = new Set<string>([def.name]);
-	const walk = (bus: BusDef, absBase: number): void => {
+	const walk = (
+		bus: BusDef,
+		absBase: number,
+		depth: number,
+		parentTop: number,
+	): void => {
 		for (const slave of [...bus.slaves].sort((a, b) => a.base - b.base)) {
 			const abs = (absBase + slave.base) >>> 0;
-			addLeafRow(ws, slave, abs, bus.addr_width);
-			if (slave.bus && !seen.has(slave.bus.name)) {
+			const span = slave.size ?? windowBytes(slave.mask, bus.addr_width);
+			const open = slave.bus !== undefined && !seen.has(slave.bus.name);
+			const repeat = slave.bus !== undefined && !open;
+			// Offset 0 starts at the parent address: keep it on the parent's rows.
+			const top = addMapBlock(
+				ws,
+				depth,
+				hexWin(abs, width),
+				slaveKind(slave, repeat),
+				[
+					hexWin(slave.base, bus.addr_width),
+					hexWin(span, bus.addr_width),
+					marksText(slave, repeat),
+				],
+				[slave.name, slaveType(slave, repeat), slave.desc],
+				slave.base === 0 ? parentTop : undefined,
+			);
+			if (slave.bus && open) {
 				seen.add(slave.bus.name);
-				walk(slave.bus, abs);
+				walk(slave.bus, abs, depth + 1, top);
 			}
 		}
 	};
-	walk(def, 0);
+	walk(def, 0, 1, rootTop);
+}
+
+/** Every sheet is read as hex and identifiers: one monospace face workbook-wide. */
+function applyMonoFont(wb: ExcelJS.Workbook): void {
+	for (const ws of wb.worksheets) {
+		ws.eachRow({ includeEmpty: true }, (row) => {
+			row.eachCell({ includeEmpty: true }, (cell) => {
+				cell.font = { ...cell.font, name: MONO_FONT };
+			});
+		});
+	}
 }
 
 /** Build one workbook: field sheets plus one sheet per independent bus tree. */
@@ -339,6 +503,7 @@ export function buildRegfileWorkbook(
 	}
 	for (const laid of tables) addSheet(wb, laid);
 	for (const bus of busRoots(buses)) addBusMapSheet(wb, bus);
+	applyMonoFont(wb);
 	return wb;
 }
 

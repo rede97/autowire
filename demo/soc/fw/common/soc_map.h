@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 // SoC memory map for C firmware (mirrors connect/soc_top.html).
-// Field layouts + window bases: wishbone packed C export (fw/gen/wishbone).
+// Field layouts + window bases: wishbone packed C export
+// (fw/gen/wishbone/{regfile,bus}).
 // Channel DMA SRC uses the child-relative map (parent strips the 4 KiB window).
 
 #pragma once
 
 #include <stdint.h>
 
-#include "soc_wb_map.h"
+#include "bus/soc_wb_map.h"
 
 #define SRAM_BASE      0x00000000u
 #define FLASH_BASE     0x01000000u

@@ -86,9 +86,12 @@ describe("wishbone-bus", () => {
 		const root = join(import.meta.dir, "..", "demo", "soc");
 		const present = (name: string) =>
 			paths.some((p) => p.endsWith(name)) ||
-			existsSync(join(root, "rtl/gen/plugins/wishbone", name)) ||
-			existsSync(join(root, "fw/gen/wishbone", name)) ||
-			existsSync(join(root, "dv/ral", name));
+			existsSync(join(root, "rtl/gen/plugins/wishbone/bus", name)) ||
+			existsSync(join(root, "rtl/gen/plugins/wishbone/regfile", name)) ||
+			existsSync(join(root, "fw/gen/wishbone/bus", name)) ||
+			existsSync(join(root, "fw/gen/wishbone/regfile", name)) ||
+			existsSync(join(root, "dv/ral/bus", name)) ||
+			existsSync(join(root, "dv/ral/regfile", name));
 		expect(present("soc_wb_interconnect.sv")).toBe(true);
 		expect(present("wb_jtag_tdr.sv")).toBe(true);
 		expect(present("wb_cdc.sv")).toBe(true);
@@ -505,10 +508,10 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(map).toContain("#define SOC_WB_SMOKE_BANK0_BASE 0x03006000u");
 		expect(map).toContain("#define SOC_WB_SMOKE_FABRIC_OFFSET 0x00000030u");
 		expect(map).toContain("shadow bank");
-		expect(map).toContain('#include "sha256.h"');
+		expect(map).toContain('#include "../regfile/sha256.h"');
 		const uvm = emitBusMapUvm(soc_wb);
 		expect(uvm).toContain("class ral_block_soc_wb");
-		expect(uvm).toContain('`include "ral_SHA256.sv"');
+		expect(uvm).toContain('`include "../regfile/ral_SHA256.sv"');
 		expect(uvm).toContain("default_map.add_submap(this.ch0_bank0.default_map");
 		expect(uvm).toContain("32'h03000000");
 		expect(uvm).toContain("32'h03006000");

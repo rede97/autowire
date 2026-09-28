@@ -7,267 +7,272 @@
 
 #include <stdint.h>
 
-#include "aword.h"
-#include "dword.h"
+#include "../regfile/center.h"
+#include "../regfile/aword.h"
+#include "../regfile/dword.h"
 
-#define HBM_CH0_PSTATE0_AWORD_BASE 0x00000000u /* pstate=0 */
-#define HBM_CH0_PSTATE0_DWORD0_BASE 0x00000100u /* pstate=0 */
-#define HBM_CH0_PSTATE0_DWORD1_BASE 0x00000200u /* pstate=0 */
-#define HBM_CH0_PSTATE1_AWORD_BASE 0x00020000u /* pstate=1 */
-#define HBM_CH0_PSTATE1_DWORD0_BASE 0x00020100u /* pstate=1 */
-#define HBM_CH0_PSTATE1_DWORD1_BASE 0x00020200u /* pstate=1 */
-#define HBM_CH0_PSTATE2_AWORD_BASE 0x00040000u /* pstate=2 */
-#define HBM_CH0_PSTATE2_DWORD0_BASE 0x00040100u /* pstate=2 */
-#define HBM_CH0_PSTATE2_DWORD1_BASE 0x00040200u /* pstate=2 */
-#define HBM_CH0_PSTATE3_AWORD_BASE 0x00060000u /* pstate=3 */
-#define HBM_CH0_PSTATE3_DWORD0_BASE 0x00060100u /* pstate=3 */
-#define HBM_CH0_PSTATE3_DWORD1_BASE 0x00060200u /* pstate=3 */
-#define HBM_CH1_PSTATE0_AWORD_BASE 0x00001000u /* pstate=0 */
-#define HBM_CH1_PSTATE0_DWORD0_BASE 0x00001100u /* pstate=0 */
-#define HBM_CH1_PSTATE0_DWORD1_BASE 0x00001200u /* pstate=0 */
-#define HBM_CH1_PSTATE1_AWORD_BASE 0x00021000u /* pstate=1 */
-#define HBM_CH1_PSTATE1_DWORD0_BASE 0x00021100u /* pstate=1 */
-#define HBM_CH1_PSTATE1_DWORD1_BASE 0x00021200u /* pstate=1 */
-#define HBM_CH1_PSTATE2_AWORD_BASE 0x00041000u /* pstate=2 */
-#define HBM_CH1_PSTATE2_DWORD0_BASE 0x00041100u /* pstate=2 */
-#define HBM_CH1_PSTATE2_DWORD1_BASE 0x00041200u /* pstate=2 */
-#define HBM_CH1_PSTATE3_AWORD_BASE 0x00061000u /* pstate=3 */
-#define HBM_CH1_PSTATE3_DWORD0_BASE 0x00061100u /* pstate=3 */
-#define HBM_CH1_PSTATE3_DWORD1_BASE 0x00061200u /* pstate=3 */
-#define HBM_CH2_PSTATE0_AWORD_BASE 0x00002000u /* pstate=0 */
-#define HBM_CH2_PSTATE0_DWORD0_BASE 0x00002100u /* pstate=0 */
-#define HBM_CH2_PSTATE0_DWORD1_BASE 0x00002200u /* pstate=0 */
-#define HBM_CH2_PSTATE1_AWORD_BASE 0x00022000u /* pstate=1 */
-#define HBM_CH2_PSTATE1_DWORD0_BASE 0x00022100u /* pstate=1 */
-#define HBM_CH2_PSTATE1_DWORD1_BASE 0x00022200u /* pstate=1 */
-#define HBM_CH2_PSTATE2_AWORD_BASE 0x00042000u /* pstate=2 */
-#define HBM_CH2_PSTATE2_DWORD0_BASE 0x00042100u /* pstate=2 */
-#define HBM_CH2_PSTATE2_DWORD1_BASE 0x00042200u /* pstate=2 */
-#define HBM_CH2_PSTATE3_AWORD_BASE 0x00062000u /* pstate=3 */
-#define HBM_CH2_PSTATE3_DWORD0_BASE 0x00062100u /* pstate=3 */
-#define HBM_CH2_PSTATE3_DWORD1_BASE 0x00062200u /* pstate=3 */
-#define HBM_CH3_PSTATE0_AWORD_BASE 0x00003000u /* pstate=0 */
-#define HBM_CH3_PSTATE0_DWORD0_BASE 0x00003100u /* pstate=0 */
-#define HBM_CH3_PSTATE0_DWORD1_BASE 0x00003200u /* pstate=0 */
-#define HBM_CH3_PSTATE1_AWORD_BASE 0x00023000u /* pstate=1 */
-#define HBM_CH3_PSTATE1_DWORD0_BASE 0x00023100u /* pstate=1 */
-#define HBM_CH3_PSTATE1_DWORD1_BASE 0x00023200u /* pstate=1 */
-#define HBM_CH3_PSTATE2_AWORD_BASE 0x00043000u /* pstate=2 */
-#define HBM_CH3_PSTATE2_DWORD0_BASE 0x00043100u /* pstate=2 */
-#define HBM_CH3_PSTATE2_DWORD1_BASE 0x00043200u /* pstate=2 */
-#define HBM_CH3_PSTATE3_AWORD_BASE 0x00063000u /* pstate=3 */
-#define HBM_CH3_PSTATE3_DWORD0_BASE 0x00063100u /* pstate=3 */
-#define HBM_CH3_PSTATE3_DWORD1_BASE 0x00063200u /* pstate=3 */
-#define HBM_CH4_PSTATE0_AWORD_BASE 0x00004000u /* pstate=0 */
-#define HBM_CH4_PSTATE0_DWORD0_BASE 0x00004100u /* pstate=0 */
-#define HBM_CH4_PSTATE0_DWORD1_BASE 0x00004200u /* pstate=0 */
-#define HBM_CH4_PSTATE1_AWORD_BASE 0x00024000u /* pstate=1 */
-#define HBM_CH4_PSTATE1_DWORD0_BASE 0x00024100u /* pstate=1 */
-#define HBM_CH4_PSTATE1_DWORD1_BASE 0x00024200u /* pstate=1 */
-#define HBM_CH4_PSTATE2_AWORD_BASE 0x00044000u /* pstate=2 */
-#define HBM_CH4_PSTATE2_DWORD0_BASE 0x00044100u /* pstate=2 */
-#define HBM_CH4_PSTATE2_DWORD1_BASE 0x00044200u /* pstate=2 */
-#define HBM_CH4_PSTATE3_AWORD_BASE 0x00064000u /* pstate=3 */
-#define HBM_CH4_PSTATE3_DWORD0_BASE 0x00064100u /* pstate=3 */
-#define HBM_CH4_PSTATE3_DWORD1_BASE 0x00064200u /* pstate=3 */
-#define HBM_CH5_PSTATE0_AWORD_BASE 0x00005000u /* pstate=0 */
-#define HBM_CH5_PSTATE0_DWORD0_BASE 0x00005100u /* pstate=0 */
-#define HBM_CH5_PSTATE0_DWORD1_BASE 0x00005200u /* pstate=0 */
-#define HBM_CH5_PSTATE1_AWORD_BASE 0x00025000u /* pstate=1 */
-#define HBM_CH5_PSTATE1_DWORD0_BASE 0x00025100u /* pstate=1 */
-#define HBM_CH5_PSTATE1_DWORD1_BASE 0x00025200u /* pstate=1 */
-#define HBM_CH5_PSTATE2_AWORD_BASE 0x00045000u /* pstate=2 */
-#define HBM_CH5_PSTATE2_DWORD0_BASE 0x00045100u /* pstate=2 */
-#define HBM_CH5_PSTATE2_DWORD1_BASE 0x00045200u /* pstate=2 */
-#define HBM_CH5_PSTATE3_AWORD_BASE 0x00065000u /* pstate=3 */
-#define HBM_CH5_PSTATE3_DWORD0_BASE 0x00065100u /* pstate=3 */
-#define HBM_CH5_PSTATE3_DWORD1_BASE 0x00065200u /* pstate=3 */
-#define HBM_CH6_PSTATE0_AWORD_BASE 0x00006000u /* pstate=0 */
-#define HBM_CH6_PSTATE0_DWORD0_BASE 0x00006100u /* pstate=0 */
-#define HBM_CH6_PSTATE0_DWORD1_BASE 0x00006200u /* pstate=0 */
-#define HBM_CH6_PSTATE1_AWORD_BASE 0x00026000u /* pstate=1 */
-#define HBM_CH6_PSTATE1_DWORD0_BASE 0x00026100u /* pstate=1 */
-#define HBM_CH6_PSTATE1_DWORD1_BASE 0x00026200u /* pstate=1 */
-#define HBM_CH6_PSTATE2_AWORD_BASE 0x00046000u /* pstate=2 */
-#define HBM_CH6_PSTATE2_DWORD0_BASE 0x00046100u /* pstate=2 */
-#define HBM_CH6_PSTATE2_DWORD1_BASE 0x00046200u /* pstate=2 */
-#define HBM_CH6_PSTATE3_AWORD_BASE 0x00066000u /* pstate=3 */
-#define HBM_CH6_PSTATE3_DWORD0_BASE 0x00066100u /* pstate=3 */
-#define HBM_CH6_PSTATE3_DWORD1_BASE 0x00066200u /* pstate=3 */
-#define HBM_CH7_PSTATE0_AWORD_BASE 0x00007000u /* pstate=0 */
-#define HBM_CH7_PSTATE0_DWORD0_BASE 0x00007100u /* pstate=0 */
-#define HBM_CH7_PSTATE0_DWORD1_BASE 0x00007200u /* pstate=0 */
-#define HBM_CH7_PSTATE1_AWORD_BASE 0x00027000u /* pstate=1 */
-#define HBM_CH7_PSTATE1_DWORD0_BASE 0x00027100u /* pstate=1 */
-#define HBM_CH7_PSTATE1_DWORD1_BASE 0x00027200u /* pstate=1 */
-#define HBM_CH7_PSTATE2_AWORD_BASE 0x00047000u /* pstate=2 */
-#define HBM_CH7_PSTATE2_DWORD0_BASE 0x00047100u /* pstate=2 */
-#define HBM_CH7_PSTATE2_DWORD1_BASE 0x00047200u /* pstate=2 */
-#define HBM_CH7_PSTATE3_AWORD_BASE 0x00067000u /* pstate=3 */
-#define HBM_CH7_PSTATE3_DWORD0_BASE 0x00067100u /* pstate=3 */
-#define HBM_CH7_PSTATE3_DWORD1_BASE 0x00067200u /* pstate=3 */
-#define HBM_CH8_PSTATE0_AWORD_BASE 0x00008000u /* pstate=0 */
-#define HBM_CH8_PSTATE0_DWORD0_BASE 0x00008100u /* pstate=0 */
-#define HBM_CH8_PSTATE0_DWORD1_BASE 0x00008200u /* pstate=0 */
-#define HBM_CH8_PSTATE1_AWORD_BASE 0x00028000u /* pstate=1 */
-#define HBM_CH8_PSTATE1_DWORD0_BASE 0x00028100u /* pstate=1 */
-#define HBM_CH8_PSTATE1_DWORD1_BASE 0x00028200u /* pstate=1 */
-#define HBM_CH8_PSTATE2_AWORD_BASE 0x00048000u /* pstate=2 */
-#define HBM_CH8_PSTATE2_DWORD0_BASE 0x00048100u /* pstate=2 */
-#define HBM_CH8_PSTATE2_DWORD1_BASE 0x00048200u /* pstate=2 */
-#define HBM_CH8_PSTATE3_AWORD_BASE 0x00068000u /* pstate=3 */
-#define HBM_CH8_PSTATE3_DWORD0_BASE 0x00068100u /* pstate=3 */
-#define HBM_CH8_PSTATE3_DWORD1_BASE 0x00068200u /* pstate=3 */
-#define HBM_CH9_PSTATE0_AWORD_BASE 0x00009000u /* pstate=0 */
-#define HBM_CH9_PSTATE0_DWORD0_BASE 0x00009100u /* pstate=0 */
-#define HBM_CH9_PSTATE0_DWORD1_BASE 0x00009200u /* pstate=0 */
-#define HBM_CH9_PSTATE1_AWORD_BASE 0x00029000u /* pstate=1 */
-#define HBM_CH9_PSTATE1_DWORD0_BASE 0x00029100u /* pstate=1 */
-#define HBM_CH9_PSTATE1_DWORD1_BASE 0x00029200u /* pstate=1 */
-#define HBM_CH9_PSTATE2_AWORD_BASE 0x00049000u /* pstate=2 */
-#define HBM_CH9_PSTATE2_DWORD0_BASE 0x00049100u /* pstate=2 */
-#define HBM_CH9_PSTATE2_DWORD1_BASE 0x00049200u /* pstate=2 */
-#define HBM_CH9_PSTATE3_AWORD_BASE 0x00069000u /* pstate=3 */
-#define HBM_CH9_PSTATE3_DWORD0_BASE 0x00069100u /* pstate=3 */
-#define HBM_CH9_PSTATE3_DWORD1_BASE 0x00069200u /* pstate=3 */
-#define HBM_CH10_PSTATE0_AWORD_BASE 0x0000a000u /* pstate=0 */
-#define HBM_CH10_PSTATE0_DWORD0_BASE 0x0000a100u /* pstate=0 */
-#define HBM_CH10_PSTATE0_DWORD1_BASE 0x0000a200u /* pstate=0 */
-#define HBM_CH10_PSTATE1_AWORD_BASE 0x0002a000u /* pstate=1 */
-#define HBM_CH10_PSTATE1_DWORD0_BASE 0x0002a100u /* pstate=1 */
-#define HBM_CH10_PSTATE1_DWORD1_BASE 0x0002a200u /* pstate=1 */
-#define HBM_CH10_PSTATE2_AWORD_BASE 0x0004a000u /* pstate=2 */
-#define HBM_CH10_PSTATE2_DWORD0_BASE 0x0004a100u /* pstate=2 */
-#define HBM_CH10_PSTATE2_DWORD1_BASE 0x0004a200u /* pstate=2 */
-#define HBM_CH10_PSTATE3_AWORD_BASE 0x0006a000u /* pstate=3 */
-#define HBM_CH10_PSTATE3_DWORD0_BASE 0x0006a100u /* pstate=3 */
-#define HBM_CH10_PSTATE3_DWORD1_BASE 0x0006a200u /* pstate=3 */
-#define HBM_CH11_PSTATE0_AWORD_BASE 0x0000b000u /* pstate=0 */
-#define HBM_CH11_PSTATE0_DWORD0_BASE 0x0000b100u /* pstate=0 */
-#define HBM_CH11_PSTATE0_DWORD1_BASE 0x0000b200u /* pstate=0 */
-#define HBM_CH11_PSTATE1_AWORD_BASE 0x0002b000u /* pstate=1 */
-#define HBM_CH11_PSTATE1_DWORD0_BASE 0x0002b100u /* pstate=1 */
-#define HBM_CH11_PSTATE1_DWORD1_BASE 0x0002b200u /* pstate=1 */
-#define HBM_CH11_PSTATE2_AWORD_BASE 0x0004b000u /* pstate=2 */
-#define HBM_CH11_PSTATE2_DWORD0_BASE 0x0004b100u /* pstate=2 */
-#define HBM_CH11_PSTATE2_DWORD1_BASE 0x0004b200u /* pstate=2 */
-#define HBM_CH11_PSTATE3_AWORD_BASE 0x0006b000u /* pstate=3 */
-#define HBM_CH11_PSTATE3_DWORD0_BASE 0x0006b100u /* pstate=3 */
-#define HBM_CH11_PSTATE3_DWORD1_BASE 0x0006b200u /* pstate=3 */
-#define HBM_CH12_PSTATE0_AWORD_BASE 0x0000c000u /* pstate=0 */
-#define HBM_CH12_PSTATE0_DWORD0_BASE 0x0000c100u /* pstate=0 */
-#define HBM_CH12_PSTATE0_DWORD1_BASE 0x0000c200u /* pstate=0 */
-#define HBM_CH12_PSTATE1_AWORD_BASE 0x0002c000u /* pstate=1 */
-#define HBM_CH12_PSTATE1_DWORD0_BASE 0x0002c100u /* pstate=1 */
-#define HBM_CH12_PSTATE1_DWORD1_BASE 0x0002c200u /* pstate=1 */
-#define HBM_CH12_PSTATE2_AWORD_BASE 0x0004c000u /* pstate=2 */
-#define HBM_CH12_PSTATE2_DWORD0_BASE 0x0004c100u /* pstate=2 */
-#define HBM_CH12_PSTATE2_DWORD1_BASE 0x0004c200u /* pstate=2 */
-#define HBM_CH12_PSTATE3_AWORD_BASE 0x0006c000u /* pstate=3 */
-#define HBM_CH12_PSTATE3_DWORD0_BASE 0x0006c100u /* pstate=3 */
-#define HBM_CH12_PSTATE3_DWORD1_BASE 0x0006c200u /* pstate=3 */
-#define HBM_CH13_PSTATE0_AWORD_BASE 0x0000d000u /* pstate=0 */
-#define HBM_CH13_PSTATE0_DWORD0_BASE 0x0000d100u /* pstate=0 */
-#define HBM_CH13_PSTATE0_DWORD1_BASE 0x0000d200u /* pstate=0 */
-#define HBM_CH13_PSTATE1_AWORD_BASE 0x0002d000u /* pstate=1 */
-#define HBM_CH13_PSTATE1_DWORD0_BASE 0x0002d100u /* pstate=1 */
-#define HBM_CH13_PSTATE1_DWORD1_BASE 0x0002d200u /* pstate=1 */
-#define HBM_CH13_PSTATE2_AWORD_BASE 0x0004d000u /* pstate=2 */
-#define HBM_CH13_PSTATE2_DWORD0_BASE 0x0004d100u /* pstate=2 */
-#define HBM_CH13_PSTATE2_DWORD1_BASE 0x0004d200u /* pstate=2 */
-#define HBM_CH13_PSTATE3_AWORD_BASE 0x0006d000u /* pstate=3 */
-#define HBM_CH13_PSTATE3_DWORD0_BASE 0x0006d100u /* pstate=3 */
-#define HBM_CH13_PSTATE3_DWORD1_BASE 0x0006d200u /* pstate=3 */
-#define HBM_CH14_PSTATE0_AWORD_BASE 0x0000e000u /* pstate=0 */
-#define HBM_CH14_PSTATE0_DWORD0_BASE 0x0000e100u /* pstate=0 */
-#define HBM_CH14_PSTATE0_DWORD1_BASE 0x0000e200u /* pstate=0 */
-#define HBM_CH14_PSTATE1_AWORD_BASE 0x0002e000u /* pstate=1 */
-#define HBM_CH14_PSTATE1_DWORD0_BASE 0x0002e100u /* pstate=1 */
-#define HBM_CH14_PSTATE1_DWORD1_BASE 0x0002e200u /* pstate=1 */
-#define HBM_CH14_PSTATE2_AWORD_BASE 0x0004e000u /* pstate=2 */
-#define HBM_CH14_PSTATE2_DWORD0_BASE 0x0004e100u /* pstate=2 */
-#define HBM_CH14_PSTATE2_DWORD1_BASE 0x0004e200u /* pstate=2 */
-#define HBM_CH14_PSTATE3_AWORD_BASE 0x0006e000u /* pstate=3 */
-#define HBM_CH14_PSTATE3_DWORD0_BASE 0x0006e100u /* pstate=3 */
-#define HBM_CH14_PSTATE3_DWORD1_BASE 0x0006e200u /* pstate=3 */
-#define HBM_CH15_PSTATE0_AWORD_BASE 0x0000f000u /* pstate=0 */
-#define HBM_CH15_PSTATE0_DWORD0_BASE 0x0000f100u /* pstate=0 */
-#define HBM_CH15_PSTATE0_DWORD1_BASE 0x0000f200u /* pstate=0 */
-#define HBM_CH15_PSTATE1_AWORD_BASE 0x0002f000u /* pstate=1 */
-#define HBM_CH15_PSTATE1_DWORD0_BASE 0x0002f100u /* pstate=1 */
-#define HBM_CH15_PSTATE1_DWORD1_BASE 0x0002f200u /* pstate=1 */
-#define HBM_CH15_PSTATE2_AWORD_BASE 0x0004f000u /* pstate=2 */
-#define HBM_CH15_PSTATE2_DWORD0_BASE 0x0004f100u /* pstate=2 */
-#define HBM_CH15_PSTATE2_DWORD1_BASE 0x0004f200u /* pstate=2 */
-#define HBM_CH15_PSTATE3_AWORD_BASE 0x0006f000u /* pstate=3 */
-#define HBM_CH15_PSTATE3_DWORD0_BASE 0x0006f100u /* pstate=3 */
-#define HBM_CH15_PSTATE3_DWORD1_BASE 0x0006f200u /* pstate=3 */
-#define HBM_CH0_PSTATE0_DWORD_BCAST_BASE 0x00000300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH0_PSTATE1_DWORD_BCAST_BASE 0x00020300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH0_PSTATE2_DWORD_BCAST_BASE 0x00040300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH0_PSTATE3_DWORD_BCAST_BASE 0x00060300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH1_PSTATE0_DWORD_BCAST_BASE 0x00001300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH1_PSTATE1_DWORD_BCAST_BASE 0x00021300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH1_PSTATE2_DWORD_BCAST_BASE 0x00041300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH1_PSTATE3_DWORD_BCAST_BASE 0x00061300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH2_PSTATE0_DWORD_BCAST_BASE 0x00002300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH2_PSTATE1_DWORD_BCAST_BASE 0x00022300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH2_PSTATE2_DWORD_BCAST_BASE 0x00042300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH2_PSTATE3_DWORD_BCAST_BASE 0x00062300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH3_PSTATE0_DWORD_BCAST_BASE 0x00003300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH3_PSTATE1_DWORD_BCAST_BASE 0x00023300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH3_PSTATE2_DWORD_BCAST_BASE 0x00043300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH3_PSTATE3_DWORD_BCAST_BASE 0x00063300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH4_PSTATE0_DWORD_BCAST_BASE 0x00004300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH4_PSTATE1_DWORD_BCAST_BASE 0x00024300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH4_PSTATE2_DWORD_BCAST_BASE 0x00044300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH4_PSTATE3_DWORD_BCAST_BASE 0x00064300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH5_PSTATE0_DWORD_BCAST_BASE 0x00005300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH5_PSTATE1_DWORD_BCAST_BASE 0x00025300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH5_PSTATE2_DWORD_BCAST_BASE 0x00045300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH5_PSTATE3_DWORD_BCAST_BASE 0x00065300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH6_PSTATE0_DWORD_BCAST_BASE 0x00006300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH6_PSTATE1_DWORD_BCAST_BASE 0x00026300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH6_PSTATE2_DWORD_BCAST_BASE 0x00046300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH6_PSTATE3_DWORD_BCAST_BASE 0x00066300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH7_PSTATE0_DWORD_BCAST_BASE 0x00007300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH7_PSTATE1_DWORD_BCAST_BASE 0x00027300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH7_PSTATE2_DWORD_BCAST_BASE 0x00047300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH7_PSTATE3_DWORD_BCAST_BASE 0x00067300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH8_PSTATE0_DWORD_BCAST_BASE 0x00008300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH8_PSTATE1_DWORD_BCAST_BASE 0x00028300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH8_PSTATE2_DWORD_BCAST_BASE 0x00048300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH8_PSTATE3_DWORD_BCAST_BASE 0x00068300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH9_PSTATE0_DWORD_BCAST_BASE 0x00009300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH9_PSTATE1_DWORD_BCAST_BASE 0x00029300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH9_PSTATE2_DWORD_BCAST_BASE 0x00049300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH9_PSTATE3_DWORD_BCAST_BASE 0x00069300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH10_PSTATE0_DWORD_BCAST_BASE 0x0000a300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH10_PSTATE1_DWORD_BCAST_BASE 0x0002a300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH10_PSTATE2_DWORD_BCAST_BASE 0x0004a300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH10_PSTATE3_DWORD_BCAST_BASE 0x0006a300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH11_PSTATE0_DWORD_BCAST_BASE 0x0000b300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH11_PSTATE1_DWORD_BCAST_BASE 0x0002b300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH11_PSTATE2_DWORD_BCAST_BASE 0x0004b300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH11_PSTATE3_DWORD_BCAST_BASE 0x0006b300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH12_PSTATE0_DWORD_BCAST_BASE 0x0000c300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH12_PSTATE1_DWORD_BCAST_BASE 0x0002c300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH12_PSTATE2_DWORD_BCAST_BASE 0x0004c300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH12_PSTATE3_DWORD_BCAST_BASE 0x0006c300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH13_PSTATE0_DWORD_BCAST_BASE 0x0000d300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH13_PSTATE1_DWORD_BCAST_BASE 0x0002d300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH13_PSTATE2_DWORD_BCAST_BASE 0x0004d300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH13_PSTATE3_DWORD_BCAST_BASE 0x0006d300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH14_PSTATE0_DWORD_BCAST_BASE 0x0000e300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH14_PSTATE1_DWORD_BCAST_BASE 0x0002e300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH14_PSTATE2_DWORD_BCAST_BASE 0x0004e300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH14_PSTATE3_DWORD_BCAST_BASE 0x0006e300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH15_PSTATE0_DWORD_BCAST_BASE 0x0000f300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
-#define HBM_CH15_PSTATE1_DWORD_BCAST_BASE 0x0002f300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
-#define HBM_CH15_PSTATE2_DWORD_BCAST_BASE 0x0004f300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
-#define HBM_CH15_PSTATE3_DWORD_BCAST_BASE 0x0006f300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
-#define HBM_CH_BCAST_BASE 0x00010000u /* broadcast ch_all: one write at this window hits every subscriber */
+#define HBM_CENTER_BASE 0x00000000u
+#define HBM_CH0_PSTATE0_AWORD_BASE 0x00001000u /* pstate=0 */
+#define HBM_CH0_PSTATE0_DWORD0_BASE 0x00001100u /* pstate=0 */
+#define HBM_CH0_PSTATE0_DWORD1_BASE 0x00001200u /* pstate=0 */
+#define HBM_CH0_PSTATE1_AWORD_BASE 0x00021000u /* pstate=1 */
+#define HBM_CH0_PSTATE1_DWORD0_BASE 0x00021100u /* pstate=1 */
+#define HBM_CH0_PSTATE1_DWORD1_BASE 0x00021200u /* pstate=1 */
+#define HBM_CH0_PSTATE2_AWORD_BASE 0x00041000u /* pstate=2 */
+#define HBM_CH0_PSTATE2_DWORD0_BASE 0x00041100u /* pstate=2 */
+#define HBM_CH0_PSTATE2_DWORD1_BASE 0x00041200u /* pstate=2 */
+#define HBM_CH0_PSTATE3_AWORD_BASE 0x00061000u /* pstate=3 */
+#define HBM_CH0_PSTATE3_DWORD0_BASE 0x00061100u /* pstate=3 */
+#define HBM_CH0_PSTATE3_DWORD1_BASE 0x00061200u /* pstate=3 */
+#define HBM_CH1_PSTATE0_AWORD_BASE 0x00002000u /* pstate=0 */
+#define HBM_CH1_PSTATE0_DWORD0_BASE 0x00002100u /* pstate=0 */
+#define HBM_CH1_PSTATE0_DWORD1_BASE 0x00002200u /* pstate=0 */
+#define HBM_CH1_PSTATE1_AWORD_BASE 0x00022000u /* pstate=1 */
+#define HBM_CH1_PSTATE1_DWORD0_BASE 0x00022100u /* pstate=1 */
+#define HBM_CH1_PSTATE1_DWORD1_BASE 0x00022200u /* pstate=1 */
+#define HBM_CH1_PSTATE2_AWORD_BASE 0x00042000u /* pstate=2 */
+#define HBM_CH1_PSTATE2_DWORD0_BASE 0x00042100u /* pstate=2 */
+#define HBM_CH1_PSTATE2_DWORD1_BASE 0x00042200u /* pstate=2 */
+#define HBM_CH1_PSTATE3_AWORD_BASE 0x00062000u /* pstate=3 */
+#define HBM_CH1_PSTATE3_DWORD0_BASE 0x00062100u /* pstate=3 */
+#define HBM_CH1_PSTATE3_DWORD1_BASE 0x00062200u /* pstate=3 */
+#define HBM_CH2_PSTATE0_AWORD_BASE 0x00003000u /* pstate=0 */
+#define HBM_CH2_PSTATE0_DWORD0_BASE 0x00003100u /* pstate=0 */
+#define HBM_CH2_PSTATE0_DWORD1_BASE 0x00003200u /* pstate=0 */
+#define HBM_CH2_PSTATE1_AWORD_BASE 0x00023000u /* pstate=1 */
+#define HBM_CH2_PSTATE1_DWORD0_BASE 0x00023100u /* pstate=1 */
+#define HBM_CH2_PSTATE1_DWORD1_BASE 0x00023200u /* pstate=1 */
+#define HBM_CH2_PSTATE2_AWORD_BASE 0x00043000u /* pstate=2 */
+#define HBM_CH2_PSTATE2_DWORD0_BASE 0x00043100u /* pstate=2 */
+#define HBM_CH2_PSTATE2_DWORD1_BASE 0x00043200u /* pstate=2 */
+#define HBM_CH2_PSTATE3_AWORD_BASE 0x00063000u /* pstate=3 */
+#define HBM_CH2_PSTATE3_DWORD0_BASE 0x00063100u /* pstate=3 */
+#define HBM_CH2_PSTATE3_DWORD1_BASE 0x00063200u /* pstate=3 */
+#define HBM_CH3_PSTATE0_AWORD_BASE 0x00004000u /* pstate=0 */
+#define HBM_CH3_PSTATE0_DWORD0_BASE 0x00004100u /* pstate=0 */
+#define HBM_CH3_PSTATE0_DWORD1_BASE 0x00004200u /* pstate=0 */
+#define HBM_CH3_PSTATE1_AWORD_BASE 0x00024000u /* pstate=1 */
+#define HBM_CH3_PSTATE1_DWORD0_BASE 0x00024100u /* pstate=1 */
+#define HBM_CH3_PSTATE1_DWORD1_BASE 0x00024200u /* pstate=1 */
+#define HBM_CH3_PSTATE2_AWORD_BASE 0x00044000u /* pstate=2 */
+#define HBM_CH3_PSTATE2_DWORD0_BASE 0x00044100u /* pstate=2 */
+#define HBM_CH3_PSTATE2_DWORD1_BASE 0x00044200u /* pstate=2 */
+#define HBM_CH3_PSTATE3_AWORD_BASE 0x00064000u /* pstate=3 */
+#define HBM_CH3_PSTATE3_DWORD0_BASE 0x00064100u /* pstate=3 */
+#define HBM_CH3_PSTATE3_DWORD1_BASE 0x00064200u /* pstate=3 */
+#define HBM_CH4_PSTATE0_AWORD_BASE 0x00005000u /* pstate=0 */
+#define HBM_CH4_PSTATE0_DWORD0_BASE 0x00005100u /* pstate=0 */
+#define HBM_CH4_PSTATE0_DWORD1_BASE 0x00005200u /* pstate=0 */
+#define HBM_CH4_PSTATE1_AWORD_BASE 0x00025000u /* pstate=1 */
+#define HBM_CH4_PSTATE1_DWORD0_BASE 0x00025100u /* pstate=1 */
+#define HBM_CH4_PSTATE1_DWORD1_BASE 0x00025200u /* pstate=1 */
+#define HBM_CH4_PSTATE2_AWORD_BASE 0x00045000u /* pstate=2 */
+#define HBM_CH4_PSTATE2_DWORD0_BASE 0x00045100u /* pstate=2 */
+#define HBM_CH4_PSTATE2_DWORD1_BASE 0x00045200u /* pstate=2 */
+#define HBM_CH4_PSTATE3_AWORD_BASE 0x00065000u /* pstate=3 */
+#define HBM_CH4_PSTATE3_DWORD0_BASE 0x00065100u /* pstate=3 */
+#define HBM_CH4_PSTATE3_DWORD1_BASE 0x00065200u /* pstate=3 */
+#define HBM_CH5_PSTATE0_AWORD_BASE 0x00006000u /* pstate=0 */
+#define HBM_CH5_PSTATE0_DWORD0_BASE 0x00006100u /* pstate=0 */
+#define HBM_CH5_PSTATE0_DWORD1_BASE 0x00006200u /* pstate=0 */
+#define HBM_CH5_PSTATE1_AWORD_BASE 0x00026000u /* pstate=1 */
+#define HBM_CH5_PSTATE1_DWORD0_BASE 0x00026100u /* pstate=1 */
+#define HBM_CH5_PSTATE1_DWORD1_BASE 0x00026200u /* pstate=1 */
+#define HBM_CH5_PSTATE2_AWORD_BASE 0x00046000u /* pstate=2 */
+#define HBM_CH5_PSTATE2_DWORD0_BASE 0x00046100u /* pstate=2 */
+#define HBM_CH5_PSTATE2_DWORD1_BASE 0x00046200u /* pstate=2 */
+#define HBM_CH5_PSTATE3_AWORD_BASE 0x00066000u /* pstate=3 */
+#define HBM_CH5_PSTATE3_DWORD0_BASE 0x00066100u /* pstate=3 */
+#define HBM_CH5_PSTATE3_DWORD1_BASE 0x00066200u /* pstate=3 */
+#define HBM_CH6_PSTATE0_AWORD_BASE 0x00007000u /* pstate=0 */
+#define HBM_CH6_PSTATE0_DWORD0_BASE 0x00007100u /* pstate=0 */
+#define HBM_CH6_PSTATE0_DWORD1_BASE 0x00007200u /* pstate=0 */
+#define HBM_CH6_PSTATE1_AWORD_BASE 0x00027000u /* pstate=1 */
+#define HBM_CH6_PSTATE1_DWORD0_BASE 0x00027100u /* pstate=1 */
+#define HBM_CH6_PSTATE1_DWORD1_BASE 0x00027200u /* pstate=1 */
+#define HBM_CH6_PSTATE2_AWORD_BASE 0x00047000u /* pstate=2 */
+#define HBM_CH6_PSTATE2_DWORD0_BASE 0x00047100u /* pstate=2 */
+#define HBM_CH6_PSTATE2_DWORD1_BASE 0x00047200u /* pstate=2 */
+#define HBM_CH6_PSTATE3_AWORD_BASE 0x00067000u /* pstate=3 */
+#define HBM_CH6_PSTATE3_DWORD0_BASE 0x00067100u /* pstate=3 */
+#define HBM_CH6_PSTATE3_DWORD1_BASE 0x00067200u /* pstate=3 */
+#define HBM_CH7_PSTATE0_AWORD_BASE 0x00008000u /* pstate=0 */
+#define HBM_CH7_PSTATE0_DWORD0_BASE 0x00008100u /* pstate=0 */
+#define HBM_CH7_PSTATE0_DWORD1_BASE 0x00008200u /* pstate=0 */
+#define HBM_CH7_PSTATE1_AWORD_BASE 0x00028000u /* pstate=1 */
+#define HBM_CH7_PSTATE1_DWORD0_BASE 0x00028100u /* pstate=1 */
+#define HBM_CH7_PSTATE1_DWORD1_BASE 0x00028200u /* pstate=1 */
+#define HBM_CH7_PSTATE2_AWORD_BASE 0x00048000u /* pstate=2 */
+#define HBM_CH7_PSTATE2_DWORD0_BASE 0x00048100u /* pstate=2 */
+#define HBM_CH7_PSTATE2_DWORD1_BASE 0x00048200u /* pstate=2 */
+#define HBM_CH7_PSTATE3_AWORD_BASE 0x00068000u /* pstate=3 */
+#define HBM_CH7_PSTATE3_DWORD0_BASE 0x00068100u /* pstate=3 */
+#define HBM_CH7_PSTATE3_DWORD1_BASE 0x00068200u /* pstate=3 */
+#define HBM_CH8_PSTATE0_AWORD_BASE 0x00009000u /* pstate=0 */
+#define HBM_CH8_PSTATE0_DWORD0_BASE 0x00009100u /* pstate=0 */
+#define HBM_CH8_PSTATE0_DWORD1_BASE 0x00009200u /* pstate=0 */
+#define HBM_CH8_PSTATE1_AWORD_BASE 0x00029000u /* pstate=1 */
+#define HBM_CH8_PSTATE1_DWORD0_BASE 0x00029100u /* pstate=1 */
+#define HBM_CH8_PSTATE1_DWORD1_BASE 0x00029200u /* pstate=1 */
+#define HBM_CH8_PSTATE2_AWORD_BASE 0x00049000u /* pstate=2 */
+#define HBM_CH8_PSTATE2_DWORD0_BASE 0x00049100u /* pstate=2 */
+#define HBM_CH8_PSTATE2_DWORD1_BASE 0x00049200u /* pstate=2 */
+#define HBM_CH8_PSTATE3_AWORD_BASE 0x00069000u /* pstate=3 */
+#define HBM_CH8_PSTATE3_DWORD0_BASE 0x00069100u /* pstate=3 */
+#define HBM_CH8_PSTATE3_DWORD1_BASE 0x00069200u /* pstate=3 */
+#define HBM_CH9_PSTATE0_AWORD_BASE 0x0000a000u /* pstate=0 */
+#define HBM_CH9_PSTATE0_DWORD0_BASE 0x0000a100u /* pstate=0 */
+#define HBM_CH9_PSTATE0_DWORD1_BASE 0x0000a200u /* pstate=0 */
+#define HBM_CH9_PSTATE1_AWORD_BASE 0x0002a000u /* pstate=1 */
+#define HBM_CH9_PSTATE1_DWORD0_BASE 0x0002a100u /* pstate=1 */
+#define HBM_CH9_PSTATE1_DWORD1_BASE 0x0002a200u /* pstate=1 */
+#define HBM_CH9_PSTATE2_AWORD_BASE 0x0004a000u /* pstate=2 */
+#define HBM_CH9_PSTATE2_DWORD0_BASE 0x0004a100u /* pstate=2 */
+#define HBM_CH9_PSTATE2_DWORD1_BASE 0x0004a200u /* pstate=2 */
+#define HBM_CH9_PSTATE3_AWORD_BASE 0x0006a000u /* pstate=3 */
+#define HBM_CH9_PSTATE3_DWORD0_BASE 0x0006a100u /* pstate=3 */
+#define HBM_CH9_PSTATE3_DWORD1_BASE 0x0006a200u /* pstate=3 */
+#define HBM_CH10_PSTATE0_AWORD_BASE 0x0000b000u /* pstate=0 */
+#define HBM_CH10_PSTATE0_DWORD0_BASE 0x0000b100u /* pstate=0 */
+#define HBM_CH10_PSTATE0_DWORD1_BASE 0x0000b200u /* pstate=0 */
+#define HBM_CH10_PSTATE1_AWORD_BASE 0x0002b000u /* pstate=1 */
+#define HBM_CH10_PSTATE1_DWORD0_BASE 0x0002b100u /* pstate=1 */
+#define HBM_CH10_PSTATE1_DWORD1_BASE 0x0002b200u /* pstate=1 */
+#define HBM_CH10_PSTATE2_AWORD_BASE 0x0004b000u /* pstate=2 */
+#define HBM_CH10_PSTATE2_DWORD0_BASE 0x0004b100u /* pstate=2 */
+#define HBM_CH10_PSTATE2_DWORD1_BASE 0x0004b200u /* pstate=2 */
+#define HBM_CH10_PSTATE3_AWORD_BASE 0x0006b000u /* pstate=3 */
+#define HBM_CH10_PSTATE3_DWORD0_BASE 0x0006b100u /* pstate=3 */
+#define HBM_CH10_PSTATE3_DWORD1_BASE 0x0006b200u /* pstate=3 */
+#define HBM_CH11_PSTATE0_AWORD_BASE 0x0000c000u /* pstate=0 */
+#define HBM_CH11_PSTATE0_DWORD0_BASE 0x0000c100u /* pstate=0 */
+#define HBM_CH11_PSTATE0_DWORD1_BASE 0x0000c200u /* pstate=0 */
+#define HBM_CH11_PSTATE1_AWORD_BASE 0x0002c000u /* pstate=1 */
+#define HBM_CH11_PSTATE1_DWORD0_BASE 0x0002c100u /* pstate=1 */
+#define HBM_CH11_PSTATE1_DWORD1_BASE 0x0002c200u /* pstate=1 */
+#define HBM_CH11_PSTATE2_AWORD_BASE 0x0004c000u /* pstate=2 */
+#define HBM_CH11_PSTATE2_DWORD0_BASE 0x0004c100u /* pstate=2 */
+#define HBM_CH11_PSTATE2_DWORD1_BASE 0x0004c200u /* pstate=2 */
+#define HBM_CH11_PSTATE3_AWORD_BASE 0x0006c000u /* pstate=3 */
+#define HBM_CH11_PSTATE3_DWORD0_BASE 0x0006c100u /* pstate=3 */
+#define HBM_CH11_PSTATE3_DWORD1_BASE 0x0006c200u /* pstate=3 */
+#define HBM_CH12_PSTATE0_AWORD_BASE 0x0000d000u /* pstate=0 */
+#define HBM_CH12_PSTATE0_DWORD0_BASE 0x0000d100u /* pstate=0 */
+#define HBM_CH12_PSTATE0_DWORD1_BASE 0x0000d200u /* pstate=0 */
+#define HBM_CH12_PSTATE1_AWORD_BASE 0x0002d000u /* pstate=1 */
+#define HBM_CH12_PSTATE1_DWORD0_BASE 0x0002d100u /* pstate=1 */
+#define HBM_CH12_PSTATE1_DWORD1_BASE 0x0002d200u /* pstate=1 */
+#define HBM_CH12_PSTATE2_AWORD_BASE 0x0004d000u /* pstate=2 */
+#define HBM_CH12_PSTATE2_DWORD0_BASE 0x0004d100u /* pstate=2 */
+#define HBM_CH12_PSTATE2_DWORD1_BASE 0x0004d200u /* pstate=2 */
+#define HBM_CH12_PSTATE3_AWORD_BASE 0x0006d000u /* pstate=3 */
+#define HBM_CH12_PSTATE3_DWORD0_BASE 0x0006d100u /* pstate=3 */
+#define HBM_CH12_PSTATE3_DWORD1_BASE 0x0006d200u /* pstate=3 */
+#define HBM_CH13_PSTATE0_AWORD_BASE 0x0000e000u /* pstate=0 */
+#define HBM_CH13_PSTATE0_DWORD0_BASE 0x0000e100u /* pstate=0 */
+#define HBM_CH13_PSTATE0_DWORD1_BASE 0x0000e200u /* pstate=0 */
+#define HBM_CH13_PSTATE1_AWORD_BASE 0x0002e000u /* pstate=1 */
+#define HBM_CH13_PSTATE1_DWORD0_BASE 0x0002e100u /* pstate=1 */
+#define HBM_CH13_PSTATE1_DWORD1_BASE 0x0002e200u /* pstate=1 */
+#define HBM_CH13_PSTATE2_AWORD_BASE 0x0004e000u /* pstate=2 */
+#define HBM_CH13_PSTATE2_DWORD0_BASE 0x0004e100u /* pstate=2 */
+#define HBM_CH13_PSTATE2_DWORD1_BASE 0x0004e200u /* pstate=2 */
+#define HBM_CH13_PSTATE3_AWORD_BASE 0x0006e000u /* pstate=3 */
+#define HBM_CH13_PSTATE3_DWORD0_BASE 0x0006e100u /* pstate=3 */
+#define HBM_CH13_PSTATE3_DWORD1_BASE 0x0006e200u /* pstate=3 */
+#define HBM_CH14_PSTATE0_AWORD_BASE 0x0000f000u /* pstate=0 */
+#define HBM_CH14_PSTATE0_DWORD0_BASE 0x0000f100u /* pstate=0 */
+#define HBM_CH14_PSTATE0_DWORD1_BASE 0x0000f200u /* pstate=0 */
+#define HBM_CH14_PSTATE1_AWORD_BASE 0x0002f000u /* pstate=1 */
+#define HBM_CH14_PSTATE1_DWORD0_BASE 0x0002f100u /* pstate=1 */
+#define HBM_CH14_PSTATE1_DWORD1_BASE 0x0002f200u /* pstate=1 */
+#define HBM_CH14_PSTATE2_AWORD_BASE 0x0004f000u /* pstate=2 */
+#define HBM_CH14_PSTATE2_DWORD0_BASE 0x0004f100u /* pstate=2 */
+#define HBM_CH14_PSTATE2_DWORD1_BASE 0x0004f200u /* pstate=2 */
+#define HBM_CH14_PSTATE3_AWORD_BASE 0x0006f000u /* pstate=3 */
+#define HBM_CH14_PSTATE3_DWORD0_BASE 0x0006f100u /* pstate=3 */
+#define HBM_CH14_PSTATE3_DWORD1_BASE 0x0006f200u /* pstate=3 */
+#define HBM_CH15_PSTATE0_AWORD_BASE 0x00010000u /* pstate=0 */
+#define HBM_CH15_PSTATE0_DWORD0_BASE 0x00010100u /* pstate=0 */
+#define HBM_CH15_PSTATE0_DWORD1_BASE 0x00010200u /* pstate=0 */
+#define HBM_CH15_PSTATE1_AWORD_BASE 0x00030000u /* pstate=1 */
+#define HBM_CH15_PSTATE1_DWORD0_BASE 0x00030100u /* pstate=1 */
+#define HBM_CH15_PSTATE1_DWORD1_BASE 0x00030200u /* pstate=1 */
+#define HBM_CH15_PSTATE2_AWORD_BASE 0x00050000u /* pstate=2 */
+#define HBM_CH15_PSTATE2_DWORD0_BASE 0x00050100u /* pstate=2 */
+#define HBM_CH15_PSTATE2_DWORD1_BASE 0x00050200u /* pstate=2 */
+#define HBM_CH15_PSTATE3_AWORD_BASE 0x00070000u /* pstate=3 */
+#define HBM_CH15_PSTATE3_DWORD0_BASE 0x00070100u /* pstate=3 */
+#define HBM_CH15_PSTATE3_DWORD1_BASE 0x00070200u /* pstate=3 */
+#define HBM_CH0_PSTATE0_DWORD_BCAST_BASE 0x00001300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH0_PSTATE1_DWORD_BCAST_BASE 0x00021300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH0_PSTATE2_DWORD_BCAST_BASE 0x00041300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH0_PSTATE3_DWORD_BCAST_BASE 0x00061300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH1_PSTATE0_DWORD_BCAST_BASE 0x00002300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH1_PSTATE1_DWORD_BCAST_BASE 0x00022300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH1_PSTATE2_DWORD_BCAST_BASE 0x00042300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH1_PSTATE3_DWORD_BCAST_BASE 0x00062300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH2_PSTATE0_DWORD_BCAST_BASE 0x00003300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH2_PSTATE1_DWORD_BCAST_BASE 0x00023300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH2_PSTATE2_DWORD_BCAST_BASE 0x00043300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH2_PSTATE3_DWORD_BCAST_BASE 0x00063300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH3_PSTATE0_DWORD_BCAST_BASE 0x00004300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH3_PSTATE1_DWORD_BCAST_BASE 0x00024300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH3_PSTATE2_DWORD_BCAST_BASE 0x00044300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH3_PSTATE3_DWORD_BCAST_BASE 0x00064300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH4_PSTATE0_DWORD_BCAST_BASE 0x00005300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH4_PSTATE1_DWORD_BCAST_BASE 0x00025300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH4_PSTATE2_DWORD_BCAST_BASE 0x00045300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH4_PSTATE3_DWORD_BCAST_BASE 0x00065300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH5_PSTATE0_DWORD_BCAST_BASE 0x00006300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH5_PSTATE1_DWORD_BCAST_BASE 0x00026300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH5_PSTATE2_DWORD_BCAST_BASE 0x00046300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH5_PSTATE3_DWORD_BCAST_BASE 0x00066300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH6_PSTATE0_DWORD_BCAST_BASE 0x00007300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH6_PSTATE1_DWORD_BCAST_BASE 0x00027300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH6_PSTATE2_DWORD_BCAST_BASE 0x00047300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH6_PSTATE3_DWORD_BCAST_BASE 0x00067300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH7_PSTATE0_DWORD_BCAST_BASE 0x00008300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH7_PSTATE1_DWORD_BCAST_BASE 0x00028300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH7_PSTATE2_DWORD_BCAST_BASE 0x00048300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH7_PSTATE3_DWORD_BCAST_BASE 0x00068300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH8_PSTATE0_DWORD_BCAST_BASE 0x00009300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH8_PSTATE1_DWORD_BCAST_BASE 0x00029300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH8_PSTATE2_DWORD_BCAST_BASE 0x00049300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH8_PSTATE3_DWORD_BCAST_BASE 0x00069300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH9_PSTATE0_DWORD_BCAST_BASE 0x0000a300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH9_PSTATE1_DWORD_BCAST_BASE 0x0002a300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH9_PSTATE2_DWORD_BCAST_BASE 0x0004a300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH9_PSTATE3_DWORD_BCAST_BASE 0x0006a300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH10_PSTATE0_DWORD_BCAST_BASE 0x0000b300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH10_PSTATE1_DWORD_BCAST_BASE 0x0002b300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH10_PSTATE2_DWORD_BCAST_BASE 0x0004b300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH10_PSTATE3_DWORD_BCAST_BASE 0x0006b300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH11_PSTATE0_DWORD_BCAST_BASE 0x0000c300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH11_PSTATE1_DWORD_BCAST_BASE 0x0002c300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH11_PSTATE2_DWORD_BCAST_BASE 0x0004c300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH11_PSTATE3_DWORD_BCAST_BASE 0x0006c300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH12_PSTATE0_DWORD_BCAST_BASE 0x0000d300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH12_PSTATE1_DWORD_BCAST_BASE 0x0002d300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH12_PSTATE2_DWORD_BCAST_BASE 0x0004d300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH12_PSTATE3_DWORD_BCAST_BASE 0x0006d300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH13_PSTATE0_DWORD_BCAST_BASE 0x0000e300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH13_PSTATE1_DWORD_BCAST_BASE 0x0002e300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH13_PSTATE2_DWORD_BCAST_BASE 0x0004e300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH13_PSTATE3_DWORD_BCAST_BASE 0x0006e300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH14_PSTATE0_DWORD_BCAST_BASE 0x0000f300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH14_PSTATE1_DWORD_BCAST_BASE 0x0002f300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH14_PSTATE2_DWORD_BCAST_BASE 0x0004f300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH14_PSTATE3_DWORD_BCAST_BASE 0x0006f300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH15_PSTATE0_DWORD_BCAST_BASE 0x00010300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=0 */
+#define HBM_CH15_PSTATE1_DWORD_BCAST_BASE 0x00030300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=1 */
+#define HBM_CH15_PSTATE2_DWORD_BCAST_BASE 0x00050300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=2 */
+#define HBM_CH15_PSTATE3_DWORD_BCAST_BASE 0x00070300u /* broadcast dword_all: one write at this window hits every subscriber; pstate=3 */
+#define HBM_CH_BCAST_BASE 0x00011000u /* broadcast ch_all: one write at this window hits every subscriber */
 
+#define HBM_CENTER_ID_OFFSET 0x00000000u
+#define HBM_CENTER_CH_EN_OFFSET 0x00000004u
+#define HBM_CENTER_STATUS_OFFSET 0x00000008u
 #define HBM_AWORD_ID_OFFSET 0x00000000u
 #define HBM_AWORD_STATUS_OFFSET 0x00000004u
 #define HBM_AWORD_TIMING_OFFSET 0x00000008u
@@ -277,6 +282,10 @@
 #define HBM_DWORD_TRAIN_OFFSET 0x00000010u
 #define HBM_DWORD_VREF_OFFSET 0x00000008u
 #define HBM_DWORD_EQ_OFFSET 0x0000000cu
+
+#define HBM_CENTER_ID (HBM_CENTER_BASE + HBM_CENTER_ID_OFFSET)
+#define HBM_CENTER_CH_EN (HBM_CENTER_BASE + HBM_CENTER_CH_EN_OFFSET)
+#define HBM_CENTER_STATUS (HBM_CENTER_BASE + HBM_CENTER_STATUS_OFFSET)
 
 #define HBM_CH0_PSTATE0_AWORD_ID (HBM_CH0_PSTATE0_AWORD_BASE + HBM_AWORD_ID_OFFSET) /* pstate=0 */
 #define HBM_CH0_PSTATE0_AWORD_STATUS (HBM_CH0_PSTATE0_AWORD_BASE + HBM_AWORD_STATUS_OFFSET) /* pstate=0 */
@@ -1366,7 +1375,14 @@
 #define HBM_CH15_PSTATE3_DWORD1_VREF (HBM_CH15_PSTATE3_DWORD1_BASE + HBM_DWORD_VREF_OFFSET) /* pstate=3; cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 #define HBM_CH15_PSTATE3_DWORD1_EQ (HBM_CH15_PSTATE3_DWORD1_BASE + HBM_DWORD_EQ_OFFSET) /* pstate=3; cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 
-/* Overlay ch0_pstate0_aword @ 0x00000000u (aword; pstate=0) */
+/* Overlay center @ 0x00000000u (center) */
+struct hbm_center {
+	union CENTER_ID id; /* +0x00000000u */
+	union CENTER_CH_EN ch_en; /* +0x00000004u */
+	union CENTER_STATUS status; /* +0x00000008u */
+};
+
+/* Overlay ch0_pstate0_aword @ 0x00001000u (aword; pstate=0) */
 struct hbm_ch0_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1374,7 +1390,7 @@ struct hbm_ch0_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch0_pstate0_dword0 @ 0x00000100u (dword; pstate=0) */
+/* Overlay ch0_pstate0_dword0 @ 0x00001100u (dword; pstate=0) */
 struct hbm_ch0_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1383,7 +1399,7 @@ struct hbm_ch0_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch0_pstate0_dword1 @ 0x00000200u (dword; pstate=0) */
+/* Overlay ch0_pstate0_dword1 @ 0x00001200u (dword; pstate=0) */
 struct hbm_ch0_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1392,7 +1408,7 @@ struct hbm_ch0_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch0_pstate1_aword @ 0x00020000u (aword; pstate=1) */
+/* Overlay ch0_pstate1_aword @ 0x00021000u (aword; pstate=1) */
 struct hbm_ch0_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1400,7 +1416,7 @@ struct hbm_ch0_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch0_pstate1_dword0 @ 0x00020100u (dword; pstate=1) */
+/* Overlay ch0_pstate1_dword0 @ 0x00021100u (dword; pstate=1) */
 struct hbm_ch0_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1409,7 +1425,7 @@ struct hbm_ch0_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch0_pstate1_dword1 @ 0x00020200u (dword; pstate=1) */
+/* Overlay ch0_pstate1_dword1 @ 0x00021200u (dword; pstate=1) */
 struct hbm_ch0_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1418,7 +1434,7 @@ struct hbm_ch0_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch0_pstate2_aword @ 0x00040000u (aword; pstate=2) */
+/* Overlay ch0_pstate2_aword @ 0x00041000u (aword; pstate=2) */
 struct hbm_ch0_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1426,7 +1442,7 @@ struct hbm_ch0_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch0_pstate2_dword0 @ 0x00040100u (dword; pstate=2) */
+/* Overlay ch0_pstate2_dword0 @ 0x00041100u (dword; pstate=2) */
 struct hbm_ch0_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1435,7 +1451,7 @@ struct hbm_ch0_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch0_pstate2_dword1 @ 0x00040200u (dword; pstate=2) */
+/* Overlay ch0_pstate2_dword1 @ 0x00041200u (dword; pstate=2) */
 struct hbm_ch0_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1444,7 +1460,7 @@ struct hbm_ch0_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch0_pstate3_aword @ 0x00060000u (aword; pstate=3) */
+/* Overlay ch0_pstate3_aword @ 0x00061000u (aword; pstate=3) */
 struct hbm_ch0_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1452,7 +1468,7 @@ struct hbm_ch0_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch0_pstate3_dword0 @ 0x00060100u (dword; pstate=3) */
+/* Overlay ch0_pstate3_dword0 @ 0x00061100u (dword; pstate=3) */
 struct hbm_ch0_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1461,7 +1477,7 @@ struct hbm_ch0_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch0_pstate3_dword1 @ 0x00060200u (dword; pstate=3) */
+/* Overlay ch0_pstate3_dword1 @ 0x00061200u (dword; pstate=3) */
 struct hbm_ch0_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1470,7 +1486,7 @@ struct hbm_ch0_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch1_pstate0_aword @ 0x00001000u (aword; pstate=0) */
+/* Overlay ch1_pstate0_aword @ 0x00002000u (aword; pstate=0) */
 struct hbm_ch1_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1478,7 +1494,7 @@ struct hbm_ch1_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch1_pstate0_dword0 @ 0x00001100u (dword; pstate=0) */
+/* Overlay ch1_pstate0_dword0 @ 0x00002100u (dword; pstate=0) */
 struct hbm_ch1_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1487,7 +1503,7 @@ struct hbm_ch1_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch1_pstate0_dword1 @ 0x00001200u (dword; pstate=0) */
+/* Overlay ch1_pstate0_dword1 @ 0x00002200u (dword; pstate=0) */
 struct hbm_ch1_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1496,7 +1512,7 @@ struct hbm_ch1_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch1_pstate1_aword @ 0x00021000u (aword; pstate=1) */
+/* Overlay ch1_pstate1_aword @ 0x00022000u (aword; pstate=1) */
 struct hbm_ch1_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1504,7 +1520,7 @@ struct hbm_ch1_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch1_pstate1_dword0 @ 0x00021100u (dword; pstate=1) */
+/* Overlay ch1_pstate1_dword0 @ 0x00022100u (dword; pstate=1) */
 struct hbm_ch1_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1513,7 +1529,7 @@ struct hbm_ch1_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch1_pstate1_dword1 @ 0x00021200u (dword; pstate=1) */
+/* Overlay ch1_pstate1_dword1 @ 0x00022200u (dword; pstate=1) */
 struct hbm_ch1_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1522,7 +1538,7 @@ struct hbm_ch1_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch1_pstate2_aword @ 0x00041000u (aword; pstate=2) */
+/* Overlay ch1_pstate2_aword @ 0x00042000u (aword; pstate=2) */
 struct hbm_ch1_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1530,7 +1546,7 @@ struct hbm_ch1_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch1_pstate2_dword0 @ 0x00041100u (dword; pstate=2) */
+/* Overlay ch1_pstate2_dword0 @ 0x00042100u (dword; pstate=2) */
 struct hbm_ch1_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1539,7 +1555,7 @@ struct hbm_ch1_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch1_pstate2_dword1 @ 0x00041200u (dword; pstate=2) */
+/* Overlay ch1_pstate2_dword1 @ 0x00042200u (dword; pstate=2) */
 struct hbm_ch1_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1548,7 +1564,7 @@ struct hbm_ch1_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch1_pstate3_aword @ 0x00061000u (aword; pstate=3) */
+/* Overlay ch1_pstate3_aword @ 0x00062000u (aword; pstate=3) */
 struct hbm_ch1_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1556,7 +1572,7 @@ struct hbm_ch1_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch1_pstate3_dword0 @ 0x00061100u (dword; pstate=3) */
+/* Overlay ch1_pstate3_dword0 @ 0x00062100u (dword; pstate=3) */
 struct hbm_ch1_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1565,7 +1581,7 @@ struct hbm_ch1_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch1_pstate3_dword1 @ 0x00061200u (dword; pstate=3) */
+/* Overlay ch1_pstate3_dword1 @ 0x00062200u (dword; pstate=3) */
 struct hbm_ch1_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1574,7 +1590,7 @@ struct hbm_ch1_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch2_pstate0_aword @ 0x00002000u (aword; pstate=0) */
+/* Overlay ch2_pstate0_aword @ 0x00003000u (aword; pstate=0) */
 struct hbm_ch2_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1582,7 +1598,7 @@ struct hbm_ch2_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch2_pstate0_dword0 @ 0x00002100u (dword; pstate=0) */
+/* Overlay ch2_pstate0_dword0 @ 0x00003100u (dword; pstate=0) */
 struct hbm_ch2_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1591,7 +1607,7 @@ struct hbm_ch2_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch2_pstate0_dword1 @ 0x00002200u (dword; pstate=0) */
+/* Overlay ch2_pstate0_dword1 @ 0x00003200u (dword; pstate=0) */
 struct hbm_ch2_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1600,7 +1616,7 @@ struct hbm_ch2_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch2_pstate1_aword @ 0x00022000u (aword; pstate=1) */
+/* Overlay ch2_pstate1_aword @ 0x00023000u (aword; pstate=1) */
 struct hbm_ch2_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1608,7 +1624,7 @@ struct hbm_ch2_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch2_pstate1_dword0 @ 0x00022100u (dword; pstate=1) */
+/* Overlay ch2_pstate1_dword0 @ 0x00023100u (dword; pstate=1) */
 struct hbm_ch2_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1617,7 +1633,7 @@ struct hbm_ch2_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch2_pstate1_dword1 @ 0x00022200u (dword; pstate=1) */
+/* Overlay ch2_pstate1_dword1 @ 0x00023200u (dword; pstate=1) */
 struct hbm_ch2_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1626,7 +1642,7 @@ struct hbm_ch2_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch2_pstate2_aword @ 0x00042000u (aword; pstate=2) */
+/* Overlay ch2_pstate2_aword @ 0x00043000u (aword; pstate=2) */
 struct hbm_ch2_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1634,7 +1650,7 @@ struct hbm_ch2_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch2_pstate2_dword0 @ 0x00042100u (dword; pstate=2) */
+/* Overlay ch2_pstate2_dword0 @ 0x00043100u (dword; pstate=2) */
 struct hbm_ch2_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1643,7 +1659,7 @@ struct hbm_ch2_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch2_pstate2_dword1 @ 0x00042200u (dword; pstate=2) */
+/* Overlay ch2_pstate2_dword1 @ 0x00043200u (dword; pstate=2) */
 struct hbm_ch2_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1652,7 +1668,7 @@ struct hbm_ch2_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch2_pstate3_aword @ 0x00062000u (aword; pstate=3) */
+/* Overlay ch2_pstate3_aword @ 0x00063000u (aword; pstate=3) */
 struct hbm_ch2_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1660,7 +1676,7 @@ struct hbm_ch2_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch2_pstate3_dword0 @ 0x00062100u (dword; pstate=3) */
+/* Overlay ch2_pstate3_dword0 @ 0x00063100u (dword; pstate=3) */
 struct hbm_ch2_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1669,7 +1685,7 @@ struct hbm_ch2_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch2_pstate3_dword1 @ 0x00062200u (dword; pstate=3) */
+/* Overlay ch2_pstate3_dword1 @ 0x00063200u (dword; pstate=3) */
 struct hbm_ch2_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1678,7 +1694,7 @@ struct hbm_ch2_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch3_pstate0_aword @ 0x00003000u (aword; pstate=0) */
+/* Overlay ch3_pstate0_aword @ 0x00004000u (aword; pstate=0) */
 struct hbm_ch3_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1686,7 +1702,7 @@ struct hbm_ch3_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch3_pstate0_dword0 @ 0x00003100u (dword; pstate=0) */
+/* Overlay ch3_pstate0_dword0 @ 0x00004100u (dword; pstate=0) */
 struct hbm_ch3_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1695,7 +1711,7 @@ struct hbm_ch3_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch3_pstate0_dword1 @ 0x00003200u (dword; pstate=0) */
+/* Overlay ch3_pstate0_dword1 @ 0x00004200u (dword; pstate=0) */
 struct hbm_ch3_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1704,7 +1720,7 @@ struct hbm_ch3_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch3_pstate1_aword @ 0x00023000u (aword; pstate=1) */
+/* Overlay ch3_pstate1_aword @ 0x00024000u (aword; pstate=1) */
 struct hbm_ch3_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1712,7 +1728,7 @@ struct hbm_ch3_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch3_pstate1_dword0 @ 0x00023100u (dword; pstate=1) */
+/* Overlay ch3_pstate1_dword0 @ 0x00024100u (dword; pstate=1) */
 struct hbm_ch3_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1721,7 +1737,7 @@ struct hbm_ch3_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch3_pstate1_dword1 @ 0x00023200u (dword; pstate=1) */
+/* Overlay ch3_pstate1_dword1 @ 0x00024200u (dword; pstate=1) */
 struct hbm_ch3_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1730,7 +1746,7 @@ struct hbm_ch3_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch3_pstate2_aword @ 0x00043000u (aword; pstate=2) */
+/* Overlay ch3_pstate2_aword @ 0x00044000u (aword; pstate=2) */
 struct hbm_ch3_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1738,7 +1754,7 @@ struct hbm_ch3_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch3_pstate2_dword0 @ 0x00043100u (dword; pstate=2) */
+/* Overlay ch3_pstate2_dword0 @ 0x00044100u (dword; pstate=2) */
 struct hbm_ch3_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1747,7 +1763,7 @@ struct hbm_ch3_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch3_pstate2_dword1 @ 0x00043200u (dword; pstate=2) */
+/* Overlay ch3_pstate2_dword1 @ 0x00044200u (dword; pstate=2) */
 struct hbm_ch3_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1756,7 +1772,7 @@ struct hbm_ch3_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch3_pstate3_aword @ 0x00063000u (aword; pstate=3) */
+/* Overlay ch3_pstate3_aword @ 0x00064000u (aword; pstate=3) */
 struct hbm_ch3_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1764,7 +1780,7 @@ struct hbm_ch3_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch3_pstate3_dword0 @ 0x00063100u (dword; pstate=3) */
+/* Overlay ch3_pstate3_dword0 @ 0x00064100u (dword; pstate=3) */
 struct hbm_ch3_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1773,7 +1789,7 @@ struct hbm_ch3_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch3_pstate3_dword1 @ 0x00063200u (dword; pstate=3) */
+/* Overlay ch3_pstate3_dword1 @ 0x00064200u (dword; pstate=3) */
 struct hbm_ch3_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1782,7 +1798,7 @@ struct hbm_ch3_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch4_pstate0_aword @ 0x00004000u (aword; pstate=0) */
+/* Overlay ch4_pstate0_aword @ 0x00005000u (aword; pstate=0) */
 struct hbm_ch4_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1790,7 +1806,7 @@ struct hbm_ch4_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch4_pstate0_dword0 @ 0x00004100u (dword; pstate=0) */
+/* Overlay ch4_pstate0_dword0 @ 0x00005100u (dword; pstate=0) */
 struct hbm_ch4_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1799,7 +1815,7 @@ struct hbm_ch4_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch4_pstate0_dword1 @ 0x00004200u (dword; pstate=0) */
+/* Overlay ch4_pstate0_dword1 @ 0x00005200u (dword; pstate=0) */
 struct hbm_ch4_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1808,7 +1824,7 @@ struct hbm_ch4_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch4_pstate1_aword @ 0x00024000u (aword; pstate=1) */
+/* Overlay ch4_pstate1_aword @ 0x00025000u (aword; pstate=1) */
 struct hbm_ch4_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1816,7 +1832,7 @@ struct hbm_ch4_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch4_pstate1_dword0 @ 0x00024100u (dword; pstate=1) */
+/* Overlay ch4_pstate1_dword0 @ 0x00025100u (dword; pstate=1) */
 struct hbm_ch4_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1825,7 +1841,7 @@ struct hbm_ch4_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch4_pstate1_dword1 @ 0x00024200u (dword; pstate=1) */
+/* Overlay ch4_pstate1_dword1 @ 0x00025200u (dword; pstate=1) */
 struct hbm_ch4_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1834,7 +1850,7 @@ struct hbm_ch4_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch4_pstate2_aword @ 0x00044000u (aword; pstate=2) */
+/* Overlay ch4_pstate2_aword @ 0x00045000u (aword; pstate=2) */
 struct hbm_ch4_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1842,7 +1858,7 @@ struct hbm_ch4_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch4_pstate2_dword0 @ 0x00044100u (dword; pstate=2) */
+/* Overlay ch4_pstate2_dword0 @ 0x00045100u (dword; pstate=2) */
 struct hbm_ch4_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1851,7 +1867,7 @@ struct hbm_ch4_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch4_pstate2_dword1 @ 0x00044200u (dword; pstate=2) */
+/* Overlay ch4_pstate2_dword1 @ 0x00045200u (dword; pstate=2) */
 struct hbm_ch4_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1860,7 +1876,7 @@ struct hbm_ch4_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch4_pstate3_aword @ 0x00064000u (aword; pstate=3) */
+/* Overlay ch4_pstate3_aword @ 0x00065000u (aword; pstate=3) */
 struct hbm_ch4_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1868,7 +1884,7 @@ struct hbm_ch4_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch4_pstate3_dword0 @ 0x00064100u (dword; pstate=3) */
+/* Overlay ch4_pstate3_dword0 @ 0x00065100u (dword; pstate=3) */
 struct hbm_ch4_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1877,7 +1893,7 @@ struct hbm_ch4_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch4_pstate3_dword1 @ 0x00064200u (dword; pstate=3) */
+/* Overlay ch4_pstate3_dword1 @ 0x00065200u (dword; pstate=3) */
 struct hbm_ch4_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1886,7 +1902,7 @@ struct hbm_ch4_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch5_pstate0_aword @ 0x00005000u (aword; pstate=0) */
+/* Overlay ch5_pstate0_aword @ 0x00006000u (aword; pstate=0) */
 struct hbm_ch5_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1894,7 +1910,7 @@ struct hbm_ch5_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch5_pstate0_dword0 @ 0x00005100u (dword; pstate=0) */
+/* Overlay ch5_pstate0_dword0 @ 0x00006100u (dword; pstate=0) */
 struct hbm_ch5_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1903,7 +1919,7 @@ struct hbm_ch5_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch5_pstate0_dword1 @ 0x00005200u (dword; pstate=0) */
+/* Overlay ch5_pstate0_dword1 @ 0x00006200u (dword; pstate=0) */
 struct hbm_ch5_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1912,7 +1928,7 @@ struct hbm_ch5_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch5_pstate1_aword @ 0x00025000u (aword; pstate=1) */
+/* Overlay ch5_pstate1_aword @ 0x00026000u (aword; pstate=1) */
 struct hbm_ch5_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1920,7 +1936,7 @@ struct hbm_ch5_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch5_pstate1_dword0 @ 0x00025100u (dword; pstate=1) */
+/* Overlay ch5_pstate1_dword0 @ 0x00026100u (dword; pstate=1) */
 struct hbm_ch5_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1929,7 +1945,7 @@ struct hbm_ch5_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch5_pstate1_dword1 @ 0x00025200u (dword; pstate=1) */
+/* Overlay ch5_pstate1_dword1 @ 0x00026200u (dword; pstate=1) */
 struct hbm_ch5_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1938,7 +1954,7 @@ struct hbm_ch5_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch5_pstate2_aword @ 0x00045000u (aword; pstate=2) */
+/* Overlay ch5_pstate2_aword @ 0x00046000u (aword; pstate=2) */
 struct hbm_ch5_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1946,7 +1962,7 @@ struct hbm_ch5_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch5_pstate2_dword0 @ 0x00045100u (dword; pstate=2) */
+/* Overlay ch5_pstate2_dword0 @ 0x00046100u (dword; pstate=2) */
 struct hbm_ch5_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1955,7 +1971,7 @@ struct hbm_ch5_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch5_pstate2_dword1 @ 0x00045200u (dword; pstate=2) */
+/* Overlay ch5_pstate2_dword1 @ 0x00046200u (dword; pstate=2) */
 struct hbm_ch5_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1964,7 +1980,7 @@ struct hbm_ch5_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch5_pstate3_aword @ 0x00065000u (aword; pstate=3) */
+/* Overlay ch5_pstate3_aword @ 0x00066000u (aword; pstate=3) */
 struct hbm_ch5_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1972,7 +1988,7 @@ struct hbm_ch5_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch5_pstate3_dword0 @ 0x00065100u (dword; pstate=3) */
+/* Overlay ch5_pstate3_dword0 @ 0x00066100u (dword; pstate=3) */
 struct hbm_ch5_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1981,7 +1997,7 @@ struct hbm_ch5_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch5_pstate3_dword1 @ 0x00065200u (dword; pstate=3) */
+/* Overlay ch5_pstate3_dword1 @ 0x00066200u (dword; pstate=3) */
 struct hbm_ch5_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -1990,7 +2006,7 @@ struct hbm_ch5_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch6_pstate0_aword @ 0x00006000u (aword; pstate=0) */
+/* Overlay ch6_pstate0_aword @ 0x00007000u (aword; pstate=0) */
 struct hbm_ch6_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -1998,7 +2014,7 @@ struct hbm_ch6_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch6_pstate0_dword0 @ 0x00006100u (dword; pstate=0) */
+/* Overlay ch6_pstate0_dword0 @ 0x00007100u (dword; pstate=0) */
 struct hbm_ch6_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2007,7 +2023,7 @@ struct hbm_ch6_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch6_pstate0_dword1 @ 0x00006200u (dword; pstate=0) */
+/* Overlay ch6_pstate0_dword1 @ 0x00007200u (dword; pstate=0) */
 struct hbm_ch6_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2016,7 +2032,7 @@ struct hbm_ch6_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch6_pstate1_aword @ 0x00026000u (aword; pstate=1) */
+/* Overlay ch6_pstate1_aword @ 0x00027000u (aword; pstate=1) */
 struct hbm_ch6_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2024,7 +2040,7 @@ struct hbm_ch6_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch6_pstate1_dword0 @ 0x00026100u (dword; pstate=1) */
+/* Overlay ch6_pstate1_dword0 @ 0x00027100u (dword; pstate=1) */
 struct hbm_ch6_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2033,7 +2049,7 @@ struct hbm_ch6_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch6_pstate1_dword1 @ 0x00026200u (dword; pstate=1) */
+/* Overlay ch6_pstate1_dword1 @ 0x00027200u (dword; pstate=1) */
 struct hbm_ch6_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2042,7 +2058,7 @@ struct hbm_ch6_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch6_pstate2_aword @ 0x00046000u (aword; pstate=2) */
+/* Overlay ch6_pstate2_aword @ 0x00047000u (aword; pstate=2) */
 struct hbm_ch6_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2050,7 +2066,7 @@ struct hbm_ch6_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch6_pstate2_dword0 @ 0x00046100u (dword; pstate=2) */
+/* Overlay ch6_pstate2_dword0 @ 0x00047100u (dword; pstate=2) */
 struct hbm_ch6_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2059,7 +2075,7 @@ struct hbm_ch6_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch6_pstate2_dword1 @ 0x00046200u (dword; pstate=2) */
+/* Overlay ch6_pstate2_dword1 @ 0x00047200u (dword; pstate=2) */
 struct hbm_ch6_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2068,7 +2084,7 @@ struct hbm_ch6_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch6_pstate3_aword @ 0x00066000u (aword; pstate=3) */
+/* Overlay ch6_pstate3_aword @ 0x00067000u (aword; pstate=3) */
 struct hbm_ch6_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2076,7 +2092,7 @@ struct hbm_ch6_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch6_pstate3_dword0 @ 0x00066100u (dword; pstate=3) */
+/* Overlay ch6_pstate3_dword0 @ 0x00067100u (dword; pstate=3) */
 struct hbm_ch6_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2085,7 +2101,7 @@ struct hbm_ch6_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch6_pstate3_dword1 @ 0x00066200u (dword; pstate=3) */
+/* Overlay ch6_pstate3_dword1 @ 0x00067200u (dword; pstate=3) */
 struct hbm_ch6_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2094,7 +2110,7 @@ struct hbm_ch6_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch7_pstate0_aword @ 0x00007000u (aword; pstate=0) */
+/* Overlay ch7_pstate0_aword @ 0x00008000u (aword; pstate=0) */
 struct hbm_ch7_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2102,7 +2118,7 @@ struct hbm_ch7_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch7_pstate0_dword0 @ 0x00007100u (dword; pstate=0) */
+/* Overlay ch7_pstate0_dword0 @ 0x00008100u (dword; pstate=0) */
 struct hbm_ch7_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2111,7 +2127,7 @@ struct hbm_ch7_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch7_pstate0_dword1 @ 0x00007200u (dword; pstate=0) */
+/* Overlay ch7_pstate0_dword1 @ 0x00008200u (dword; pstate=0) */
 struct hbm_ch7_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2120,7 +2136,7 @@ struct hbm_ch7_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch7_pstate1_aword @ 0x00027000u (aword; pstate=1) */
+/* Overlay ch7_pstate1_aword @ 0x00028000u (aword; pstate=1) */
 struct hbm_ch7_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2128,7 +2144,7 @@ struct hbm_ch7_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch7_pstate1_dword0 @ 0x00027100u (dword; pstate=1) */
+/* Overlay ch7_pstate1_dword0 @ 0x00028100u (dword; pstate=1) */
 struct hbm_ch7_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2137,7 +2153,7 @@ struct hbm_ch7_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch7_pstate1_dword1 @ 0x00027200u (dword; pstate=1) */
+/* Overlay ch7_pstate1_dword1 @ 0x00028200u (dword; pstate=1) */
 struct hbm_ch7_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2146,7 +2162,7 @@ struct hbm_ch7_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch7_pstate2_aword @ 0x00047000u (aword; pstate=2) */
+/* Overlay ch7_pstate2_aword @ 0x00048000u (aword; pstate=2) */
 struct hbm_ch7_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2154,7 +2170,7 @@ struct hbm_ch7_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch7_pstate2_dword0 @ 0x00047100u (dword; pstate=2) */
+/* Overlay ch7_pstate2_dword0 @ 0x00048100u (dword; pstate=2) */
 struct hbm_ch7_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2163,7 +2179,7 @@ struct hbm_ch7_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch7_pstate2_dword1 @ 0x00047200u (dword; pstate=2) */
+/* Overlay ch7_pstate2_dword1 @ 0x00048200u (dword; pstate=2) */
 struct hbm_ch7_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2172,7 +2188,7 @@ struct hbm_ch7_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch7_pstate3_aword @ 0x00067000u (aword; pstate=3) */
+/* Overlay ch7_pstate3_aword @ 0x00068000u (aword; pstate=3) */
 struct hbm_ch7_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2180,7 +2196,7 @@ struct hbm_ch7_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch7_pstate3_dword0 @ 0x00067100u (dword; pstate=3) */
+/* Overlay ch7_pstate3_dword0 @ 0x00068100u (dword; pstate=3) */
 struct hbm_ch7_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2189,7 +2205,7 @@ struct hbm_ch7_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch7_pstate3_dword1 @ 0x00067200u (dword; pstate=3) */
+/* Overlay ch7_pstate3_dword1 @ 0x00068200u (dword; pstate=3) */
 struct hbm_ch7_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2198,7 +2214,7 @@ struct hbm_ch7_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch8_pstate0_aword @ 0x00008000u (aword; pstate=0) */
+/* Overlay ch8_pstate0_aword @ 0x00009000u (aword; pstate=0) */
 struct hbm_ch8_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2206,7 +2222,7 @@ struct hbm_ch8_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch8_pstate0_dword0 @ 0x00008100u (dword; pstate=0) */
+/* Overlay ch8_pstate0_dword0 @ 0x00009100u (dword; pstate=0) */
 struct hbm_ch8_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2215,7 +2231,7 @@ struct hbm_ch8_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch8_pstate0_dword1 @ 0x00008200u (dword; pstate=0) */
+/* Overlay ch8_pstate0_dword1 @ 0x00009200u (dword; pstate=0) */
 struct hbm_ch8_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2224,7 +2240,7 @@ struct hbm_ch8_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch8_pstate1_aword @ 0x00028000u (aword; pstate=1) */
+/* Overlay ch8_pstate1_aword @ 0x00029000u (aword; pstate=1) */
 struct hbm_ch8_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2232,7 +2248,7 @@ struct hbm_ch8_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch8_pstate1_dword0 @ 0x00028100u (dword; pstate=1) */
+/* Overlay ch8_pstate1_dword0 @ 0x00029100u (dword; pstate=1) */
 struct hbm_ch8_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2241,7 +2257,7 @@ struct hbm_ch8_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch8_pstate1_dword1 @ 0x00028200u (dword; pstate=1) */
+/* Overlay ch8_pstate1_dword1 @ 0x00029200u (dword; pstate=1) */
 struct hbm_ch8_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2250,7 +2266,7 @@ struct hbm_ch8_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch8_pstate2_aword @ 0x00048000u (aword; pstate=2) */
+/* Overlay ch8_pstate2_aword @ 0x00049000u (aword; pstate=2) */
 struct hbm_ch8_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2258,7 +2274,7 @@ struct hbm_ch8_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch8_pstate2_dword0 @ 0x00048100u (dword; pstate=2) */
+/* Overlay ch8_pstate2_dword0 @ 0x00049100u (dword; pstate=2) */
 struct hbm_ch8_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2267,7 +2283,7 @@ struct hbm_ch8_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch8_pstate2_dword1 @ 0x00048200u (dword; pstate=2) */
+/* Overlay ch8_pstate2_dword1 @ 0x00049200u (dword; pstate=2) */
 struct hbm_ch8_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2276,7 +2292,7 @@ struct hbm_ch8_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch8_pstate3_aword @ 0x00068000u (aword; pstate=3) */
+/* Overlay ch8_pstate3_aword @ 0x00069000u (aword; pstate=3) */
 struct hbm_ch8_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2284,7 +2300,7 @@ struct hbm_ch8_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch8_pstate3_dword0 @ 0x00068100u (dword; pstate=3) */
+/* Overlay ch8_pstate3_dword0 @ 0x00069100u (dword; pstate=3) */
 struct hbm_ch8_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2293,7 +2309,7 @@ struct hbm_ch8_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch8_pstate3_dword1 @ 0x00068200u (dword; pstate=3) */
+/* Overlay ch8_pstate3_dword1 @ 0x00069200u (dword; pstate=3) */
 struct hbm_ch8_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2302,7 +2318,7 @@ struct hbm_ch8_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch9_pstate0_aword @ 0x00009000u (aword; pstate=0) */
+/* Overlay ch9_pstate0_aword @ 0x0000a000u (aword; pstate=0) */
 struct hbm_ch9_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2310,7 +2326,7 @@ struct hbm_ch9_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch9_pstate0_dword0 @ 0x00009100u (dword; pstate=0) */
+/* Overlay ch9_pstate0_dword0 @ 0x0000a100u (dword; pstate=0) */
 struct hbm_ch9_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2319,7 +2335,7 @@ struct hbm_ch9_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch9_pstate0_dword1 @ 0x00009200u (dword; pstate=0) */
+/* Overlay ch9_pstate0_dword1 @ 0x0000a200u (dword; pstate=0) */
 struct hbm_ch9_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2328,7 +2344,7 @@ struct hbm_ch9_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch9_pstate1_aword @ 0x00029000u (aword; pstate=1) */
+/* Overlay ch9_pstate1_aword @ 0x0002a000u (aword; pstate=1) */
 struct hbm_ch9_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2336,7 +2352,7 @@ struct hbm_ch9_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch9_pstate1_dword0 @ 0x00029100u (dword; pstate=1) */
+/* Overlay ch9_pstate1_dword0 @ 0x0002a100u (dword; pstate=1) */
 struct hbm_ch9_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2345,7 +2361,7 @@ struct hbm_ch9_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch9_pstate1_dword1 @ 0x00029200u (dword; pstate=1) */
+/* Overlay ch9_pstate1_dword1 @ 0x0002a200u (dword; pstate=1) */
 struct hbm_ch9_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2354,7 +2370,7 @@ struct hbm_ch9_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch9_pstate2_aword @ 0x00049000u (aword; pstate=2) */
+/* Overlay ch9_pstate2_aword @ 0x0004a000u (aword; pstate=2) */
 struct hbm_ch9_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2362,7 +2378,7 @@ struct hbm_ch9_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch9_pstate2_dword0 @ 0x00049100u (dword; pstate=2) */
+/* Overlay ch9_pstate2_dword0 @ 0x0004a100u (dword; pstate=2) */
 struct hbm_ch9_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2371,7 +2387,7 @@ struct hbm_ch9_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch9_pstate2_dword1 @ 0x00049200u (dword; pstate=2) */
+/* Overlay ch9_pstate2_dword1 @ 0x0004a200u (dword; pstate=2) */
 struct hbm_ch9_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2380,7 +2396,7 @@ struct hbm_ch9_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch9_pstate3_aword @ 0x00069000u (aword; pstate=3) */
+/* Overlay ch9_pstate3_aword @ 0x0006a000u (aword; pstate=3) */
 struct hbm_ch9_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2388,7 +2404,7 @@ struct hbm_ch9_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch9_pstate3_dword0 @ 0x00069100u (dword; pstate=3) */
+/* Overlay ch9_pstate3_dword0 @ 0x0006a100u (dword; pstate=3) */
 struct hbm_ch9_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2397,7 +2413,7 @@ struct hbm_ch9_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch9_pstate3_dword1 @ 0x00069200u (dword; pstate=3) */
+/* Overlay ch9_pstate3_dword1 @ 0x0006a200u (dword; pstate=3) */
 struct hbm_ch9_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2406,7 +2422,7 @@ struct hbm_ch9_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch10_pstate0_aword @ 0x0000a000u (aword; pstate=0) */
+/* Overlay ch10_pstate0_aword @ 0x0000b000u (aword; pstate=0) */
 struct hbm_ch10_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2414,7 +2430,7 @@ struct hbm_ch10_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch10_pstate0_dword0 @ 0x0000a100u (dword; pstate=0) */
+/* Overlay ch10_pstate0_dword0 @ 0x0000b100u (dword; pstate=0) */
 struct hbm_ch10_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2423,7 +2439,7 @@ struct hbm_ch10_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch10_pstate0_dword1 @ 0x0000a200u (dword; pstate=0) */
+/* Overlay ch10_pstate0_dword1 @ 0x0000b200u (dword; pstate=0) */
 struct hbm_ch10_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2432,7 +2448,7 @@ struct hbm_ch10_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch10_pstate1_aword @ 0x0002a000u (aword; pstate=1) */
+/* Overlay ch10_pstate1_aword @ 0x0002b000u (aword; pstate=1) */
 struct hbm_ch10_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2440,7 +2456,7 @@ struct hbm_ch10_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch10_pstate1_dword0 @ 0x0002a100u (dword; pstate=1) */
+/* Overlay ch10_pstate1_dword0 @ 0x0002b100u (dword; pstate=1) */
 struct hbm_ch10_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2449,7 +2465,7 @@ struct hbm_ch10_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch10_pstate1_dword1 @ 0x0002a200u (dword; pstate=1) */
+/* Overlay ch10_pstate1_dword1 @ 0x0002b200u (dword; pstate=1) */
 struct hbm_ch10_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2458,7 +2474,7 @@ struct hbm_ch10_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch10_pstate2_aword @ 0x0004a000u (aword; pstate=2) */
+/* Overlay ch10_pstate2_aword @ 0x0004b000u (aword; pstate=2) */
 struct hbm_ch10_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2466,7 +2482,7 @@ struct hbm_ch10_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch10_pstate2_dword0 @ 0x0004a100u (dword; pstate=2) */
+/* Overlay ch10_pstate2_dword0 @ 0x0004b100u (dword; pstate=2) */
 struct hbm_ch10_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2475,7 +2491,7 @@ struct hbm_ch10_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch10_pstate2_dword1 @ 0x0004a200u (dword; pstate=2) */
+/* Overlay ch10_pstate2_dword1 @ 0x0004b200u (dword; pstate=2) */
 struct hbm_ch10_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2484,7 +2500,7 @@ struct hbm_ch10_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch10_pstate3_aword @ 0x0006a000u (aword; pstate=3) */
+/* Overlay ch10_pstate3_aword @ 0x0006b000u (aword; pstate=3) */
 struct hbm_ch10_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2492,7 +2508,7 @@ struct hbm_ch10_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch10_pstate3_dword0 @ 0x0006a100u (dword; pstate=3) */
+/* Overlay ch10_pstate3_dword0 @ 0x0006b100u (dword; pstate=3) */
 struct hbm_ch10_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2501,7 +2517,7 @@ struct hbm_ch10_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch10_pstate3_dword1 @ 0x0006a200u (dword; pstate=3) */
+/* Overlay ch10_pstate3_dword1 @ 0x0006b200u (dword; pstate=3) */
 struct hbm_ch10_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2510,7 +2526,7 @@ struct hbm_ch10_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch11_pstate0_aword @ 0x0000b000u (aword; pstate=0) */
+/* Overlay ch11_pstate0_aword @ 0x0000c000u (aword; pstate=0) */
 struct hbm_ch11_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2518,7 +2534,7 @@ struct hbm_ch11_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch11_pstate0_dword0 @ 0x0000b100u (dword; pstate=0) */
+/* Overlay ch11_pstate0_dword0 @ 0x0000c100u (dword; pstate=0) */
 struct hbm_ch11_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2527,7 +2543,7 @@ struct hbm_ch11_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch11_pstate0_dword1 @ 0x0000b200u (dword; pstate=0) */
+/* Overlay ch11_pstate0_dword1 @ 0x0000c200u (dword; pstate=0) */
 struct hbm_ch11_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2536,7 +2552,7 @@ struct hbm_ch11_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch11_pstate1_aword @ 0x0002b000u (aword; pstate=1) */
+/* Overlay ch11_pstate1_aword @ 0x0002c000u (aword; pstate=1) */
 struct hbm_ch11_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2544,7 +2560,7 @@ struct hbm_ch11_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch11_pstate1_dword0 @ 0x0002b100u (dword; pstate=1) */
+/* Overlay ch11_pstate1_dword0 @ 0x0002c100u (dword; pstate=1) */
 struct hbm_ch11_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2553,7 +2569,7 @@ struct hbm_ch11_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch11_pstate1_dword1 @ 0x0002b200u (dword; pstate=1) */
+/* Overlay ch11_pstate1_dword1 @ 0x0002c200u (dword; pstate=1) */
 struct hbm_ch11_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2562,7 +2578,7 @@ struct hbm_ch11_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch11_pstate2_aword @ 0x0004b000u (aword; pstate=2) */
+/* Overlay ch11_pstate2_aword @ 0x0004c000u (aword; pstate=2) */
 struct hbm_ch11_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2570,7 +2586,7 @@ struct hbm_ch11_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch11_pstate2_dword0 @ 0x0004b100u (dword; pstate=2) */
+/* Overlay ch11_pstate2_dword0 @ 0x0004c100u (dword; pstate=2) */
 struct hbm_ch11_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2579,7 +2595,7 @@ struct hbm_ch11_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch11_pstate2_dword1 @ 0x0004b200u (dword; pstate=2) */
+/* Overlay ch11_pstate2_dword1 @ 0x0004c200u (dword; pstate=2) */
 struct hbm_ch11_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2588,7 +2604,7 @@ struct hbm_ch11_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch11_pstate3_aword @ 0x0006b000u (aword; pstate=3) */
+/* Overlay ch11_pstate3_aword @ 0x0006c000u (aword; pstate=3) */
 struct hbm_ch11_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2596,7 +2612,7 @@ struct hbm_ch11_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch11_pstate3_dword0 @ 0x0006b100u (dword; pstate=3) */
+/* Overlay ch11_pstate3_dword0 @ 0x0006c100u (dword; pstate=3) */
 struct hbm_ch11_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2605,7 +2621,7 @@ struct hbm_ch11_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch11_pstate3_dword1 @ 0x0006b200u (dword; pstate=3) */
+/* Overlay ch11_pstate3_dword1 @ 0x0006c200u (dword; pstate=3) */
 struct hbm_ch11_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2614,7 +2630,7 @@ struct hbm_ch11_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch12_pstate0_aword @ 0x0000c000u (aword; pstate=0) */
+/* Overlay ch12_pstate0_aword @ 0x0000d000u (aword; pstate=0) */
 struct hbm_ch12_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2622,7 +2638,7 @@ struct hbm_ch12_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch12_pstate0_dword0 @ 0x0000c100u (dword; pstate=0) */
+/* Overlay ch12_pstate0_dword0 @ 0x0000d100u (dword; pstate=0) */
 struct hbm_ch12_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2631,7 +2647,7 @@ struct hbm_ch12_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch12_pstate0_dword1 @ 0x0000c200u (dword; pstate=0) */
+/* Overlay ch12_pstate0_dword1 @ 0x0000d200u (dword; pstate=0) */
 struct hbm_ch12_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2640,7 +2656,7 @@ struct hbm_ch12_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch12_pstate1_aword @ 0x0002c000u (aword; pstate=1) */
+/* Overlay ch12_pstate1_aword @ 0x0002d000u (aword; pstate=1) */
 struct hbm_ch12_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2648,7 +2664,7 @@ struct hbm_ch12_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch12_pstate1_dword0 @ 0x0002c100u (dword; pstate=1) */
+/* Overlay ch12_pstate1_dword0 @ 0x0002d100u (dword; pstate=1) */
 struct hbm_ch12_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2657,7 +2673,7 @@ struct hbm_ch12_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch12_pstate1_dword1 @ 0x0002c200u (dword; pstate=1) */
+/* Overlay ch12_pstate1_dword1 @ 0x0002d200u (dword; pstate=1) */
 struct hbm_ch12_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2666,7 +2682,7 @@ struct hbm_ch12_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch12_pstate2_aword @ 0x0004c000u (aword; pstate=2) */
+/* Overlay ch12_pstate2_aword @ 0x0004d000u (aword; pstate=2) */
 struct hbm_ch12_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2674,7 +2690,7 @@ struct hbm_ch12_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch12_pstate2_dword0 @ 0x0004c100u (dword; pstate=2) */
+/* Overlay ch12_pstate2_dword0 @ 0x0004d100u (dword; pstate=2) */
 struct hbm_ch12_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2683,7 +2699,7 @@ struct hbm_ch12_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch12_pstate2_dword1 @ 0x0004c200u (dword; pstate=2) */
+/* Overlay ch12_pstate2_dword1 @ 0x0004d200u (dword; pstate=2) */
 struct hbm_ch12_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2692,7 +2708,7 @@ struct hbm_ch12_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch12_pstate3_aword @ 0x0006c000u (aword; pstate=3) */
+/* Overlay ch12_pstate3_aword @ 0x0006d000u (aword; pstate=3) */
 struct hbm_ch12_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2700,7 +2716,7 @@ struct hbm_ch12_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch12_pstate3_dword0 @ 0x0006c100u (dword; pstate=3) */
+/* Overlay ch12_pstate3_dword0 @ 0x0006d100u (dword; pstate=3) */
 struct hbm_ch12_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2709,7 +2725,7 @@ struct hbm_ch12_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch12_pstate3_dword1 @ 0x0006c200u (dword; pstate=3) */
+/* Overlay ch12_pstate3_dword1 @ 0x0006d200u (dword; pstate=3) */
 struct hbm_ch12_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2718,7 +2734,7 @@ struct hbm_ch12_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch13_pstate0_aword @ 0x0000d000u (aword; pstate=0) */
+/* Overlay ch13_pstate0_aword @ 0x0000e000u (aword; pstate=0) */
 struct hbm_ch13_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2726,7 +2742,7 @@ struct hbm_ch13_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch13_pstate0_dword0 @ 0x0000d100u (dword; pstate=0) */
+/* Overlay ch13_pstate0_dword0 @ 0x0000e100u (dword; pstate=0) */
 struct hbm_ch13_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2735,7 +2751,7 @@ struct hbm_ch13_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch13_pstate0_dword1 @ 0x0000d200u (dword; pstate=0) */
+/* Overlay ch13_pstate0_dword1 @ 0x0000e200u (dword; pstate=0) */
 struct hbm_ch13_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2744,7 +2760,7 @@ struct hbm_ch13_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch13_pstate1_aword @ 0x0002d000u (aword; pstate=1) */
+/* Overlay ch13_pstate1_aword @ 0x0002e000u (aword; pstate=1) */
 struct hbm_ch13_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2752,7 +2768,7 @@ struct hbm_ch13_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch13_pstate1_dword0 @ 0x0002d100u (dword; pstate=1) */
+/* Overlay ch13_pstate1_dword0 @ 0x0002e100u (dword; pstate=1) */
 struct hbm_ch13_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2761,7 +2777,7 @@ struct hbm_ch13_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch13_pstate1_dword1 @ 0x0002d200u (dword; pstate=1) */
+/* Overlay ch13_pstate1_dword1 @ 0x0002e200u (dword; pstate=1) */
 struct hbm_ch13_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2770,7 +2786,7 @@ struct hbm_ch13_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch13_pstate2_aword @ 0x0004d000u (aword; pstate=2) */
+/* Overlay ch13_pstate2_aword @ 0x0004e000u (aword; pstate=2) */
 struct hbm_ch13_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2778,7 +2794,7 @@ struct hbm_ch13_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch13_pstate2_dword0 @ 0x0004d100u (dword; pstate=2) */
+/* Overlay ch13_pstate2_dword0 @ 0x0004e100u (dword; pstate=2) */
 struct hbm_ch13_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2787,7 +2803,7 @@ struct hbm_ch13_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch13_pstate2_dword1 @ 0x0004d200u (dword; pstate=2) */
+/* Overlay ch13_pstate2_dword1 @ 0x0004e200u (dword; pstate=2) */
 struct hbm_ch13_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2796,7 +2812,7 @@ struct hbm_ch13_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch13_pstate3_aword @ 0x0006d000u (aword; pstate=3) */
+/* Overlay ch13_pstate3_aword @ 0x0006e000u (aword; pstate=3) */
 struct hbm_ch13_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2804,7 +2820,7 @@ struct hbm_ch13_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch13_pstate3_dword0 @ 0x0006d100u (dword; pstate=3) */
+/* Overlay ch13_pstate3_dword0 @ 0x0006e100u (dword; pstate=3) */
 struct hbm_ch13_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2813,7 +2829,7 @@ struct hbm_ch13_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch13_pstate3_dword1 @ 0x0006d200u (dword; pstate=3) */
+/* Overlay ch13_pstate3_dword1 @ 0x0006e200u (dword; pstate=3) */
 struct hbm_ch13_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2822,7 +2838,7 @@ struct hbm_ch13_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch14_pstate0_aword @ 0x0000e000u (aword; pstate=0) */
+/* Overlay ch14_pstate0_aword @ 0x0000f000u (aword; pstate=0) */
 struct hbm_ch14_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2830,7 +2846,7 @@ struct hbm_ch14_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch14_pstate0_dword0 @ 0x0000e100u (dword; pstate=0) */
+/* Overlay ch14_pstate0_dword0 @ 0x0000f100u (dword; pstate=0) */
 struct hbm_ch14_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2839,7 +2855,7 @@ struct hbm_ch14_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch14_pstate0_dword1 @ 0x0000e200u (dword; pstate=0) */
+/* Overlay ch14_pstate0_dword1 @ 0x0000f200u (dword; pstate=0) */
 struct hbm_ch14_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2848,7 +2864,7 @@ struct hbm_ch14_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch14_pstate1_aword @ 0x0002e000u (aword; pstate=1) */
+/* Overlay ch14_pstate1_aword @ 0x0002f000u (aword; pstate=1) */
 struct hbm_ch14_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2856,7 +2872,7 @@ struct hbm_ch14_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch14_pstate1_dword0 @ 0x0002e100u (dword; pstate=1) */
+/* Overlay ch14_pstate1_dword0 @ 0x0002f100u (dword; pstate=1) */
 struct hbm_ch14_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2865,7 +2881,7 @@ struct hbm_ch14_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch14_pstate1_dword1 @ 0x0002e200u (dword; pstate=1) */
+/* Overlay ch14_pstate1_dword1 @ 0x0002f200u (dword; pstate=1) */
 struct hbm_ch14_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2874,7 +2890,7 @@ struct hbm_ch14_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch14_pstate2_aword @ 0x0004e000u (aword; pstate=2) */
+/* Overlay ch14_pstate2_aword @ 0x0004f000u (aword; pstate=2) */
 struct hbm_ch14_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2882,7 +2898,7 @@ struct hbm_ch14_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch14_pstate2_dword0 @ 0x0004e100u (dword; pstate=2) */
+/* Overlay ch14_pstate2_dword0 @ 0x0004f100u (dword; pstate=2) */
 struct hbm_ch14_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2891,7 +2907,7 @@ struct hbm_ch14_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch14_pstate2_dword1 @ 0x0004e200u (dword; pstate=2) */
+/* Overlay ch14_pstate2_dword1 @ 0x0004f200u (dword; pstate=2) */
 struct hbm_ch14_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2900,7 +2916,7 @@ struct hbm_ch14_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch14_pstate3_aword @ 0x0006e000u (aword; pstate=3) */
+/* Overlay ch14_pstate3_aword @ 0x0006f000u (aword; pstate=3) */
 struct hbm_ch14_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2908,7 +2924,7 @@ struct hbm_ch14_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch14_pstate3_dword0 @ 0x0006e100u (dword; pstate=3) */
+/* Overlay ch14_pstate3_dword0 @ 0x0006f100u (dword; pstate=3) */
 struct hbm_ch14_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2917,7 +2933,7 @@ struct hbm_ch14_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch14_pstate3_dword1 @ 0x0006e200u (dword; pstate=3) */
+/* Overlay ch14_pstate3_dword1 @ 0x0006f200u (dword; pstate=3) */
 struct hbm_ch14_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2926,7 +2942,7 @@ struct hbm_ch14_pstate3_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch15_pstate0_aword @ 0x0000f000u (aword; pstate=0) */
+/* Overlay ch15_pstate0_aword @ 0x00010000u (aword; pstate=0) */
 struct hbm_ch15_pstate0_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2934,7 +2950,7 @@ struct hbm_ch15_pstate0_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch15_pstate0_dword0 @ 0x0000f100u (dword; pstate=0) */
+/* Overlay ch15_pstate0_dword0 @ 0x00010100u (dword; pstate=0) */
 struct hbm_ch15_pstate0_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2943,7 +2959,7 @@ struct hbm_ch15_pstate0_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch15_pstate0_dword1 @ 0x0000f200u (dword; pstate=0) */
+/* Overlay ch15_pstate0_dword1 @ 0x00010200u (dword; pstate=0) */
 struct hbm_ch15_pstate0_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2952,7 +2968,7 @@ struct hbm_ch15_pstate0_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch15_pstate1_aword @ 0x0002f000u (aword; pstate=1) */
+/* Overlay ch15_pstate1_aword @ 0x00030000u (aword; pstate=1) */
 struct hbm_ch15_pstate1_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2960,7 +2976,7 @@ struct hbm_ch15_pstate1_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch15_pstate1_dword0 @ 0x0002f100u (dword; pstate=1) */
+/* Overlay ch15_pstate1_dword0 @ 0x00030100u (dword; pstate=1) */
 struct hbm_ch15_pstate1_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2969,7 +2985,7 @@ struct hbm_ch15_pstate1_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch15_pstate1_dword1 @ 0x0002f200u (dword; pstate=1) */
+/* Overlay ch15_pstate1_dword1 @ 0x00030200u (dword; pstate=1) */
 struct hbm_ch15_pstate1_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2978,7 +2994,7 @@ struct hbm_ch15_pstate1_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch15_pstate2_aword @ 0x0004f000u (aword; pstate=2) */
+/* Overlay ch15_pstate2_aword @ 0x00050000u (aword; pstate=2) */
 struct hbm_ch15_pstate2_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -2986,7 +3002,7 @@ struct hbm_ch15_pstate2_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch15_pstate2_dword0 @ 0x0004f100u (dword; pstate=2) */
+/* Overlay ch15_pstate2_dword0 @ 0x00050100u (dword; pstate=2) */
 struct hbm_ch15_pstate2_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -2995,7 +3011,7 @@ struct hbm_ch15_pstate2_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch15_pstate2_dword1 @ 0x0004f200u (dword; pstate=2) */
+/* Overlay ch15_pstate2_dword1 @ 0x00050200u (dword; pstate=2) */
 struct hbm_ch15_pstate2_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -3004,7 +3020,7 @@ struct hbm_ch15_pstate2_dword1 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch15_pstate3_aword @ 0x0006f000u (aword; pstate=3) */
+/* Overlay ch15_pstate3_aword @ 0x00070000u (aword; pstate=3) */
 struct hbm_ch15_pstate3_aword {
 	union AWORD_ID id; /* +0x00000000u */
 	union AWORD_STATUS status; /* +0x00000004u */
@@ -3012,7 +3028,7 @@ struct hbm_ch15_pstate3_aword {
 	union AWORD_DRIVE drive; /* +0x0000000cu cell shadow pstate, 4 copies; selected by the address alias, not by a second offset */
 };
 
-/* Overlay ch15_pstate3_dword0 @ 0x0006f100u (dword; pstate=3) */
+/* Overlay ch15_pstate3_dword0 @ 0x00070100u (dword; pstate=3) */
 struct hbm_ch15_pstate3_dword0 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */
@@ -3021,7 +3037,7 @@ struct hbm_ch15_pstate3_dword0 {
 	union DWORD_TRAIN train; /* +0x00000010u */
 };
 
-/* Overlay ch15_pstate3_dword1 @ 0x0006f200u (dword; pstate=3) */
+/* Overlay ch15_pstate3_dword1 @ 0x00070200u (dword; pstate=3) */
 struct hbm_ch15_pstate3_dword1 {
 	union DWORD_ID id; /* +0x00000000u */
 	union DWORD_STATUS status; /* +0x00000004u */

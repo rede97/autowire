@@ -1,6 +1,6 @@
 // SoC wishbone-regfile smoke SoT (MMIO-tested from fw/regfile_smoke).
 // On-bus leaf only. Bun Access/theme leaves live in test/fixtures/wb_reg_access.ts.
-// Generate → rtl/gen/plugins/wishbone/smoke_regfile.sv;
+// Generate → rtl/gen/plugins/wishbone/regfile/smoke_regfile.sv;
 // instantiate on soc_top; rtl/smoke_wb.v is sideband glue only.
 // After generate + analysis: bus wrapper instantiates smoke_regfile; HTML keeps smoke_wb glue.
 // No HTML register stub tags.

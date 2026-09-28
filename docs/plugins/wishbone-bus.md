@@ -276,12 +276,12 @@ ts = "sot/wb_bus_soc.ts"
 # exports = ["soc_wb"]   # 可选；省略 = 全部 BusDef
 
 [plugins.wishbone]
-c   = "fw/gen/wishbone"  # <name>_map.h（git-tracked showcase in demo/soc）
-uvm = "dv/ral"           # ral_block_<name>.sv（uvm_reg 模型；无 RALF）
+c   = "fw/gen/wishbone"  # bus/<name>_map.h（git-tracked showcase in demo/soc）
+uvm = "dv/ral"           # bus/ral_block_<name>.sv（uvm_reg 模型；无 RALF）
 
-# out → plugins_dir/wishbone/wb_cfg_pipe.sv
-#                      + <name>_decoder.sv | <name>_interconnect.sv
-#                      + <name>_system.sv   # SlaveRegfile 和/或 Master("uplink")
+# out → plugins_dir/wishbone/bus/wb_cfg_pipe.sv
+#                      + bus/<name>_decoder.sv | bus/<name>_interconnect.sv
+#                      + bus/<name>_system.sv   # SlaveRegfile 和/或 Master("uplink")
 # NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）
 # demo/soc：顶层 soc_wb = interconnect（cpu + JTAG dbg，dbg 经 demo_tap USER）；两个 SlaveBus(sd_sha) channel
 #           HTML u_ic = soc_wb_system；u_ch0/u_ch1 = sd_sha_ch
@@ -289,7 +289,7 @@ uvm = "dv/ral"           # ral_block_<name>.sv（uvm_reg 模型；无 RALF）
 #           smoke FABRIC.rb_grant_en 驱动两个 channel rb_grant_en
 ```
 
-demo/hbm 是本插件的 VCS + UVM-1.2 验证展示：顶层 `hbm` = interconnect（`cfg` 原生 WB 800 MHz + `host` APB 100 MHz 经 `wb_apb2wb` + `wb_cdc`）；16 个 `SlaveBus(hbm_ch)` channel + `ch_bcast`；channel 内 `dword0`/`dword1` 订阅 `dword_all`；dword 叶子有 RO `train_pass_n`（每 lane 一位，广播读 OR = any-fail 回读）。环境在 `demo/hbm/dv/uvm/`（WB/APB agent、RAL frontdoor 走 WB master），回归入口 `demo/hbm/sim/vcs/run.sh`（reset / ro / rw / 广播写 / 广播读 OR / 双 master 并发仲裁）。
+demo/hbm 是本插件的 VCS + UVM-1.2 验证展示：顶层 `hbm` = interconnect（`cfg` 原生 WB 800 MHz + `host` APB 100 MHz 经 `wb_apb2wb` + `wb_cdc`）；`center` regfile 挂在 channel 0 之前（偏移 `0x00000`，不随 pstate 复制），16 个 `SlaveBus(hbm_ch)` channel 从 `0x1000` 起（channel 选择 = `ADR[15:12] - 1`）+ `ch_bcast`（`0x11000`）；channel 内 `dword0`/`dword1` 订阅 `dword_all`；dword 叶子有 RO `train_pass_n`（每 lane 一位，广播读 OR = any-fail 回读）。环境在 `demo/hbm/dv/uvm/`（WB/APB agent、RAL frontdoor 走 WB master），回归入口 `demo/hbm/sim/vcs/run.sh`（reset / ro / rw / 广播写 / 广播读 OR / 双 master 并发仲裁）。
 
 ## 8. 暂时不做
 

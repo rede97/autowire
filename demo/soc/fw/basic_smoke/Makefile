@@ -42,7 +42,7 @@ $(BUILD)/kat.o: kat.S | $(BUILD)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BUILD)/main.o: main.c $(COMMON)/soc_map.h \
-		$(WISHBONE)/smoke.h $(WISHBONE)/sha256.h $(WISHBONE)/soc_wb_map.h | $(BUILD)
+		$(WISHBONE)/regfile/smoke.h $(WISHBONE)/regfile/sha256.h $(WISHBONE)/bus/soc_wb_map.h | $(BUILD)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BUILD)/firmware.elf: $(OBJS) link.ld

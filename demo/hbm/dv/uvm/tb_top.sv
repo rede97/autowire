@@ -43,6 +43,9 @@ module tb_top;
 	logic [31:0] ch_rdat [16];
 	logic        ch_ack  [16];
 
+	// center CSR sidebands (CH_EN drives nothing in this TB; RO tied below)
+	logic [15:0] center_enable;
+
 	hbm_system u_sys (
 		.clk               (clk),
 		.rst_n             (rst_n),
@@ -210,7 +213,11 @@ module tb_top;
 		.ch15_i_wb_stb       (ch_stb[15]),
 		.ch15_i_wb_we        (ch_we[15]),
 		.ch15_o_wb_dat       (ch_rdat[15]),
-		.ch15_o_wb_ack       (ch_ack[15])
+		.ch15_o_wb_ack       (ch_ack[15]),
+		// center CSR (attached leaf inside hbm_system, offset 0x00000)
+		.rg_enable           (center_enable),
+		.ro_all_cal_done     (1'b1),
+		.ro_err_ch           (4'h5)
 	);
 
 	for (genvar i = 0; i < 16; i++) begin : g_ch

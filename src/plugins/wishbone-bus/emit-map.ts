@@ -3,6 +3,7 @@
 // Only the uvm_reg model is generated (no RALF); field classes stay in the
 // regfile emit.
 
+import { REGFILE_DIR } from "../wishbone/id.ts";
 import { effectiveSheet } from "../wishbone-regfile/dsl.ts";
 import type { LaidCell, LaidRegfile } from "../wishbone-regfile/layout.ts";
 import { layoutRegfile } from "../wishbone-regfile/layout.ts";
@@ -124,7 +125,7 @@ export function emitBusMapC(def: BusDef): string {
 		"",
 	];
 	const sheets = [...new Set(hangs.map((h) => h.sheet))];
-	for (const sh of sheets) lines.push(`#include "${sh}.h"`);
+	for (const sh of sheets) lines.push(`#include "../${REGFILE_DIR}/${sh}.h"`);
 	if (sheets.length > 0) lines.push("");
 
 	for (const h of hangs) {
@@ -225,7 +226,7 @@ export function emitBusMapUvm(def: BusDef): string {
 		"",
 	];
 	const files = [...new Set(hangs.map((h) => ralFile(h.sheet)))];
-	for (const f of files) lines.push(`\`include "${f}"`);
+	for (const f of files) lines.push(`\`include "../${REGFILE_DIR}/${f}"`);
 	if (files.length > 0) lines.push("");
 
 	const childBuses = childBusNames(tree);

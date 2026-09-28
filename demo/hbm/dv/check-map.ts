@@ -1,16 +1,20 @@
 // HBM software-map check.
 // Reads the generated C map and uvm_reg block and checks them against the
-// address the fabric actually decodes: channel = ADR[15:12], pstate =
-// ADR[18:17], directly above the windows. Bits above the tag are discarded.
-// Broadcast windows are real addresses. No UVM simulator is required.
+// address the fabric actually decodes: the center CSR sits at 0x00000 and
+// channel i at (i + 1) * 0x1000, so the channel select is ADR[15:12] - 1;
+// pstate = ADR[18:17], directly above the windows. Bits above the tag are
+// discarded. Broadcast windows are real addresses. No UVM simulator is required.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
-const c = readFileSync(resolve(root, "fw/gen/wishbone/hbm_map.h"), "utf8");
-const uvm = readFileSync(resolve(root, "dv/ral/ral_block_hbm.sv"), "utf8");
-const ch = readFileSync(resolve(root, "dv/ral/ral_block_hbm_ch.sv"), "utf8");
+const c = readFileSync(resolve(root, "fw/gen/wishbone/bus/hbm_map.h"), "utf8");
+const uvm = readFileSync(resolve(root, "dv/ral/bus/ral_block_hbm.sv"), "utf8");
+const ch = readFileSync(
+	resolve(root, "dv/ral/bus/ral_block_hbm_ch.sv"),
+	"utf8",
+);
 
 const CH = 0x1000;
 const PSTATE = 1 << 17;
@@ -26,7 +30,7 @@ function need(hay: string, needle: string, where: string): void {
 
 for (let chn = 0; chn < 16; chn++) {
 	for (let ps = 0; ps < 4; ps++) {
-		const base = chn * CH + ps * PSTATE;
+		const base = (chn + 1) * CH + ps * PSTATE;
 		const tag = `ch${chn}_pstate${ps}`;
 		need(c, `#define HBM_${tag.toUpperCase()}_AWORD_BASE 0x${base.toString(16).padStart(8, "0")}u`, "C");
 		need(
@@ -43,9 +47,12 @@ for (let chn = 0; chn < 16; chn++) {
 	}
 }
 
-const bcast = 16 * CH;
+const bcast = 17 * CH;
 need(c, `#define HBM_CH_BCAST_BASE 0x${bcast.toString(16).padStart(8, "0")}u`, "C");
 need(c, "broadcast ch_all", "C");
+// Center CSR in front of channel 0 (offset 0, no pstate replication).
+need(c, "#define HBM_CENTER_BASE 0x00000000u", "C");
+need(uvm, "add_submap(this.center.default_map, 32'h00000000)", "uvm");
 
 // The child only passes pstate through, so its own block is not copied;
 // regfile leaves hang as shared leaf blocks (one class per sheet).
@@ -55,7 +62,7 @@ need(ch, "add_submap(this.aword.default_map, 32'h00000000", "child uvm");
 need(ch, "add_submap(this.dword0.default_map, 32'h00000100", "child uvm");
 need(ch, "broadcast dword_all", "child uvm");
 // One leaf block class per sheet, shared by both dword hangs.
-const leaf = readFileSync(resolve(root, "dv/ral/ral_DWORD.sv"), "utf8");
+const leaf = readFileSync(resolve(root, "dv/ral/regfile/ral_DWORD.sv"), "utf8");
 const leafDefs = leaf.match(/^class ral_block_dword /gm) ?? [];
 if (leafDefs.length !== 1) fail(`ral_block_dword defined ${leafDefs.length} times`);
 if (!c.includes("cell shadow pstate")) fail("C lost the cell shadow note");
@@ -64,4 +71,6 @@ if (errors.length > 0) {
 	console.error(errors.join("\n"));
 	process.exit(1);
 }
-console.log("hbm map: 16 channels x 4 pstates, broadcast, and shared child block");
+console.log(
+	"hbm map: center + 16 channels x 4 pstates, broadcast, and shared child block",
+);

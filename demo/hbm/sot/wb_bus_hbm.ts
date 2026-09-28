@@ -1,11 +1,13 @@
 // HBM two-level fabric SoT.
 //
-//   level 1  hbm     channel decoder; pstate is PRODUCED here from ADR[18:17]
+//   level 1  hbm     center CSR + channel decoder; pstate is PRODUCED here
+//                    from ADR[18:17]
 //   level 2  hbm_ch  aword + dword0 + dword1; pstate PASSES THROUGH (bare name)
 //
-// Address map (byte ADR): channel = ADR[15:12], pstate = ADR[18:17].
-// The tag sits directly above the windows (span 0x11000). Bits above it are
-// discarded; decode keeps ADR[16:0].
+// Address map (byte ADR): center = 0x00000, channel i = (i + 1) * 0x1000, so the
+// channel select is ADR[15:12] - 1 (0 selects the center block). pstate =
+// ADR[18:17]. The tag sits directly above the windows (span 0x12000). Bits above
+// it are discarded; decode keeps ADR[16:0].
 // Contract: docs/plugins/wishbone-bus.md 2.1.
 
 import {
@@ -18,6 +20,7 @@ import {
 	TagFromAddr,
 } from "../../../src/plugins/wishbone-bus/dsl.ts";
 import { aword } from "./wb_reg_aword.ts";
+import { center } from "./wb_reg_center.ts";
 import { dword } from "./wb_reg_dword.ts";
 import { pstate } from "./wb_tag_pstate.ts";
 
@@ -59,16 +62,22 @@ export const hbm = Bus("hbm", "HBM channel interconnect (16 channels)", {
 			timeout: 64,
 		}),
 	],
-	slaves: Array.from({ length: CH_COUNT }, (_, i) =>
-		SlaveBus(hbm_ch, i * CH_SIZE, {
-			id: `ch${i}`,
-			size: Size(CH_SIZE),
-			desc: `HBM channel ${i}`,
-			broadcastBy: ["ch_all"],
-		}),
-	).concat(
-		SlaveRegion("ch_bcast", "broadcast all 16 channels", CH_COUNT * CH_SIZE, Size(CH_SIZE), {
-			broadcast: "ch_all",
-		}),
-	),
+	slaves: [
+		SlaveRegfile(center, 0x000, { size: Size(CH_SIZE) }),
+		...Array.from({ length: CH_COUNT }, (_, i) =>
+			SlaveBus(hbm_ch, (i + 1) * CH_SIZE, {
+				id: `ch${i}`,
+				size: Size(CH_SIZE),
+				desc: `HBM channel ${i}`,
+				broadcastBy: ["ch_all"],
+			}),
+		),
+		SlaveRegion(
+			"ch_bcast",
+			"broadcast all 16 channels",
+			(CH_COUNT + 1) * CH_SIZE,
+			Size(CH_SIZE),
+			{ broadcast: "ch_all" },
+		),
+	],
 });

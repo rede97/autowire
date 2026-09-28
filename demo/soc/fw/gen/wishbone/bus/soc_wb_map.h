@@ -7,8 +7,8 @@
 
 #include <stdint.h>
 
-#include "sha256.h"
-#include "smoke.h"
+#include "../regfile/sha256.h"
+#include "../regfile/smoke.h"
 
 #define SOC_WB_CH0_BANK0_SHA256_BASE 0x03000040u /* bank=0 */
 #define SOC_WB_CH0_BANK1_SHA256_BASE 0x07000040u /* bank=1 */

@@ -1,5 +1,5 @@
 // Channel fabric SoT: one BusDef reused as parallel SD+DMA+SHA lanes.
-// Generate → rtl/gen/plugins/wishbone/sd_sha_interconnect.sv + sd_sha_system.sv
+// Generate → rtl/gen/plugins/wishbone/bus/sd_sha_interconnect.sv + sd_sha_system.sv
 // Master("uplink") is the cascade face (wrapper remaps to i_wb_* / o_wb_*).
 // Parent soc_wb hangs this bus in a 4 KiB window and forwards ADR[11:0].
 // Child addresses are window-relative; parent SlaveBus forwards adr & ~mask.

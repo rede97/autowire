@@ -23,10 +23,10 @@ connect_dir = "rtl/gen/connect"
 sim_dir = "rtl/gen/sim"
 plugins_dir = "rtl/gen/plugins"
 
-# Packed C / Excel / uvm_reg (not SoT)
+# Packed C / Excel / uvm_reg (not SoT); regfile/ and bus/ stay separate
 [plugins.wishbone]
 c = "fw/gen/wishbone"
-export = "fw/gen/wishbone/wishbone.xlsx"
+export = "fw/gen/wishbone/bus_regfiles.xlsx"
 uvm = "dv/ral"
 
 # Author SoT: sot/connect/*.html + sot/wb_reg_*.ts / sot/wb_bus_*.ts

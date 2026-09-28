@@ -27,7 +27,7 @@ import { writeRegfileExcel } from "../wishbone-regfile/emit-excel.ts";
 import { swLayoutFingerprint } from "../wishbone-regfile/emit-sw.ts";
 import { generateDef as generateRegfileDef } from "../wishbone-regfile/generate.ts";
 import { type LaidRegfile, layoutRegfile } from "../wishbone-regfile/layout.ts";
-import { PLUGIN_ID } from "./id.ts";
+import { BUS_DIR, PLUGIN_ID, REGFILE_DIR } from "./id.ts";
 
 export { PLUGIN_ID };
 
@@ -128,14 +128,17 @@ async function packSoftware(
 	const paths: string[] = [];
 	const mapped = buses.filter((b) => mapHangsDeep(b).length > 0);
 	if (ws.wishboneCExport) {
-		await mkdir(ws.wishboneCExport, { recursive: true });
-		const headers: string[] = [...excelBySheet.keys()].map((s) => `${s}.h`);
+		const busDir = join(ws.wishboneCExport, BUS_DIR);
+		await mkdir(busDir, { recursive: true });
+		const headers: string[] = [...excelBySheet.keys()].map(
+			(s) => `${REGFILE_DIR}/${s}.h`,
+		);
 		for (const bus of mapped) {
 			const name = busMapHeaderName(bus);
-			const cPath = join(ws.wishboneCExport, name);
+			const cPath = join(busDir, name);
 			if (await writeIfChanged(cPath, emitBusMapC(bus), force))
 				paths.push(cPath);
-			headers.push(name);
+			headers.push(`${BUS_DIR}/${name}`);
 		}
 		if (headers.length > 0) {
 			const uPath = join(ws.wishboneCExport, "wishbone.h");
@@ -144,16 +147,17 @@ async function packSoftware(
 		}
 	}
 	if (ws.wishboneUvmExport) {
-		await mkdir(ws.wishboneUvmExport, { recursive: true });
+		const busDir = join(ws.wishboneUvmExport, BUS_DIR);
+		await mkdir(busDir, { recursive: true });
 		const files: string[] = [...excelBySheet.keys()].map(
-			(s) => `ral_${s.toUpperCase()}.sv`,
+			(s) => `${REGFILE_DIR}/ral_${s.toUpperCase()}.sv`,
 		);
 		for (const bus of mapped) {
 			const name = `${busRalBlockName(bus)}.sv`;
-			const uPath = join(ws.wishboneUvmExport, name);
+			const uPath = join(busDir, name);
 			if (await writeIfChanged(uPath, emitBusMapUvm(bus), force))
 				paths.push(uPath);
-			files.push(name);
+			files.push(`${BUS_DIR}/${name}`);
 		}
 		if (files.length > 0) {
 			const uPath = join(ws.wishboneUvmExport, "ral_wishbone.sv");
@@ -227,7 +231,7 @@ export async function generateAll(
 	const fabricNames = new Set<string>();
 	const allBuses = flattenBuses(buses);
 	if (allBuses.length > 0) {
-		const outDir = join(ws.pluginsDir, PLUGIN_ID);
+		const outDir = join(ws.pluginsDir, PLUGIN_ID, BUS_DIR);
 		await mkdir(outDir, { recursive: true });
 		const pipe = await generatePipeModule(outDir, force);
 		if (pipe) paths.push(pipe);

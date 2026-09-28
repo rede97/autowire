@@ -14,16 +14,16 @@ rtl/soc_irqmerge.v
 rtl/demo_tap.v
 
 # Type-A wishbone (CPU + JTAG interconnect + two sd_sha channel interconnects + leaves)
-rtl/gen/plugins/wishbone/wb_cfg_pipe.sv
-rtl/gen/plugins/wishbone/wb_sync_cell.sv
-rtl/gen/plugins/wishbone/wb_cdc.sv
-rtl/gen/plugins/wishbone/wb_jtag_tdr.sv
-rtl/gen/plugins/wishbone/soc_wb_interconnect.sv
-rtl/gen/plugins/wishbone/soc_wb_system.sv
-rtl/gen/plugins/wishbone/sd_sha_interconnect.sv
-rtl/gen/plugins/wishbone/sd_sha_system.sv
-rtl/gen/plugins/wishbone/sha256_regfile.sv
-rtl/gen/plugins/wishbone/smoke_regfile.sv
+rtl/gen/plugins/wishbone/bus/wb_cfg_pipe.sv
+rtl/gen/plugins/wishbone/bus/wb_sync_cell.sv
+rtl/gen/plugins/wishbone/bus/wb_cdc.sv
+rtl/gen/plugins/wishbone/bus/wb_jtag_tdr.sv
+rtl/gen/plugins/wishbone/bus/soc_wb_interconnect.sv
+rtl/gen/plugins/wishbone/bus/soc_wb_system.sv
+rtl/gen/plugins/wishbone/bus/sd_sha_interconnect.sv
+rtl/gen/plugins/wishbone/bus/sd_sha_system.sv
+rtl/gen/plugins/wishbone/regfile/sha256_regfile.sv
+rtl/gen/plugins/wishbone/regfile/smoke_regfile.sv
 
 # picorv32: CPU + Wishbone wrapper (picorv32_wb lives in picorv32.v)
 # plus the picosoc UART / QSPI flash controller

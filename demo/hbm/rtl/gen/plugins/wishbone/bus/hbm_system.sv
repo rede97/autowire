@@ -6,6 +6,7 @@
 //  Desc:   HBM channel interconnect (16 channels)
 //  Fabric: hbm_interconnect
 //  Attached regfile hangs:
+//    center  center_regfile  base=0x00000000  mask=0x0007f000
 //  Bridged masters (bridge / wb_cdc before the fabric):
 //    Master host — SoC APB host (100 MHz PCLK) [APB + wb_cdc]
 //------------------------------------------------------------------------------
@@ -195,8 +196,26 @@ module hbm_system (
 	input  logic [2:0]  host_pprot,
 	output logic [31:0] host_prdata,
 	output logic        host_pready,
-	output logic        host_pslverr
+	output logic        host_pslverr,
+	// Regfile center hang center sidebands
+	// Field / shadow sidebands
+	// RW register out: enable — One bit per channel
+	output logic [15:0] rg_enable,
+	// RO status in: all_cal_done — Every enabled channel calibrated
+	input  logic        ro_all_cal_done,
+	// RO status in: err_ch — First channel reporting an error
+	input  logic [3:0]  ro_err_ch
 );
+
+	// Internal WB: fabric slave center ↔ center_regfile
+	logic [18:0] center_i_wb_adr;
+	logic [31:0] center_i_wb_dat;
+	logic [3:0]  center_i_wb_sel;
+	logic        center_i_wb_cyc;
+	logic        center_i_wb_stb;
+	logic        center_i_wb_we;
+	logic [31:0] center_o_wb_dat;
+	logic        center_o_wb_ack;
 
 	//------------------------------------------------------------------------------
 	//  Master host — SoC APB host (100 MHz PCLK) [APB + wb_cdc]
@@ -287,6 +306,14 @@ module hbm_system (
 		.host_o_wb_we        (host_fab_we),
 		.host_i_wb_dat       (host_fab_rdat),
 		.host_i_wb_ack       (host_fab_ack),
+		.center_i_wb_adr     (center_i_wb_adr),
+		.center_i_wb_dat     (center_i_wb_dat),
+		.center_i_wb_sel     (center_i_wb_sel),
+		.center_i_wb_cyc     (center_i_wb_cyc),
+		.center_i_wb_stb     (center_i_wb_stb),
+		.center_i_wb_we      (center_i_wb_we),
+		.center_o_wb_dat     (center_o_wb_dat),
+		.center_o_wb_ack     (center_o_wb_ack),
 		.ch0_i_wb_adr        (ch0_i_wb_adr),
 		.ch0_i_wb_dat        (ch0_i_wb_dat),
 		.ch0_i_wb_sel        (ch0_i_wb_sel),
@@ -431,6 +458,22 @@ module hbm_system (
 		.ch15_i_wb_we        (ch15_i_wb_we),
 		.ch15_o_wb_dat       (ch15_o_wb_dat),
 		.ch15_o_wb_ack       (ch15_o_wb_ack)
+	);
+
+	center_regfile u_center (
+		.i_clk          (clk),
+		.i_rst_n        (rst_n),
+		.center_i_wb_cyc(center_i_wb_cyc),
+		.center_i_wb_stb(center_i_wb_stb),
+		.center_i_wb_we (center_i_wb_we),
+		.center_i_wb_adr(center_i_wb_adr),
+		.center_i_wb_dat(center_i_wb_dat),
+		.center_i_wb_sel(center_i_wb_sel),
+		.center_o_wb_ack(center_o_wb_ack),
+		.center_o_wb_dat(center_o_wb_dat),
+		.rg_enable      (rg_enable),
+		.ro_all_cal_done(ro_all_cal_done),
+		.ro_err_ch      (ro_err_ch)
 	);
 
 endmodule

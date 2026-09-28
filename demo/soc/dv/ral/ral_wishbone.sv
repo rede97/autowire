@@ -4,9 +4,9 @@
 `ifndef RAL_WISHBONE_SV
 `define RAL_WISHBONE_SV
 
-`include "ral_SHA256.sv"
-`include "ral_SMOKE.sv"
-`include "ral_block_sd_sha.sv"
-`include "ral_block_soc_wb.sv"
+`include "regfile/ral_SHA256.sv"
+`include "regfile/ral_SMOKE.sv"
+`include "bus/ral_block_sd_sha.sv"
+`include "bus/ral_block_soc_wb.sv"
 
 `endif

@@ -390,9 +390,12 @@ exports = ["smoke_rw"]
 		expect(paths.some((p) => p.endsWith("ral_SMOKE_RW.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("ral_wishbone.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("regs.xlsx"))).toBe(true);
-		const hdr = readFileSync(join(dir, "fw/gen/smoke_rw.h"), "utf8");
+		const hdr = readFileSync(join(dir, "fw/gen/regfile/smoke_rw.h"), "utf8");
 		expect(hdr).toContain("union SMOKE_RW_CFG");
-		const ral = readFileSync(join(dir, "dv/ral/ral_SMOKE_RW.sv"), "utf8");
+		const ral = readFileSync(
+			join(dir, "dv/ral/regfile/ral_SMOKE_RW.sv"),
+			"utf8",
+		);
 		expect(ral).toContain("class ral_reg_smoke_rw_CFG");
 		const xlsx = readFileSync(join(dir, "docs/regs.xlsx"));
 		expect(xlsx.byteLength).toBeGreaterThan(0);
@@ -444,7 +447,7 @@ c = "fw/gen"
 		expect(p0.some((p) => p.endsWith("core.h"))).toBe(true);
 		expect(p1.some((p) => p.endsWith("core.h"))).toBe(false);
 		expect(p1.some((p) => p.endsWith("core_1_regfile.sv"))).toBe(true);
-		const hdr = readFileSync(join(dir, "fw/gen/core.h"), "utf8");
+		const hdr = readFileSync(join(dir, "fw/gen/regfile/core.h"), "utf8");
 		expect(hdr).toContain("union CORE_CFG");
 		expect(hdr).not.toContain("CORE_0");
 		await expect(generateDef(ws, other, sheets)).rejects.toThrow(
@@ -631,6 +634,7 @@ describe("wishbone-regfile demo/soc sha256", () => {
 				"fw",
 				"gen",
 				"wishbone",
+				"regfile",
 				"sha256.h",
 			),
 			"utf8",

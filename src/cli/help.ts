@@ -84,7 +84,7 @@ Landed
                             Run shows the .sv text (same as connect run writes).
                             Saves are browser downloads. The page does not write files.
   aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir
-  plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/ (docs/cli.md)
+  plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/{regfile,bus}/ (docs/cli.md)
 
 Not landed (parked; do not implement until a later ask)
   Production package        three sibling binaries: autowire, hdxml, obscura
@@ -111,16 +111,22 @@ Parallel (does not block connect)
     draft API + samples: docs/examples/regfile/regfile.ts;
     toml [wishbone.<source>] ts= (one file may export either or both; optional exports=);
     [plugins.wishbone] packed software (SoT exports only; no reverse to TS):
-    export= Excel (field sheets + MAP_<bus> address map;
-    field .note() continues that Description cell after a newline;
+    export= Excel workbook (default name bus_regfiles.xlsx: field sheets + one
+    Address Map sheet per bus tree: column A absolute address, one 2-row x 3-column
+    block per item indented 3 columns per level, leaves stop at a regfile or an
+    empty port, repeated subtrees and broadcast ports are not expanded, pastel fill
+    per type; field .note() continues that Description cell after a newline;
     regfile .note() is the header Description comment;
-    trunk columns; leaf offset; no empty A / ADDRWIDTH), c= C dir (layout .h + <bus>_map.h + wishbone.h umbrella),
-    uvm= uvm_reg dir (ral_<SHEET>.sv with cell classes + leaf ral_block_<SHEET>, bus ral_block_* hang
+    trunk columns; leaf offset; no empty A / ADDRWIDTH),
+    c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + wishbone.h umbrella at the root),
+    uvm= uvm_reg dir (regfile/ral_<SHEET>.sv with cell classes + leaf ral_block_<SHEET>,
+    bus/ral_block_* hang
     leaves via add_submap; uvm_reg model only, no RALF)
     (one block per bus; TagFromAddr splits that level into one instance per copy;
     a pass-through child is not split again; broadcast windows are addresses);
     git-tracked showcase fw/gen/wishbone (do not delete);
-    generate: listed + attached-leaf SV, then fabric/wrapper; RTL → plugins_dir/wishbone/;
+    generate: listed + attached-leaf SV, then fabric/wrapper;
+    RTL → plugins_dir/wishbone/regfile/ (leaves) and plugins_dir/wishbone/bus/ (fabric);
     demo/soc: one sha256_regfile RTL, one hang per sd_sha channel via SlaveRegfile;
     C sha256.h; smoke identity-match (id = RegfileDef.name);
     firmware uses generated cell unions; soc_map.h aliases software map macros;
@@ -229,9 +235,11 @@ Shared by deps / web / cli for the RTL universe:
                         connect ids; dump → sim_dir (no .autowire/connect XML)
   [wishbone.<source>]   wishbone SoT file: ts=; optional exports=[]; omit = all
                         RegfileDef and/or BusDef exports (types stay separate)
-  [plugins.wishbone]    packed software: export= Excel (field sheets + one sheet per bus tree);
-                        c= C dir (layout + <bus>_map.h + wishbone.h; TagFromAddr aliases
-                        and broadcast windows); uvm= uvm_reg dir (model only, no RALF)
+  [plugins.wishbone]    packed software: export= Excel (bus_regfiles.xlsx: field sheets +
+                        one indented Address Map sheet per bus tree);
+                        c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + wishbone.h;
+                        TagFromAddr aliases
+                        and broadcast windows); uvm= uvm_reg dir (regfile/ + bus/; model only, no RALF)
   [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
                         sim_dir="gen/sim"          DV TB tops

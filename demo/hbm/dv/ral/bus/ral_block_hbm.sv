@@ -8,8 +8,9 @@
 import uvm_pkg::*;
 `include "uvm_macros.svh"
 
-`include "ral_AWORD.sv"
-`include "ral_DWORD.sv"
+`include "../regfile/ral_CENTER.sv"
+`include "../regfile/ral_AWORD.sv"
+`include "../regfile/ral_DWORD.sv"
 
 `include "ral_block_hbm_ch.sv"
 
@@ -78,6 +79,7 @@ class ral_block_hbm extends uvm_reg_block;
 	rand ral_block_hbm_ch ch15_pstate1;
 	rand ral_block_hbm_ch ch15_pstate2;
 	rand ral_block_hbm_ch ch15_pstate3;
+	rand ral_block_center center;
 
 	function new(string name = "ral_block_hbm");
 		super.new(name, build_coverage(UVM_NO_COVERAGE));
@@ -85,327 +87,331 @@ class ral_block_hbm extends uvm_reg_block;
 
 	virtual function void build();
 		default_map = create_map("default_map", 0, 4, UVM_LITTLE_ENDIAN);
-		// ch_bcast @ 32'h00010000: broadcast ch_all: one write at this window hits every subscriber
+		// ch_bcast @ 32'h00011000: broadcast ch_all: one write at this window hits every subscriber
 		// ch0_pstate0: pstate=0
 		this.ch0_pstate0 = ral_block_hbm_ch::type_id::create("ch0_pstate0",, get_full_name());
 		this.ch0_pstate0.configure(this, "");
 		this.ch0_pstate0.build();
-		default_map.add_submap(this.ch0_pstate0.default_map, 32'h00000000);
+		default_map.add_submap(this.ch0_pstate0.default_map, 32'h00001000);
 		// ch0_pstate1: pstate=1
 		this.ch0_pstate1 = ral_block_hbm_ch::type_id::create("ch0_pstate1",, get_full_name());
 		this.ch0_pstate1.configure(this, "");
 		this.ch0_pstate1.build();
-		default_map.add_submap(this.ch0_pstate1.default_map, 32'h00020000);
+		default_map.add_submap(this.ch0_pstate1.default_map, 32'h00021000);
 		// ch0_pstate2: pstate=2
 		this.ch0_pstate2 = ral_block_hbm_ch::type_id::create("ch0_pstate2",, get_full_name());
 		this.ch0_pstate2.configure(this, "");
 		this.ch0_pstate2.build();
-		default_map.add_submap(this.ch0_pstate2.default_map, 32'h00040000);
+		default_map.add_submap(this.ch0_pstate2.default_map, 32'h00041000);
 		// ch0_pstate3: pstate=3
 		this.ch0_pstate3 = ral_block_hbm_ch::type_id::create("ch0_pstate3",, get_full_name());
 		this.ch0_pstate3.configure(this, "");
 		this.ch0_pstate3.build();
-		default_map.add_submap(this.ch0_pstate3.default_map, 32'h00060000);
+		default_map.add_submap(this.ch0_pstate3.default_map, 32'h00061000);
 		// ch1_pstate0: pstate=0
 		this.ch1_pstate0 = ral_block_hbm_ch::type_id::create("ch1_pstate0",, get_full_name());
 		this.ch1_pstate0.configure(this, "");
 		this.ch1_pstate0.build();
-		default_map.add_submap(this.ch1_pstate0.default_map, 32'h00001000);
+		default_map.add_submap(this.ch1_pstate0.default_map, 32'h00002000);
 		// ch1_pstate1: pstate=1
 		this.ch1_pstate1 = ral_block_hbm_ch::type_id::create("ch1_pstate1",, get_full_name());
 		this.ch1_pstate1.configure(this, "");
 		this.ch1_pstate1.build();
-		default_map.add_submap(this.ch1_pstate1.default_map, 32'h00021000);
+		default_map.add_submap(this.ch1_pstate1.default_map, 32'h00022000);
 		// ch1_pstate2: pstate=2
 		this.ch1_pstate2 = ral_block_hbm_ch::type_id::create("ch1_pstate2",, get_full_name());
 		this.ch1_pstate2.configure(this, "");
 		this.ch1_pstate2.build();
-		default_map.add_submap(this.ch1_pstate2.default_map, 32'h00041000);
+		default_map.add_submap(this.ch1_pstate2.default_map, 32'h00042000);
 		// ch1_pstate3: pstate=3
 		this.ch1_pstate3 = ral_block_hbm_ch::type_id::create("ch1_pstate3",, get_full_name());
 		this.ch1_pstate3.configure(this, "");
 		this.ch1_pstate3.build();
-		default_map.add_submap(this.ch1_pstate3.default_map, 32'h00061000);
+		default_map.add_submap(this.ch1_pstate3.default_map, 32'h00062000);
 		// ch2_pstate0: pstate=0
 		this.ch2_pstate0 = ral_block_hbm_ch::type_id::create("ch2_pstate0",, get_full_name());
 		this.ch2_pstate0.configure(this, "");
 		this.ch2_pstate0.build();
-		default_map.add_submap(this.ch2_pstate0.default_map, 32'h00002000);
+		default_map.add_submap(this.ch2_pstate0.default_map, 32'h00003000);
 		// ch2_pstate1: pstate=1
 		this.ch2_pstate1 = ral_block_hbm_ch::type_id::create("ch2_pstate1",, get_full_name());
 		this.ch2_pstate1.configure(this, "");
 		this.ch2_pstate1.build();
-		default_map.add_submap(this.ch2_pstate1.default_map, 32'h00022000);
+		default_map.add_submap(this.ch2_pstate1.default_map, 32'h00023000);
 		// ch2_pstate2: pstate=2
 		this.ch2_pstate2 = ral_block_hbm_ch::type_id::create("ch2_pstate2",, get_full_name());
 		this.ch2_pstate2.configure(this, "");
 		this.ch2_pstate2.build();
-		default_map.add_submap(this.ch2_pstate2.default_map, 32'h00042000);
+		default_map.add_submap(this.ch2_pstate2.default_map, 32'h00043000);
 		// ch2_pstate3: pstate=3
 		this.ch2_pstate3 = ral_block_hbm_ch::type_id::create("ch2_pstate3",, get_full_name());
 		this.ch2_pstate3.configure(this, "");
 		this.ch2_pstate3.build();
-		default_map.add_submap(this.ch2_pstate3.default_map, 32'h00062000);
+		default_map.add_submap(this.ch2_pstate3.default_map, 32'h00063000);
 		// ch3_pstate0: pstate=0
 		this.ch3_pstate0 = ral_block_hbm_ch::type_id::create("ch3_pstate0",, get_full_name());
 		this.ch3_pstate0.configure(this, "");
 		this.ch3_pstate0.build();
-		default_map.add_submap(this.ch3_pstate0.default_map, 32'h00003000);
+		default_map.add_submap(this.ch3_pstate0.default_map, 32'h00004000);
 		// ch3_pstate1: pstate=1
 		this.ch3_pstate1 = ral_block_hbm_ch::type_id::create("ch3_pstate1",, get_full_name());
 		this.ch3_pstate1.configure(this, "");
 		this.ch3_pstate1.build();
-		default_map.add_submap(this.ch3_pstate1.default_map, 32'h00023000);
+		default_map.add_submap(this.ch3_pstate1.default_map, 32'h00024000);
 		// ch3_pstate2: pstate=2
 		this.ch3_pstate2 = ral_block_hbm_ch::type_id::create("ch3_pstate2",, get_full_name());
 		this.ch3_pstate2.configure(this, "");
 		this.ch3_pstate2.build();
-		default_map.add_submap(this.ch3_pstate2.default_map, 32'h00043000);
+		default_map.add_submap(this.ch3_pstate2.default_map, 32'h00044000);
 		// ch3_pstate3: pstate=3
 		this.ch3_pstate3 = ral_block_hbm_ch::type_id::create("ch3_pstate3",, get_full_name());
 		this.ch3_pstate3.configure(this, "");
 		this.ch3_pstate3.build();
-		default_map.add_submap(this.ch3_pstate3.default_map, 32'h00063000);
+		default_map.add_submap(this.ch3_pstate3.default_map, 32'h00064000);
 		// ch4_pstate0: pstate=0
 		this.ch4_pstate0 = ral_block_hbm_ch::type_id::create("ch4_pstate0",, get_full_name());
 		this.ch4_pstate0.configure(this, "");
 		this.ch4_pstate0.build();
-		default_map.add_submap(this.ch4_pstate0.default_map, 32'h00004000);
+		default_map.add_submap(this.ch4_pstate0.default_map, 32'h00005000);
 		// ch4_pstate1: pstate=1
 		this.ch4_pstate1 = ral_block_hbm_ch::type_id::create("ch4_pstate1",, get_full_name());
 		this.ch4_pstate1.configure(this, "");
 		this.ch4_pstate1.build();
-		default_map.add_submap(this.ch4_pstate1.default_map, 32'h00024000);
+		default_map.add_submap(this.ch4_pstate1.default_map, 32'h00025000);
 		// ch4_pstate2: pstate=2
 		this.ch4_pstate2 = ral_block_hbm_ch::type_id::create("ch4_pstate2",, get_full_name());
 		this.ch4_pstate2.configure(this, "");
 		this.ch4_pstate2.build();
-		default_map.add_submap(this.ch4_pstate2.default_map, 32'h00044000);
+		default_map.add_submap(this.ch4_pstate2.default_map, 32'h00045000);
 		// ch4_pstate3: pstate=3
 		this.ch4_pstate3 = ral_block_hbm_ch::type_id::create("ch4_pstate3",, get_full_name());
 		this.ch4_pstate3.configure(this, "");
 		this.ch4_pstate3.build();
-		default_map.add_submap(this.ch4_pstate3.default_map, 32'h00064000);
+		default_map.add_submap(this.ch4_pstate3.default_map, 32'h00065000);
 		// ch5_pstate0: pstate=0
 		this.ch5_pstate0 = ral_block_hbm_ch::type_id::create("ch5_pstate0",, get_full_name());
 		this.ch5_pstate0.configure(this, "");
 		this.ch5_pstate0.build();
-		default_map.add_submap(this.ch5_pstate0.default_map, 32'h00005000);
+		default_map.add_submap(this.ch5_pstate0.default_map, 32'h00006000);
 		// ch5_pstate1: pstate=1
 		this.ch5_pstate1 = ral_block_hbm_ch::type_id::create("ch5_pstate1",, get_full_name());
 		this.ch5_pstate1.configure(this, "");
 		this.ch5_pstate1.build();
-		default_map.add_submap(this.ch5_pstate1.default_map, 32'h00025000);
+		default_map.add_submap(this.ch5_pstate1.default_map, 32'h00026000);
 		// ch5_pstate2: pstate=2
 		this.ch5_pstate2 = ral_block_hbm_ch::type_id::create("ch5_pstate2",, get_full_name());
 		this.ch5_pstate2.configure(this, "");
 		this.ch5_pstate2.build();
-		default_map.add_submap(this.ch5_pstate2.default_map, 32'h00045000);
+		default_map.add_submap(this.ch5_pstate2.default_map, 32'h00046000);
 		// ch5_pstate3: pstate=3
 		this.ch5_pstate3 = ral_block_hbm_ch::type_id::create("ch5_pstate3",, get_full_name());
 		this.ch5_pstate3.configure(this, "");
 		this.ch5_pstate3.build();
-		default_map.add_submap(this.ch5_pstate3.default_map, 32'h00065000);
+		default_map.add_submap(this.ch5_pstate3.default_map, 32'h00066000);
 		// ch6_pstate0: pstate=0
 		this.ch6_pstate0 = ral_block_hbm_ch::type_id::create("ch6_pstate0",, get_full_name());
 		this.ch6_pstate0.configure(this, "");
 		this.ch6_pstate0.build();
-		default_map.add_submap(this.ch6_pstate0.default_map, 32'h00006000);
+		default_map.add_submap(this.ch6_pstate0.default_map, 32'h00007000);
 		// ch6_pstate1: pstate=1
 		this.ch6_pstate1 = ral_block_hbm_ch::type_id::create("ch6_pstate1",, get_full_name());
 		this.ch6_pstate1.configure(this, "");
 		this.ch6_pstate1.build();
-		default_map.add_submap(this.ch6_pstate1.default_map, 32'h00026000);
+		default_map.add_submap(this.ch6_pstate1.default_map, 32'h00027000);
 		// ch6_pstate2: pstate=2
 		this.ch6_pstate2 = ral_block_hbm_ch::type_id::create("ch6_pstate2",, get_full_name());
 		this.ch6_pstate2.configure(this, "");
 		this.ch6_pstate2.build();
-		default_map.add_submap(this.ch6_pstate2.default_map, 32'h00046000);
+		default_map.add_submap(this.ch6_pstate2.default_map, 32'h00047000);
 		// ch6_pstate3: pstate=3
 		this.ch6_pstate3 = ral_block_hbm_ch::type_id::create("ch6_pstate3",, get_full_name());
 		this.ch6_pstate3.configure(this, "");
 		this.ch6_pstate3.build();
-		default_map.add_submap(this.ch6_pstate3.default_map, 32'h00066000);
+		default_map.add_submap(this.ch6_pstate3.default_map, 32'h00067000);
 		// ch7_pstate0: pstate=0
 		this.ch7_pstate0 = ral_block_hbm_ch::type_id::create("ch7_pstate0",, get_full_name());
 		this.ch7_pstate0.configure(this, "");
 		this.ch7_pstate0.build();
-		default_map.add_submap(this.ch7_pstate0.default_map, 32'h00007000);
+		default_map.add_submap(this.ch7_pstate0.default_map, 32'h00008000);
 		// ch7_pstate1: pstate=1
 		this.ch7_pstate1 = ral_block_hbm_ch::type_id::create("ch7_pstate1",, get_full_name());
 		this.ch7_pstate1.configure(this, "");
 		this.ch7_pstate1.build();
-		default_map.add_submap(this.ch7_pstate1.default_map, 32'h00027000);
+		default_map.add_submap(this.ch7_pstate1.default_map, 32'h00028000);
 		// ch7_pstate2: pstate=2
 		this.ch7_pstate2 = ral_block_hbm_ch::type_id::create("ch7_pstate2",, get_full_name());
 		this.ch7_pstate2.configure(this, "");
 		this.ch7_pstate2.build();
-		default_map.add_submap(this.ch7_pstate2.default_map, 32'h00047000);
+		default_map.add_submap(this.ch7_pstate2.default_map, 32'h00048000);
 		// ch7_pstate3: pstate=3
 		this.ch7_pstate3 = ral_block_hbm_ch::type_id::create("ch7_pstate3",, get_full_name());
 		this.ch7_pstate3.configure(this, "");
 		this.ch7_pstate3.build();
-		default_map.add_submap(this.ch7_pstate3.default_map, 32'h00067000);
+		default_map.add_submap(this.ch7_pstate3.default_map, 32'h00068000);
 		// ch8_pstate0: pstate=0
 		this.ch8_pstate0 = ral_block_hbm_ch::type_id::create("ch8_pstate0",, get_full_name());
 		this.ch8_pstate0.configure(this, "");
 		this.ch8_pstate0.build();
-		default_map.add_submap(this.ch8_pstate0.default_map, 32'h00008000);
+		default_map.add_submap(this.ch8_pstate0.default_map, 32'h00009000);
 		// ch8_pstate1: pstate=1
 		this.ch8_pstate1 = ral_block_hbm_ch::type_id::create("ch8_pstate1",, get_full_name());
 		this.ch8_pstate1.configure(this, "");
 		this.ch8_pstate1.build();
-		default_map.add_submap(this.ch8_pstate1.default_map, 32'h00028000);
+		default_map.add_submap(this.ch8_pstate1.default_map, 32'h00029000);
 		// ch8_pstate2: pstate=2
 		this.ch8_pstate2 = ral_block_hbm_ch::type_id::create("ch8_pstate2",, get_full_name());
 		this.ch8_pstate2.configure(this, "");
 		this.ch8_pstate2.build();
-		default_map.add_submap(this.ch8_pstate2.default_map, 32'h00048000);
+		default_map.add_submap(this.ch8_pstate2.default_map, 32'h00049000);
 		// ch8_pstate3: pstate=3
 		this.ch8_pstate3 = ral_block_hbm_ch::type_id::create("ch8_pstate3",, get_full_name());
 		this.ch8_pstate3.configure(this, "");
 		this.ch8_pstate3.build();
-		default_map.add_submap(this.ch8_pstate3.default_map, 32'h00068000);
+		default_map.add_submap(this.ch8_pstate3.default_map, 32'h00069000);
 		// ch9_pstate0: pstate=0
 		this.ch9_pstate0 = ral_block_hbm_ch::type_id::create("ch9_pstate0",, get_full_name());
 		this.ch9_pstate0.configure(this, "");
 		this.ch9_pstate0.build();
-		default_map.add_submap(this.ch9_pstate0.default_map, 32'h00009000);
+		default_map.add_submap(this.ch9_pstate0.default_map, 32'h0000a000);
 		// ch9_pstate1: pstate=1
 		this.ch9_pstate1 = ral_block_hbm_ch::type_id::create("ch9_pstate1",, get_full_name());
 		this.ch9_pstate1.configure(this, "");
 		this.ch9_pstate1.build();
-		default_map.add_submap(this.ch9_pstate1.default_map, 32'h00029000);
+		default_map.add_submap(this.ch9_pstate1.default_map, 32'h0002a000);
 		// ch9_pstate2: pstate=2
 		this.ch9_pstate2 = ral_block_hbm_ch::type_id::create("ch9_pstate2",, get_full_name());
 		this.ch9_pstate2.configure(this, "");
 		this.ch9_pstate2.build();
-		default_map.add_submap(this.ch9_pstate2.default_map, 32'h00049000);
+		default_map.add_submap(this.ch9_pstate2.default_map, 32'h0004a000);
 		// ch9_pstate3: pstate=3
 		this.ch9_pstate3 = ral_block_hbm_ch::type_id::create("ch9_pstate3",, get_full_name());
 		this.ch9_pstate3.configure(this, "");
 		this.ch9_pstate3.build();
-		default_map.add_submap(this.ch9_pstate3.default_map, 32'h00069000);
+		default_map.add_submap(this.ch9_pstate3.default_map, 32'h0006a000);
 		// ch10_pstate0: pstate=0
 		this.ch10_pstate0 = ral_block_hbm_ch::type_id::create("ch10_pstate0",, get_full_name());
 		this.ch10_pstate0.configure(this, "");
 		this.ch10_pstate0.build();
-		default_map.add_submap(this.ch10_pstate0.default_map, 32'h0000a000);
+		default_map.add_submap(this.ch10_pstate0.default_map, 32'h0000b000);
 		// ch10_pstate1: pstate=1
 		this.ch10_pstate1 = ral_block_hbm_ch::type_id::create("ch10_pstate1",, get_full_name());
 		this.ch10_pstate1.configure(this, "");
 		this.ch10_pstate1.build();
-		default_map.add_submap(this.ch10_pstate1.default_map, 32'h0002a000);
+		default_map.add_submap(this.ch10_pstate1.default_map, 32'h0002b000);
 		// ch10_pstate2: pstate=2
 		this.ch10_pstate2 = ral_block_hbm_ch::type_id::create("ch10_pstate2",, get_full_name());
 		this.ch10_pstate2.configure(this, "");
 		this.ch10_pstate2.build();
-		default_map.add_submap(this.ch10_pstate2.default_map, 32'h0004a000);
+		default_map.add_submap(this.ch10_pstate2.default_map, 32'h0004b000);
 		// ch10_pstate3: pstate=3
 		this.ch10_pstate3 = ral_block_hbm_ch::type_id::create("ch10_pstate3",, get_full_name());
 		this.ch10_pstate3.configure(this, "");
 		this.ch10_pstate3.build();
-		default_map.add_submap(this.ch10_pstate3.default_map, 32'h0006a000);
+		default_map.add_submap(this.ch10_pstate3.default_map, 32'h0006b000);
 		// ch11_pstate0: pstate=0
 		this.ch11_pstate0 = ral_block_hbm_ch::type_id::create("ch11_pstate0",, get_full_name());
 		this.ch11_pstate0.configure(this, "");
 		this.ch11_pstate0.build();
-		default_map.add_submap(this.ch11_pstate0.default_map, 32'h0000b000);
+		default_map.add_submap(this.ch11_pstate0.default_map, 32'h0000c000);
 		// ch11_pstate1: pstate=1
 		this.ch11_pstate1 = ral_block_hbm_ch::type_id::create("ch11_pstate1",, get_full_name());
 		this.ch11_pstate1.configure(this, "");
 		this.ch11_pstate1.build();
-		default_map.add_submap(this.ch11_pstate1.default_map, 32'h0002b000);
+		default_map.add_submap(this.ch11_pstate1.default_map, 32'h0002c000);
 		// ch11_pstate2: pstate=2
 		this.ch11_pstate2 = ral_block_hbm_ch::type_id::create("ch11_pstate2",, get_full_name());
 		this.ch11_pstate2.configure(this, "");
 		this.ch11_pstate2.build();
-		default_map.add_submap(this.ch11_pstate2.default_map, 32'h0004b000);
+		default_map.add_submap(this.ch11_pstate2.default_map, 32'h0004c000);
 		// ch11_pstate3: pstate=3
 		this.ch11_pstate3 = ral_block_hbm_ch::type_id::create("ch11_pstate3",, get_full_name());
 		this.ch11_pstate3.configure(this, "");
 		this.ch11_pstate3.build();
-		default_map.add_submap(this.ch11_pstate3.default_map, 32'h0006b000);
+		default_map.add_submap(this.ch11_pstate3.default_map, 32'h0006c000);
 		// ch12_pstate0: pstate=0
 		this.ch12_pstate0 = ral_block_hbm_ch::type_id::create("ch12_pstate0",, get_full_name());
 		this.ch12_pstate0.configure(this, "");
 		this.ch12_pstate0.build();
-		default_map.add_submap(this.ch12_pstate0.default_map, 32'h0000c000);
+		default_map.add_submap(this.ch12_pstate0.default_map, 32'h0000d000);
 		// ch12_pstate1: pstate=1
 		this.ch12_pstate1 = ral_block_hbm_ch::type_id::create("ch12_pstate1",, get_full_name());
 		this.ch12_pstate1.configure(this, "");
 		this.ch12_pstate1.build();
-		default_map.add_submap(this.ch12_pstate1.default_map, 32'h0002c000);
+		default_map.add_submap(this.ch12_pstate1.default_map, 32'h0002d000);
 		// ch12_pstate2: pstate=2
 		this.ch12_pstate2 = ral_block_hbm_ch::type_id::create("ch12_pstate2",, get_full_name());
 		this.ch12_pstate2.configure(this, "");
 		this.ch12_pstate2.build();
-		default_map.add_submap(this.ch12_pstate2.default_map, 32'h0004c000);
+		default_map.add_submap(this.ch12_pstate2.default_map, 32'h0004d000);
 		// ch12_pstate3: pstate=3
 		this.ch12_pstate3 = ral_block_hbm_ch::type_id::create("ch12_pstate3",, get_full_name());
 		this.ch12_pstate3.configure(this, "");
 		this.ch12_pstate3.build();
-		default_map.add_submap(this.ch12_pstate3.default_map, 32'h0006c000);
+		default_map.add_submap(this.ch12_pstate3.default_map, 32'h0006d000);
 		// ch13_pstate0: pstate=0
 		this.ch13_pstate0 = ral_block_hbm_ch::type_id::create("ch13_pstate0",, get_full_name());
 		this.ch13_pstate0.configure(this, "");
 		this.ch13_pstate0.build();
-		default_map.add_submap(this.ch13_pstate0.default_map, 32'h0000d000);
+		default_map.add_submap(this.ch13_pstate0.default_map, 32'h0000e000);
 		// ch13_pstate1: pstate=1
 		this.ch13_pstate1 = ral_block_hbm_ch::type_id::create("ch13_pstate1",, get_full_name());
 		this.ch13_pstate1.configure(this, "");
 		this.ch13_pstate1.build();
-		default_map.add_submap(this.ch13_pstate1.default_map, 32'h0002d000);
+		default_map.add_submap(this.ch13_pstate1.default_map, 32'h0002e000);
 		// ch13_pstate2: pstate=2
 		this.ch13_pstate2 = ral_block_hbm_ch::type_id::create("ch13_pstate2",, get_full_name());
 		this.ch13_pstate2.configure(this, "");
 		this.ch13_pstate2.build();
-		default_map.add_submap(this.ch13_pstate2.default_map, 32'h0004d000);
+		default_map.add_submap(this.ch13_pstate2.default_map, 32'h0004e000);
 		// ch13_pstate3: pstate=3
 		this.ch13_pstate3 = ral_block_hbm_ch::type_id::create("ch13_pstate3",, get_full_name());
 		this.ch13_pstate3.configure(this, "");
 		this.ch13_pstate3.build();
-		default_map.add_submap(this.ch13_pstate3.default_map, 32'h0006d000);
+		default_map.add_submap(this.ch13_pstate3.default_map, 32'h0006e000);
 		// ch14_pstate0: pstate=0
 		this.ch14_pstate0 = ral_block_hbm_ch::type_id::create("ch14_pstate0",, get_full_name());
 		this.ch14_pstate0.configure(this, "");
 		this.ch14_pstate0.build();
-		default_map.add_submap(this.ch14_pstate0.default_map, 32'h0000e000);
+		default_map.add_submap(this.ch14_pstate0.default_map, 32'h0000f000);
 		// ch14_pstate1: pstate=1
 		this.ch14_pstate1 = ral_block_hbm_ch::type_id::create("ch14_pstate1",, get_full_name());
 		this.ch14_pstate1.configure(this, "");
 		this.ch14_pstate1.build();
-		default_map.add_submap(this.ch14_pstate1.default_map, 32'h0002e000);
+		default_map.add_submap(this.ch14_pstate1.default_map, 32'h0002f000);
 		// ch14_pstate2: pstate=2
 		this.ch14_pstate2 = ral_block_hbm_ch::type_id::create("ch14_pstate2",, get_full_name());
 		this.ch14_pstate2.configure(this, "");
 		this.ch14_pstate2.build();
-		default_map.add_submap(this.ch14_pstate2.default_map, 32'h0004e000);
+		default_map.add_submap(this.ch14_pstate2.default_map, 32'h0004f000);
 		// ch14_pstate3: pstate=3
 		this.ch14_pstate3 = ral_block_hbm_ch::type_id::create("ch14_pstate3",, get_full_name());
 		this.ch14_pstate3.configure(this, "");
 		this.ch14_pstate3.build();
-		default_map.add_submap(this.ch14_pstate3.default_map, 32'h0006e000);
+		default_map.add_submap(this.ch14_pstate3.default_map, 32'h0006f000);
 		// ch15_pstate0: pstate=0
 		this.ch15_pstate0 = ral_block_hbm_ch::type_id::create("ch15_pstate0",, get_full_name());
 		this.ch15_pstate0.configure(this, "");
 		this.ch15_pstate0.build();
-		default_map.add_submap(this.ch15_pstate0.default_map, 32'h0000f000);
+		default_map.add_submap(this.ch15_pstate0.default_map, 32'h00010000);
 		// ch15_pstate1: pstate=1
 		this.ch15_pstate1 = ral_block_hbm_ch::type_id::create("ch15_pstate1",, get_full_name());
 		this.ch15_pstate1.configure(this, "");
 		this.ch15_pstate1.build();
-		default_map.add_submap(this.ch15_pstate1.default_map, 32'h0002f000);
+		default_map.add_submap(this.ch15_pstate1.default_map, 32'h00030000);
 		// ch15_pstate2: pstate=2
 		this.ch15_pstate2 = ral_block_hbm_ch::type_id::create("ch15_pstate2",, get_full_name());
 		this.ch15_pstate2.configure(this, "");
 		this.ch15_pstate2.build();
-		default_map.add_submap(this.ch15_pstate2.default_map, 32'h0004f000);
+		default_map.add_submap(this.ch15_pstate2.default_map, 32'h00050000);
 		// ch15_pstate3: pstate=3
 		this.ch15_pstate3 = ral_block_hbm_ch::type_id::create("ch15_pstate3",, get_full_name());
 		this.ch15_pstate3.configure(this, "");
 		this.ch15_pstate3.build();
-		default_map.add_submap(this.ch15_pstate3.default_map, 32'h0006f000);
+		default_map.add_submap(this.ch15_pstate3.default_map, 32'h00070000);
+		this.center = ral_block_center::type_id::create("center",, get_full_name());
+		this.center.configure(this, "");
+		this.center.build();
+		default_map.add_submap(this.center.default_map, 32'h00000000);
 	endfunction: build
 
 	`uvm_object_utils(ral_block_hbm)

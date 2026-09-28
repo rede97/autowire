@@ -8,8 +8,8 @@
 import uvm_pkg::*;
 `include "uvm_macros.svh"
 
-`include "ral_SHA256.sv"
-`include "ral_SMOKE.sv"
+`include "../regfile/ral_SHA256.sv"
+`include "../regfile/ral_SMOKE.sv"
 
 `include "ral_block_sd_sha.sv"
 

@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-#include "sha256.h"
+#include "../regfile/sha256.h"
 
 #define SD_SHA_SHA256_BASE 0x00000040u
 

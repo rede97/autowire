@@ -8,8 +8,8 @@
 import uvm_pkg::*;
 `include "uvm_macros.svh"
 
-`include "ral_AWORD.sv"
-`include "ral_DWORD.sv"
+`include "../regfile/ral_AWORD.sv"
+`include "../regfile/ral_DWORD.sv"
 
 class ral_block_hbm_ch extends uvm_reg_block;
 	rand ral_block_aword aword;

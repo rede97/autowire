@@ -7,8 +7,8 @@
 
 #include <stdint.h>
 
-#include "aword.h"
-#include "dword.h"
+#include "../regfile/aword.h"
+#include "../regfile/dword.h"
 
 #define HBM_CH_AWORD_BASE 0x00000000u
 #define HBM_CH_DWORD0_BASE 0x00000100u

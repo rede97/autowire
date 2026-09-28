@@ -11,7 +11,7 @@ the SPI flash model via `$readmemh` / `+firmware=…`.
 | Path | Role |
 |------|------|
 | `common/` | `soc_map.h` (aliases bus map + mmio helpers), `sdspi_regs.h`, `link.ld`, `crt0.S`, `makehex.py` |
-| `gen/wishbone/` | Packed generated C (`smoke.h`, `sha256.h`, `sd_sha_map.h`, `soc_wb_map.h`, `wishbone.h`) and Excel `wishbone.xlsx` from `[plugins.wishbone]`; **git-tracked showcase** (regenerate in place, do not delete) |
+| `gen/wishbone/` | Packed generated C — `regfile/` (`smoke.h`, `sha256.h`), `bus/` (`sd_sha_map.h`, `soc_wb_map.h`), umbrella `wishbone.h` — and Excel `bus_regfiles.xlsx` from `[plugins.wishbone]`; **git-tracked showcase** (regenerate in place, do not delete) |
 | `basic_smoke/` | Cascade MMIO: smoke ID + SHA0/SHA1 CTRL via two `SlaveBus` channels + grant CSR |
 | `regfile_smoke/` | Wishbone-regfile MMIO smoke (RC/RO/RW/RWW counter/RWE FIFO loopback/…) |
 | `sd_sha256/` | SD0 init + CMD17 → channel DMA (FIFO A, relative SRC) → SHA256 |

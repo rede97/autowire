@@ -4,9 +4,10 @@
 #ifndef AUTOWIRE_WISHBONE_H
 #define AUTOWIRE_WISHBONE_H
 
-#include "aword.h"
-#include "dword.h"
-#include "hbm_ch_map.h"
-#include "hbm_map.h"
+#include "regfile/aword.h"
+#include "regfile/center.h"
+#include "regfile/dword.h"
+#include "bus/hbm_ch_map.h"
+#include "bus/hbm_map.h"
 
 #endif /* AUTOWIRE_WISHBONE_H */

@@ -430,6 +430,11 @@ package hbm_tb_pkg;
 		endfunction
 
 		task body();
+			// Center CSR in front of channel 0: one instance for all channels and
+			// pstates. STATUS mirrors the tb_top RO ties (all_cal_done=1, err_ch=5).
+			check_reg(ral.center.ID,     32'h0001_c0de, "center_ID");
+			check_reg(ral.center.CH_EN,  32'h0000_ffff, "center_CH_EN");
+			check_reg(ral.center.STATUS, 32'h0000_0501, "center_STATUS");
 			for (int ch = 0; ch < 16; ch++) begin
 				ral_block_hbm_ch b0 = chan(ch, 0);
 				string tag = $sformatf("ch%0d", ch);
@@ -522,7 +527,7 @@ package hbm_tb_pkg;
 		task body();
 			bit [31:0] rd;
 			// All channels, dword0+dword1, VREF pstate0: ch_bcast | 0x308.
-			wb_raw(19'h10308, 32'h0000_002a, 1'b1, rd);
+			wb_raw(19'h11308, 32'h0000_002a, 1'b1, rd);
 			for (int ch = 0; ch < 16; ch++) begin
 				string tag = $sformatf("ch%0d", ch);
 				check_reg(chan(ch, 0).dword0.VREF, 32'h2a, {tag, " ps0 dword0_VREF after ch_bcast"});
@@ -533,7 +538,7 @@ package hbm_tb_pkg;
 				check_reg(chan(ch, 0).aword.TIMING, 32'h0000_0c0c, {tag, " aword_TIMING untouched"});
 			end
 			// Channel-local dword broadcast: ch3 window + 0x308.
-			wb_raw(19'h03308, 32'h0000_0055, 1'b1, rd);
+			wb_raw(19'h04308, 32'h0000_0055, 1'b1, rd);
 			check_reg(chan(3, 0).dword0.VREF, 32'h55, "ch3 dword0_VREF after dword_bcast");
 			check_reg(chan(3, 0).dword1.VREF, 32'h55, "ch3 dword1_VREF after dword_bcast");
 			check_reg(chan(2, 0).dword0.VREF, 32'h2a, "ch2 dword0_VREF untouched");
@@ -542,7 +547,7 @@ package hbm_tb_pkg;
 
 	// Broadcast read OR: train_pass_n is one active-low RO bit per lane
 	// (16 ch x 2 dword = lane bit [2*ch+dw] of tb_top.train_pass_n).
-	// Reading ch_bcast|dword_bcast|TRAIN (0x10310) ORs all 32 lanes into bit 0.
+	// Reading ch_bcast|dword_bcast|TRAIN (0x11310) ORs all 32 lanes into bit 0.
 	class hbm_bcast_read_seq extends hbm_base_seq;
 		`uvm_object_utils(hbm_bcast_read_seq)
 		function new(string name = "hbm_bcast_read_seq");
@@ -554,14 +559,14 @@ package hbm_tb_pkg;
 			// All lanes pass.
 			if (!uvm_hdl_deposit("tb_top.train_pass_n", 32'h0000_0000))
 				`uvm_fatal("HDL", "cannot deposit tb_top.train_pass_n")
-			wb_raw(19'h10310, 0, 1'b0, rd);
+			wb_raw(19'h11310, 0, 1'b0, rd);
 			if (rd !== 32'h0) `uvm_error("BCAST_RD", $sformatf("all-pass: exp 0 got %08h", rd))
 			// Lane 7 (ch3 dword1) fails -> OR bit set, via both masters.
 			if (!uvm_hdl_deposit("tb_top.train_pass_n", 32'h0000_0080))
 				`uvm_fatal("HDL", "cannot deposit tb_top.train_pass_n")
-			wb_raw(19'h10310, 0, 1'b0, rd);
+			wb_raw(19'h11310, 0, 1'b0, rd);
 			if (rd !== 32'h1) `uvm_error("BCAST_RD", $sformatf("lane7 via WB: exp 1 got %08h", rd))
-			apb_raw(19'h10310, 0, 1'b0, rd);
+			apb_raw(19'h11310, 0, 1'b0, rd);
 			if (rd !== 32'h1) `uvm_error("BCAST_RD", $sformatf("lane7 via APB: exp 1 got %08h", rd))
 			// The failing lane is visible in its own RAL register, others stay 0.
 			check_reg(chan(3, 0).dword1.TRAIN, 32'h1, "ch3 dword1_TRAIN");
@@ -569,16 +574,16 @@ package hbm_tb_pkg;
 			// Channel-local dword broadcast read: lane 10 (ch5 dword0).
 			if (!uvm_hdl_deposit("tb_top.train_pass_n", 32'h0000_0400))
 				`uvm_fatal("HDL", "cannot deposit tb_top.train_pass_n")
-			wb_raw(19'h05310, 0, 1'b0, rd);
+			wb_raw(19'h06310, 0, 1'b0, rd);
 			if (rd !== 32'h1) `uvm_error("BCAST_RD", $sformatf("ch5 dword_bcast: exp 1 got %08h", rd))
-			wb_raw(19'h04310, 0, 1'b0, rd);
+			wb_raw(19'h05310, 0, 1'b0, rd);
 			if (rd !== 32'h0) `uvm_error("BCAST_RD", $sformatf("ch4 dword_bcast: exp 0 got %08h", rd))
-			wb_raw(19'h10310, 0, 1'b0, rd);
+			wb_raw(19'h11310, 0, 1'b0, rd);
 			if (rd !== 32'h1) `uvm_error("BCAST_RD", $sformatf("ch_bcast sees ch5: exp 1 got %08h", rd))
 			// Back to all-pass.
 			if (!uvm_hdl_deposit("tb_top.train_pass_n", 32'h0000_0000))
 				`uvm_fatal("HDL", "cannot deposit tb_top.train_pass_n")
-			wb_raw(19'h10310, 0, 1'b0, rd);
+			wb_raw(19'h11310, 0, 1'b0, rd);
 			if (rd !== 32'h0) `uvm_error("BCAST_RD", $sformatf("recovered: exp 0 got %08h", rd))
 		endtask
 	endclass
@@ -623,7 +628,7 @@ package hbm_tb_pkg;
 					for (int ch = 0; ch < 16; ch++) begin
 						for (int ps = 0; ps < 4; ps++) begin
 							bit [31:0] v = $urandom & 32'h0000_1f1f;
-							bit [18:0] a = 19'(ch*19'h1000 + ps*19'h20000 + 19'h10c);
+							bit [18:0] a = 19'((ch+1)*19'h1000 + ps*19'h20000 + 19'h10c);
 							apb_raw(a, v, 1'b1, rd);
 							apb_exp[ch][ps] = v;
 							apb_raw(a, 0, 1'b0, rd);
@@ -633,7 +638,7 @@ package hbm_tb_pkg;
 					end
 					for (int k = 0; k < 8; k++) begin
 						bit [31:0] v = $urandom & 32'h0000_ffff;
-						apb_raw(19'h00008, v, 1'b1, rd);
+						apb_raw(19'h01008, v, 1'b1, rd);
 						cont_apb = v;
 					end
 				end

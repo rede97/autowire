@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import chalk from "chalk";
 import { writeIfChanged } from "../../core/write.ts";
 import type { WorkspaceConfig } from "../../workspace.ts";
-import { PLUGIN_ID } from "../wishbone/id.ts";
+import { PLUGIN_ID, REGFILE_DIR } from "../wishbone/id.ts";
 import { effectiveSheet, isRegfileDef, type RegfileDef } from "./dsl.ts";
 import { emitRegfileSv } from "./emit.ts";
 import {
@@ -53,7 +53,7 @@ export async function generateDef(
 ): Promise<string[]> {
 	const laid = layoutRegfile(def);
 	const paths: string[] = [];
-	const svDir = join(ws.pluginsDir, PLUGIN_ID);
+	const svDir = join(ws.pluginsDir, PLUGIN_ID, REGFILE_DIR);
 	await mkdir(svDir, { recursive: true });
 	const svPath = join(svDir, `${def.name.toLowerCase()}_regfile.sv`);
 	if (await writeIfChanged(svPath, emitRegfileSv(laid), force))
@@ -73,15 +73,17 @@ export async function generateDef(
 	swSheets.set(table, fp);
 	excelBySheet.set(table, laid);
 	if (ws.wishboneCExport) {
-		await mkdir(ws.wishboneCExport, { recursive: true });
-		const cPath = join(ws.wishboneCExport, `${table}.h`);
+		const cDir = join(ws.wishboneCExport, REGFILE_DIR);
+		await mkdir(cDir, { recursive: true });
+		const cPath = join(cDir, `${table}.h`);
 		if (await writeIfChanged(cPath, emitRegfileC(laid), force))
 			paths.push(cPath);
 		console.log(chalk.green(`regfile ${def.name} ${cPath}`));
 	}
 	if (ws.wishboneUvmExport) {
-		await mkdir(ws.wishboneUvmExport, { recursive: true });
-		const uPath = join(ws.wishboneUvmExport, `ral_${table.toUpperCase()}.sv`);
+		const uvmDir = join(ws.wishboneUvmExport, REGFILE_DIR);
+		await mkdir(uvmDir, { recursive: true });
+		const uPath = join(uvmDir, `ral_${table.toUpperCase()}.sv`);
 		if (await writeIfChanged(uPath, emitRegfileUvm(laid), force))
 			paths.push(uPath);
 		console.log(chalk.green(`regfile ${def.name} ${uPath}`));

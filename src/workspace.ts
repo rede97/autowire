@@ -547,9 +547,9 @@ plugins_dir = "gen/plugins"
 
 # Type-A wishbone (RegfileDef + BusDef stay separate types).
 # [plugins.wishbone]
-# export = "fw/gen/wishbone/wishbone.xlsx"
-# c = "fw/gen/wishbone"
-# uvm = "dv/ral"
+# export = "fw/gen/wishbone/bus_regfiles.xlsx"
+# c = "fw/gen/wishbone"   # regfile/<sheet>.h + bus/<bus>_map.h + wishbone.h
+# uvm = "dv/ral"          # regfile/ral_<SHEET>.sv + bus/ral_block_<bus>.sv
 # [wishbone.soc]
 # ts = "sot/wb_bus_soc.ts"
 

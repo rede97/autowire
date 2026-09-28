@@ -174,7 +174,7 @@ Block("wide", "Wide fields", BlockDefault.byteAlign(4), [
 1. **一份** `RegfileDef.name` 导出 ↔ **一个**生成叶子模（硬件例化 / WB identity）。软件与文档身份 = 有效 **`sheet`**（空/缺省 = `name`）。  
 2. 同一 `.ts` 模块 / 工作区登记内可多个导出；**`name` 必须唯一**（一份 `name` ↔ 一份 SV 叶子）。同一 IP 多挂总线：**一份** SoT + bus `SlaveRegfile(regfile, base, { id })` 多次，或挂到可复用的 child `BusDef` 再 `SlaveBus` ×N（demo：`sha256` 挂在 `sd_sha` 上，两个 channel 例化同一 wrapper）。有效 `sheet` **可以**被不同 `name` 共享（C/UVM/Excel 只写一份）；共享时 **字段 layout 必须相同**，不同 → generate 报错。  
 3. 有效 `sheet` **必须**是稳定标识符（`[A-Za-z_][A-Za-z0-9_]*`）。  
-4. 工作簿路径：`autowire.toml` 的 **`plugins.wishbone.export`**（例 `"fw/gen/wishbone/wishbone.xlsx"`）；**永远**文档产物；改寄存器 **只改** TS。未配置 export → 可不写 Excel。  
+4. 工作簿路径：`autowire.toml` 的 **`plugins.wishbone.export`**（默认名 `"fw/gen/wishbone/bus_regfiles.xlsx"`）；**永远**文档产物；改寄存器 **只改** TS。未配置 export → 可不写 Excel。  
 5. HTML 桩 **结构**上可与 `aw-mod` 同槽；**语义**上由 wishbone-regfile **generate**，不进 connect elaborate，不写 `.autowire/connect/`。  
 6. Shadow：**必须**经 `RegfileDefault…shadows(...)`（或等价 opts）挂在表级；无 shadow 则省略。  
 7. Shadow 挂在 **Cell**（或 Block 缺省落到 Cell）；有效 bank = `wb_tga` 切片再经该 shadow 的 **`remaps`**（bitmask）。**禁止** Field 级 shadow；**禁止**同 cell 混 shadow。  
@@ -200,7 +200,7 @@ generate：TS RegfileDef export
 - **禁止**经 connect 路径直接吐 regfile SV——只走 generate → leaf → RtlIndex（HTML 或 bus wrapper 再例化）。  
 - 声明 **禁止**登记为 `[connect.<id>]` / `[sim.<id>]`；toml 用 `[wishbone.<source_id>] ts=` 指向 SoT **文件**（可含多个 export）。  
 - 字段重叠 / 共享 `sheet` 但 layout 不同 / 桩带子女等自检在 **generate** 失败即不落盘。  
-- SV 只进 `plugins_dir/<plugin-id>/`；Excel / C / uvm_reg 只写 `[plugins.wishbone]` 所指路径，**禁止**当 SoT。
+- SV 只进 `plugins_dir/<plugin-id>/regfile/`（bus 产物在 `bus/`，§6.2）；Excel / C / uvm_reg 只写 `[plugins.wishbone]` 所指路径，**禁止**当 SoT。
 
 ## 5. 生成 RTL 模板与样式（对照主干；口名/时序已裁定）
 
@@ -492,16 +492,16 @@ effective_sel = wb_tga[tag-bits]
 ```toml
 # 全局：同一 SoT 的非 RTL 导出（文档 / 固件 / UVM）；均非 SoT
 [plugins.wishbone]
-export = "fw/gen/wishbone/wishbone.xlsx"  # field sheets + one sheet per bus tree
-c      = "fw/gen/wishbone"                # <sheet>.h + <bus>_map.h + wishbone.h
-uvm    = "dv/ral"                         # ral_<SHEET>.sv（cell 类 + 叶子 ral_block_<sheet>）+ ral_block_* + ral_wishbone.sv
+export = "fw/gen/wishbone/bus_regfiles.xlsx"  # field sheets + one Address Map sheet per bus tree
+c      = "fw/gen/wishbone"                    # regfile/<sheet>.h + bus/<bus>_map.h + wishbone.h
+uvm    = "dv/ral"                             # regfile/ral_<SHEET>.sv + bus/ral_block_<bus>.sv + ral_wishbone.sv
 
 # source_id = SoT 文件槽（可含 RegfileDef 与/或 BusDef）；不是单个叶子名
 [wishbone.examples]
 ts = "docs/examples/regfile/regfile.ts"
 # exports = ["sub_module_a"]   # 可选；省略 = 文件内全部 RegfileDef 与 BusDef
 
-# RTL out → [dump] plugins_dir/wishbone/<name>_regfile.sv
+# RTL out → [dump] plugins_dir/wishbone/regfile/<name>_regfile.sv
 ```
 
 - **禁止**在 toml 写 pin 级连线。  
@@ -511,7 +511,7 @@ ts = "docs/examples/regfile/regfile.ts"
 - 省略某键 → 跳过该导出。键必须是非空字符串。  
 - Excel 工作表名来自 **有效 `sheet`**（缺省 = `name`），不是 HTML 属性。同 sheet 的多例化共用一份软件/文档产物。  
 - C / uvm_reg / Excel **禁止**进 `plugins_dir`（那是 SV 叶子）；也 **禁止**当 connect/sim dump。
-- demo/soc：一份 `sha256` SoT → `sha256_regfile.sv` + `sha256.h` + `ral_SHA256.sv`；channel bus `SlaveRegfile(sha256, 0x40)` 挂一次，两个 `SlaveBus` channel 例化同一 `sd_sha_system`。父级 `TagFromAddr(bank)` 把每个 channel 和 smoke 拆成 bank0..3；`sd_sha` 只透传 `bank`，不再拆。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`soc_wb_map.h` overlay `ch0_bank0_sha256` … + `wishbone.h`）；`fw/common/soc_map.h` 只做别名（固件用 bank0）。C 头 **入库展示**（`fw/gen/wishbone/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（无 `.ralf`；`ral_block_soc_wb.sv` 与 `ral_wishbone.sv` 同套打包）。
+- demo/soc：一份 `sha256` SoT → `regfile/sha256_regfile.sv` + `regfile/sha256.h` + `regfile/ral_SHA256.sv`；channel bus `SlaveRegfile(sha256, 0x40)` 挂一次，两个 `SlaveBus` channel 例化同一 `sd_sha_system`。父级 `TagFromAddr(bank)` 把每个 channel 和 smoke 拆成 bank0..3；`sd_sha` 只透传 `bank`，不再拆。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`bus/soc_wb_map.h` overlay `ch0_bank0_sha256` … + 顶层 `wishbone.h`）；`fw/common/soc_map.h` 只做别名（固件用 bank0）。C 头 **入库展示**（`fw/gen/wishbone/{regfile,bus}/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（无 `.ralf`；`bus/ral_block_soc_wb.sv` 与顶层 `ral_wishbone.sv` 同套打包）。
 
 ### 6.1 C 头、uvm_reg 与 Excel（已裁定；C / uvm_reg / Excel emit 已落地）
 
@@ -535,6 +535,58 @@ wishbone generate（同一插件；RegfileDef / BusDef 类型分立）
 | UVM | `uvm=` **目录** | `ral_<SHEET>.sv` | 对照主干 `gen_ralf.py` 的 **cell 级结果**：`class ral_reg_<table>_<cell> extends uvm_reg` + `uvm_reg_field`（width / lsb / access / reset）；外加每 sheet 一份叶子 `class ral_block_<sheet> extends uvm_reg_block`，cell 以布局 offset `add_reg` 进自己的 `default_map`。**禁止** `.ralf` 文本。shadow 只写注释 | 窗基址、TGA、跨叶子的地址图；bus 侧只用 `add_submap` 挂叶子 block |
 
 复位值：标量 `.reset`；dict 只取 **copy 0**（与「可见的一份」一致）。Access → `uvm_reg_field` 的 `access` 字符串沿主干 `field.access.ral_name`（实现时对照 Python Access）；C 位域不编码 Access。
+
+### 6.2 导出目录分层（regfile / bus 分家）
+
+`[plugins.wishbone]` 的键 **不变**（`export` / `c` / `uvm` 仍各一条路径）；插件在每个 **目录型** 键下自动分出 `regfile/` 与 `bus/` 两个子目录，umbrella 留在顶层：
+
+```text
+plugins_dir/wishbone/
+    regfile/<name>_regfile.sv
+    bus/<bus>_decoder.sv | <bus>_interconnect.sv | <bus>_system.sv
+    bus/wb_cfg_pipe.sv、wb_apb2wb.sv、wb_cdc.sv …      # master / pipe 公共模块
+c=<dir>/
+    regfile/<sheet>.h
+    bus/<bus>_map.h
+    wishbone.h                                        # umbrella：#include "regfile/…" / "bus/…"
+uvm=<dir>/
+    regfile/ral_<SHEET>.sv
+    bus/ral_block_<bus>.sv
+    ral_wishbone.sv                                   # umbrella：`include "regfile/…" / "bus/…"
+export=<file>                                         # 默认名 bus_regfiles.xlsx（不再叫 wishbone.xlsx）
+```
+
+- umbrella **必须**留在键指向的目录根，内部用相对子目录路径引用；工具的 include 以「包含文件所在目录」解析，不需要新增 incdir。
+- 子目录名 **固定** `regfile` / `bus`，不可配置（不新增 toml 键；`[plugins.wishbone]` 仍是唯一路径来源）。
+- 生成 SV 的 filelist / 依赖若按目录展开，需要覆盖两个子目录；`.svh` 纪律不变。
+
+### 6.3 Address Map 表布局（每棵总线树一张 sheet）
+
+工作簿名默认 `bus_regfiles.xlsx`。总线树 sheet **重排**为「缩进块」形状，替换原先的 8 列平表（`Address/Window/Size/Leaf/Bits/Broadcast/Shadow/Description`）：
+
+- **A 列**：绝对地址（`0x` + `addr_width` 对齐宽度），跨该项目的 2 行合并。
+- 每个项目占 **2 行 × 3 列**，四周画一圈 **外边框**（细线 `FF9AA0A6`；块内格线仍是浅灰 hair）；深度 `d` 的项目从 `B + 3d` 列开始（子级 decoder 元素再右移 3 列，逐级递推）。
+- 子级 **相对偏移为 0** 时（起点与父级同址）**不另起 2 行**，直接排在父级那两行的右侧一组列里；多级连续 0 偏移就一路向右接在同一行带上。其余项各占新的 2 行。
+  - 第 1 行：`相对地址偏移` | `地址空间大小` | `bus-tag / 广播信息`
+  - 第 2 行：`名称` | `类型`（`bus` / `interconnect` / `regfile` / `broadcast` / `port`）| `description`
+- 表头同形：第 1 行 `Abs Addr | Offset | Size | Tag / Broadcast`，第 2 行留空 A 列 + `Name | Type | Description`。
+- **叶子粒度**只到 **regfile** 或 **空 bus 端口**；**不**再展开寄存器 / 字段（原 `Bits` 列删除，字段内容看各自 field sheet）。
+- **不展开**：同一 `BusDef` 第二次出现（多 channel 例化同一子树）与广播端口——与 `print-tree.ts` 的 `seen` 集合同一规则；该项目只出 1 个 2×3 块，Tag 格里写 `repeat of <bus>` / `broadcast <domain>` / `broadcast-by: …`。
+- shadow 从独立列改为 Tag 格追加 `shadow: a|b`。
+
+配色（低对比度 pastel；边框用浅灰细线，避免整表发花）：
+
+| 位置 | 填充 ARGB |
+|---|---|
+| A 列绝对地址（统一） | `FFDCE9F5` 浅蓝 |
+| `bus` / `interconnect` 块 | `FFE4EEDC` 浅绿 |
+| `regfile` 块 | `FFFDF3D8` 浅琥珀 |
+| 广播端口块 | `FFEDE2F3` 浅紫 |
+| 空 bus 端口（无 regfile 无子树） | `FFECECEC` 浅灰 |
+| 重复子树（不展开） | `FFF2E0DC` 浅粉 |
+| 表头 | `FFE8E8E8` 浅灰 |
+
+field sheet 的黄/灰配色 **不变**（对照主干 `gen_excel_doc.py`）。整本工作簿（字段 sheet + Address Map sheet）统一 **等宽字体 Consolas**，十六进制与标识符对齐。
 
 ## 7. 不做（v1）
 

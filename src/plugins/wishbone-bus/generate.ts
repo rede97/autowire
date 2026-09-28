@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { writeIfChanged } from "../../core/write.ts";
 import type { WorkspaceConfig } from "../../workspace.ts";
-import { PLUGIN_ID } from "../wishbone/id.ts";
+import { BUS_DIR, PLUGIN_ID } from "../wishbone/id.ts";
 import { type BusDef, isBusDef } from "./dsl.ts";
 import { busModuleName, busSystemModuleName, emitBusSv } from "./emit.ts";
 import { emitBusSystemSv } from "./emit-attach.ts";
@@ -79,7 +79,7 @@ export async function generateDef(
 	force = false,
 ): Promise<string[]> {
 	const sv = emitBusSv(def);
-	const outDir = join(ws.pluginsDir, PLUGIN_ID);
+	const outDir = join(ws.pluginsDir, PLUGIN_ID, BUS_DIR);
 	await mkdir(outDir, { recursive: true });
 	const paths: string[] = [];
 	const outPath = join(outDir, `${busModuleName(def)}.sv`);

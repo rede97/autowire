@@ -4,9 +4,10 @@
 `ifndef RAL_WISHBONE_SV
 `define RAL_WISHBONE_SV
 
-`include "ral_AWORD.sv"
-`include "ral_DWORD.sv"
-`include "ral_block_hbm_ch.sv"
-`include "ral_block_hbm.sv"
+`include "regfile/ral_AWORD.sv"
+`include "regfile/ral_CENTER.sv"
+`include "regfile/ral_DWORD.sv"
+`include "bus/ral_block_hbm_ch.sv"
+`include "bus/ral_block_hbm.sv"
 
 `endif
