@@ -105,8 +105,9 @@ export function loadPack(): Promise<PackedFile[]> {
 	packCache ??= (async () => {
 		// Lazy: the generated module is a ~27MB string literal; importing it
 		// statically would decode it on every cold start.
-		const { DOC_PACK_B64 } = await import("./doc-pack.generated.ts");
-		if (DOC_PACK_B64) return decodePack(Buffer.from(DOC_PACK_B64, "base64"));
+		const { docPackB64 } = await import("./doc-pack.generated.ts");
+		const b64 = docPackB64();
+		if (b64) return decodePack(Buffer.from(b64, "base64"));
 		return collectPackFiles(join(import.meta.dir, "..", ".."));
 	})();
 	return packCache;
