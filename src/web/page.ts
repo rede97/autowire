@@ -521,7 +521,7 @@ async function runChain({
 		if (run) {
 			const res = await runView(id);
 			summary.push(
-				`check: ok; elaborate: ok; source: ${res.files.length} snapshot(s) in view`,
+				`check: ok; elaborate: ok; source: ${res.files.length} unit(s) as .sv in view`,
 			);
 		} else {
 			if (check || elaborate) {

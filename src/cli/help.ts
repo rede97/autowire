@@ -502,6 +502,9 @@ Minimal-browser quirks (obscura-verified)
   downloads navigate    stub HTMLAnchorElement.prototype.click to read save text
   SSRF guard            --allow-private-network for 127.0.0.1
 
+Tests: launchBrowser() (scripts/cdp-helper.ts) tries chromium.launch first,
+then spawns obscura serve + CDP; AW_CDP_ENDPOINT points at a live endpoint.
+
 Equivalence baseline: the page and connect run must produce byte-identical
 snapshots and .sv. Port order is semantic (connect sort key); the connect
 sidecar keeps ports in declaration order.

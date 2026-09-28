@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { type Browser, chromium } from "playwright";
+import type { BrowserContext } from "playwright";
+import { launchBrowser } from "../scripts/cdp-helper.ts";
 import { startWeb } from "../src/web/server.ts";
 import type { WorkspaceConfig } from "../src/workspace.ts";
 import { loadWorkspace } from "../src/workspace.ts";
@@ -16,7 +17,8 @@ const DEMO = join(ROOT, "demo", "soc");
 
 let ws: WorkspaceConfig;
 let base = "";
-let browser: Browser;
+let ctx: BrowserContext;
+let closeBrowser: () => Promise<void>;
 
 async function waitStatus(page: import("playwright").Page) {
 	await page.waitForSelector(
@@ -40,16 +42,18 @@ beforeAll(async () => {
 		);
 	}
 	base = await startWeb(ws, 0, null);
-	browser = await chromium.launch({ headless: true });
+	const launched = await launchBrowser();
+	closeBrowser = launched.close;
+	ctx = launched.browser.contexts()[0] ?? (await launched.browser.newContext());
 }, 30000);
 
 afterAll(async () => {
-	await browser?.close();
+	await closeBrowser?.();
 });
 
 describe("autowire web e2e", () => {
 	test("plain load: idle status, panels populated, no auto action", async () => {
-		const page = await browser.newPage();
+		const page = await ctx.newPage();
 		await page.goto(`${base}`);
 		await page.waitForSelector("#db-summary table", { timeout: 10000 });
 		expect(await page.locator("#aw-status").getAttribute("data-state")).toBe(
@@ -59,7 +63,8 @@ describe("autowire web e2e", () => {
 			"#btn-check",
 			"#btn-elaborate",
 			"#btn-run",
-			"#btn-save",
+			"#btn-save-sv",
+			"#btn-save-html",
 			"#btn-reset",
 		]) {
 			expect(await page.locator(id).isVisible()).toBe(true);
@@ -74,7 +79,7 @@ describe("autowire web e2e", () => {
 	});
 
 	test("?check=1 validates only (render untouched, no workspace write)", async () => {
-		const page = await browser.newPage();
+		const page = await ctx.newPage();
 		await page.goto(`${base}?check=1`);
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
@@ -87,7 +92,7 @@ describe("autowire web e2e", () => {
 	});
 
 	test("?select= shows leaf facts from RtlIndex", async () => {
-		const page = await browser.newPage();
+		const page = await ctx.newPage();
 		await page.goto(`${base}?select=picorv32_wb&check=1`);
 		await waitStatus(page);
 		expect(await page.locator("#right-title").textContent()).toBe(
@@ -100,7 +105,7 @@ describe("autowire web e2e", () => {
 	});
 
 	test("buttons: [Elaborate] auto-runs check; [Reset] restores author face", async () => {
-		const page = await browser.newPage();
+		const page = await ctx.newPage();
 		await page.goto(`${base}`);
 		await page.waitForSelector("#aw-live aw-mod");
 		await page.locator("#btn-elaborate").click();
@@ -130,15 +135,16 @@ describe("autowire web e2e", () => {
 		const before = existsSync(join(ws.connectDir, "soc_top.sv"))
 			? await readFile(join(ws.connectDir, "soc_top.sv"), "utf8")
 			: null;
-		const page = await browser.newPage();
+		const page = await ctx.newPage();
 		await page.goto(`${base}?unit=soc_top&run=1`);
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain("snapshot(s) in view");
+		expect(status.text).toContain(".sv in view");
 		const shown = (await page.locator("#aw-generated").textContent()) ?? "";
-		expect(shown).toContain('name="sha256wb"');
-		expect(shown).toContain('name="sd_sha_ch"');
-		expect(shown).toContain('name="soc_top"');
+		expect(shown).toContain("module sha256wb");
+		expect(shown).toContain("module sd_sha_ch");
+		expect(shown).toContain("module soc_top");
+		expect(shown).not.toContain("aw-render");
 		await page.close();
 		const after = existsSync(join(ws.connectDir, "soc_top.sv"))
 			? await readFile(join(ws.connectDir, "soc_top.sv"), "utf8")
@@ -149,13 +155,13 @@ describe("autowire web e2e", () => {
 	test("?run=1 on soc_tb shows tb_soc in the page and writes nothing", async () => {
 		const simPath = join(ws.simDir, "tb_soc.sv");
 		const before = existsSync(simPath) ? await readFile(simPath, "utf8") : null;
-		const page = await browser.newPage();
+		const page = await ctx.newPage();
 		await page.goto(`${base}?unit=soc_tb&run=1`);
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain("snapshot(s) in view");
+		expect(status.text).toContain(".sv in view");
 		const shown = (await page.locator("#aw-generated").textContent()) ?? "";
-		expect(shown).toContain('name="tb_soc"');
+		expect(shown).toContain("module tb_soc");
 		await page.close();
 		expect(existsSync(join(DEMO, ".autowire", "connect", "soc_tb.xml"))).toBe(
 			false,
@@ -184,18 +190,20 @@ describe("autowire web e2e", () => {
 		expect(crossSite.status).toBe(403);
 	});
 
-	test("save downloads visible source and does not write .autowire/save", async () => {
+	test("save downloads visible .sv and does not write .autowire/save", async () => {
 		await rm(join(DEMO, ".autowire", "save"), { recursive: true, force: true });
-		const page = await browser.newPage();
+		const page = await ctx.newPage();
 		await page.goto(`${base}?unit=sha256wb&run=1`);
 		await waitStatus(page);
-		const download = page.waitForEvent("download");
-		await page.locator("#btn-save").click();
-		const file = await download;
-		expect(file.suggestedFilename()).toBe("sha256wb.txt");
+		// Minimal browsers (obscura) navigate on anchor downloads and lack CDP
+		// download events; stub the click so the page survives.
+		await page.evaluate(() => {
+			HTMLAnchorElement.prototype.click = () => {};
+		});
+		await page.locator("#btn-save-sv").click();
 		const status = await waitStatus(page);
 		expect(status.state).toBe("done");
-		expect(status.text).toContain("browser download");
+		expect(status.text).toContain("browser download (.sv)");
 		await page.close();
 		expect(existsSync(join(DEMO, ".autowire", "save", "sha256wb.html"))).toBe(
 			false,
@@ -203,7 +211,7 @@ describe("autowire web e2e", () => {
 	});
 
 	test("session refuses a step whose predecessor was not run", async () => {
-		const page = await browser.newPage();
+		const page = await ctx.newPage();
 		await page.goto(`${base}?unit=sha256wb`);
 		await page.waitForSelector("#aw-live aw-mod");
 		const skipped = await page.evaluate(async () => {
@@ -232,7 +240,7 @@ describe("autowire web e2e", () => {
 			).aw;
 			return aw.session("run");
 		});
-		expect(ran).toContain('name="sha256wb"');
+		expect(ran).toContain("module sha256wb");
 		await page.close();
 	});
 
@@ -241,7 +249,7 @@ describe("autowire web e2e", () => {
 		const saved = existsSync(snap) ? await readFile(snap, "utf8") : null;
 		await rm(snap, { force: true });
 		try {
-			const page = await browser.newPage();
+			const page = await ctx.newPage();
 			await page.goto(`${base}?unit=soc_top&check=1`);
 			const status = await waitStatus(page);
 			expect(status.state).toBe("error");

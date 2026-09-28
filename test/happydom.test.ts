@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chromium } from "playwright";
+import { launchBrowser } from "../scripts/cdp-helper.ts";
 import { check } from "../src/core/aw.ts";
 import { loadLiveUnitDoc, renderUnit } from "../src/core/happydom.ts";
 import { LeafDb } from "../src/rtl/leaf.ts";
@@ -131,66 +131,86 @@ html = "leaf.html"
 		}
 	});
 
-	test("same HTML snapshot as Chromium", async () => {
-		const browser = await chromium.launch();
-		const page = await browser.newPage();
+	test("same HTML snapshot as the CDP browser", async () => {
+		const { browser, close } = await launchBrowser();
+		// Minimal static host: setContent/addScriptTag hang on browsers without
+		// lifecycle events (obscura); goto + import("/aw.js") works everywhere.
+		const host = Bun.serve({
+			port: 0,
+			fetch(req) {
+				const p = new URL(req.url).pathname;
+				if (p === "/aw.js")
+					return new Response(
+						readFileSync(join(import.meta.dir, "..", "web", "aw.js"), "utf8"),
+						{ headers: { "content-type": "text/javascript" } },
+					);
+				return new Response("<!doctype html><html><body></body></html>", {
+					headers: { "content-type": "text/html" },
+				});
+			},
+		});
+		const page = await (
+			browser.contexts()[0] ?? (await browser.newContext())
+		).newPage();
 		page.on("pageerror", (error) => {
 			throw error;
 		});
 		try {
-			await page.setContent("<!doctype html><html><body></body></html>");
-			const aw = readFileSync(
-				join(import.meta.dir, "..", "web", "aw.js"),
-				"utf8",
-			);
-			await page.addScriptTag({
-				type: "module",
-				content: `${aw}\ninstallGlobal(window);`,
-			});
-			await page.waitForFunction(() => "aw" in window, undefined, {
-				timeout: 3000,
-			});
-			await page.setContent(HTML.replace(/<script[\s\S]*<\/script>/, ""), {
+			await page.goto(`http://127.0.0.1:${host.port}/`, {
 				waitUntil: "domcontentloaded",
 			});
-			const fromBrowser = await page.evaluate(async (script) => {
-				const aw = (
-					window as unknown as {
-						aw: {
-							beginUnitHooks: (id: string) => void;
-							endUnitHooks: () => void;
-							runBeforeInstances: (doc: Document, id: string) => void;
-							check: (doc: Document, ctx: unknown) => { errors: string[] };
-							elaborate: (doc: Document, ctx: unknown) => { errors: string[] };
-							runBeforeDump: (doc: Document, id: string) => void;
-							serializeSnapshot: (doc: Document) => string;
-						};
+			const fromBrowser = await page.evaluate(
+				async ({ html, script }) => {
+					// @ts-expect-error runtime URL served by the test host
+					const mod = (await import("/aw.js")) as {
+						installGlobal: (w: unknown) => void;
+					};
+					mod.installGlobal(window);
+					document.open();
+					document.write(html);
+					document.close();
+					const aw = (
+						window as unknown as {
+							aw: {
+								beginUnitHooks: (id: string) => void;
+								endUnitHooks: () => void;
+								runBeforeInstances: (doc: Document, id: string) => void;
+								check: (doc: Document, ctx: unknown) => { errors: string[] };
+								elaborate: (
+									doc: Document,
+									ctx: unknown,
+								) => { errors: string[] };
+								runBeforeDump: (doc: Document, id: string) => void;
+								serializeSnapshot: (doc: Document) => string;
+							};
+						}
+					).aw;
+					const fn = new Function("window", "document", "aw", script);
+					aw.beginUnitHooks("leaf");
+					try {
+						fn(window, document, aw);
+					} finally {
+						aw.endUnitHooks();
 					}
-				).aw;
-				const fn = new Function("window", "document", "aw", script);
-				aw.beginUnitHooks("leaf");
-				try {
-					fn(window, document, aw);
-				} finally {
-					aw.endUnitHooks();
-				}
-				aw.runBeforeInstances(document, "leaf");
-				const ctx = {
-					style: { paramInline: true, localparamUpper: false },
-					unitId: "leaf",
-					unitKind: "connect",
-					unitDeps: [],
-					unitMods: new Map(),
-					leaf: () => null,
-					wrapper: () => null,
-				};
-				const checked = aw.check(document, ctx);
-				if (checked.errors.length) throw new Error(checked.errors[0]);
-				const rendered = aw.elaborate(document, ctx);
-				if (rendered.errors.length) throw new Error(rendered.errors[0]);
-				aw.runBeforeDump(document, "leaf");
-				return aw.serializeSnapshot(document);
-			}, SCRIPT);
+					aw.runBeforeInstances(document, "leaf");
+					const ctx = {
+						style: { paramInline: true, localparamUpper: false },
+						unitId: "leaf",
+						unitKind: "connect",
+						unitDeps: [],
+						unitMods: new Map(),
+						leaf: () => null,
+						wrapper: () => null,
+					};
+					const checked = aw.check(document, ctx);
+					if (checked.errors.length) throw new Error(checked.errors[0]);
+					const rendered = aw.elaborate(document, ctx);
+					if (rendered.errors.length) throw new Error(rendered.errors[0]);
+					aw.runBeforeDump(document, "leaf");
+					return aw.serializeSnapshot(document);
+				},
+				{ html: HTML.replace(/<script[\s\S]*<\/script>/, ""), script: SCRIPT },
+			);
 			const dir = await workspace();
 			const ws = await loadWorkspace(join(dir, "autowire.toml"));
 			const unit = ws.connectUnits[0];
@@ -203,7 +223,8 @@ html = "leaf.html"
 			);
 			expect(happy.snapshot).toBe(fromBrowser);
 		} finally {
-			await browser.close();
+			host.stop(true);
+			await close();
 		}
 	});
 
