@@ -120,8 +120,8 @@ Parallel (does not block connect)
     draft API + samples: docs/examples/regfile/regfile.ts;
     toml [wishbone.<source>] ts= (one file may export either or both; optional exports=);
     [plugins.wishbone] packed software (SoT exports only; no reverse to TS):
-    export= Excel workbook (default name bus_regfiles.xlsx: field sheets + one
-    Address Map sheet per bus tree: column A absolute address, one 2-row x 3-column
+    export= Excel workbook (default name bus_regfiles.xlsx: field sheets regfile_<sheet> + one
+    Address Map sheet bus_map_<bus> per bus tree: column A absolute address, one 2-row x 3-column
     block per item indented 3 columns per level, leaves stop at a regfile or an
     empty port, repeated subtrees and broadcast ports are not expanded, pastel fill
     per type; field .note() continues that Description cell after a newline;
@@ -245,8 +245,8 @@ Shared by deps / web / cli for the RTL universe:
                         connect ids; dump → sim_dir (no .autowire/connect XML)
   [wishbone.<source>]   wishbone SoT file: ts=; optional exports=[]; omit = all
                         RegfileDef and/or BusDef exports (types stay separate)
-  [plugins.wishbone]    packed software: export= Excel (bus_regfiles.xlsx: field sheets +
-                        one indented Address Map sheet per bus tree);
+  [plugins.wishbone]    packed software: export= Excel (bus_regfiles.xlsx: field sheets regfile_<sheet> +
+                        one indented Address Map sheet bus_map_<bus> per bus tree);
                         c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + <name>.h;
                         TagFromAddr aliases
                         and broadcast windows); uvm= uvm_reg dir (regfile/ + bus/ + ral_<name>.sv; model only, no RALF)

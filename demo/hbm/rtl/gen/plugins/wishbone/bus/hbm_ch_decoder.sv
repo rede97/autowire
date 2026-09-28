@@ -109,6 +109,9 @@ module hbm_ch_decoder (
 	// Broadcast dword_all: no WB data port; writes fan out, reads OR subscriber DAT
 	logic broadcast_dword_all;
 	assign broadcast_dword_all = (g_adr & 12'hf00) == 12'h300;
+	// Window offset shared by every dword_all subscriber
+	logic [11:0] dword_all_off;
+	assign dword_all_off = g_adr - 12'h300;
 
 	//------------------------------------------------------------------------------
 	//  Named slave drive (window offset ADR)
@@ -121,7 +124,7 @@ module hbm_ch_decoder (
 	assign aword_i_wb_stb  = slot_sel[SLOT_AWORD] & g_stb;
 	assign aword_i_wb_we   = g_we;
 
-	assign dword0_i_wb_adr = (slot_sel[SLOT_DWORD0] || broadcast_dword_all) ? (({12{slot_sel[SLOT_DWORD0]}} & g_adr) | ({12{broadcast_dword_all}} & (g_adr - 12'h300))) & ~12'hf00 : 12'd0;
+	assign dword0_i_wb_adr = (slot_sel[SLOT_DWORD0] || broadcast_dword_all) ? (({12{slot_sel[SLOT_DWORD0]}} & g_adr) | ({12{broadcast_dword_all}} & dword_all_off)) & ~12'hf00 : 12'd0;
 	assign dword0_i_wb_dat = g_wdata;
 	assign dword0_i_wb_sel = g_sel;
 	assign dword0_i_wb_tga_pstate = g_tga_pstate;
@@ -129,7 +132,7 @@ module hbm_ch_decoder (
 	assign dword0_i_wb_stb = (slot_sel[SLOT_DWORD0] || broadcast_dword_all) & g_stb;
 	assign dword0_i_wb_we  = g_we;
 
-	assign dword1_i_wb_adr = (slot_sel[SLOT_DWORD1] || broadcast_dword_all) ? (({12{slot_sel[SLOT_DWORD1]}} & g_adr) | ({12{broadcast_dword_all}} & (g_adr - 12'h300))) & ~12'hf00 : 12'd0;
+	assign dword1_i_wb_adr = (slot_sel[SLOT_DWORD1] || broadcast_dword_all) ? (({12{slot_sel[SLOT_DWORD1]}} & g_adr) | ({12{broadcast_dword_all}} & dword_all_off)) & ~12'hf00 : 12'd0;
 	assign dword1_i_wb_dat = g_wdata;
 	assign dword1_i_wb_sel = g_sel;
 	assign dword1_i_wb_tga_pstate = g_tga_pstate;

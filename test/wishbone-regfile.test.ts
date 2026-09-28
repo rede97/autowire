@@ -251,7 +251,7 @@ describe("wishbone-regfile smoke features", () => {
 		const uvm = emitRegfileUvm(laid);
 		expect(uvm).toContain("key[95:64] of [95:0]");
 		const wb = buildRegfileWorkbook([laid]);
-		const ws = wb.getWorksheet("smoke_block_wide");
+		const ws = wb.getWorksheet("regfile_smoke_block_wide");
 		const descs: string[] = [];
 		ws?.eachRow((row, n) => {
 			if (n === 1) return;
@@ -513,7 +513,7 @@ describe("wishbone-regfile Excel export", () => {
 
 	test("trunk columns minus empty A and ADDRWIDTH; MSB-first reserved", () => {
 		const wb = buildRegfileWorkbook([layoutRegfile(smoke_rw)]);
-		const ws = wb.getWorksheet("smoke_rw");
+		const ws = wb.getWorksheet("regfile_smoke_rw");
 		expect(ws).toBeDefined();
 		const headers = ((ws?.getRow(1).values as unknown[]) ?? [])
 			.slice(1)
@@ -541,7 +541,7 @@ describe("wishbone-regfile Excel export", () => {
 
 	test("SHADOW on cell row only; reset dict uses copy 0", () => {
 		const wb = buildRegfileWorkbook([layoutRegfile(smoke_shadow)]);
-		const ws = wb.getWorksheet("smoke_shadow");
+		const ws = wb.getWorksheet("regfile_smoke_shadow");
 		expect(ws).toBeDefined();
 		expect(ws?.getRow(2).getCell(7).value).toBe("CFG");
 		expect(ws?.getRow(2).getCell(12).value).toBe("bank");
@@ -580,7 +580,7 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		const laid = layoutRegfile(sha256);
 		const wb = buildRegfileWorkbook([laid]);
 		expect(wb.getWorksheet("NOTES")).toBeUndefined();
-		const ws = wb.getWorksheet("sha256");
+		const ws = wb.getWorksheet("regfile_sha256");
 		const headerNote = noteOf(ws?.getRow(1).getCell(8) ?? {});
 		expect(headerNote.startsWith(`${sha256.desc}\n`)).toBe(true);
 		expect(headerNote).toContain("byte-reversed");

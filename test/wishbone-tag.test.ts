@@ -49,7 +49,7 @@ describe("wishbone tag domains", () => {
 		// Tag bits are stripped before compare and before forwarding.
 		expect(sv).toContain("if ((g_adr_dec & 19'h7f000) == 19'h00000)");
 		expect(sv).toContain(
-			"ch0_i_wb_adr  = (slot_sel[SLOT_CH0] || broadcast_ch_all)",
+			"ch0_i_wb_adr    = (slot_sel[SLOT_CH0] || broadcast_ch_all)",
 		);
 		expect(sv).not.toContain("m_tga_pstate");
 		expect(sv).not.toContain("cfg_o_wb_tga");
@@ -166,14 +166,15 @@ describe("wishbone tag domains", () => {
 		const parent = emitBusSv(hbm);
 		const child = emitBusSv(hbm_ch);
 		expect(parent).toContain(
-			"assign broadcast_ch_all = (g_adr_dec & 19'h7f000) == 19'h10000;",
+			"assign broadcast_ch_all = (g_adr_dec & 19'h7f000) == 19'h11000;",
 		);
+		expect(parent).toContain("assign ch_all_off = g_adr_dec - 19'h11000;");
 		expect(parent).toContain(
-			"ch15_i_wb_cyc = (slot_sel[SLOT_CH15] || broadcast_ch_all)",
+			"ch15_i_wb_cyc   = (slot_sel[SLOT_CH15] || broadcast_ch_all)",
 		);
 		expect(parent).toContain("broadcast_ch_all & ch0_o_wb_ack & ch1_o_wb_ack");
 		expect(parent).toContain(
-			"(({19{slot_sel[SLOT_CH0]}} & g_adr_dec) | ({19{broadcast_ch_all}} & (g_adr_dec - 19'h10000))) & ~19'h7f000",
+			"(({19{slot_sel[SLOT_CH0]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000",
 		);
 		// Broadcast read ORs every subscriber's DAT; the window itself is not unmapped.
 		expect(parent).toContain(
@@ -186,12 +187,13 @@ describe("wishbone tag domains", () => {
 		expect(child).toContain(
 			"assign broadcast_dword_all = (g_adr & 12'hf00) == 12'h300;",
 		);
+		expect(child).toContain("assign dword_all_off = g_adr - 12'h300;");
 		expect(child).toContain(
 			"dword0_i_wb_cyc = (slot_sel[SLOT_DWORD0] || broadcast_dword_all)",
 		);
 		expect(child).toContain("aword_i_wb_cyc  = slot_sel[SLOT_AWORD]");
 		expect(child).toContain(
-			"(({12{slot_sel[SLOT_DWORD0]}} & g_adr) | ({12{broadcast_dword_all}} & (g_adr - 12'h300))) & ~12'hf00",
+			"(({12{slot_sel[SLOT_DWORD0]}} & g_adr) | ({12{broadcast_dword_all}} & dword_all_off)) & ~12'hf00",
 		);
 		expect(child).toContain(
 			"({32{broadcast_dword_all}} & (dword0_o_wb_dat | dword1_o_wb_dat))",
