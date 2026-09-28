@@ -4,6 +4,7 @@
 
 ## [2.2.0] - 2026-09-28
 
+- 发布包冷启动优化：文档包不再打包仿真器与办公产物（`vcs/work/` 的 simv、`.a`/`.so`、日志，wishbone 导出的 `.xlsx`，`ucli.key`、`~$*` 锁文件——全部是 git 忽略的本地生成物），压缩从 gzip 换成 zstd level 22，内嵌形式从 80MB 的 `Uint8Array.from([...])` 字节数组字面量改成函数体内的 base64 字符串（函数体惰性解析，只在 `loadPack` 时解码）。`autowire.js` 从 85MB 降到 12MB，冷启动从约 1.2s 降到约 0.3s。
 - `autowire init <name>` 同时写出 `.autowire/dsl/`（wishbone-bus/wishbone-regfile 的 DSL 源码三件套）。独立工作区的 SoT 用 `../.autowire/dsl/wishbone-bus/dsl.ts`、`../.autowire/dsl/wishbone-regfile/dsl.ts` 导入，不再依赖仓库源码树。DSL 随发布版本走；`.autowire` 被删后 `plugin wishbone run` 自动补回。DSL 判定为结构式（无 instanceof），bundle 内置副本与外部文件不会重复定义冲突。
 
 ## [2.1.0] - 2026-09-28

@@ -35,5 +35,6 @@ describe("docs pack", () => {
 		} finally {
 			rmSync(dest, { recursive: true, force: true });
 		}
-	});
+		// zstd-22 on the real ~11MB tree takes ~4s; default 5s timeout is too tight.
+	}, 30000);
 });
