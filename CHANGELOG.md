@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.0.2] - 2026-09-28
+
+- `help agent`（`Reference (top priority)`）与仓库根 `AGENTS.md` 明确：项目最佳实践以 `docs/`（契约/约束）与 `demo/`（可运行范例）为准，改动行为前先读这两处，作为第一优先级参考。
+
 ## [2.0.1] - 2026-09-28
 
 - `[analysis.rtl]` 新增 `exclude_dirs`，映射 hdxml `--exclude-dirs`（按目录名剪整棵子树，任一路径分量命中即排除）。此前 hdxml 已支持该能力，但 autowire.toml 未透出、文档也未说明。

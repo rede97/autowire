@@ -4,6 +4,8 @@ HTML plus `<script>` is the connectivity source. After the script runs, the live
 
 Start with `bun index.ts help agent`. Do not invent a command that `help status` does not list as landed. Behavior changes MUST update `src/cli/help.ts` and the matching doc.
 
+**Reference — top priority.** Project best practices live in [`docs/`](docs/README.md) (contracts and constraints) and [`demo/`](demo/) (runnable examples). Before changing behavior, read the relevant `docs/` and `demo/` files first; they are the authoritative reference, not guesswork. (Same rule in `help agent`.)
+
 ## Tools
 
 Three processes, never linked into one binary. Details: [`docs/dev/release.md`](docs/dev/release.md). The 0.9.1 release CI on `main` (`.github/workflows/release.yml`) publishes `hdxml` (Linux x64 glibc 2.17, macOS arm64/x64) and single-file `autowire.js`; obscura, the installer, and the compiled `out/autowire` are still parked.

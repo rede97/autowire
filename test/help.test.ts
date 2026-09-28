@@ -23,6 +23,8 @@ test("agent topic holds the working contract", () => {
 	expect(text).toContain("connect run");
 	expect(text).toContain("help status");
 	expect(text).toContain("docs/connect/html.md");
+	expect(text).toContain("top-priority reference");
+	expect(text).toContain("demo/");
 });
 
 test("each slice prints independently", () => {

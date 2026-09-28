@@ -26,6 +26,12 @@ Autowire — Agent contract
 This topic is the working contract; do not invent a separate project prompt.
 Other topics are command/dialect reference: autowire help topics
 
+Reference (top priority)
+  Best practices live in docs/ (contracts and constraints) and demo/ (runnable examples).
+  Before changing behavior, extract and read the relevant docs/ and demo/ files first —
+  this is the top-priority reference. Start with docs/README.md, docs/workspace/toml.md,
+  docs/plugins/, docs/connect/, and the demos demo/soc + demo/hbm.
+
 What it is
   Connectivity is one HTML + <script>. After the browser runs the script, the live DOM is the netlist.
   connect run writes .sv from that netlist. The page shows the same text and does not write.
@@ -563,7 +569,7 @@ function commandIndex(): string {
 		"  docs unpack <dir>        write bundled docs/, demo/, AGENTS.md → help docs",
 		"",
 		"Also: help status | connect | dont",
-		"Docs: docs/   (format constraints; keep in sync with help)",
+		"Reference: docs/ (contracts) + demo/ (examples) — read these first; keep help in sync",
 		"",
 		"Agents: run `bun index.ts help agent` — that is the working contract; do not invent a project prompt.",
 		"",
