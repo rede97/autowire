@@ -22,6 +22,10 @@ function skip(path: string): boolean {
 		parts.includes("obj_dir_tb")
 	)
 		return true;
+	// Submodule .git pointer files hold a machine-specific gitdir path; .github
+	// is upstream CI config. Neither is docs/demo content. (.gitignore stays:
+	// it documents which sibling files are generated.)
+	if (parts.includes(".git") || parts.includes(".github")) return true;
 	// Generated exports and tool junk: wishbone Excel is an export (SoT is the
 	// TS), ucli.key / ~$* are VCS / Excel leftovers. All git-ignored.
 	const name = parts.at(-1) ?? "";
