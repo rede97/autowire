@@ -382,12 +382,241 @@ var state = {
   current: null,
   docs: new Map,
   leafCache: new Map,
-  phase: new Map
+  phase: new Map,
+  dirty: new Set,
+  svText: "",
+  htmlText: ""
 };
 function showGenerated(text) {
   const box = $("#aw-generated");
-  if (box)
-    box.textContent = text;
+  box.hidden = false;
+  box.textContent = text;
+}
+var minimal = document.documentElement.dataset.ui === "min";
+var obsMute = 0;
+function holdObs() {
+  obsMute++;
+}
+function releaseObs() {
+  queueMicrotask(() => {
+    obsMute = Math.max(0, obsMute - 1);
+  });
+}
+function watchInputs() {
+  const obs = new MutationObserver((recs) => {
+    if (obsMute > 0)
+      return;
+    for (const rec of recs) {
+      const node = rec.target.nodeType === Node.ELEMENT_NODE ? rec.target : rec.target.parentElement;
+      const unit = node?.closest("[data-unit]")?.getAttribute("data-unit");
+      if (unit)
+        state.dirty.add(unit);
+    }
+  });
+  const opts = {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    characterData: true
+  };
+  obs.observe($("#aw-source"), opts);
+  obs.observe($("#aw-hooks"), opts);
+}
+function setAuthorTab(which) {
+  const src = document.querySelector("#author-source");
+  const proc = document.querySelector("#author-processed");
+  if (!src || !proc)
+    return;
+  src.hidden = which !== "source";
+  proc.hidden = which !== "processed";
+  document.querySelector("#atab-source")?.setAttribute("aria-selected", String(which === "source"));
+  document.querySelector("#atab-proc")?.setAttribute("aria-selected", String(which === "processed"));
+}
+function setSideTab(which) {
+  const rtl = document.querySelector("#pane-rtlindex");
+  const connect = document.querySelector("#pane-connect");
+  if (!rtl || !connect)
+    return;
+  rtl.hidden = which !== "rtl";
+  connect.hidden = which !== "connect";
+  document.querySelector("#tab-rtl")?.setAttribute("aria-selected", String(which === "rtl"));
+  document.querySelector("#tab-connect")?.setAttribute("aria-selected", String(which === "connect"));
+}
+function showUnitWorkspace() {
+  const unit = document.querySelector("#unit-view");
+  const mod = document.querySelector("#module-view");
+  if (!unit || !mod)
+    return;
+  unit.hidden = false;
+  mod.hidden = true;
+}
+function showModuleWorkspace() {
+  const unit = document.querySelector("#unit-view");
+  const mod = document.querySelector("#module-view");
+  if (!unit || !mod)
+    return;
+  unit.hidden = true;
+  mod.hidden = false;
+}
+var SV_DIRS = new Set(["input", "output", "inout"]);
+var SV_KW = new Set([
+  "module",
+  "endmodule",
+  "logic",
+  "wire",
+  "reg",
+  "assign",
+  "parameter",
+  "localparam",
+  "interface",
+  "modport",
+  "import",
+  "package",
+  "endpackage",
+  "generate",
+  "endgenerate",
+  "begin",
+  "end",
+  "if",
+  "else",
+  "for",
+  "always",
+  "always_ff",
+  "always_comb",
+  "always_latch",
+  "posedge",
+  "negedge",
+  "or"
+]);
+function paintTokens(text, host, re, cls) {
+  host.replaceChildren();
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    const i = m.index ?? 0;
+    if (i > last)
+      host.appendChild(document.createTextNode(text.slice(last, i)));
+    const tok = m[0];
+    const span = document.createElement("span");
+    const name = cls(tok);
+    if (name)
+      span.className = name;
+    span.textContent = tok;
+    host.appendChild(span);
+    last = i + tok.length;
+  }
+  if (last < text.length)
+    host.appendChild(document.createTextNode(text.slice(last)));
+}
+function highlightSv(text, host) {
+  paintTokens(text, host, /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b\d+'[bodhBODH][0-9a-fA-FxXzZ_]+|\b\d+\b|\b[A-Za-z_][A-Za-z0-9_$]*\b/g, (tok) => {
+    if (tok.startsWith("//") || tok.startsWith("/*"))
+      return "sv-cmt";
+    if (tok.startsWith('"') || tok.startsWith("'"))
+      return "sv-str";
+    if (SV_DIRS.has(tok))
+      return "sv-dir";
+    if (SV_KW.has(tok))
+      return "sv-kw";
+    if (/^\d/.test(tok))
+      return "sv-num";
+    return "";
+  });
+}
+function highlightXml(text, host) {
+  paintTokens(text, host, /<!--[\s\S]*?-->|<\/?[A-Za-z][\w:-]*|\/?>|[A-Za-z_:][\w:.-]*="[^"]*"/g, (tok) => {
+    if (tok.startsWith("<!--"))
+      return "xml-cmt";
+    if (tok.includes("="))
+      return "xml-attr";
+    return "xml-tag";
+  });
+}
+function paintResult() {
+  const gen = $("#aw-generated");
+  gen.hidden = false;
+  const tabs = document.querySelector("#result-tabs");
+  if (!tabs) {
+    gen.textContent = state.svText || state.htmlText;
+    return;
+  }
+  const sv = document.querySelector("#rtab-sv")?.getAttribute("aria-selected") !== "false";
+  if (sv && state.svText)
+    highlightSv(state.svText, gen);
+  else if (!sv)
+    highlightXml(state.htmlText, gen);
+  else
+    gen.textContent = state.htmlText;
+}
+function setResultTab(which) {
+  document.querySelector("#rtab-sv")?.setAttribute("aria-selected", String(which === "sv"));
+  document.querySelector("#rtab-html")?.setAttribute("aria-selected", String(which === "html"));
+  paintResult();
+}
+function namesInErrors(errors) {
+  const out = new Set;
+  for (const e of errors) {
+    for (const m of e.matchAll(/"([^"]+)"/g)) {
+      const n = m[1] ?? "";
+      if (n.length >= 2 && !/^\d+$/.test(n))
+        out.add(n);
+    }
+  }
+  return [...out];
+}
+function markProcessed(names) {
+  const root = document.querySelector("#aw-live");
+  if (!root)
+    return;
+  for (const el of root.querySelectorAll(".tn-err"))
+    el.classList.remove("tn-err");
+  if (names.length === 0)
+    return;
+  const want = new Set(names);
+  const keys = ["name", "id", "port", "mod", "to", "match"];
+  for (const el of root.querySelectorAll("*")) {
+    if (keys.some((k) => want.has(el.getAttribute(k) ?? "")))
+      el.classList.add("tn-err");
+  }
+}
+function snapshotOf(id) {
+  const entry = state.docs.get(id);
+  if (!entry?.doc)
+    return "";
+  return AW.serializeSnapshot(entry.doc);
+}
+function showErrors(errors) {
+  const list = document.querySelector("#error-list");
+  if (list) {
+    list.hidden = false;
+    list.textContent = errors.join(`
+`);
+  }
+  document.querySelector("#result-tabs")?.setAttribute("hidden", "");
+  $("#aw-generated").hidden = true;
+  markProcessed(namesInErrors(errors));
+  setAuthorTab("processed");
+}
+function showResult(sv, html) {
+  if (sv !== null)
+    state.svText = sv;
+  if (html !== null)
+    state.htmlText = html;
+  const list = document.querySelector("#error-list");
+  if (list) {
+    list.hidden = true;
+    list.textContent = "";
+  }
+  markProcessed([]);
+  const tabs = document.querySelector("#result-tabs");
+  if (tabs) {
+    tabs.removeAttribute("hidden");
+    const which = state.svText ? "sv" : "html";
+    setResultTab(which);
+    return;
+  }
+  const gen = $("#aw-generated");
+  gen.hidden = false;
+  gen.textContent = state.svText || state.htmlText;
 }
 function downloadText(text, filename) {
   const blob = new Blob([text], { type: "text/plain" });
@@ -399,7 +628,7 @@ function downloadText(text, filename) {
   URL.revokeObjectURL(url);
 }
 function saveSv() {
-  const text = $("#aw-generated")?.textContent ?? "";
+  const text = state.svText;
   if (!text) {
     setStatus("error", "save: run first; nothing generated");
     throw new Error("save: run first; nothing generated");
@@ -427,7 +656,7 @@ ${face?.outerHTML ?? clone.innerHTML}
   return text;
 }
 var SESSION_HELP = [
-  "before-instances: run author scripts on the current unit",
+  "before-instances: compile #aw-source + #aw-hooks into #aw-live (does not write the input back)",
   "check: rule report; requires before-instances in this session",
   "elaborate: freeze aw-render; requires a clean check in this session",
   "before-dump: read-only hook; requires elaborate in this session",
@@ -445,8 +674,10 @@ async function sessionStep(step) {
   if (step === "help")
     return SESSION_HELP;
   if (step === "before-instances") {
-    await loadUnit(id);
+    const entry = await loadUnit(id);
+    await compileUnit(entry, id, true);
     state.phase.set(id, "before-instances");
+    setAuthorTab("processed");
     showGenerated($("#aw-live").textContent ?? "");
     return "before-instances";
   }
@@ -454,24 +685,32 @@ async function sessionStep(step) {
     if (phase === "none")
       throw new Error('session: run "before-instances" before "check"');
     const res = await runCheck(id);
-    if (res.errors.length === 0)
-      state.phase.set(id, "check");
     const text = [...res.errors, ...res.warnings].join(`
 `) || "check ok";
-    showGenerated(text);
+    if (res.errors.length === 0) {
+      state.phase.set(id, "check");
+      showResult("", snapshotOf(id));
+      setAuthorTab("processed");
+    } else
+      showErrors(res.errors);
     return text;
   }
   if (step === "elaborate") {
+    if (state.dirty.has(id))
+      throw new Error('session: input workspace changed; run "before-instances" and "check" again');
     if (phase !== "check" && phase !== "elaborate" && phase !== "before-dump")
       throw new Error('session: "elaborate" requires a clean check');
     const res = await runRender(id);
     if (res.errors.length > 0)
       throw new Error(res.errors[0]);
     state.phase.set(id, "elaborate");
-    showGenerated($("#aw-live").textContent ?? "");
+    showResult("", snapshotOf(id));
+    setAuthorTab("processed");
     return "elaborate";
   }
   if (step === "before-dump") {
+    if (state.dirty.has(id))
+      throw new Error('session: input workspace changed; run "before-instances" and "check" again');
     if (phase !== "elaborate" && phase !== "before-dump")
       throw new Error('session: "before-dump" requires elaborate');
     const res = await runBeforeDumpOnly(id);
@@ -512,46 +751,128 @@ async function fetchJson(url, options) {
     throw new Error(data.error ?? `${res.status} ${url}`);
   return data;
 }
-async function loadUnit(id) {
-  const cached = state.docs.get(id);
-  if (cached)
-    return cached;
-  const res = await fetch(`/api/author?id=${encodeURIComponent(id)}`);
-  if (!res.ok)
-    throw new Error((await res.json()).error);
-  const html = await res.text();
-  const parsed = new DOMParser().parseFromString(html, "text/html");
-  const root = parsed.querySelector("autowire");
-  if (!root)
-    throw new Error(`unit "${id}": author HTML has no <autowire> root`);
-  const container = document.createElement("div");
-  container.dataset.unit = id;
-  const adopted = document.importNode(root, true);
-  container.appendChild(adopted);
-  $("#aw-live").appendChild(container);
+async function execHookScripts(id, hooks) {
   AW.beginUnitHooks(id);
   try {
-    const pending = [];
-    for (const s of parsed.querySelectorAll('script[type="module"]')) {
+    for (const h of hooks.querySelectorAll('script[type="aw/hook"]')) {
+      const inline = h.textContent ?? "";
+      const srcAttr = h.getAttribute("src");
+      if (!inline.trim() && !srcAttr)
+        continue;
       const el = document.createElement("script");
       el.type = "module";
-      const done = new Promise((res) => {
+      el.dataset.awInjected = id;
+      let src = srcAttr ? new URL(srcAttr, location.href).href : "";
+      if (inline.trim()) {
+        const posted = await fetch("/api/hook-script", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            text: `${inline}
+;window.__awScriptDone?.shift()?.();`
+          })
+        });
+        if (!posted.ok) {
+          const err = await posted.json();
+          throw new Error(err.error ?? "hook script upload failed");
+        }
+        const meta = await posted.json();
+        src = new URL(meta.url, location.href).href;
+      }
+      const sentinel = new Promise((res) => {
         const q = win.__awScriptDone ?? [];
         win.__awScriptDone = q;
         q.push(res);
       });
-      pending.push(done);
-      el.textContent = `${s.textContent}
-;window.__awScriptDone?.shift()?.();`;
+      const loaded = new Promise((res, rej) => {
+        el.addEventListener("load", () => res());
+        el.addEventListener("error", () => rej(new Error(`hook script failed to load ${src}`)));
+      });
+      el.src = src;
       document.body.appendChild(el);
+      await Promise.race([sentinel, loaded]);
     }
-    await Promise.all(pending);
   } finally {
     AW.endUnitHooks();
+    for (const el of document.querySelectorAll(`script[data-aw-injected="${id}"]`))
+      el.remove();
   }
-  const entry = { doc: container, container, rendered: false };
-  state.docs.set(id, entry);
-  return entry;
+}
+async function compileUnit(entry, id, runHooks) {
+  holdObs();
+  const sourceRoot = $("#aw-source");
+  const sourceParent = sourceRoot.parentElement;
+  const sourceNext = sourceRoot.nextSibling;
+  sourceRoot.remove();
+  try {
+    if (entry.doc !== entry.source)
+      entry.doc.remove();
+    AW.clearUnitHooks(id);
+    const container = document.createElement("div");
+    container.dataset.unit = id;
+    const root = entry.source.querySelector(":scope > autowire");
+    if (!root)
+      throw new Error(`unit "${id}": source workspace has no <autowire>`);
+    container.appendChild(root.cloneNode(true));
+    $("#aw-live").appendChild(container);
+    entry.doc = container;
+    entry.container = container;
+    entry.rendered = false;
+    entry.hooksRan = false;
+    await execHookScripts(id, entry.hooks);
+    if (runHooks) {
+      AW.runBeforeInstances(container, id);
+      entry.hooksRan = true;
+    }
+    state.dirty.delete(id);
+  } finally {
+    sourceParent?.insertBefore(sourceRoot, sourceNext);
+    releaseObs();
+  }
+}
+async function loadUnit(id) {
+  const cached = state.docs.get(id);
+  if (cached)
+    return cached;
+  holdObs();
+  try {
+    const res = await fetch(`/api/author?id=${encodeURIComponent(id)}`);
+    if (!res.ok)
+      throw new Error((await res.json()).error);
+    const html = await res.text();
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const root = parsed.querySelector("autowire");
+    if (!root)
+      throw new Error(`unit "${id}": author HTML has no <autowire> root`);
+    const source = document.createElement("div");
+    source.dataset.unit = id;
+    source.appendChild(document.importNode(root, true));
+    $("#aw-source").appendChild(source);
+    const hooks = document.createElement("div");
+    hooks.dataset.unit = id;
+    for (const s of parsed.querySelectorAll('script[type="module"]')) {
+      const el = document.createElement("script");
+      el.type = "aw/hook";
+      const src = s.getAttribute("src");
+      if (src)
+        el.setAttribute("src", src);
+      el.textContent = s.textContent ?? "";
+      hooks.appendChild(el);
+    }
+    $("#aw-hooks").appendChild(hooks);
+    const entry = {
+      source,
+      hooks,
+      doc: document.createElement("div"),
+      container: source,
+      rendered: false
+    };
+    state.docs.set(id, entry);
+    await compileUnit(entry, id, false);
+    return entry;
+  } finally {
+    releaseObs();
+  }
 }
 async function depWrappers(depId) {
   const session = state.docs.get(depId);
@@ -570,15 +891,14 @@ function xmlFactsOf(doc) {
   const facts = [];
   for (const mod of doc.querySelectorAll("connectUnit > module")) {
     const ports = [];
-    for (const dir of ["input", "output", "inout", "interface"]) {
-      for (const p of mod.querySelectorAll(`:scope > ports > ${dir}`)) {
-        ports.push({
-          name: p.getAttribute("name"),
-          dir,
-          packed: p.getAttribute("packed"),
-          unpacked: p.getAttribute("unpacked")
-        });
-      }
+    for (const p of mod.querySelectorAll(":scope > ports > port")) {
+      const dir = p.getAttribute("dir") ?? "input";
+      ports.push({
+        name: p.getAttribute("name"),
+        dir,
+        packed: p.getAttribute("packed"),
+        unpacked: p.getAttribute("unpacked")
+      });
     }
     const params = [];
     for (const pr of mod.querySelectorAll(":scope > params > param")) {
@@ -668,22 +988,22 @@ async function buildCtx(id) {
     }
   };
 }
-function ensureAuthorMutations(entry, id) {
-  if (entry.hooksRan)
+async function ensureAuthorMutations(entry, id) {
+  if (entry.hooksRan && !state.dirty.has(id))
     return;
-  entry.hooksRan = true;
-  AW.runBeforeInstances(entry.doc, id);
+  await compileUnit(entry, id, true);
+  setAuthorTab("processed");
 }
 async function runCheck(id) {
   const entry = await loadUnit(id);
-  ensureAuthorMutations(entry, id);
+  await ensureAuthorMutations(entry, id);
   const { errors: ctxErrors, ctx } = await buildCtx(id);
   const res = AW.check(entry.doc, ctx);
   return { errors: [...ctxErrors, ...res.errors], warnings: res.warnings };
 }
 async function runRender(id) {
   const entry = await loadUnit(id);
-  ensureAuthorMutations(entry, id);
+  await ensureAuthorMutations(entry, id);
   const { errors: ctxErrors, ctx } = await buildCtx(id);
   if (ctxErrors.length > 0)
     return { errors: ctxErrors, warnings: [] };
@@ -732,7 +1052,9 @@ ${printSv(m, uid, state.style)}`);
   }
   const sv = chunks.join(`
 `);
-  showGenerated(sv);
+  showResult(sv, files.map((f) => f.text).join(`
+`));
+  setAuthorTab("processed");
   return { files: files.map((f) => f.text), sv };
 }
 async function runBeforeDumpOnly(id) {
@@ -765,16 +1087,24 @@ async function runChain({
       if (check || elaborate) {
         const res = await runCheck(id);
         summary.push(res.errors.length > 0 ? `check: ${res.errors.length} error(s)` : `check: ok${res.warnings.length > 0 ? ` (${res.warnings.length} warning(s))` : ""}`);
-        if (res.errors.length > 0)
+        if (res.errors.length > 0) {
+          showErrors(res.errors);
           throw new Error(res.errors[0]);
+        }
+        showResult("", snapshotOf(id));
+        setAuthorTab("processed");
         if (res.warnings.length > 0)
           console.warn("[autowire check warnings]", res.warnings);
       }
       if (elaborate) {
         const res = await runRender(id);
-        if (res.errors.length > 0)
+        if (res.errors.length > 0) {
+          showErrors(res.errors);
           throw new Error(res.errors[0]);
+        }
         summary.push("elaborate: ok");
+        showResult("", snapshotOf(id));
+        setAuthorTab("processed");
         refreshRightIfRendered();
       }
     }
@@ -783,24 +1113,10 @@ async function runChain({
     setStatus("error", e.message);
   }
 }
-function hierNode(node) {
-  const det = document.createElement("details");
-  const sum = document.createElement("summary");
-  const span = document.createElement("span");
-  span.className = `mod-node${node.blackbox ? " blackbox" : ""}`;
-  span.textContent = node.blackbox ? `${node.module} (blackbox)` : node.module;
-  span.dataset.mod = node.module;
-  sum.appendChild(span);
-  if (node.cycle)
-    sum.appendChild(document.createTextNode(" (cycle)"));
-  det.appendChild(sum);
-  for (const c of node.children ?? [])
-    det.appendChild(hierNode(c));
-  return det;
-}
-async function buildLeft() {
-  const db = $("#db-summary");
-  const tree = $("#dep-tree");
+async function buildSummary() {
+  const db = document.querySelector("#db-summary");
+  if (!db)
+    return;
   try {
     const idx = await fetchJson("/api/rtlindex");
     db.innerHTML = "";
@@ -822,14 +1138,67 @@ async function buildLeft() {
       table.appendChild(tr);
     }
     db.appendChild(table);
-    tree.innerHTML = "";
-    for (const top of idx.hierarchy)
-      tree.appendChild(hierNode(top));
   } catch (e) {
     db.textContent = e.message;
   }
 }
+async function buildRtlList() {
+  const list = document.querySelector("#rtl-list");
+  if (!list)
+    return;
+  let rows = [];
+  try {
+    const data = await fetchJson("/api/modules");
+    rows = [
+      ...data.modules.map((m) => ({ name: m.name, kind: "module" })),
+      ...data.packages.map((m) => ({ name: m.name, kind: "package" }))
+    ];
+  } catch (e) {
+    list.textContent = e.message;
+    return;
+  }
+  const paint = (q) => {
+    list.replaceChildren();
+    const needle = q.trim().toLowerCase();
+    for (const row of rows) {
+      if (needle && !row.name.toLowerCase().includes(needle))
+        continue;
+      const div = document.createElement("div");
+      div.textContent = row.name;
+      div.dataset.mod = row.name;
+      if (row.kind === "package")
+        div.className = "pkg";
+      div.addEventListener("click", () => {
+        selectModule(row.name);
+      });
+      list.appendChild(div);
+    }
+  };
+  paint("");
+  document.querySelector("#rtl-search")?.addEventListener("input", (e) => {
+    paint(e.target.value);
+  });
+}
+function buildUnitList() {
+  const list = document.querySelector("#unit-list");
+  if (!list)
+    return;
+  list.replaceChildren();
+  for (const u of state.units) {
+    const a = document.createElement("a");
+    a.href = `/?unit=${encodeURIComponent(u.id)}`;
+    a.textContent = u.id;
+    if (u.id === state.current)
+      a.setAttribute("aria-current", "true");
+    const kind = document.createElement("span");
+    kind.className = "kind";
+    kind.textContent = ` ${u.kind ?? "connect"}`;
+    a.appendChild(kind);
+    list.appendChild(a);
+  }
+}
 async function selectModule(name) {
+  showModuleWorkspace();
   $("#right-title").textContent = name;
   const body = $("#right-body");
   body.innerHTML = "";
@@ -901,16 +1270,36 @@ function refreshRightIfRendered() {
     selectModule(title);
 }
 async function resetAll() {
-  for (const [id] of state.docs)
-    AW.clearUnitHooks(id);
-  state.docs.clear();
-  state.phase.clear();
-  $("#aw-live").innerHTML = "";
-  showGenerated("");
-  if (!state.current)
-    throw new Error("no unit selected");
-  await loadUnit(state.current);
-  setStatus("idle", "idle");
+  holdObs();
+  try {
+    for (const [id] of state.docs)
+      AW.clearUnitHooks(id);
+    state.docs.clear();
+    state.phase.clear();
+    state.dirty.clear();
+    state.svText = "";
+    state.htmlText = "";
+    $("#aw-live").innerHTML = "";
+    $("#aw-source").innerHTML = "";
+    $("#aw-hooks").innerHTML = "";
+    const gen = $("#aw-generated");
+    gen.hidden = false;
+    gen.textContent = "";
+    const list = document.querySelector("#error-list");
+    if (list) {
+      list.hidden = true;
+      list.textContent = "";
+    }
+    document.querySelector("#result-tabs")?.setAttribute("hidden", "");
+    showUnitWorkspace();
+    setAuthorTab("source");
+    if (!state.current)
+      throw new Error("no unit selected");
+    await loadUnit(state.current);
+    setStatus("idle", "idle");
+  } finally {
+    releaseObs();
+  }
 }
 async function init() {
   const meta = await fetchJson("/api/units");
@@ -919,13 +1308,6 @@ async function init() {
   if (meta.style)
     state.style = meta.style;
   $("#ws-name").textContent = meta.workspace.split("/").pop() ?? "";
-  const sel = $("#unit-select");
-  for (const u of state.units) {
-    const opt = document.createElement("option");
-    opt.value = u.id;
-    opt.textContent = u.deps.length > 0 ? `${u.id} (deps: ${u.deps.join(",")})` : u.id;
-    sel.appendChild(opt);
-  }
   for (const u of state.units) {
     const res = await fetch(`/api/author?id=${encodeURIComponent(u.id)}`);
     if (!res.ok)
@@ -944,11 +1326,8 @@ async function init() {
     setStatus("error", "no connect units in autowire.toml");
     return;
   }
-  sel.value = state.current;
-  sel.addEventListener("change", async () => {
-    state.current = sel.value;
-    await resetAll();
-  });
+  $("#unit-name").textContent = state.current;
+  buildUnitList();
   $("#btn-check").addEventListener("click", () => runChain({ check: true }));
   $("#btn-elaborate").addEventListener("click", () => runChain({ elaborate: true }));
   $("#btn-run").addEventListener("click", () => runChain({ run: true }));
@@ -965,12 +1344,16 @@ async function init() {
     }
   });
   $("#btn-reset").addEventListener("click", () => resetAll());
-  $("#dep-tree").addEventListener("click", (e) => {
-    const mod = e.target?.dataset?.mod;
-    if (mod)
-      selectModule(mod);
-  });
-  await buildLeft();
+  document.querySelector("#tab-rtl")?.addEventListener("click", () => setSideTab("rtl"));
+  document.querySelector("#tab-connect")?.addEventListener("click", () => setSideTab("connect"));
+  document.querySelector("#atab-source")?.addEventListener("click", () => setAuthorTab("source"));
+  document.querySelector("#atab-proc")?.addEventListener("click", () => setAuthorTab("processed"));
+  document.querySelector("#rtab-sv")?.addEventListener("click", () => setResultTab("sv"));
+  document.querySelector("#rtab-html")?.addEventListener("click", () => setResultTab("html"));
+  watchInputs();
+  await buildSummary();
+  if (!minimal)
+    await buildRtlList();
   if (!state.current)
     throw new Error("no unit selected");
   await loadUnit(state.current);

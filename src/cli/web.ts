@@ -175,6 +175,11 @@ export function registerConnect(program: Command): void {
 				}
 				const url = await startWeb(cfg, opts.port ?? 0, defaultUnit);
 				console.log(`autowire connect web: ${url} (unit ${defaultUnit})`);
+				if (defaultUnit) {
+					const id = encodeURIComponent(defaultUnit);
+					console.log(`  frontend: ${url}?unit=${id}`);
+					console.log(`  headless: ${url}?ui=min&unit=${id}`);
+				}
 			},
 		);
 }

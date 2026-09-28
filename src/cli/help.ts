@@ -373,13 +373,21 @@ autowire connect web
 Static page on 127.0.0.1. The session does not write the workspace.
 Buttons: Check, Elaborate, Run, Save SV, Save HTML, Reset. After Run,
 #aw-generated shows the printed .sv (the same text connect run writes).
-Save SV downloads that .sv; Save HTML downloads the live author face with
-aw-render stripped. MCP calls window.aw.session(step):
+Save SV downloads that .sv; Save HTML downloads the processed author face
+with aw-render stripped. MCP calls window.aw.session(step):
   before-instances, check, elaborate, before-dump, run, save / save-sv, save-html, help.
 None of those steps write a file. connect run writes .sv.
 
+/?unit=<id> is the frontend. Source (#aw-source, hook scripts in #aw-hooks)
+is the input workspace. Processed (#aw-live) is the pipeline output, like a
+.c compiled to a .o: hooks and before-instances write only the output.
+CDP may edit input nodes and hook script text; the next before-instances
+or Check compiles again and does not write the input back.
+/?ui=min is the headless page: same workspaces and buttons, no tree chrome.
+/ with no query is the unit index.
+
 GET (read-only)
-  /api/rtlindex, /api/module?name=, /api/author?id=, /api/connect?id=
+  /api/rtlindex, /api/module?name=, /api/modules, /api/author?id=, /api/connect?id=
 `,
 
 	check: `\

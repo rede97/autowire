@@ -5,27 +5,33 @@
 
 ## 1. 页面布局
 
+两种入口：
+
+| URL | 用途 |
+|---|---|
+| `/` | 单元索引，链到 `/?unit=<id>` |
+| `/?unit=<id>` | 前端。侧栏 RtlIndex / Connect；作者面两个工作区 |
+| `/?ui=min` | 无头 / CDP。同一套工作区和按钮，不做树和着色 |
+
+前端：
+
 ```text
-┌──────────────────────────────────────────────────────────┐
-│ header：工作区 / HTML 名  [Check] [Elaborate] [Run] [Save SV] [Save HTML] [Reset] │
-├────────────────────┬─────────────────────────────────────┤
-│ 左栏               │ 右栏                                │
-│ · dep tree         │ 选中模块信息（人工预览，只读）：      │
-│   （RtlIndex       │   params / imports / ports /        │
-│    hierarchy 展开，│   instances（来自 RtlIndex 文件 XML）│
-│    黑盒标注）      │   render 后追加：该 aw-mod 的        │
-│ · DB 摘要          │   aw-render 预览                    │
-│   files / modules /│                                     │
-│   packages /       │                                     │
-│   errorFiles /     │                                     │
-│   definesFp        │                                     │
-└────────────────────┴─────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ header：工作区 / 单元  [Check] [Elaborate] [Run] [Save SV] [Save HTML] [Reset] │
+├──────────────┬───────────────────────────────────────────────┤
+│ 侧栏         │ 作者面（两个 tab，两条流水线，互不覆盖）        │
+│ RtlIndex     │  Source：#aw-source 未改作者 HTML + #aw-hooks  │
+│  摘要+搜索   │  Processed：#aw-live 脚本/钩子之后的 HTML       │
+│ Connect      │ 右：有 error 则列表；否则 SV / HTML 快照        │
+│  单元链接    │  #aw-generated                                  │
+└──────────────┴───────────────────────────────────────────────┘
 ```
 
-- 左栏数据 **必须**只读 RtlIndex（index.xml 摘要 + 各文件 XML）；**禁止**在页面重解析 RTL。
-- 右栏默认展示 RtlIndex 事实；`aw-render` 预览只在 render 之后存在。
-- header **必须**提供人工按钮 **[Check] [Elaborate] [Run] [Save SV] [Save HTML] [Reset]**；无 GET 时靠按钮触发（见 §2–§3）。**[Save SV]** 下载 `#aw-generated` 里可见的 `.sv` 文本（与 `connect run` 写盘同一份，不含 render XML）；**[Save HTML]** 下载当前单元活作者面（`aw-render` 已剥空）——agent 调试改完作者面后取中间成果用。两者都走浏览器保存，**不**向 autowire 提交路径，**不**写作者 HTML。Save **不**进入 §3 的 GET 动作链。
-- 生成源码 **必须**出现在 `#aw-generated`，供人阅读，也供浏览器驱动打印。MCP 读这块文本再自己落盘。
+- **Source 与 Processed 是独立工作区**，关系像 `.c` 编译成 `.o`。脚本、`before-instances`、elaborate **只写** `#aw-live`。**禁止**把钩子结果回写 `#aw-source`。下一次编译从当前输入重新克隆，替换 Processed，不改 Source。
+- CDP **可以**改 `#aw-source` 里的 autowire 节点，也可以改 `#aw-hooks` 里 `script[type="aw/hook"]` 的文本。改完后 `before-instances` 或 [Check] 再编译。Reset 从作者文件重新装入，丢掉这两处编辑。
+- 侧栏 RtlIndex **必须**只读 index（`/api/rtlindex`、`/api/modules`、`/api/module`）；**禁止**在页面重解析 RTL。
+- header **必须**提供 **[Check] [Elaborate] [Run] [Save SV] [Save HTML] [Reset]**；无 GET 时靠按钮触发（见 §2–§3）。**[Save SV]** 下载本次 Run 的 `.sv` 文本（与 `connect run` 写盘同一份，不含 render XML）；**[Save HTML]** 下载 Processed 作者面（`aw-render` 已剥空）。两者都走浏览器保存，**不**写工作区。Save **不**进入 §3 的 GET 动作链。
+- 生成源码 **必须**出现在 `#aw-generated`。无头页是纯文本；前端页用 SV / HTML 两个 tab 着色，Save SV 仍下载 `.sv` 字符串，不下载着色后的 HTML。
 - 节点 **应当**带可访问名字（docs/connect/html.md §3.8），便于 Playwright snapshot。
 - CDP 驱动（obscura / Chromium 等讲 CDP 的浏览器通用）：[`../dev/cdp-debug.md`](../dev/cdp-debug.md)（`bun index.ts help cdp`）。
 
@@ -106,14 +112,17 @@ Run              ←── 依赖 Elaborate（传递依赖 Check）；只显示�
 | 端点 | 方法 | 磁盘来源 | 内容 |
 |---|---|---|---|
 | `/api/rtlindex` | GET | **`.autowire/hdxml/`** `index.xml` | files / modules / packages / errorFiles、definesFp、hierarchy |
+| `/api/modules` | GET | **`.autowire/hdxml/`** `index.xml` | 模块与 package 名字列表（侧栏搜索） |
 | `/api/module?name=` | GET | **`.autowire/hdxml/`** 对应模块文件 XML | params / imports / ports / instances（叶子事实） |
 | `/api/connect?id=` | GET | **`.autowire/connect/`** 该单元快照 | 已由 `connect run` 写出的 `aw-render`（跨单元 deps / 预览）；**不是**作者 HTML |
 | `/api/units` | GET | `autowire.toml` | 单元列表、deps、默认单元 |
 | `/api/author?id=` | GET | 作者 `html=` | 作者 HTML 原文 |
+| `/api/hook-script` | POST | 进程内存 | 把钩子脚本文本换成一次性 URL（obscura 拒绝 `data:` 模块）。**不**写工作区 |
+| `/api/hook-script/<id>.js` | GET | 同上 | 该次编译要执行的模块脚本 |
 
 加载要求（与 [`toml.md`](./toml.md) §4.2 一致）：
 
 1. 叶子端口表 **必须**来自 hdxml API；索引缺失或 `definesFp` 过期 → 需要叶子信息的动作 **报错**。  
 2. 跨 `[connect.<id>]` 引用 **必须**能加载 deps 单元在 `.autowire/connect/` 的快照（或本会话刚 elaborate 的等价物）；缺失 → **报错**。  
 3. **禁止**用 `/api/connect` 冒充作者 SoT。  
-4. 前端和这些 GET **禁止**写盘。`.sv` 只由 `connect run` 写，或由 MCP 保存 `#aw-generated`。check **禁止**写 `.sv` / `gen/`。没有 `POST /api/dump`、`POST /api/save`、`POST /api/check`。
+4. 前端和这些 GET **禁止**写盘。`.sv` 只由 `connect run` 写，或由 MCP 保存 `#aw-generated`。check **禁止**写 `.sv` / `gen/`。没有 `POST /api/dump`、`POST /api/save`、`POST /api/check`。`POST /api/hook-script` 只在内存里放本次编译的脚本，响应后由浏览器用 GET 取回。

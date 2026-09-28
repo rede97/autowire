@@ -2,7 +2,9 @@
 // Buttons and GET params share the same action chain: select → check → elaborate → run.
 // Check has no prerequisite. Elaborate depends on a clean check. Run implies both.
 // Nothing here writes the workspace. Save SV downloads the printed .sv text;
-// Save HTML downloads the live author HTML with aw-render stripped.
+// Save HTML downloads the processed author face with aw-render stripped.
+// #aw-source + #aw-hooks are the input workspace (CDP-editable). #aw-live is
+// the pipeline output, replaced on each compile — hooks do not write back.
 
 // The engine is served as a bundle at /aw.js (runtime URL); tsc cannot resolve
 // rooted specifiers, so we import it untyped and re-type it from the source.
@@ -28,6 +30,11 @@ interface UnitMeta {
 }
 
 interface UnitEntry {
+	/** Input workspace. Pipeline steps clone this; they never write it back. */
+	source: HTMLElement;
+	/** `<script type="aw/hook">` elements. Edited in place; re-read on compile. */
+	hooks: HTMLElement;
+	/** Processed workspace (clone after scripts / before-instances / elaborate). */
 	doc: HTMLElement;
 	container: HTMLElement;
 	rendered: boolean;
@@ -78,6 +85,10 @@ const state: {
 		string,
 		"before-instances" | "check" | "elaborate" | "before-dump"
 	>;
+	/** Input edits since the last compile of that unit. */
+	dirty: Set<string>;
+	svText: string;
+	htmlText: string;
 } = {
 	workspace: "",
 	style: { paramInline: true },
@@ -87,11 +98,268 @@ const state: {
 	docs: new Map(),
 	leafCache: new Map(),
 	phase: new Map(),
+	dirty: new Set(),
+	svText: "",
+	htmlText: "",
 };
 
 function showGenerated(text: string): void {
 	const box = $("#aw-generated");
-	if (box) box.textContent = text;
+	box.hidden = false;
+	box.textContent = text;
+}
+
+const minimal = document.documentElement.dataset.ui === "min";
+
+/** Ignore input-workspace mutations caused by compile itself. */
+let obsMute = 0;
+function holdObs(): void {
+	obsMute++;
+}
+function releaseObs(): void {
+	queueMicrotask(() => {
+		obsMute = Math.max(0, obsMute - 1);
+	});
+}
+
+function watchInputs(): void {
+	const obs = new MutationObserver((recs) => {
+		if (obsMute > 0) return;
+		for (const rec of recs) {
+			const node =
+				rec.target.nodeType === Node.ELEMENT_NODE
+					? (rec.target as Element)
+					: rec.target.parentElement;
+			const unit = node?.closest("[data-unit]")?.getAttribute("data-unit");
+			if (unit) state.dirty.add(unit);
+		}
+	});
+	const opts: MutationObserverInit = {
+		subtree: true,
+		childList: true,
+		attributes: true,
+		characterData: true,
+	};
+	obs.observe($("#aw-source"), opts);
+	obs.observe($("#aw-hooks"), opts);
+}
+
+function setAuthorTab(which: "source" | "processed"): void {
+	const src = document.querySelector<HTMLElement>("#author-source");
+	const proc = document.querySelector<HTMLElement>("#author-processed");
+	if (!src || !proc) return;
+	src.hidden = which !== "source";
+	proc.hidden = which !== "processed";
+	document
+		.querySelector("#atab-source")
+		?.setAttribute("aria-selected", String(which === "source"));
+	document
+		.querySelector("#atab-proc")
+		?.setAttribute("aria-selected", String(which === "processed"));
+}
+
+function setSideTab(which: "rtl" | "connect"): void {
+	const rtl = document.querySelector<HTMLElement>("#pane-rtlindex");
+	const connect = document.querySelector<HTMLElement>("#pane-connect");
+	if (!rtl || !connect) return;
+	rtl.hidden = which !== "rtl";
+	connect.hidden = which !== "connect";
+	document
+		.querySelector("#tab-rtl")
+		?.setAttribute("aria-selected", String(which === "rtl"));
+	document
+		.querySelector("#tab-connect")
+		?.setAttribute("aria-selected", String(which === "connect"));
+}
+
+function showUnitWorkspace(): void {
+	const unit = document.querySelector<HTMLElement>("#unit-view");
+	const mod = document.querySelector<HTMLElement>("#module-view");
+	if (!unit || !mod) return;
+	unit.hidden = false;
+	mod.hidden = true;
+}
+
+function showModuleWorkspace(): void {
+	const unit = document.querySelector<HTMLElement>("#unit-view");
+	const mod = document.querySelector<HTMLElement>("#module-view");
+	if (!unit || !mod) return;
+	unit.hidden = true;
+	mod.hidden = false;
+}
+
+const SV_DIRS = new Set(["input", "output", "inout"]);
+const SV_KW = new Set([
+	"module",
+	"endmodule",
+	"logic",
+	"wire",
+	"reg",
+	"assign",
+	"parameter",
+	"localparam",
+	"interface",
+	"modport",
+	"import",
+	"package",
+	"endpackage",
+	"generate",
+	"endgenerate",
+	"begin",
+	"end",
+	"if",
+	"else",
+	"for",
+	"always",
+	"always_ff",
+	"always_comb",
+	"always_latch",
+	"posedge",
+	"negedge",
+	"or",
+]);
+
+function paintTokens(
+	text: string,
+	host: HTMLElement,
+	re: RegExp,
+	cls: (tok: string) => string,
+): void {
+	host.replaceChildren();
+	let last = 0;
+	for (const m of text.matchAll(re)) {
+		const i = m.index ?? 0;
+		if (i > last)
+			host.appendChild(document.createTextNode(text.slice(last, i)));
+		const tok = m[0];
+		const span = document.createElement("span");
+		const name = cls(tok);
+		if (name) span.className = name;
+		span.textContent = tok;
+		host.appendChild(span);
+		last = i + tok.length;
+	}
+	if (last < text.length)
+		host.appendChild(document.createTextNode(text.slice(last)));
+}
+
+function highlightSv(text: string, host: HTMLElement): void {
+	paintTokens(
+		text,
+		host,
+		/\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b\d+'[bodhBODH][0-9a-fA-FxXzZ_]+|\b\d+\b|\b[A-Za-z_][A-Za-z0-9_$]*\b/g,
+		(tok) => {
+			if (tok.startsWith("//") || tok.startsWith("/*")) return "sv-cmt";
+			if (tok.startsWith('"') || tok.startsWith("'")) return "sv-str";
+			if (SV_DIRS.has(tok)) return "sv-dir";
+			if (SV_KW.has(tok)) return "sv-kw";
+			if (/^\d/.test(tok)) return "sv-num";
+			return "";
+		},
+	);
+}
+
+function highlightXml(text: string, host: HTMLElement): void {
+	paintTokens(
+		text,
+		host,
+		/<!--[\s\S]*?-->|<\/?[A-Za-z][\w:-]*|\/?>|[A-Za-z_:][\w:.-]*="[^"]*"/g,
+		(tok) => {
+			if (tok.startsWith("<!--")) return "xml-cmt";
+			if (tok.includes("=")) return "xml-attr";
+			return "xml-tag";
+		},
+	);
+}
+
+function paintResult(): void {
+	const gen = $("#aw-generated");
+	gen.hidden = false;
+	const tabs = document.querySelector("#result-tabs");
+	if (!tabs) {
+		gen.textContent = state.svText || state.htmlText;
+		return;
+	}
+	const sv =
+		document.querySelector("#rtab-sv")?.getAttribute("aria-selected") !==
+		"false";
+	if (sv && state.svText) highlightSv(state.svText, gen);
+	else if (!sv) highlightXml(state.htmlText, gen);
+	else gen.textContent = state.htmlText;
+}
+
+function setResultTab(which: "sv" | "html"): void {
+	document
+		.querySelector("#rtab-sv")
+		?.setAttribute("aria-selected", String(which === "sv"));
+	document
+		.querySelector("#rtab-html")
+		?.setAttribute("aria-selected", String(which === "html"));
+	paintResult();
+}
+
+function namesInErrors(errors: string[]): string[] {
+	const out = new Set<string>();
+	for (const e of errors) {
+		for (const m of e.matchAll(/"([^"]+)"/g)) {
+			const n = m[1] ?? "";
+			if (n.length >= 2 && !/^\d+$/.test(n)) out.add(n);
+		}
+	}
+	return [...out];
+}
+
+function markProcessed(names: string[]): void {
+	const root = document.querySelector("#aw-live");
+	if (!root) return;
+	for (const el of root.querySelectorAll(".tn-err"))
+		el.classList.remove("tn-err");
+	if (names.length === 0) return;
+	const want = new Set(names);
+	const keys = ["name", "id", "port", "mod", "to", "match"];
+	for (const el of root.querySelectorAll("*")) {
+		if (keys.some((k) => want.has(el.getAttribute(k) ?? "")))
+			el.classList.add("tn-err");
+	}
+}
+
+function snapshotOf(id: string): string {
+	const entry = state.docs.get(id);
+	if (!entry?.doc) return "";
+	return AW.serializeSnapshot(entry.doc as unknown as Document);
+}
+
+function showErrors(errors: string[]): void {
+	const list = document.querySelector<HTMLElement>("#error-list");
+	if (list) {
+		list.hidden = false;
+		list.textContent = errors.join("\n");
+	}
+	document.querySelector("#result-tabs")?.setAttribute("hidden", "");
+	$("#aw-generated").hidden = true;
+	markProcessed(namesInErrors(errors));
+	setAuthorTab("processed");
+}
+
+function showResult(sv: string | null, html: string | null): void {
+	if (sv !== null) state.svText = sv;
+	if (html !== null) state.htmlText = html;
+	const list = document.querySelector<HTMLElement>("#error-list");
+	if (list) {
+		list.hidden = true;
+		list.textContent = "";
+	}
+	markProcessed([]);
+	const tabs = document.querySelector("#result-tabs");
+	if (tabs) {
+		tabs.removeAttribute("hidden");
+		const which = state.svText ? "sv" : "html";
+		setResultTab(which);
+		return;
+	}
+	const gen = $("#aw-generated");
+	gen.hidden = false;
+	gen.textContent = state.svText || state.htmlText;
 }
 
 /** Browser download. Does not write the workspace. */
@@ -107,7 +375,7 @@ function downloadText(text: string, filename: string): void {
 
 /** Save SV: download the printed .sv text shown after Run. No render XML. */
 function saveSv(): string {
-	const text = $("#aw-generated")?.textContent ?? "";
+	const text = state.svText;
 	if (!text) {
 		setStatus("error", "save: run first; nothing generated");
 		throw new Error("save: run first; nothing generated");
@@ -135,7 +403,7 @@ function saveHtml(): string {
 }
 
 const SESSION_HELP = [
-	"before-instances: run author scripts on the current unit",
+	"before-instances: compile #aw-source + #aw-hooks into #aw-live (does not write the input back)",
 	"check: rule report; requires before-instances in this session",
 	"elaborate: freeze aw-render; requires a clean check in this session",
 	"before-dump: read-only hook; requires elaborate in this session",
@@ -151,8 +419,10 @@ async function sessionStep(step: string): Promise<string> {
 	const phase = state.phase.get(id) ?? "none";
 	if (step === "help") return SESSION_HELP;
 	if (step === "before-instances") {
-		await loadUnit(id);
+		const entry = await loadUnit(id);
+		await compileUnit(entry, id, true);
 		state.phase.set(id, "before-instances");
+		setAuthorTab("processed");
 		showGenerated($("#aw-live").textContent ?? "");
 		return "before-instances";
 	}
@@ -160,21 +430,33 @@ async function sessionStep(step: string): Promise<string> {
 		if (phase === "none")
 			throw new Error('session: run "before-instances" before "check"');
 		const res = await runCheck(id);
-		if (res.errors.length === 0) state.phase.set(id, "check");
 		const text = [...res.errors, ...res.warnings].join("\n") || "check ok";
-		showGenerated(text);
+		if (res.errors.length === 0) {
+			state.phase.set(id, "check");
+			showResult("", snapshotOf(id));
+			setAuthorTab("processed");
+		} else showErrors(res.errors);
 		return text;
 	}
 	if (step === "elaborate") {
+		if (state.dirty.has(id))
+			throw new Error(
+				'session: input workspace changed; run "before-instances" and "check" again',
+			);
 		if (phase !== "check" && phase !== "elaborate" && phase !== "before-dump")
 			throw new Error('session: "elaborate" requires a clean check');
 		const res = await runRender(id);
 		if (res.errors.length > 0) throw new Error(res.errors[0]);
 		state.phase.set(id, "elaborate");
-		showGenerated($("#aw-live").textContent ?? "");
+		showResult("", snapshotOf(id));
+		setAuthorTab("processed");
 		return "elaborate";
 	}
 	if (step === "before-dump") {
+		if (state.dirty.has(id))
+			throw new Error(
+				'session: input workspace changed; run "before-instances" and "check" again',
+			);
 		if (phase !== "elaborate" && phase !== "before-dump")
 			throw new Error('session: "before-dump" requires elaborate');
 		const res = await runBeforeDumpOnly(id);
@@ -225,14 +507,11 @@ interface RtlIndexSummary {
 	modules: number;
 	errorFiles: string[];
 	definesFp: string;
-	hierarchy: HierNode[];
 }
 
-interface HierNode {
-	module: string;
-	blackbox?: boolean;
-	cycle?: boolean;
-	children?: HierNode[];
+interface ModulesPayload {
+	modules: { name: string; source: string; kind: string }[];
+	packages: { name: string; source: string; kind: string }[];
 }
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -247,48 +526,141 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 // per-unit hook registry (aw.js beginUnitHooks/endUnitHooks).
 // ---------------------------------------------------------------------------
 
-async function loadUnit(id: string): Promise<UnitEntry> {
-	const cached = state.docs.get(id);
-	if (cached) return cached;
-	const res = await fetch(`/api/author?id=${encodeURIComponent(id)}`);
-	if (!res.ok) throw new Error(((await res.json()) as { error: string }).error);
-	const html = await res.text();
-	const parsed = new DOMParser().parseFromString(html, "text/html");
-	const root = parsed.querySelector("autowire");
-	if (!root)
-		throw new Error(`unit "${id}": author HTML has no <autowire> root`);
-	const container = document.createElement("div");
-	container.dataset.unit = id;
-	const adopted = document.importNode(root, true);
-	container.appendChild(adopted);
-	$("#aw-live").appendChild(container);
-	// Re-create module scripts so they execute; hooks bind to this unit.
+async function execHookScripts(id: string, hooks: HTMLElement): Promise<void> {
 	AW.beginUnitHooks(id);
 	try {
-		const pending: Promise<void>[] = [];
-		for (const s of parsed.querySelectorAll('script[type="module"]')) {
+		for (const h of hooks.querySelectorAll('script[type="aw/hook"]')) {
+			const inline = h.textContent ?? "";
+			const srcAttr = h.getAttribute("src");
+			if (!inline.trim() && !srcAttr) continue;
 			const el = document.createElement("script");
 			el.type = "module";
-			// Inline module scripts do not fire a load event; append a sentinel
-			// line that resolves after the author script's top level executed
-			// (document order), so hook registration lands before we close the
-			// unit registry.
-			const done = new Promise<void>((res) => {
+			el.dataset.awInjected = id;
+			let src = srcAttr ? new URL(srcAttr, location.href).href : "";
+			if (inline.trim()) {
+				// Obscura rejects data:/blob: module URLs. Serve the text from
+				// an ephemeral loopback URL (not a workspace file).
+				const posted = await fetch("/api/hook-script", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({
+						text: `${inline}\n;window.__awScriptDone?.shift()?.();`,
+					}),
+				});
+				if (!posted.ok) {
+					const err = (await posted.json()) as { error?: string };
+					throw new Error(err.error ?? "hook script upload failed");
+				}
+				const meta = (await posted.json()) as { url: string };
+				src = new URL(meta.url, location.href).href;
+			}
+			const sentinel = new Promise<void>((res) => {
 				const q = win.__awScriptDone ?? [];
 				win.__awScriptDone = q;
 				q.push(res);
 			});
-			pending.push(done);
-			el.textContent = `${s.textContent}\n;window.__awScriptDone?.shift()?.();`;
+			const loaded = new Promise<void>((res, rej) => {
+				el.addEventListener("load", () => res());
+				el.addEventListener("error", () =>
+					rej(new Error(`hook script failed to load ${src}`)),
+				);
+			});
+			el.src = src;
 			document.body.appendChild(el);
+			// One script at a time so aw.on registration stays in source order.
+			await Promise.race([sentinel, loaded]);
 		}
-		await Promise.all(pending);
 	} finally {
 		AW.endUnitHooks();
+		for (const el of document.querySelectorAll(
+			`script[data-aw-injected="${id}"]`,
+		))
+			el.remove();
 	}
-	const entry = { doc: container, container, rendered: false };
-	state.docs.set(id, entry);
-	return entry;
+}
+
+/** Clone the input workspace into #aw-live and run scripts there.
+ *  `runHooks` also runs before-instances. Source is detached while scripts
+ *  run so they cannot write the input tree. */
+async function compileUnit(
+	entry: UnitEntry,
+	id: string,
+	runHooks: boolean,
+): Promise<void> {
+	holdObs();
+	// Hide every input tree while scripts run. Otherwise a hook's
+	// document.querySelector("aw-mod") can write the source workspace.
+	const sourceRoot = $("#aw-source");
+	const sourceParent = sourceRoot.parentElement;
+	const sourceNext = sourceRoot.nextSibling;
+	sourceRoot.remove();
+	try {
+		if (entry.doc !== entry.source) entry.doc.remove();
+		AW.clearUnitHooks(id);
+		const container = document.createElement("div");
+		container.dataset.unit = id;
+		const root = entry.source.querySelector(":scope > autowire");
+		if (!root)
+			throw new Error(`unit "${id}": source workspace has no <autowire>`);
+		container.appendChild(root.cloneNode(true));
+		$("#aw-live").appendChild(container);
+		entry.doc = container;
+		entry.container = container;
+		entry.rendered = false;
+		entry.hooksRan = false;
+		await execHookScripts(id, entry.hooks);
+		if (runHooks) {
+			AW.runBeforeInstances(container as unknown as Document, id);
+			entry.hooksRan = true;
+		}
+		state.dirty.delete(id);
+	} finally {
+		sourceParent?.insertBefore(sourceRoot, sourceNext);
+		releaseObs();
+	}
+}
+
+async function loadUnit(id: string): Promise<UnitEntry> {
+	const cached = state.docs.get(id);
+	if (cached) return cached;
+	holdObs();
+	try {
+		const res = await fetch(`/api/author?id=${encodeURIComponent(id)}`);
+		if (!res.ok)
+			throw new Error(((await res.json()) as { error: string }).error);
+		const html = await res.text();
+		const parsed = new DOMParser().parseFromString(html, "text/html");
+		const root = parsed.querySelector("autowire");
+		if (!root)
+			throw new Error(`unit "${id}": author HTML has no <autowire> root`);
+		const source = document.createElement("div");
+		source.dataset.unit = id;
+		source.appendChild(document.importNode(root, true));
+		$("#aw-source").appendChild(source);
+		const hooks = document.createElement("div");
+		hooks.dataset.unit = id;
+		for (const s of parsed.querySelectorAll('script[type="module"]')) {
+			const el = document.createElement("script");
+			el.type = "aw/hook";
+			const src = s.getAttribute("src");
+			if (src) el.setAttribute("src", src);
+			el.textContent = s.textContent ?? "";
+			hooks.appendChild(el);
+		}
+		$("#aw-hooks").appendChild(hooks);
+		const entry: UnitEntry = {
+			source,
+			hooks,
+			doc: document.createElement("div"),
+			container: source,
+			rendered: false,
+		};
+		state.docs.set(id, entry);
+		await compileUnit(entry, id, false);
+		return entry;
+	} finally {
+		releaseObs();
+	}
 }
 
 /** Wrapper facts of a dep unit: prefer this session's elaborated doc, else the
@@ -311,15 +683,14 @@ function xmlFactsOf(doc: Document): WrapperFacts[] {
 	const facts: WrapperFacts[] = [];
 	for (const mod of doc.querySelectorAll("connectUnit > module")) {
 		const ports: WrapperFacts["ports"] = [];
-		for (const dir of ["input", "output", "inout", "interface"]) {
-			for (const p of mod.querySelectorAll(`:scope > ports > ${dir}`)) {
-				ports.push({
-					name: p.getAttribute("name"),
-					dir,
-					packed: p.getAttribute("packed"),
-					unpacked: p.getAttribute("unpacked"),
-				});
-			}
+		for (const p of mod.querySelectorAll(":scope > ports > port")) {
+			const dir = p.getAttribute("dir") ?? "input";
+			ports.push({
+				name: p.getAttribute("name"),
+				dir,
+				packed: p.getAttribute("packed"),
+				unpacked: p.getAttribute("unpacked"),
+			});
 		}
 		const params: WrapperFacts["params"] = [];
 		for (const pr of mod.querySelectorAll(":scope > params > param")) {
@@ -427,17 +798,21 @@ async function buildCtx(
 // Actions (shared by buttons and GET params).
 // ---------------------------------------------------------------------------
 
-/** Run before-instances once per loaded unit (mutates aw-content). Must precede check. */
-function ensureAuthorMutations(entry: UnitEntry, id: string): void {
-	if (entry.hooksRan) return;
-	entry.hooksRan = true;
-	AW.runBeforeInstances(entry.doc as unknown as Document, id);
+/** Compile source → processed when hooks have not run, or the input changed.
+ *  before-instances writes only the processed clone. */
+async function ensureAuthorMutations(
+	entry: UnitEntry,
+	id: string,
+): Promise<void> {
+	if (entry.hooksRan && !state.dirty.has(id)) return;
+	await compileUnit(entry, id, true);
+	setAuthorTab("processed");
 }
 
 async function runCheck(id: string): Promise<AwEngine.CheckResult> {
 	const entry = await loadUnit(id);
 	// lifecycle §3.1: author-face mutators before check (hook-generated insts visible).
-	ensureAuthorMutations(entry, id);
+	await ensureAuthorMutations(entry, id);
 	const { errors: ctxErrors, ctx } = await buildCtx(id);
 	const res = AW.check(entry.doc as unknown as Document, ctx);
 	return { errors: [...ctxErrors, ...res.errors], warnings: res.warnings };
@@ -445,7 +820,7 @@ async function runCheck(id: string): Promise<AwEngine.CheckResult> {
 
 async function runRender(id: string): Promise<AwEngine.CheckResult> {
 	const entry = await loadUnit(id);
-	ensureAuthorMutations(entry, id);
+	await ensureAuthorMutations(entry, id);
 	const { errors: ctxErrors, ctx } = await buildCtx(id);
 	if (ctxErrors.length > 0) return { errors: ctxErrors, warnings: [] };
 	const res = AW.elaborate(entry.doc as unknown as Document, ctx);
@@ -491,7 +866,8 @@ async function runView(id: string): Promise<{ files: string[]; sv: string }> {
 		}
 	}
 	const sv = chunks.join("\n");
-	showGenerated(sv);
+	showResult(sv, files.map((f) => f.text).join("\n"));
+	setAuthorTab("processed");
 	return { files: files.map((f) => f.text), sv };
 }
 
@@ -531,14 +907,24 @@ async function runChain({
 						? `check: ${res.errors.length} error(s)`
 						: `check: ok${res.warnings.length > 0 ? ` (${res.warnings.length} warning(s))` : ""}`,
 				);
-				if (res.errors.length > 0) throw new Error(res.errors[0]);
+				if (res.errors.length > 0) {
+					showErrors(res.errors);
+					throw new Error(res.errors[0]);
+				}
+				showResult("", snapshotOf(id));
+				setAuthorTab("processed");
 				if (res.warnings.length > 0)
 					console.warn("[autowire check warnings]", res.warnings);
 			}
 			if (elaborate) {
 				const res = await runRender(id);
-				if (res.errors.length > 0) throw new Error(res.errors[0]);
+				if (res.errors.length > 0) {
+					showErrors(res.errors);
+					throw new Error(res.errors[0]);
+				}
 				summary.push("elaborate: ok");
+				showResult("", snapshotOf(id));
+				setAuthorTab("processed");
 				refreshRightIfRendered();
 			}
 		}
@@ -552,23 +938,9 @@ async function runChain({
 // Panels.
 // ---------------------------------------------------------------------------
 
-function hierNode(node: HierNode): HTMLElement {
-	const det = document.createElement("details");
-	const sum = document.createElement("summary");
-	const span = document.createElement("span");
-	span.className = `mod-node${node.blackbox ? " blackbox" : ""}`;
-	span.textContent = node.blackbox ? `${node.module} (blackbox)` : node.module;
-	span.dataset.mod = node.module;
-	sum.appendChild(span);
-	if (node.cycle) sum.appendChild(document.createTextNode(" (cycle)"));
-	det.appendChild(sum);
-	for (const c of node.children ?? []) det.appendChild(hierNode(c));
-	return det;
-}
-
-async function buildLeft(): Promise<void> {
-	const db = $("#db-summary");
-	const tree = $("#dep-tree");
+async function buildSummary(): Promise<void> {
+	const db = document.querySelector("#db-summary");
+	if (!db) return;
 	try {
 		const idx = await fetchJson<RtlIndexSummary>("/api/rtlindex");
 		db.innerHTML = "";
@@ -590,14 +962,65 @@ async function buildLeft(): Promise<void> {
 			table.appendChild(tr);
 		}
 		db.appendChild(table);
-		tree.innerHTML = "";
-		for (const top of idx.hierarchy) tree.appendChild(hierNode(top));
 	} catch (e) {
 		db.textContent = (e as Error).message;
 	}
 }
 
+async function buildRtlList(): Promise<void> {
+	const list = document.querySelector("#rtl-list");
+	if (!list) return;
+	let rows: { name: string; kind: string }[] = [];
+	try {
+		const data = await fetchJson<ModulesPayload>("/api/modules");
+		rows = [
+			...data.modules.map((m) => ({ name: m.name, kind: "module" })),
+			...data.packages.map((m) => ({ name: m.name, kind: "package" })),
+		];
+	} catch (e) {
+		list.textContent = (e as Error).message;
+		return;
+	}
+	const paint = (q: string) => {
+		list.replaceChildren();
+		const needle = q.trim().toLowerCase();
+		for (const row of rows) {
+			if (needle && !row.name.toLowerCase().includes(needle)) continue;
+			const div = document.createElement("div");
+			div.textContent = row.name;
+			div.dataset.mod = row.name;
+			if (row.kind === "package") div.className = "pkg";
+			div.addEventListener("click", () => {
+				void selectModule(row.name);
+			});
+			list.appendChild(div);
+		}
+	};
+	paint("");
+	document.querySelector("#rtl-search")?.addEventListener("input", (e) => {
+		paint((e.target as HTMLInputElement).value);
+	});
+}
+
+function buildUnitList(): void {
+	const list = document.querySelector("#unit-list");
+	if (!list) return;
+	list.replaceChildren();
+	for (const u of state.units) {
+		const a = document.createElement("a");
+		a.href = `/?unit=${encodeURIComponent(u.id)}`;
+		a.textContent = u.id;
+		if (u.id === state.current) a.setAttribute("aria-current", "true");
+		const kind = document.createElement("span");
+		kind.className = "kind";
+		kind.textContent = ` ${u.kind ?? "connect"}`;
+		a.appendChild(kind);
+		list.appendChild(a);
+	}
+}
+
 async function selectModule(name: string): Promise<void> {
+	showModuleWorkspace();
 	$("#right-title").textContent = name;
 	const body = $("#right-body");
 	body.innerHTML = "";
@@ -691,14 +1114,34 @@ function refreshRightIfRendered(): void {
 // ---------------------------------------------------------------------------
 
 async function resetAll(): Promise<void> {
-	for (const [id] of state.docs) AW.clearUnitHooks(id);
-	state.docs.clear();
-	state.phase.clear();
-	$("#aw-live").innerHTML = "";
-	showGenerated("");
-	if (!state.current) throw new Error("no unit selected");
-	await loadUnit(state.current);
-	setStatus("idle", "idle");
+	holdObs();
+	try {
+		for (const [id] of state.docs) AW.clearUnitHooks(id);
+		state.docs.clear();
+		state.phase.clear();
+		state.dirty.clear();
+		state.svText = "";
+		state.htmlText = "";
+		$("#aw-live").innerHTML = "";
+		$("#aw-source").innerHTML = "";
+		$("#aw-hooks").innerHTML = "";
+		const gen = $("#aw-generated");
+		gen.hidden = false;
+		gen.textContent = "";
+		const list = document.querySelector<HTMLElement>("#error-list");
+		if (list) {
+			list.hidden = true;
+			list.textContent = "";
+		}
+		document.querySelector("#result-tabs")?.setAttribute("hidden", "");
+		showUnitWorkspace();
+		setAuthorTab("source");
+		if (!state.current) throw new Error("no unit selected");
+		await loadUnit(state.current);
+		setStatus("idle", "idle");
+	} finally {
+		releaseObs();
+	}
 }
 
 async function init(): Promise<void> {
@@ -707,14 +1150,6 @@ async function init(): Promise<void> {
 	state.workspace = meta.workspace;
 	if (meta.style) state.style = meta.style;
 	$("#ws-name").textContent = meta.workspace.split("/").pop() ?? "";
-	const sel = $<HTMLSelectElement>("#unit-select");
-	for (const u of state.units) {
-		const opt = document.createElement("option");
-		opt.value = u.id;
-		opt.textContent =
-			u.deps.length > 0 ? `${u.id} (deps: ${u.deps.join(",")})` : u.id;
-		sel.appendChild(opt);
-	}
 	// Top-level mod names per unit (cross-unit reference checks).
 	for (const u of state.units) {
 		const res = await fetch(`/api/author?id=${encodeURIComponent(u.id)}`);
@@ -738,11 +1173,8 @@ async function init(): Promise<void> {
 		setStatus("error", "no connect units in autowire.toml");
 		return;
 	}
-	sel.value = state.current;
-	sel.addEventListener("change", async () => {
-		state.current = sel.value;
-		await resetAll();
-	});
+	$("#unit-name").textContent = state.current;
+	buildUnitList();
 	$("#btn-check").addEventListener("click", () => runChain({ check: true }));
 	$("#btn-elaborate").addEventListener("click", () =>
 		runChain({ elaborate: true }),
@@ -763,11 +1195,27 @@ async function init(): Promise<void> {
 		}
 	});
 	$("#btn-reset").addEventListener("click", () => resetAll());
-	$("#dep-tree").addEventListener("click", (e) => {
-		const mod = (e.target as HTMLElement | null)?.dataset?.mod;
-		if (mod) void selectModule(mod);
-	});
-	await buildLeft();
+	document
+		.querySelector("#tab-rtl")
+		?.addEventListener("click", () => setSideTab("rtl"));
+	document
+		.querySelector("#tab-connect")
+		?.addEventListener("click", () => setSideTab("connect"));
+	document
+		.querySelector("#atab-source")
+		?.addEventListener("click", () => setAuthorTab("source"));
+	document
+		.querySelector("#atab-proc")
+		?.addEventListener("click", () => setAuthorTab("processed"));
+	document
+		.querySelector("#rtab-sv")
+		?.addEventListener("click", () => setResultTab("sv"));
+	document
+		.querySelector("#rtab-html")
+		?.addEventListener("click", () => setResultTab("html"));
+	watchInputs();
+	await buildSummary();
+	if (!minimal) await buildRtlList();
 	if (!state.current) throw new Error("no unit selected");
 	await loadUnit(state.current);
 	// GET action contract (docs/workspace/web-ui.md §3.2): select → check → elaborate → run.

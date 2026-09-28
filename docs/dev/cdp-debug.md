@@ -19,7 +19,7 @@ bun index.ts connect web soc_top --port 4173   # 在 demo/soc 下
 import { connectCdp, openPage, runSession, authorFaceText } from "../scripts/cdp-helper.ts";
 
 const { browser, page } = await connectCdp("http://127.0.0.1:9222");
-await openPage(page, "http://127.0.0.1:4173/");
+await openPage(page, "http://127.0.0.1:4173/?ui=min");
 const sv = await runSession(page);      // 全链，返回 .sv 文本（= connect run 写盘内容）
 const html = await authorFaceText(page); // 活作者面（aw-render 已剥空）
 await browser.close();
@@ -27,7 +27,15 @@ await browser.close();
 
 ## 2. 页面会话 = 调试界面
 
-`window.aw.session(step)` 逐步推进：`before-instances → check → elaborate → before-dump → run`；`save-sv` / `save-html` 各给一份下载文本（语义见 web-ui.md）。agent 在中间任意相位用 `page.evaluate` 读/改活 DOM（作者面突变规则见 [`../connect/lifecycle.md`](../connect/lifecycle.md) §4），再 `save-html` 取回中间成果——这是 MCP 途径 A 的手工等价物。
+`window.aw.session(step)` 逐步推进：`before-instances → check → elaborate → before-dump → run`；`save-sv` / `save-html` 各给一份下载文本（语义见 web-ui.md）。无头打开 `/?ui=min`（前端是 `/?unit=<id>`）。
+
+输入和产物是两条工作区，不是就地覆盖：
+
+- `#aw-source`：未改过的作者 HTML。CDP 直接改这些节点。
+- `#aw-hooks`：`script[type="aw/hook"]`。CDP 改 `textContent` 就是改钩子脚本。
+- `#aw-live`：编译结果（脚本 / `before-instances` / elaborate）。下次 `before-instances` 或 Check 会整段换掉它。
+
+改输入后调用 `before-instances`（或点 Check）再编译。钩子不会写回 `#aw-source`。`save-html` 下载的是 Processed 作者面（`aw-render` 已剥空）。
 
 ## 3. 轻量浏览器的坑（obscura 实测）
 
@@ -38,6 +46,8 @@ await browser.close();
 | 点击下载链接触发导航，evaluate 上下文销毁 | 只取文本时先存根 `HTMLAnchorElement.prototype.click = () => {}` |
 | `text/xml` 的 DOMParser 可能套 HTML 骨架、`tagName` 大写 | 解析用 `querySelector` + `localName`（`src/core/printer.ts` `parseSnapshot` 已按此写） |
 | 回环/内网地址默认被 SSRF 防护拦截 | 启动加 `--allow-private-network` |
+| 内联 `type="module"` 被改写成 `data:` 后拒绝加载 | 作者钩子由页面 POST 到 `/api/hook-script`，再以 http 模块执行。索引页用普通 script |
+| 坐标点击打在自定义元素上，按钮的 `getBoundingClientRect` 与命中不一致 | 无头页用 `element.click()` 或 `window.aw.session`，不要用坐标点击 |
 
 ## 4. 测试的浏览器回退
 
