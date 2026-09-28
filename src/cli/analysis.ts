@@ -9,22 +9,33 @@ import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex, type RtlIndex } from "../rtl/rtlindex.ts";
 import { renderSummary, renderTrees } from "../rtl/tree.ts";
 import { DEFAULT_TOML, hdxmlArgs } from "../workspace.js";
+import { loadPack } from "./pack.ts";
 import { findHdxml, requireWorkspace } from "./shared.ts";
 
 export function registerAnalysis(program: Command): void {
 	program
 		.command("init")
 		.description(
-			"Create default autowire.toml in the current directory (refuses to overwrite)",
+			"Create default autowire.toml and AGENTS-AUTOWIRE.md in the current directory (refuses to overwrite either)",
 		)
-		.action(() => {
-			const target = join(process.cwd(), "autowire.toml");
-			if (existsSync(target)) {
-				console.error(`autowire.toml already exists: ${target}`);
+		.action(async () => {
+			const tomlTarget = join(process.cwd(), "autowire.toml");
+			const agentsTarget = join(process.cwd(), "AGENTS-AUTOWIRE.md");
+			const existing = [tomlTarget, agentsTarget].filter((p) => existsSync(p));
+			if (existing.length > 0) {
+				console.error(`already exists: ${existing.join(", ")}`);
 				process.exit(1);
 			}
-			Bun.write(target, DEFAULT_TOML);
-			console.log(`created ${target}`);
+			const pack = await loadPack();
+			const contract = pack.find((f) => f.path === "AGENTS.md");
+			if (!contract) {
+				console.error("docs pack has no AGENTS.md");
+				process.exit(1);
+			}
+			await Bun.write(tomlTarget, DEFAULT_TOML);
+			await Bun.write(agentsTarget, contract.bytes);
+			console.log(`created ${tomlTarget}`);
+			console.log(`created ${agentsTarget}`);
 		});
 
 	const analysis = program

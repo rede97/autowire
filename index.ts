@@ -12,11 +12,13 @@ import { registerAnalysis } from "./src/cli/analysis.ts";
 import { registerDocs } from "./src/cli/docs.ts";
 import { renderHelp } from "./src/cli/help.ts";
 import { registerPlugin } from "./src/cli/plugin.ts";
+import { formatRelease } from "./src/cli/version.ts";
 import { registerConnect } from "./src/cli/web.ts";
 
 const program = new Command();
 program
 	.name("autowire")
+	.version(formatRelease())
 	.description(
 		"RTL register and connectivity tool. Agents: run `help agent`; do not invent a project prompt.",
 	)

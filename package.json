@@ -1,5 +1,6 @@
 {
 	"name": "autowire",
+	"version": "0.9.1",
 	"module": "index.ts",
 	"type": "module",
 	"private": true,
@@ -8,10 +9,11 @@
 	},
 	"scripts": {
 		"help": "bun index.ts help",
-		"lint": "biome check . && tsc --noEmit -p tsconfig.json",
-		"test": "bun test",
+		"lint": "bun scripts/ensure-doc-pack.ts && biome check . && tsc --noEmit -p tsconfig.json",
+		"test": "bun scripts/ensure-doc-pack.ts && bun test",
 		"build:web": "bun build src/core/aw.ts --target browser --format esm --outfile web/aw.js && bun build src/web/page.ts --target browser --format esm --outfile web/page.js --external /aw.js --external '*/aw.js'",
-		"build:bin": "bun run build:web && bun scripts/pack-docs.ts && bun build index.ts --outfile out/autowire.js --target bun && bun build --compile index.ts --outfile out/autowire"
+		"build:js": "bun run build:web && bun scripts/pack-docs.ts && bun scripts/build-js.ts",
+		"build:bin": "bun run build:web && bun scripts/pack-docs.ts && bun scripts/build-js.ts --compile"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.12",

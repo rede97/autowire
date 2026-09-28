@@ -14,6 +14,7 @@ describe("docs pack", () => {
 		const root = join(import.meta.dir, "..");
 		const files = await collectPackFiles(root);
 		expect(files.some((file) => file.path === "docs/cli.md")).toBe(true);
+		expect(files.some((file) => file.path === "AGENTS.md")).toBe(true);
 		expect(files.some((file) => file.path.startsWith("demo/soc/"))).toBe(true);
 		expect(files.some((file) => file.path.startsWith("demo/hbm/"))).toBe(true);
 		expect(files.some((file) => file.path.includes(".autowire"))).toBe(false);
@@ -25,6 +26,9 @@ describe("docs pack", () => {
 		try {
 			const written = await unpackPack(again, dest);
 			expect(written.length).toBe(files.length);
+			expect(await Bun.file(join(dest, "AGENTS.md")).text()).toContain(
+				"Autowire",
+			);
 			expect(await Bun.file(join(dest, "docs/cli.md")).text()).toContain(
 				"connect",
 			);

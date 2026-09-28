@@ -1,6 +1,6 @@
 # 生产发布包
 
-> 状态：**产物规则已定，打包脚本与安装布局暂时不做**（2026-09-27）。开发与 CI 继续用 Bun 跑 `index.ts`，调试浏览器仍是 Playwright Chromium。不要把安装器或 obscura 当成现网。
+> 状态：**hdxml 与单文件 `autowire.js` 自 0.9.1 起由主干 GitHub Actions 发布**。obscura、安装器、Linux aarch64 与编译版 `autowire` 仍不做。开发与 CI 继续用 Bun 跑 `index.ts`，调试浏览器仍是 Playwright Chromium。
 > 开发与 CI 仍按仓库现况：Bun、Playwright 及其 Chromium、`bun test`。本文只规定**发给用户的生产包里有什么**。
 > Windows 开发环境见 [windows-msys2.md](./windows-msys2.md)，不由本包覆盖。
 
@@ -64,11 +64,19 @@ obscura 自带协议服务，生产包不再附带 Chromium、Playwright 或 chr
 - obscura 的许可证以其构建来源为准，生产包附带对应许可证文本。
 - 发布物钉住一次具体构建。不用会移动的 `nightly` 标签充当版本号。
 
-## 5. 暂时不做
+## 5. 发布（0.9.1 起）
+
+- 触发：推送 `main` 或手动 `workflow_dispatch`，见 `.github/workflows/release.yml`。
+- 版本与 Release 说明取 `CHANGELOG.md` 最上面一条 `## [x.y.z]`；`package.json` 的 `version` 必须一致（`scripts/check-version.ts` 把关）。hdxml 用自己的版本（`hdxml/Cargo.toml`），不受 autowire 版本约束。
+- 产物：`autowire.js`（单文件 Bun 脚本，内嵌版本/提交/构建时间）、`hdxml-linux-x64.tar.xz`（Ubuntu 22.04 跑 `hdxml/dist.sh`，glibc 2.17）、`hdxml-macos-arm64.tar.xz`、`hdxml-macos-x64.tar.xz`。
+- 同一版本再次发布会删除重建 tag `v<x.y.z>`。换版本只需改 `CHANGELOG.md` 与 `package.json`。
+- `doc-pack.generated.ts` 每次构建由 `scripts/pack-docs.ts` 重新生成，不入库；文档包含仓库根目录 `AGENTS.md`。
+
+## 6. 暂时不做
 
 这个阶段不实现：
 
-- 版本钉、安装布局、PATH 约定。`build:bin` 只把两种 autowire 产物写到 `out/`，不是安装器。
+- obscura 二进制、安装布局、PATH 约定、Linux aarch64、编译版 `out/autowire`。
 - 把开发用 `.mcp.json` 换成生产包的 `obscura mcp`。
 
-有新的发布需求再打开。在此之前 `help status` 把本节放在 Not landed。
+有新的发布需求再打开。

@@ -1,0 +1,125 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/check-version.ts
+      - run: bun run lint
+      - run: bun test
+
+  autowire-js:
+    needs: check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run build:js
+      - run: bun out/autowire.js --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autowire-js
+          path: out/autowire.js
+          if-no-files-found: error
+
+  hdxml-linux:
+    needs: check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.14.0
+      - run: ./dist.sh
+        working-directory: hdxml
+      - run: |
+          tar -tJf hdxml/hdxml-linux-x64.tar.xz
+          mkdir -p /tmp/hdxml-check
+          tar -xJf hdxml/hdxml-linux-x64.tar.xz -C /tmp/hdxml-check
+          /tmp/hdxml-check/hdxml --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hdxml-linux
+          path: hdxml/hdxml-linux-x64.tar.xz
+          if-no-files-found: error
+
+  hdxml-macos:
+    needs: check
+    runs-on: macos-14
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            suffix: macos-arm64
+          - target: x86_64-apple-darwin
+            suffix: macos-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - run: |
+          cargo build --release --locked --target "${{ matrix.target }}" --target-dir target/dist
+          tar -cJvf "hdxml-${{ matrix.suffix }}.tar.xz" -C "target/dist/${{ matrix.target }}/release" hdxml
+        working-directory: hdxml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hdxml-${{ matrix.suffix }}
+          path: hdxml/hdxml-${{ matrix.suffix }}.tar.xz
+          if-no-files-found: error
+
+  publish:
+    needs: [autowire-js, hdxml-linux, hdxml-macos]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun scripts/release-notes.ts /tmp/notes.md
+      - id: meta
+        run: |
+          VERSION="$(bun scripts/release-notes.ts)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - run: |
+          ls -R artifacts
+          cp artifacts/autowire-js/autowire.js .
+          cp artifacts/hdxml-linux/hdxml-linux-x64.tar.xz .
+          cp artifacts/hdxml-macos-arm64/hdxml-macos-arm64.tar.xz .
+          cp artifacts/hdxml-macos-x64/hdxml-macos-x64.tar.xz .
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 && gh release delete "$TAG" --yes --cleanup-tag
+          git fetch --tags origin || true
+          git tag -d "$TAG" 2>/dev/null || true
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/notes.md \
+            autowire.js hdxml-linux-x64.tar.xz hdxml-macos-arm64.tar.xz hdxml-macos-x64.tar.xz

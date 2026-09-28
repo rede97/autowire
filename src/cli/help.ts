@@ -60,8 +60,8 @@ Rules of engagement
   Edit this help (src/cli/help.ts) when behavior changes; format constraints live in docs/.
   Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
   Windows: MSYS2 UCRT64 toolchain, ucrt64/bin on PATH, LF checkout (docs/dev/windows-msys2.md).
-  Production package is parked (docs/dev/release.md): do not add an installer
-    or switch dev/CI debug to obscura. Dev/CI stays Playwright + Chromium.
+  Release CI (0.9.1) publishes hdxml + autowire.js only (docs/dev/release.md):
+    no installer, no obscura binary; dev/CI stays Playwright + Chromium.
   Connect authoring (docs/connect/html.md §3.5.5): same-name → identity (omit);
     rename batch → one aw-rewrite RegExp — never list identity ports one-by-one.
 `,
@@ -86,9 +86,18 @@ Landed
   aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir
   plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/{regfile,bus}/ (docs/cli.md)
 
+Landed (release)
+  Release 0.9.1 CI          push to main publishes hdxml (linux-x64 glibc 2.17,
+                            macos arm64/x64) and single-file autowire.js
+                            (docs/dev/release.md).
+                            Version + notes come from the top CHANGELOG.md entry.
+  autowire --version        version / commit / build time (baked into the bundle)
+  autowire init             also writes AGENTS-AUTOWIRE.md (copy of repo AGENTS.md)
+  docs unpack <dir>         bundled tree also contains AGENTS.md
+
 Not landed (parked; do not implement until a later ask)
-  Production package        three sibling binaries: autowire, hdxml, obscura
-                            (docs/dev/release.md). Parked. Dev/CI stays Playwright.
+  Production package        obscura binary, installer/PATH layout, linux aarch64,
+                            compiled out/autowire. Dev/CI stays Playwright.
   Workspace HTML edit       no node-edit MCP. This stage: the agent drives the
                             browser, then saves locally. Direct HTML-node edit is
                             not required (docs/mcp/workspace.md).
@@ -292,7 +301,7 @@ autowire init / analysis (docs/cli.md)
   autowire analysis search [--module|--port|--package|--enum] [--regex] <pattern>
   autowire analysis info <module>
 
-init: create default autowire.toml in CWD (refuses to overwrite).
+init: create default autowire.toml and AGENTS-AUTOWIRE.md in CWD (refuses to overwrite either; AGENTS-AUTOWIRE.md is the bundled AGENTS.md copy).
 analysis run: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
 (docs/workspace/toml.md):
   [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames
@@ -483,7 +492,7 @@ Do not
   ship Playwright or Chromium in the production package (docs/dev/release.md: autowire + hdxml + obscura)
   link obscura into the autowire binary
   ship the repo source as the production entry (use out/autowire.js or out/autowire)
-  docs unpack over a tree you did not mean to replace (it writes docs/ and demo/)
+  docs unpack over a tree you did not mean to replace (it writes AGENTS.md, docs/ and demo/)
 `,
 
 	docs: `\
@@ -491,10 +500,12 @@ autowire docs unpack
 
   autowire docs unpack <dir>
 
-The release script contains the full docs/ tree and every demo/, gzip-compressed.
+The release script contains the full docs/ tree, every demo/, and the repo
+AGENTS.md, gzip-compressed.
 This command writes that tree under <dir> so an agent can read the contract and
 the examples. Dev builds read the repo instead of the bundle.
 
+  <dir>/AGENTS.md
   <dir>/docs/...
   <dir>/demo/soc/...
   <dir>/demo/hbm/...
@@ -537,7 +548,7 @@ function commandIndex(): string {
 		"Autowire — commands",
 		"",
 		"  help [topic]              topic reference (see help topics)",
-		"  init                      create default autowire.toml in CWD",
+		"  init                      create autowire.toml + AGENTS-AUTOWIRE.md in CWD",
 		"  analysis run              hdxml from autowire.toml       → help analysis",
 		"  analysis deps [module]    RTL dependency trees           → help deps",
 		"  analysis search <pattern> fuzzy or regex index search    → help analysis",
@@ -547,7 +558,7 @@ function commandIndex(): string {
 		"  connect elaborate [unit] check + elaborate, no write    → help cli",
 		"  connect web [unit]       static session page            → help web",
 		"  plugin wishbone run      generate regfiles and buses    → help status",
-		"  docs unpack <dir>        write bundled docs/ and demo/  → help docs",
+		"  docs unpack <dir>        write bundled docs/, demo/, AGENTS.md → help docs",
 		"",
 		"Also: help status | connect | dont",
 		"Docs: docs/   (format constraints; keep in sync with help)",

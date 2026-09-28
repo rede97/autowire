@@ -23,6 +23,7 @@ function skip(path: string): boolean {
 }
 
 /** Files an agent can unpack. Repo layout, posix paths. */
+/** Files an agent can unpack. Repo layout, posix paths. */
 export async function collectPackFiles(root: string): Promise<PackedFile[]> {
 	const out: PackedFile[] = [];
 	const walk = async (dir: string): Promise<void> => {
@@ -36,6 +37,9 @@ export async function collectPackFiles(root: string): Promise<PackedFile[]> {
 		}
 	};
 	for (const name of ROOTS) await walk(join(root, name));
+	const contract = Bun.file(join(root, "AGENTS.md"));
+	if (await contract.exists())
+		out.push({ path: "AGENTS.md", bytes: await contract.bytes() });
 	out.sort((a, b) => a.path.localeCompare(b.path));
 	return out;
 }
