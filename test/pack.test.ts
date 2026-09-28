@@ -17,7 +17,23 @@ describe("docs pack", () => {
 		expect(files.some((file) => file.path === "AGENTS.md")).toBe(true);
 		expect(files.some((file) => file.path.startsWith("demo/soc/"))).toBe(true);
 		expect(files.some((file) => file.path.startsWith("demo/hbm/"))).toBe(true);
-		expect(files.some((file) => file.path.includes(".autowire"))).toBe(false);
+		// ip/ ships only the filelist closure, with demo patches applied.
+		expect(
+			files.some((f) => f.path === "demo/soc/ip/picorv32/picorv32.v"),
+		).toBe(true);
+		expect(files.some((f) => f.path === "demo/soc/ip/sha256/sha256.v")).toBe(
+			true,
+		);
+		expect(files.some((f) => f.path.startsWith("demo/soc/ip/sdspi/doc/"))).toBe(
+			false,
+		);
+		expect(files.some((f) => f.path === "demo/soc/ip/picorv32/README.md")).toBe(
+			false,
+		);
+		const sdspi = files.find(
+			(f) => f.path === "demo/soc/ip/sdspi/rtl/spi/sdspi.v",
+		);
+		expect(new TextDecoder().decode(sdspi?.bytes)).toContain("(!dly_stb)");
 		const again = decodePack(encodePack(files));
 		expect(again.map((file) => file.path)).toEqual(
 			files.map((file) => file.path),
