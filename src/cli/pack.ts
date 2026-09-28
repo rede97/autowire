@@ -103,8 +103,10 @@ let packCache: Promise<PackedFile[]> | null = null;
  *  dev fallback walks the whole docs/+demo/ tree (too slow to repeat per call). */
 export function loadPack(): Promise<PackedFile[]> {
 	packCache ??= (async () => {
-		const { DOC_PACK } = await import("./doc-pack.generated.ts");
-		if (DOC_PACK.byteLength > 0) return decodePack(DOC_PACK);
+		// Lazy: the generated module is a ~27MB string literal; importing it
+		// statically would decode it on every cold start.
+		const { DOC_PACK_B64 } = await import("./doc-pack.generated.ts");
+		if (DOC_PACK_B64) return decodePack(Buffer.from(DOC_PACK_B64, "base64"));
 		return collectPackFiles(join(import.meta.dir, "..", ".."));
 	})();
 	return packCache;
@@ -122,10 +124,7 @@ export async function ensureWishboneDsl(root: string): Promise<string[]> {
 	const pack = await loadPack();
 	const written: string[] = [];
 	for (const f of pack.filter((f) => f.path.startsWith("dsl/"))) {
-		const target = join(
-			wishboneDslDir(root),
-			f.path.slice("dsl/".length),
-		);
+		const target = join(wishboneDslDir(root), f.path.slice("dsl/".length));
 		if (existsSync(target)) continue;
 		await mkdir(dirname(target), { recursive: true });
 		await Bun.write(target, f.bytes);
