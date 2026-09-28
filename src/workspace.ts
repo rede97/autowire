@@ -11,7 +11,10 @@ import { parse } from "smol-toml";
 export interface WorkspaceConfig {
 	/** Directory containing autowire.toml (the workspace root) */
 	root: string;
-	/** hdxml binary path ([hdxml] bin; null = default lookup: env/repo/PATH) */
+	/** Workspace identity ([workspace] name): a C-identifier used for umbrella
+	 *  file names and include guards. Required. */
+	name: string;
+	/** hdxml binary path ([analysis] hdxml_bin; null = default lookup: env/repo/PATH) */
 	hdxmlBin: string | null;
 	filelists: string[];
 	walkDirs: string[];
@@ -264,13 +267,31 @@ export async function loadWorkspace(
 	const analysis = isObj(doc.analysis) ? doc.analysis : {};
 	const rtl = isObj(analysis.rtl) ? analysis.rtl : {};
 	const index = isObj(analysis.index) ? analysis.index : {};
-	const dump = isObj(doc.dump) ? doc.dump : {};
+	if (doc.dump !== undefined)
+		throw new Error("autowire.toml: [dump] is moved under [workspace.dump]");
+	if (doc.style !== undefined)
+		throw new Error("autowire.toml: [style] is moved under [workspace.style]");
+	if (doc.hdxml !== undefined)
+		throw new Error(
+			"autowire.toml: [hdxml] is removed — set the binary via [analysis] hdxml_bin",
+		);
+	const workspace = isObj(doc.workspace) ? doc.workspace : {};
+	const wsName = workspace.name;
+	if (typeof wsName !== "string" || wsName.length === 0)
+		throw new Error(
+			"autowire.toml: [workspace] name is required (a C-identifier string)",
+		);
+	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(wsName))
+		throw new Error(
+			`autowire.toml: [workspace] name "${wsName}" must match [A-Za-z_][A-Za-z0-9_]* (used for file names and C include guards)`,
+		);
+	const dump = isObj(workspace.dump) ? workspace.dump : {};
 	const connect = isObj(doc.connect) ? doc.connect : {};
 	const sim = isObj(doc.sim) ? doc.sim : {};
-	const style = isObj(doc.style) ? doc.style : {};
+	const style = isObj(workspace.style) ? workspace.style : {};
 	if (style.param !== undefined)
 		throw new Error(
-			`autowire.toml: [style] param is renamed to param_inline (boolean, default true)`,
+			`autowire.toml: [workspace.style] param is renamed to param_inline (boolean, default true)`,
 		);
 	for (const key of [
 		"param_inline",
@@ -285,16 +306,23 @@ export async function loadWorkspace(
 	]) {
 		const v = (style as Record<string, unknown>)[key];
 		if (v !== undefined && typeof v !== "boolean")
-			throw new Error(`autowire.toml: [style] ${key} must be a boolean`);
+			throw new Error(
+				`autowire.toml: [workspace.style] ${key} must be a boolean`,
+			);
 	}
 	const dirFormat = style.inst_port_dir_format;
 	if (dirFormat !== undefined && dirFormat !== "full" && dirFormat !== "short")
 		throw new Error(
-			`autowire.toml: [style] inst_port_dir_format must be "full" or "short"`,
+			`autowire.toml: [workspace.style] inst_port_dir_format must be "full" or "short"`,
 		);
-	const hdxml = isObj(doc.hdxml) ? doc.hdxml : {};
-	if (hdxml.bin !== undefined && typeof hdxml.bin !== "string")
-		throw new Error("autowire.toml: [hdxml] bin must be a string");
+	const hdxmlBinRaw = analysis.hdxml_bin;
+	if (
+		hdxmlBinRaw !== undefined &&
+		(typeof hdxmlBinRaw !== "string" || hdxmlBinRaw.length === 0)
+	)
+		throw new Error(
+			"autowire.toml: [analysis] hdxml_bin must be a non-empty string",
+		);
 
 	const defines: Record<string, string> = {};
 	if (analysis.defines !== undefined) {
@@ -373,7 +401,9 @@ export async function loadWorkspace(
 	const wishboneCExport = optPluginPath(pluginsWishbone, "c", rel);
 	const wishboneUvmExport = optPluginPath(pluginsWishbone, "uvm", rel);
 	return {
-		hdxmlBin: typeof hdxml.bin === "string" ? rel(hdxml.bin) : null,
+		name: wsName,
+		hdxmlBin:
+			typeof analysis.hdxml_bin === "string" ? rel(analysis.hdxml_bin) : null,
 		root,
 		filelists: strList(rtl.filelists, "analysis.rtl.filelists").map(rel),
 		walkDirs: strList(rtl.walk_dirs, "analysis.rtl.walk_dirs").map(rel),
@@ -502,15 +532,17 @@ export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
 }
 
 /** Default config written by init (aligned with docs/workspace/toml.md §4) */
-export const DEFAULT_TOML = `# autowire workspace config (contract: docs/workspace/toml.md)
+export function defaultToml(name: string): string {
+	return `# autowire workspace config (contract: docs/workspace/toml.md)
 # hdxml never reads this file: autowire analysis maps it to hdxml CLI args.
 
-[hdxml]
-# hdxml binary path (relative to this file). Unset = default lookup:
-# --hdxml CLI > $HDXML_BIN > repo hdxml/target/{release,debug} > PATH
-# bin = "hdxml/target/release/hdxml"
+[workspace]
+name = "${name}"
 
 [analysis]
+# hdxml binary path (relative to this file). Unset = default lookup:
+# --hdxml CLI > $HDXML_BIN > repo hdxml/target/{release,debug} > PATH
+# hdxml_bin = "hdxml/target/release/hdxml"
 # Macro define headers (same as hdxml --define-headers): replaces the traditional EDA
 # ".f-head .svh" global-macro trick — per-file parallel preprocessing cannot carry
 # macros across files. Extracted macros stay RAW (sentinel) by default; override
@@ -538,7 +570,7 @@ exclude_filenames = []
 # RtlIndex XML dir; lives under the fixed generated temp dir .autowire
 dir = ".autowire/hdxml"
 
-[dump]
+[workspace.dump]
 # Product dirs (docs/workspace/toml.md §4.0). Prefer these over legacy dir=.
 connect_dir = "gen/connect"
 sim_dir = "gen/sim"
@@ -548,12 +580,12 @@ plugins_dir = "gen/plugins"
 # Type-A wishbone (RegfileDef + BusDef stay separate types).
 # [plugins.wishbone]
 # export = "fw/gen/wishbone/bus_regfiles.xlsx"
-# c = "fw/gen/wishbone"   # regfile/<sheet>.h + bus/<bus>_map.h + wishbone.h
-# uvm = "dv/ral"          # regfile/ral_<SHEET>.sv + bus/ral_block_<bus>.sv
+# c = "fw/gen/wishbone"   # regfile/<sheet>.h + bus/<bus>_map.h + ${name}.h umbrella
+# uvm = "dv/ral"          # regfile/ral_<SHEET>.sv + bus/ral_block_<bus>.sv + ral_${name}.sv umbrella
 # [wishbone.soc]
 # ts = "sot/wb_bus_soc.ts"
 
-[style]
+[workspace.style]
 # Param overrides: param_inline = true (default) writes simple overrides into
 # the instance (#(.W(8))); false folds each override into Mod__Inst__Param.
 # inst_port_dir = true appends "// input" to each instance port-map row
@@ -572,3 +604,4 @@ plugins_dir = "gen/plugins"
 # html = "sim/soc_tb.html"
 # deps = ["soc_top"]
 `;
+}

@@ -142,7 +142,9 @@ describe("wishbone-regfile", () => {
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
-[dump]
+[workspace]
+name = "test"
+[workspace.dump]
 plugins_dir = "gen/plugins"
 [wishbone.examples]
 ts = "${example.replaceAll("\\", "/")}"
@@ -169,7 +171,9 @@ ts = "${example.replaceAll("\\", "/")}"
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
-[dump]
+[workspace]
+name = "test"
+[workspace.dump]
 plugins_dir = "gen/plugins"
 [wishbone.examples]
 ts = "${example.replaceAll("\\", "/")}"
@@ -371,7 +375,9 @@ endmodule
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
-[dump]
+[workspace]
+name = "acc"
+[workspace.dump]
 plugins_dir = "gen/plugins"
 [plugins.wishbone]
 c = "fw/gen"
@@ -386,9 +392,9 @@ exports = ["smoke_rw"]
 		const paths = await generateAll(ws);
 		expect(paths.some((p) => p.endsWith("smoke_rw_regfile.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("smoke_rw.h"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("wishbone.h"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("acc.h"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("ral_SMOKE_RW.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("ral_wishbone.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("ral_acc.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("regs.xlsx"))).toBe(true);
 		const hdr = readFileSync(join(dir, "fw/gen/regfile/smoke_rw.h"), "utf8");
 		expect(hdr).toContain("union SMOKE_RW_CFG");
@@ -407,7 +413,9 @@ exports = ["smoke_rw"]
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
-[dump]
+[workspace]
+name = "test"
+[workspace.dump]
 plugins_dir = "gen/plugins"
 [plugins.wishbone]
 c = "fw/gen"
@@ -471,7 +479,9 @@ c = "fw/gen"
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
-[dump]
+[workspace]
+name = "test"
+[workspace.dump]
 plugins_dir = "gen/plugins"
 [wishbone.access]
 ts = "${access.replaceAll("\\", "/")}"
@@ -624,7 +634,7 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		expect(paths.some((p) => p.endsWith("sha256_0_regfile.sv"))).toBe(false);
 		expect(paths.some((p) => p.endsWith("sha256_1_regfile.sv"))).toBe(false);
 		expect(paths.filter((p) => p.endsWith("sha256.h"))).toHaveLength(1);
-		expect(paths.some((p) => p.endsWith("wishbone.h"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("soc.h"))).toBe(true);
 		const hdr = readFileSync(
 			join(
 				import.meta.dir,

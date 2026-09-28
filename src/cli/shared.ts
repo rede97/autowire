@@ -10,10 +10,10 @@ export const REPO_ROOT = join(import.meta.dir, "..", "..");
 
 const EXE = process.platform === "win32" ? ".exe" : "";
 
-/** Resolve hdxml binary: --hdxml > toml [hdxml] bin > $HDXML_BIN > repo target/{release,debug} > PATH */
+/** Resolve hdxml binary: --hdxml > toml [analysis] hdxml_bin > $HDXML_BIN > repo target/{release,debug} > PATH */
 export function findHdxml(explicit?: string, tomlBin?: string | null): string {
 	if (tomlBin && !existsSync(tomlBin)) {
-		console.error(`autowire.toml: [hdxml] bin not found: ${tomlBin}`);
+		console.error(`autowire.toml: [analysis] hdxml_bin not found: ${tomlBin}`);
 		process.exit(1);
 	}
 	const candidates = [

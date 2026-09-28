@@ -44,12 +44,14 @@ RtlIndex 用 `definesFp` 把宏集合绑进索引有效性（见 `rtlindex-xml.m
 ```toml
 # hdxml 不读本文件：autowire analysis 负责把配置映射为 hdxml CLI 参数。
 
-[hdxml]
-# hdxml 二进制路径（相对本文件解析）。不设置 = 默认查找：
-# --hdxml CLI > toml [hdxml] bin > $HDXML_BIN > 仓库 hdxml/target/{release,debug} > PATH
-# bin = "hdxml/target/release/hdxml"
+[workspace]
+# 工作区身份（必填，C 标识符）：命名 wishbone 顶层伞文件与 include guard；`init <name>` 写入
+name = "chip_top"
 
 [analysis]
+# hdxml 二进制路径（相对本文件解析）。不设置 = 默认查找：
+# --hdxml CLI > toml [analysis] hdxml_bin > $HDXML_BIN > 仓库 hdxml/target/{release,debug} > PATH
+# hdxml_bin = "hdxml/target/release/hdxml"
 # 保原文宏（端口表达式保留 `NAME 原文，`ifdef 判真，dump 时还原；经 --keep-raw 传入）
 keep_raw = ["WIDTH", "ENV_MACRO"]
 
@@ -69,7 +71,7 @@ SYNTHESIS = "1"
 # RtlIndex XML 目录；固定在工作区生成临时目录 .autowire 下（见下方说明）
 dir = ".autowire/hdxml"
 
-[dump]
+[workspace.dump]
 # 产物目录三分（DE / DV / 插件）；相对工作区根。
 # 现状实现仍认单一 dir=（兼容）；迁移后以三分目录为准（见 §4.0）。
 connect_dir = "gen/connect"
@@ -77,7 +79,7 @@ sim_dir     = "gen/sim"
 plugins_dir = "gen/plugins"
 # dir = "gen"   # 已弃用：勿与三分目录混用
 
-[style]
+[workspace.style]
 # 例化参数风格（connect-rules §7）：
 #   param_inline = true（默认）——非表达式 override（字面量/param·localparam 引用/宏）直接写进
 #     例化 #(.W(CNT_W))；含任何操作符的表达式（含 {} 拼接）不展开，仍折叠；
@@ -133,7 +135,7 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 2. **禁止**再用单一 `dir` 混写三类产物（迁移期：仅设置了旧 `dir` 时，实现可临时把 connect dump 落到该目录并 **警告**；新工作区用三分目录）。  
 3. 插件 **禁止**往 `connect_dir` / `sim_dir` 写生成物；只进 `plugins_dir/<id>/`。  
 4. `.autowire/` 仍只放索引/快照/调试临时物，**不是**上述三类产物目录。  
-5. 类型 A wishbone：toml `[wishbone.<source_id>] ts=` 指向 SoT **文件**（可含 `RegfileDef` 与/或 `BusDef` 导出，类型仍分立；可选 `exports=`）；非 RTL 导出路径见 `[plugins.wishbone]`：`export=` Excel 工作簿（默认名 `bus_regfiles.xlsx`；字段 sheet + 每棵独立总线一张 Address Map sheet）、`c=` C 头目录（`regfile/<sheet>.h` + `bus/<bus>_map.h` + 顶层 `wishbone.h` 总头）、`uvm=` uvm_reg 目录（`regfile/ral_<SHEET>.sv` + `bus/ral_block_*.sv` + 顶层 `ral_wishbone.sv`；[`../plugins/wishbone-regfile.md`](../plugins/wishbone-regfile.md) §6、§6.2、§6.3；均非 SoT）。软件/文档身份 = 有效 `sheet`（缺省 = `name`）；同 sheet 的多例化共用一份 C/`uvm_reg`/Excel 字段产物。C / uvm_reg **禁止**写进 `plugins_dir`。demo/soc 的 C 头落在 `fw/gen/wishbone/{regfile,bus}/`，**入库展示**（与 `demo/soc/rtl/gen/` 同类；generate 只覆盖写入，**禁止**整目录删除）。RTL 进 `plugins_dir/wishbone/regfile/`（叶子）与 `plugins_dir/wishbone/bus/`（interconnect/decoder + wrapper + pipe/master 公共模块）。挂接了 `RegfileDef` 时 generate 另写 Type-A wrapper `bus/<name>_system.sv`。
+5. 类型 A wishbone：toml `[wishbone.<source_id>] ts=` 指向 SoT **文件**（可含 `RegfileDef` 与/或 `BusDef` 导出，类型仍分立；可选 `exports=`）；非 RTL 导出路径见 `[plugins.wishbone]`：`export=` Excel 工作簿（默认名 `bus_regfiles.xlsx`；字段 sheet + 每棵独立总线一张 Address Map sheet）、`c=` C 头目录（`regfile/<sheet>.h` + `bus/<bus>_map.h` + 顶层 `<name>.h` 总头，`<name>` 取 `[workspace] name`）、`uvm=` uvm_reg 目录（`regfile/ral_<SHEET>.sv` + `bus/ral_block_*.sv` + 顶层 `ral_<name>.sv`；[`../plugins/wishbone-regfile.md`](../plugins/wishbone-regfile.md) §6、§6.2、§6.3；均非 SoT）。软件/文档身份 = 有效 `sheet`（缺省 = `name`）；同 sheet 的多例化共用一份 C/`uvm_reg`/Excel 字段产物。C / uvm_reg **禁止**写进 `plugins_dir`。demo/soc 的 C 头落在 `fw/gen/wishbone/{regfile,bus}/`，**入库展示**（与 `demo/soc/rtl/gen/` 同类；generate 只覆盖写入，**禁止**整目录删除）。RTL 进 `plugins_dir/wishbone/regfile/`（叶子）与 `plugins_dir/wishbone/bus/`（interconnect/decoder + wrapper + pipe/master 公共模块）。挂接了 `RegfileDef` 时 generate 另写 Type-A wrapper `bus/<name>_system.sv`。
 
 ### 4.1 `[connect.<id>]`（DE 连接单元 DAG）
 
@@ -170,7 +172,8 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 
 - **hdxml 不读 toml**：`autowire analysis` 把 `[analysis.*]` 映射为 hdxml CLI 参数（映射表见 `help analysis`）；hdxml 侧只认 CLI 旗标。
 - **增量模式**：`autowire analysis` 默认增量——未变更文件复用 `.autowire/hdxml/` 缓存（`` `include `` 闭包追踪；`--refresh` 强制全量并重写缓存）；语义见 `hdxml/cli.md` 与 `hdxml/rtlindex-xml.md` §5.8。
-- **`[hdxml] bin`** 只给 autowire 定位二进制用，**不**映射为 hdxml 参数；设置了但文件不存在 ⇒ analysis 直接报错（不静默回退）。未设置时按默认链查找，最终落到 PATH。  
+- **`[analysis] hdxml_bin`** 只给 autowire 定位二进制用，**不**映射为 hdxml 参数；设置了但文件不存在 ⇒ analysis 直接报错（不静默回退）。未设置时按默认链查找，最终落到 PATH。
+- **`[workspace]`（Cargo 风格顶层身份表）**：`name` **必填**（C 标识符 `[A-Za-z_][A-Za-z0-9_]*`），缺失 ⇒ 加载报错；用于 wishbone 顶层伞文件名与 include guard。产出目录三分与打印风格作为其子表 `[workspace.dump]` / `[workspace.style]`。**破坏性变更**：旧的顶层 `[dump]` / `[style]` 已分别移至 `[workspace.dump]` / `[workspace.style]`，旧的 `[hdxml] bin` 移至 `[analysis] hdxml_bin`；仍写旧位置 ⇒ 加载报错并提示新位置。  
 - **宏集合** = `[analysis.defines]`（展开）+ `keep_raw`（保原文哨兵）；二者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。覆盖顺序 `[analysis.defines]` → `keep_raw`；`[analysis.defines]` 同时作为 `define_headers` 预处理的种子（header 内 `` `ifdef `` 可见），同名 header 宏随后再被其压顶。空串保原文约定已**废弃**（空串值直接报错）。哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。
 - **宏作用域**：CLI/toml 宏作为 pre_defines 对**每个文件**一致生效（编译单元级种子）；各文件内 `` `define `` 不外泄（按文件独立预处理）。跨文件一致的宏**必须**走本表，禁止依赖文件间宏传递。
 

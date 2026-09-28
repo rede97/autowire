@@ -1,6 +1,6 @@
 // autowire CLI entry (bun). Commands:
 //   help [topic]  command index (default); Agent contract: help agent
-//   init          create default autowire.toml in CWD              (src/cli/analysis.ts)
+//   init <name>   create default autowire.toml in CWD              (src/cli/analysis.ts)
 //   analysis run      hdxml from autowire.toml                  (src/cli/analysis.ts)
 //   analysis deps     RTL module dependency tree                (src/cli/analysis.ts)
 //   connect run       happy-dom scripts, check, then write .sv  (src/cli/web.ts)

@@ -7,7 +7,10 @@
 # Run from this directory: bun ../../index.ts plugin wishbone run
 # VCS + UVM-1.2 regression (agents/RAL in dv/uvm): sim/vcs/run.sh
 
-[dump]
+[workspace]
+name = "hbm"
+
+[workspace.dump]
 plugins_dir = "rtl/gen/plugins"
 
 # Packed software exports (not SoT); regfile/ and bus/ stay separate

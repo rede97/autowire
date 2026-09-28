@@ -330,7 +330,9 @@ export const tiny = Bus("tiny", "t", {
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
-[dump]
+[workspace]
+name = "test"
+[workspace.dump]
 plugins_dir = "gen/plugins"
 [wishbone.t]
 ts = "${ts.replaceAll("\\", "/")}"

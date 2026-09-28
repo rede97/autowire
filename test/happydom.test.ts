@@ -37,7 +37,9 @@ async function workspace(): Promise<string> {
 	writeFileSync(
 		join(dir, "autowire.toml"),
 		`
-[dump]
+[workspace]
+name = "test"
+[workspace.dump]
 connect_dir = "out/connect"
 sim_dir = "out/sim"
 [analysis.index]
@@ -72,7 +74,9 @@ describe("happy-dom render", () => {
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
-[dump]
+[workspace]
+name = "test"
+[workspace.dump]
 connect_dir = "out/connect"
 sim_dir = "out/sim"
 [analysis.index]
@@ -83,10 +87,7 @@ html = "leaf.html"
 		);
 		writeFileSync(
 			join(dir, "leaf.html"),
-			HTML.replace(
-				"<script>",
-				"<script>\nthrow new Error('script boom');\n",
-			),
+			HTML.replace("<script>", "<script>\nthrow new Error('script boom');\n"),
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
 		const unit = ws.connectUnits[0];
@@ -200,7 +201,10 @@ html = "leaf.html"
 		);
 		writeFileSync(
 			join(dir, "leaf.html"),
-			HTML.replace(/<script>[\s\S]*<\/script>/, `<script src="./gen.js"></script>`),
+			HTML.replace(
+				/<script>[\s\S]*<\/script>/,
+				`<script src="./gen.js"></script>`,
+			),
 		);
 		const ws = await loadWorkspace(join(dir, "autowire.toml"));
 		const unit = ws.connectUnits[0];

@@ -8,7 +8,7 @@ import type { Command } from "commander";
 import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex, type RtlIndex } from "../rtl/rtlindex.ts";
 import { renderSummary, renderTrees } from "../rtl/tree.ts";
-import { DEFAULT_TOML, hdxmlArgs } from "../workspace.js";
+import { defaultToml, hdxmlArgs } from "../workspace.js";
 import { findHdxml, requireWorkspace } from "./shared.ts";
 
 export function registerAnalysis(program: Command): void {
@@ -17,13 +17,21 @@ export function registerAnalysis(program: Command): void {
 		.description(
 			"Create default autowire.toml in the current directory (refuses to overwrite)",
 		)
-		.action(() => {
+		.argument(
+			"<name>",
+			"workspace name (C-identifier); names the wishbone umbrella files",
+		)
+		.action((name: string) => {
+			if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+				console.error(`init: name "${name}" must match [A-Za-z_][A-Za-z0-9_]*`);
+				process.exit(1);
+			}
 			const target = join(process.cwd(), "autowire.toml");
 			if (existsSync(target)) {
 				console.error(`autowire.toml already exists: ${target}`);
 				process.exit(1);
 			}
-			Bun.write(target, DEFAULT_TOML);
+			Bun.write(target, defaultToml(name));
 			console.log(`created ${target}`);
 		});
 

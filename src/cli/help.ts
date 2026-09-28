@@ -118,7 +118,7 @@ Parallel (does not block connect)
     per type; field .note() continues that Description cell after a newline;
     regfile .note() is the header Description comment;
     trunk columns; leaf offset; no empty A / ADDRWIDTH),
-    c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + wishbone.h umbrella at the root),
+    c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + <name>.h umbrella at the root),
     uvm= uvm_reg dir (regfile/ral_<SHEET>.sv with cell classes + leaf ral_block_<SHEET>,
     bus/ral_block_* hang
     leaves via add_submap; uvm_reg model only, no RALF)
@@ -225,7 +225,8 @@ Full constraints: docs/workspace/toml.md
 Commands: autowire init | autowire analysis  (see help analysis)
 
 Shared by deps / web / cli for the RTL universe:
-  [hdxml] bin="…"       hdxml binary path (unset: --hdxml > $HDXML_BIN > repo target > PATH)
+  [workspace] name="…"  workspace identity (C-identifier): names wishbone umbrella files + guards
+  [analysis] hdxml_bin="…"  hdxml binary path (unset: --hdxml > $HDXML_BIN > repo target > PATH)
   [analysis.*]  .f / sources / walk / incdirs / defines / keep_raw / index dir
   Author SoT            one tree (demo: sot/): connect HTML under sot/connect/;
                         wishbone ts= as wb_reg_*.ts / wb_bus_*.ts;
@@ -237,28 +238,28 @@ Shared by deps / web / cli for the RTL universe:
                         RegfileDef and/or BusDef exports (types stay separate)
   [plugins.wishbone]    packed software: export= Excel (bus_regfiles.xlsx: field sheets +
                         one indented Address Map sheet per bus tree);
-                        c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + wishbone.h;
+                        c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + <name>.h;
                         TagFromAddr aliases
-                        and broadcast windows); uvm= uvm_reg dir (regfile/ + bus/; model only, no RALF)
-  [dump]                product dirs (docs §4.0; legacy dir= still accepted with warn):
+                        and broadcast windows); uvm= uvm_reg dir (regfile/ + bus/ + ral_<name>.sv; model only, no RALF)
+  [workspace.dump]      product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
                         sim_dir="gen/sim"          DV TB tops
                         plugins_dir="gen/plugins"  type-A plugins; subdirs per plugin id
                         dir="gen"                  deprecated single sink (compat warn)
                         demo/soc dump → rtl/gen/{connect,sim,plugins}
-  [style] param_inline      true (default) inline simple overrides | false: fold all to Mod__Inst__Param
-  [style] port_align        declaration port columns: dir / type / packed, names left-aligned (default false)
-  [style] param_align       declaration parameter = column (default false)
-  [style] inst_port_align   instantiation .port ( and ) columns, file-wide (default false)
-  [style] inst_param_align  instantiation .PARAM ( and ) columns, file-wide (default false);
+  [workspace.style] param_inline  true (default) inline simple overrides | false: fold all to Mod__Inst__Param
+  [workspace.style] port_align    declaration port columns: dir / type / packed, names left-aligned (default false)
+  [workspace.style] param_align   declaration parameter = column (default false)
+  [workspace.style] inst_port_align   instantiation .port ( and ) columns, file-wide (default false)
+  [workspace.style] inst_param_align  instantiation .PARAM ( and ) columns, file-wide (default false);
                             with inst_port_align too, ports + params share one column pair
-  [style] inst_port_dir     append // input|output|inout to instance port-map rows (default false)
-  [style] inst_port_dir_format  "full" (input/output/inout, default) | "short" (i/o/io)
-  [style] inst_port_width   append the port width after the direction: // input [31:0];
+  [workspace.style] inst_port_dir     append // input|output|inout to instance port-map rows (default false)
+  [workspace.style] inst_port_dir_format  "full" (input/output/inout, default) | "short" (i/o/io)
+  [workspace.style] inst_port_width   append the port width after the direction: // input [31:0];
                             multi-dim packed as-is ([3:0][7:0]); unpacked after ';'
                             ([7:0];[0:15], ;[0:3]); 1-bit ports show none (default false)
-  [style] signal_align      internal signal columns: nettype / packed, names left-aligned (default false)
-  [style] localparam_upper  uppercase generated Mod__Inst__Param names (default false)
+  [workspace.style] signal_align      internal signal columns: nettype / packed, names left-aligned (default false)
+  [workspace.style] localparam_upper  uppercase generated Mod__Inst__Param names (default false)
 
 Dirs
   .autowire/          generated temp (deletable; never hand-authored)
@@ -286,13 +287,13 @@ Boundaries
 	analysis: `\
 autowire init / analysis (docs/cli.md)
 
-  autowire init
+  autowire init <name>
   autowire analysis run [--workspace dir|file] [--hdxml bin] [--sub-bars] [--force]
   autowire analysis deps [module] [--depth n]
   autowire analysis search [--module|--port|--package|--enum] [--regex] <pattern>
   autowire analysis info <module>
 
-init: create default autowire.toml in CWD (refuses to overwrite).
+init <name>: create default autowire.toml (with [workspace] name) in CWD (refuses to overwrite).
 analysis run: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
 (docs/workspace/toml.md):
   [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames
@@ -300,9 +301,9 @@ analysis run: load toml (upward from CWD, or --workspace) and run hdxml with map
   [analysis.defines] NAME="v" → -D NAME=v
   [analysis] keep_raw = [...] → --keep-raw
   [analysis.index] dir → -o/--output-dir (default .autowire/hdxml)
-  [hdxml] bin → binary path only (not an hdxml arg; must exist if set)
+  [analysis] hdxml_bin → binary path only (not an hdxml arg; must exist if set)
 
-hdxml binary lookup: --hdxml > toml [hdxml] bin > $HDXML_BIN
+hdxml binary lookup: --hdxml > toml [analysis] hdxml_bin > $HDXML_BIN
   > repo hdxml/target/{release,debug} > PATH
 hdxml never reads toml; autowire maps everything.
 Paths in toml are relative to the workspace root (toml location).
@@ -537,7 +538,7 @@ function commandIndex(): string {
 		"Autowire — commands",
 		"",
 		"  help [topic]              topic reference (see help topics)",
-		"  init                      create default autowire.toml in CWD",
+		"  init <name>               create default autowire.toml in CWD",
 		"  analysis run              hdxml from autowire.toml       → help analysis",
 		"  analysis deps [module]    RTL dependency trees           → help deps",
 		"  analysis search <pattern> fuzzy or regex index search    → help analysis",
