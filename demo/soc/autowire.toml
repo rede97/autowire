@@ -3,9 +3,8 @@
 # 2x read DMA + 2x sha256 (Wishbone + AXI4-Stream).
 # Run from this directory: bun ../../index.ts analysis / web soc_top / check
 
-[hdxml]
-# hdxml binary path (relative to this file). Unset = default lookup:
-# --hdxml CLI > $HDXML_BIN > repo hdxml/target/{release,debug} > PATH
+[workspace]
+name = "soc"
 
 [analysis.rtl]
 filelists = ["rtl/soc.f"]
@@ -18,7 +17,7 @@ exclude_filenames = []
 # RtlIndex XML dir; fixed generated temp dir (deletable)
 dir = ".autowire/hdxml"
 
-[dump]
+[workspace.dump]
 connect_dir = "rtl/gen/connect"
 sim_dir = "rtl/gen/sim"
 plugins_dir = "rtl/gen/plugins"
@@ -46,7 +45,7 @@ exports = ["soc_wb"]
 ts = "sot/wb_bus_sd_sha.ts"
 exports = ["sd_sha"]
 
-[style]
+[workspace.style]
 # traditional RTL look: aligned declaration/inst ports + params + signals,
 # uppercased folding names (param_inline stays at its default true)
 port_align = true

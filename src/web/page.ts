@@ -83,6 +83,11 @@ const state: {
 	dirty: Set<string>;
 	svText: string;
 	htmlText: string;
+	/** Per-stage error text routed into the result tabs (empty = none). */
+	renderError: string;
+	svError: string;
+	/** RtlIndex module currently shown in the RtlIndex author tab (full page). */
+	rtlModule: string | null;
 } = {
 	workspace: "",
 	style: { paramInline: true },
@@ -96,6 +101,9 @@ const state: {
 	dirty: new Set(),
 	svText: "",
 	htmlText: "",
+	renderError: "",
+	svError: "",
+	rtlModule: null,
 };
 
 function showGenerated(text: string): void {
@@ -169,18 +177,23 @@ function withCurrentUnit<T>(id: string, fn: () => T): T {
 	}
 }
 
-function setAuthorTab(which: "source" | "processed"): void {
+function setAuthorTab(which: "source" | "processed" | "rtl"): void {
 	const src = document.querySelector<HTMLElement>("#author-source");
 	const proc = document.querySelector<HTMLElement>("#author-processed");
+	const rtl = document.querySelector<HTMLElement>("#author-rtl");
 	if (!src || !proc) return;
 	src.hidden = which !== "source";
 	proc.hidden = which !== "processed";
+	if (rtl) rtl.hidden = which !== "rtl";
 	document
 		.querySelector("#atab-source")
 		?.setAttribute("aria-selected", String(which === "source"));
 	document
 		.querySelector("#atab-proc")
 		?.setAttribute("aria-selected", String(which === "processed"));
+	document
+		.querySelector("#atab-rtl")
+		?.setAttribute("aria-selected", String(which === "rtl"));
 }
 
 function setSideTab(which: "rtl" | "connect"): void {
@@ -197,20 +210,177 @@ function setSideTab(which: "rtl" | "connect"): void {
 		?.setAttribute("aria-selected", String(which === "connect"));
 }
 
-function showUnitWorkspace(): void {
-	const unit = document.querySelector<HTMLElement>("#unit-view");
-	const mod = document.querySelector<HTMLElement>("#module-view");
-	if (!unit || !mod) return;
-	unit.hidden = false;
-	mod.hidden = true;
+/** Rebuild the display tree next to a real workspace pane. The real aw-* nodes
+ *  stay untouched (the engine and Playwright read them); only the sibling view
+ *  is painted. No-op on the minimal page, which has no view element. */
+function refreshView(realId: "#aw-source" | "#aw-live"): void {
+	const view = document.querySelector(
+		realId === "#aw-source" ? "#aw-source-view" : "#aw-live-view",
+	);
+	const real = document.querySelector(realId);
+	if (!view || !real) return;
+	const open = new Set<string>();
+	for (const d of view.querySelectorAll("details:not([open])")) {
+		const key = d.getAttribute("data-path");
+		if (key) open.add(key);
+	}
+	view.replaceChildren();
+	let n = 0;
+	const walk = (node: Element, host: HTMLElement, path: string): void => {
+		for (const child of [...node.children]) {
+			// The per-unit <div data-unit> is a page wrapper, not author HTML.
+			if (child.hasAttribute("data-unit")) {
+				walk(child, host, path);
+				continue;
+			}
+			const key = `${path}/${n++}`;
+			host.appendChild(viewNode(child, key, open));
+		}
+	};
+	walk(real, view as HTMLElement, realId);
 }
 
-function showModuleWorkspace(): void {
-	const unit = document.querySelector<HTMLElement>("#unit-view");
-	const mod = document.querySelector<HTMLElement>("#module-view");
-	if (!unit || !mod) return;
-	unit.hidden = true;
-	mod.hidden = false;
+/** One real element becomes either a collapsible <details> (it has element
+ *  children) or a single leaf row. A marker exists only on a real container. */
+function viewNode(el: Element, path: string, closed: Set<string>): HTMLElement {
+	const tag = el.tagName.toLowerCase();
+	const kids = [...el.children];
+	if (kids.length === 0) return leafRow(el, tag);
+	const box = document.createElement("details");
+	box.open = !closed.has(path);
+	box.dataset.path = path;
+	const summary = document.createElement("summary");
+	fillTag(summary, el, tag, true);
+	box.appendChild(summary);
+	if (tag === "script") {
+		const body = document.createElement("span");
+		body.className = "script-body";
+		body.textContent = (el.textContent ?? "")
+			.replace(/^\n/, "")
+			.replace(/\s+$/, "");
+		box.appendChild(body);
+	}
+	const rules = tag === "aw-template";
+	const body = rules ? document.createElement("div") : box;
+	if (rules) {
+		body.className = "rules";
+		box.appendChild(body);
+	}
+	let n = 0;
+	for (const child of kids)
+		body.appendChild(viewNode(child, `${path}/${n++}`, closed));
+	return box;
+}
+
+function leafRow(el: Element, tag: string): HTMLElement {
+	if (
+		tag === "aw-connect" ||
+		tag === "aw-rewrite" ||
+		tag === "aw-param" ||
+		tag === "aw-localparam"
+	) {
+		const row = document.createElement("div");
+		row.className = "leaf";
+		for (const text of ruleCols(el, tag)) {
+			const col = document.createElement("span");
+			col.className = "col";
+			col.textContent = text;
+			row.appendChild(col);
+		}
+		return row;
+	}
+	const row = document.createElement("div");
+	row.className = "leaf";
+	fillTag(row, el, tag, false);
+	if (tag === "script" && (el.textContent ?? "").trim()) {
+		const body = document.createElement("span");
+		body.className = "script-body";
+		body.textContent = (el.textContent ?? "")
+			.replace(/^\n/, "")
+			.replace(/\s+$/, "");
+		const wrap = document.createElement("div");
+		wrap.appendChild(row);
+		wrap.appendChild(body);
+		return wrap;
+	}
+	return row;
+}
+
+/** Paint one element the way the DevTools Elements panel does: an opening tag
+ *  with each attribute as name="value", and for a container the collapsed form
+ *  `<tag ...></tag>` plus a closing tag shown only while it is expanded. */
+function fillTag(
+	host: HTMLElement,
+	el: Element,
+	tag: string,
+	container: boolean,
+): void {
+	const open = document.createElement("span");
+	open.className = "tg";
+	open.textContent = `<${tag}`;
+	host.appendChild(open);
+	for (const attr of el.attributes) {
+		host.appendChild(document.createTextNode(" "));
+		const name = document.createElement("span");
+		name.className = "an";
+		name.textContent = attr.name;
+		host.appendChild(name);
+		const eq = document.createElement("span");
+		eq.className = "punct";
+		eq.textContent = "=";
+		host.appendChild(eq);
+		const value = document.createElement("span");
+		value.className = "av";
+		value.textContent = `"${attr.value}"`;
+		host.appendChild(value);
+	}
+	const end = document.createElement("span");
+	end.className = "tg";
+	end.textContent = container || (el.textContent ?? "").trim() ? ">" : " />";
+	host.appendChild(end);
+	if (!container) return;
+	const ellipsis = document.createElement("span");
+	ellipsis.className = "ellipsis";
+	ellipsis.textContent = "...";
+	host.appendChild(ellipsis);
+	const close = document.createElement("span");
+	close.className = "close";
+	close.textContent = `</${tag}>`;
+	host.appendChild(close);
+}
+
+/** Column-aligned rule cells: type, content, target, trailing qualifiers. */
+function ruleCols(el: Element, tag: string): string[] {
+	const a = (name: string) => el.getAttribute(name) ?? "";
+	const extra = [
+		a("packed") && `packed=${a("packed")}`,
+		a("unpacked") && `unpacked=${a("unpacked")}`,
+		a("width") && `width=${a("width")}`,
+		a("part") && `part=${a("part")}`,
+		a("nettype") && a("nettype"),
+	]
+		.filter(Boolean)
+		.join("  ");
+	if (tag === "aw-connect")
+		return [
+			a("type") || "net",
+			`.${a("port")}`,
+			a("to") || (a("type") === "open" ? "(open)" : ""),
+			extra,
+		];
+	if (tag === "aw-rewrite")
+		return [
+			"rewrite",
+			a("match"),
+			a("to") || (a("type") === "open" ? "(open)" : ""),
+			extra,
+		];
+	return [
+		tag === "aw-localparam" ? "localparam" : "param",
+		a("name"),
+		a("expr"),
+		extra,
+	];
 }
 
 const SV_DIRS = new Set(["input", "output", "inout"]);
@@ -297,29 +467,58 @@ function highlightXml(text: string, host: HTMLElement): void {
 	);
 }
 
+/** Paint the currently-selected result tab: its product, or its stage error.
+ *  The minimal page (no #result-tabs) keeps a plain-text #aw-generated. */
 function paintResult(): void {
 	const gen = $("#aw-generated");
-	gen.hidden = false;
+	const list = document.querySelector<HTMLElement>("#error-list");
 	const tabs = document.querySelector("#result-tabs");
 	if (!tabs) {
-		gen.textContent = state.svText || state.htmlText;
+		const err = state.renderError || state.svError;
+		if (err) {
+			if (list) {
+				list.hidden = false;
+				list.textContent = err;
+			}
+			gen.hidden = true;
+		} else {
+			if (list) {
+				list.hidden = true;
+				list.textContent = "";
+			}
+			gen.hidden = false;
+			gen.textContent = state.svText || state.htmlText;
+		}
 		return;
 	}
-	const sv =
-		document.querySelector("#rtab-sv")?.getAttribute("aria-selected") !==
-		"false";
-	if (sv && state.svText) highlightSv(state.svText, gen);
-	else if (!sv) highlightXml(state.htmlText, gen);
-	else gen.textContent = state.htmlText;
+	const render =
+		document.querySelector("#rtab-render")?.getAttribute("aria-selected") ===
+		"true";
+	const err = render ? state.renderError : state.svError;
+	if (err) {
+		if (list) {
+			list.hidden = false;
+			list.textContent = err;
+		}
+		gen.hidden = true;
+		return;
+	}
+	if (list) {
+		list.hidden = true;
+		list.textContent = "";
+	}
+	gen.hidden = false;
+	if (render) highlightXml(state.htmlText, gen);
+	else highlightSv(state.svText, gen);
 }
 
-function setResultTab(which: "sv" | "html"): void {
+function setResultTab(which: "render" | "sv"): void {
+	document
+		.querySelector("#rtab-render")
+		?.setAttribute("aria-selected", String(which === "render"));
 	document
 		.querySelector("#rtab-sv")
 		?.setAttribute("aria-selected", String(which === "sv"));
-	document
-		.querySelector("#rtab-html")
-		?.setAttribute("aria-selected", String(which === "html"));
 	paintResult();
 }
 
@@ -335,16 +534,15 @@ function namesInErrors(errors: string[]): string[] {
 }
 
 function markProcessed(names: string[]): void {
-	const root = document.querySelector("#aw-live");
-	if (!root) return;
-	for (const el of root.querySelectorAll(".tn-err"))
-		el.classList.remove("tn-err");
+	const view = document.querySelector("#aw-live-view");
+	if (!view) return;
+	for (const el of view.querySelectorAll(".err")) el.classList.remove("err");
 	if (names.length === 0) return;
 	const want = new Set(names);
-	const keys = ["name", "id", "port", "mod", "to", "match"];
-	for (const el of root.querySelectorAll("*")) {
-		if (keys.some((k) => want.has(el.getAttribute(k) ?? "")))
-			el.classList.add("tn-err");
+	for (const row of view.querySelectorAll(".leaf, details")) {
+		const text =
+			row.querySelector(":scope > summary, :scope")?.textContent ?? "";
+		if ([...want].some((n) => text.includes(n))) row.classList.add("err");
 	}
 }
 
@@ -354,37 +552,43 @@ function snapshotOf(id: string): string {
 	return AW.serializeSnapshot(entry.doc);
 }
 
+/** Route a check / elaborate / render stage error into the Rendered tab. */
 function showErrors(errors: string[]): void {
-	const list = document.querySelector<HTMLElement>("#error-list");
-	if (list) {
-		list.hidden = false;
-		list.textContent = errors.join("\n");
-	}
-	document.querySelector("#result-tabs")?.setAttribute("hidden", "");
-	$("#aw-generated").hidden = true;
+	state.renderError = errors.join("\n");
 	markProcessed(namesInErrors(errors));
 	setAuthorTab("processed");
+	const tabs = document.querySelector("#result-tabs");
+	if (tabs) {
+		tabs.removeAttribute("hidden");
+		setResultTab("render");
+	} else paintResult();
+}
+
+/** Route a `.sv` print stage error into the SystemVerilog tab. */
+function showSvError(message: string): void {
+	state.svError = message;
+	const tabs = document.querySelector("#result-tabs");
+	if (tabs) {
+		tabs.removeAttribute("hidden");
+		setResultTab("sv");
+	} else paintResult();
 }
 
 function showResult(sv: string | null, html: string | null): void {
 	if (sv !== null) state.svText = sv;
 	if (html !== null) state.htmlText = html;
-	const list = document.querySelector<HTMLElement>("#error-list");
-	if (list) {
-		list.hidden = true;
-		list.textContent = "";
-	}
+	// A freshly produced product clears the matching stage error.
+	if (sv !== null) state.svError = "";
+	if (html !== null) state.renderError = "";
 	markProcessed([]);
 	const tabs = document.querySelector("#result-tabs");
 	if (tabs) {
 		tabs.removeAttribute("hidden");
-		const which = state.svText ? "sv" : "html";
-		setResultTab(which);
+		// After Run (sv present) default to SystemVerilog; else Rendered.
+		setResultTab(state.svText ? "sv" : "render");
 		return;
 	}
-	const gen = $("#aw-generated");
-	gen.hidden = false;
-	gen.textContent = state.svText || state.htmlText;
+	paintResult();
 }
 
 /** Browser download. Does not write the workspace. */
@@ -595,6 +799,7 @@ async function compileUnit(
 		entry.rendered = false;
 		if (runScripts) await runClassicScripts(container, unitOf(id)?.html ?? "");
 		state.dirty.delete(id);
+		refreshView("#aw-live");
 	} finally {
 		releaseObs();
 	}
@@ -621,6 +826,7 @@ async function loadUnit(id: string): Promise<UnitEntry> {
 				source.appendChild(document.importNode(child, true));
 		}
 		$("#aw-source").appendChild(source);
+		refreshView("#aw-source");
 		const entry: UnitEntry = {
 			source,
 			doc: document.createElement("div"),
@@ -784,6 +990,7 @@ async function runRender(id: string): Promise<AwEngine.CheckResult> {
 	if (ctxErrors.length > 0) return { errors: ctxErrors, warnings: [] };
 	const res = withCurrentUnit(id, () => AW.elaborate(entry.doc, ctx));
 	if (res.errors.length === 0) entry.rendered = true;
+	refreshView("#aw-live");
 	return res;
 }
 
@@ -838,6 +1045,16 @@ async function runBeforeDumpOnly(id: string): Promise<{ files: string[] }> {
 	return { files: [text] };
 }
 
+/** Reflect one step's status on its own action button (docs/workspace/web-ui.md §1/§4). */
+type ActionButton = "check" | "elaborate" | "run";
+function setBtnState(which: ActionButton, s: Status): void {
+	document.querySelector(`#btn-${which}`)?.setAttribute("data-state", s);
+}
+function resetBtnStates(): void {
+	for (const b of ["check", "elaborate", "run"] as ActionButton[])
+		setBtnState(b, "idle");
+}
+
 /** One action chain: select → check → elaborate → run (docs/workspace/web-ui.md §3). */
 async function runChain({
 	select,
@@ -846,18 +1063,43 @@ async function runChain({
 	run,
 }: ChainActions): Promise<void> {
 	setStatus("running", "running…");
+	resetBtnStates();
 	try {
 		if (select) await selectModule(select);
 		const id = state.current;
 		if (!id) throw new Error("no unit selected");
 		const summary: string[] = [];
 		if (run) {
-			const res = await runView(id);
-			summary.push(
-				`check: ok; elaborate: ok; source: ${res.files.length} unit(s) as .sv in view`,
-			);
+			setBtnState("check", "running");
+			try {
+				const res = await runView(id);
+				setBtnState("check", "done");
+				setBtnState("elaborate", "done");
+				setBtnState("run", "done");
+				summary.push(
+					`check: ok; elaborate: ok; source: ${res.files.length} unit(s) as .sv in view`,
+				);
+			} catch (e) {
+				const msg = (e as Error).message;
+				// runView tags upstream failures; a print failure is anything else.
+				if (msg.startsWith("check failed")) {
+					setBtnState("check", "error");
+					showErrors([msg]);
+				} else if (msg.startsWith("render failed")) {
+					setBtnState("check", "done");
+					setBtnState("elaborate", "error");
+					showErrors([msg]);
+				} else {
+					setBtnState("check", "done");
+					setBtnState("elaborate", "done");
+					setBtnState("run", "error");
+					showSvError(msg);
+				}
+				throw e;
+			}
 		} else {
 			if (check || elaborate) {
+				setBtnState("check", "running");
 				const res = await runCheck(id);
 				summary.push(
 					res.errors.length > 0
@@ -865,20 +1107,25 @@ async function runChain({
 						: `check: ok${res.warnings.length > 0 ? ` (${res.warnings.length} warning(s))` : ""}`,
 				);
 				if (res.errors.length > 0) {
+					setBtnState("check", "error");
 					showErrors(res.errors);
 					throw new Error(res.errors[0]);
 				}
+				setBtnState("check", "done");
 				showResult("", snapshotOf(id));
 				setAuthorTab("processed");
 				if (res.warnings.length > 0)
 					console.warn("[autowire check warnings]", res.warnings);
 			}
 			if (elaborate) {
+				setBtnState("elaborate", "running");
 				const res = await runRender(id);
 				if (res.errors.length > 0) {
+					setBtnState("elaborate", "error");
 					showErrors(res.errors);
 					throw new Error(res.errors[0]);
 				}
+				setBtnState("elaborate", "done");
 				summary.push("elaborate: ok");
 				showResult("", snapshotOf(id));
 				setAuthorTab("processed");
@@ -977,9 +1224,19 @@ function buildUnitList(): void {
 }
 
 async function selectModule(name: string): Promise<void> {
-	showModuleWorkspace();
-	$("#right-title").textContent = name;
-	const body = $("#right-body");
+	state.rtlModule = name;
+	const rtlPane = document.querySelector<HTMLElement>("#aw-rtl");
+	if (rtlPane) {
+		// Full page: the RtlIndex author tab (peer of Source / Processed).
+		setAuthorTab("rtl");
+		await renderRtlDetail(name, rtlPane);
+		return;
+	}
+	// Minimal page: legacy right-title / right-body (MIN_HTML is unchanged).
+	const title = document.querySelector<HTMLElement>("#right-title");
+	const body = document.querySelector<HTMLElement>("#right-body");
+	if (!title || !body) return;
+	title.textContent = name;
 	body.innerHTML = "";
 	// Prefer a loaded connect unit's aw-mod (render preview); else RtlIndex leaf facts.
 	for (const [, entry] of state.docs) {
@@ -1014,6 +1271,93 @@ async function selectModule(name: string): Promise<void> {
 			"unpacked",
 		]),
 	);
+}
+
+/** Render one RtlIndex module's detail (leaf facts from /api/module) into the
+ *  RtlIndex author tab, as collapsible sections consistent with Source /
+ *  Processed. RtlIndex is read-only; the page never reparses RTL. */
+async function renderRtlDetail(name: string, host: HTMLElement): Promise<void> {
+	host.replaceChildren();
+	host.classList.add("aw-tree");
+	const title = document.createElement("div");
+	title.className = "rtl-title";
+	title.textContent = name;
+	host.appendChild(title);
+	const res = await fetch(`/api/module?name=${encodeURIComponent(name)}`);
+	if (!res.ok) {
+		const err = document.createElement("div");
+		err.textContent =
+			((await res.json()) as { error?: string }).error ?? "unknown module";
+		host.appendChild(err);
+		return;
+	}
+	const leaf = (await res.json()) as {
+		params?: Record<string, unknown>[];
+		imports?: Record<string, unknown>[];
+		ports?: Record<string, unknown>[];
+		instances?: Record<string, unknown>[];
+	};
+	host.appendChild(
+		rtlSection("params", leaf.params ?? [], [
+			"name",
+			"kind",
+			"dataType",
+			"defaultText",
+		]),
+	);
+	host.appendChild(
+		rtlSection("imports", leaf.imports ?? [], ["package", "symbol"]),
+	);
+	host.appendChild(
+		rtlSection("ports", leaf.ports ?? [], [
+			"name",
+			"dir",
+			"dataType",
+			"packed",
+			"unpacked",
+		]),
+	);
+	if (leaf.instances && leaf.instances.length > 0)
+		host.appendChild(
+			rtlSection("instances", leaf.instances, ["id", "mod", "module"]),
+		);
+}
+
+/** One collapsible section for the RtlIndex tab, same <details> shape as the
+ *  Source / Processed view trees. */
+function rtlSection(
+	title: string,
+	rows: Record<string, unknown>[],
+	cols: string[],
+): HTMLElement {
+	const sec = document.createElement("details");
+	sec.open = true;
+	const head = document.createElement("summary");
+	const mk = document.createElement("span");
+	mk.className = "mk";
+	mk.textContent = String(rows.length);
+	head.appendChild(mk);
+	head.appendChild(document.createTextNode(title));
+	sec.appendChild(head);
+	const table = document.createElement("table");
+	const hr = document.createElement("tr");
+	for (const c of cols) {
+		const th = document.createElement("th");
+		th.textContent = c;
+		hr.appendChild(th);
+	}
+	table.appendChild(hr);
+	for (const row of rows) {
+		const tr = document.createElement("tr");
+		for (const c of cols) {
+			const td = document.createElement("td");
+			td.textContent = String(row[c] ?? "");
+			tr.appendChild(td);
+		}
+		table.appendChild(tr);
+	}
+	sec.appendChild(table);
+	return sec;
 }
 
 function serializeForView(render: Element): string {
@@ -1062,8 +1406,11 @@ function tableOf(
 }
 
 function refreshRightIfRendered(): void {
-	const title = $("#right-title").textContent;
-	if (title && title !== "(no module selected)") void selectModule(title);
+	// The RtlIndex tab shows static leaf facts; only the minimal page's aw-mod
+	// render preview benefits from a refresh after elaborate.
+	const title = document.querySelector("#right-title");
+	if (title?.textContent && title.textContent !== "(no module selected)")
+		void selectModule(title.textContent);
 }
 
 // ---------------------------------------------------------------------------
@@ -1078,6 +1425,9 @@ async function resetAll(): Promise<void> {
 		state.dirty.clear();
 		state.svText = "";
 		state.htmlText = "";
+		state.renderError = "";
+		state.svError = "";
+		state.rtlModule = null;
 		$("#aw-live").innerHTML = "";
 		$("#aw-source").innerHTML = "";
 		const gen = $("#aw-generated");
@@ -1089,7 +1439,9 @@ async function resetAll(): Promise<void> {
 			list.textContent = "";
 		}
 		document.querySelector("#result-tabs")?.setAttribute("hidden", "");
-		showUnitWorkspace();
+		const rtl = document.querySelector<HTMLElement>("#aw-rtl");
+		if (rtl) rtl.replaceChildren();
+		resetBtnStates();
 		setAuthorTab("source");
 		if (!state.current) throw new Error("no unit selected");
 		await loadUnit(state.current);
@@ -1163,11 +1515,14 @@ async function init(): Promise<void> {
 		.querySelector("#atab-proc")
 		?.addEventListener("click", () => setAuthorTab("processed"));
 	document
+		.querySelector("#atab-rtl")
+		?.addEventListener("click", () => setAuthorTab("rtl"));
+	document
+		.querySelector("#rtab-render")
+		?.addEventListener("click", () => setResultTab("render"));
+	document
 		.querySelector("#rtab-sv")
 		?.addEventListener("click", () => setResultTab("sv"));
-	document
-		.querySelector("#rtab-html")
-		?.addEventListener("click", () => setResultTab("html"));
 	watchInputs();
 	await buildSummary();
 	if (!minimal) await buildRtlList();

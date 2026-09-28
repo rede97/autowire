@@ -73,7 +73,9 @@ describe("wishbone pack", () => {
 		writeFileSync(
 			join(dir, "autowire.toml"),
 			`
-[dump]
+[workspace]
+name = "soc"
+[workspace.dump]
 plugins_dir = "gen/plugins"
 [plugins.wishbone]
 c = "fw/gen"
@@ -90,10 +92,10 @@ exports = ["soc_wb"]
 		expect(paths.some((p) => p.endsWith("smoke_regfile.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("soc_wb_system.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("sd_sha_system.sv"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("wishbone.h"))).toBe(true);
-		expect(paths.some((p) => p.endsWith("ral_wishbone.sv"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("soc.h"))).toBe(true);
+		expect(paths.some((p) => p.endsWith("ral_soc.sv"))).toBe(true);
 		expect(paths.some((p) => p.endsWith("bus_regfiles.xlsx"))).toBe(true);
-		const umbrella = readFileSync(join(dir, "fw/gen/wishbone.h"), "utf8");
+		const umbrella = readFileSync(join(dir, "fw/gen/soc.h"), "utf8");
 		expect(umbrella).toContain('#include "regfile/sha256.h"');
 		expect(umbrella).toContain('#include "bus/soc_wb_map.h"');
 		rmSync(dir, { recursive: true, force: true });

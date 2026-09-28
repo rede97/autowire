@@ -385,7 +385,10 @@ var state = {
   phase: new Map,
   dirty: new Set,
   svText: "",
-  htmlText: ""
+  htmlText: "",
+  renderError: "",
+  svError: "",
+  rtlModule: null
 };
 function showGenerated(text) {
   const box = $("#aw-generated");
@@ -454,12 +457,16 @@ function withCurrentUnit(id, fn) {
 function setAuthorTab(which) {
   const src = document.querySelector("#author-source");
   const proc = document.querySelector("#author-processed");
+  const rtl = document.querySelector("#author-rtl");
   if (!src || !proc)
     return;
   src.hidden = which !== "source";
   proc.hidden = which !== "processed";
+  if (rtl)
+    rtl.hidden = which !== "rtl";
   document.querySelector("#atab-source")?.setAttribute("aria-selected", String(which === "source"));
   document.querySelector("#atab-proc")?.setAttribute("aria-selected", String(which === "processed"));
+  document.querySelector("#atab-rtl")?.setAttribute("aria-selected", String(which === "rtl"));
 }
 function setSideTab(which) {
   const rtl = document.querySelector("#pane-rtlindex");
@@ -471,21 +478,149 @@ function setSideTab(which) {
   document.querySelector("#tab-rtl")?.setAttribute("aria-selected", String(which === "rtl"));
   document.querySelector("#tab-connect")?.setAttribute("aria-selected", String(which === "connect"));
 }
-function showUnitWorkspace() {
-  const unit = document.querySelector("#unit-view");
-  const mod = document.querySelector("#module-view");
-  if (!unit || !mod)
+function refreshView(realId) {
+  const view = document.querySelector(realId === "#aw-source" ? "#aw-source-view" : "#aw-live-view");
+  const real = document.querySelector(realId);
+  if (!view || !real)
     return;
-  unit.hidden = false;
-  mod.hidden = true;
+  const open = new Set;
+  for (const d of view.querySelectorAll("details:not([open])")) {
+    const key = d.getAttribute("data-path");
+    if (key)
+      open.add(key);
+  }
+  view.replaceChildren();
+  let n = 0;
+  const walk = (node, host, path) => {
+    for (const child of [...node.children]) {
+      if (child.hasAttribute("data-unit")) {
+        walk(child, host, path);
+        continue;
+      }
+      const key = `${path}/${n++}`;
+      host.appendChild(viewNode(child, key, open));
+    }
+  };
+  walk(real, view, realId);
 }
-function showModuleWorkspace() {
-  const unit = document.querySelector("#unit-view");
-  const mod = document.querySelector("#module-view");
-  if (!unit || !mod)
+function viewNode(el, path, closed) {
+  const tag = el.tagName.toLowerCase();
+  const kids = [...el.children];
+  if (kids.length === 0)
+    return leafRow(el, tag);
+  const box = document.createElement("details");
+  box.open = !closed.has(path);
+  box.dataset.path = path;
+  const summary = document.createElement("summary");
+  fillTag(summary, el, tag, true);
+  box.appendChild(summary);
+  if (tag === "script") {
+    const body = document.createElement("span");
+    body.className = "script-body";
+    body.textContent = (el.textContent ?? "").replace(/^\n/, "").replace(/\s+$/, "");
+    box.appendChild(body);
+  }
+  const rules = tag === "aw-template";
+  const body = rules ? document.createElement("div") : box;
+  if (rules) {
+    body.className = "rules";
+    box.appendChild(body);
+  }
+  let n = 0;
+  for (const child of kids)
+    body.appendChild(viewNode(child, `${path}/${n++}`, closed));
+  return box;
+}
+function leafRow(el, tag) {
+  if (tag === "aw-connect" || tag === "aw-rewrite" || tag === "aw-param" || tag === "aw-localparam") {
+    const row = document.createElement("div");
+    row.className = "leaf";
+    for (const text of ruleCols(el, tag)) {
+      const col = document.createElement("span");
+      col.className = "col";
+      col.textContent = text;
+      row.appendChild(col);
+    }
+    return row;
+  }
+  const row = document.createElement("div");
+  row.className = "leaf";
+  fillTag(row, el, tag, false);
+  if (tag === "script" && (el.textContent ?? "").trim()) {
+    const body = document.createElement("span");
+    body.className = "script-body";
+    body.textContent = (el.textContent ?? "").replace(/^\n/, "").replace(/\s+$/, "");
+    const wrap = document.createElement("div");
+    wrap.appendChild(row);
+    wrap.appendChild(body);
+    return wrap;
+  }
+  return row;
+}
+function fillTag(host, el, tag, container) {
+  const open = document.createElement("span");
+  open.className = "tg";
+  open.textContent = `<${tag}`;
+  host.appendChild(open);
+  for (const attr of el.attributes) {
+    host.appendChild(document.createTextNode(" "));
+    const name = document.createElement("span");
+    name.className = "an";
+    name.textContent = attr.name;
+    host.appendChild(name);
+    const eq = document.createElement("span");
+    eq.className = "punct";
+    eq.textContent = "=";
+    host.appendChild(eq);
+    const value = document.createElement("span");
+    value.className = "av";
+    value.textContent = `"${attr.value}"`;
+    host.appendChild(value);
+  }
+  const end = document.createElement("span");
+  end.className = "tg";
+  end.textContent = container || (el.textContent ?? "").trim() ? ">" : " />";
+  host.appendChild(end);
+  if (!container)
     return;
-  unit.hidden = true;
-  mod.hidden = false;
+  const ellipsis = document.createElement("span");
+  ellipsis.className = "ellipsis";
+  ellipsis.textContent = "...";
+  host.appendChild(ellipsis);
+  const close = document.createElement("span");
+  close.className = "close";
+  close.textContent = `</${tag}>`;
+  host.appendChild(close);
+}
+function ruleCols(el, tag) {
+  const a = (name) => el.getAttribute(name) ?? "";
+  const extra = [
+    a("packed") && `packed=${a("packed")}`,
+    a("unpacked") && `unpacked=${a("unpacked")}`,
+    a("width") && `width=${a("width")}`,
+    a("part") && `part=${a("part")}`,
+    a("nettype") && a("nettype")
+  ].filter(Boolean).join("  ");
+  if (tag === "aw-connect")
+    return [
+      a("type") || "net",
+      `.${a("port")}`,
+      a("to") || (a("type") === "open" ? "(open)" : ""),
+      extra
+    ];
+  if (tag === "aw-rewrite")
+    return [
+      "rewrite",
+      a("match"),
+      a("to") || (a("type") === "open" ? "(open)" : ""),
+      extra
+    ];
+  return [
+    tag === "aw-localparam" ? "localparam" : "param",
+    a("name"),
+    a("expr"),
+    extra
+  ];
 }
 var SV_DIRS = new Set(["input", "output", "inout"]);
 var SV_KW = new Set([
@@ -562,23 +697,49 @@ function highlightXml(text, host) {
 }
 function paintResult() {
   const gen = $("#aw-generated");
-  gen.hidden = false;
+  const list = document.querySelector("#error-list");
   const tabs = document.querySelector("#result-tabs");
   if (!tabs) {
-    gen.textContent = state.svText || state.htmlText;
+    const err = state.renderError || state.svError;
+    if (err) {
+      if (list) {
+        list.hidden = false;
+        list.textContent = err;
+      }
+      gen.hidden = true;
+    } else {
+      if (list) {
+        list.hidden = true;
+        list.textContent = "";
+      }
+      gen.hidden = false;
+      gen.textContent = state.svText || state.htmlText;
+    }
     return;
   }
-  const sv = document.querySelector("#rtab-sv")?.getAttribute("aria-selected") !== "false";
-  if (sv && state.svText)
-    highlightSv(state.svText, gen);
-  else if (!sv)
+  const render = document.querySelector("#rtab-render")?.getAttribute("aria-selected") === "true";
+  const err = render ? state.renderError : state.svError;
+  if (err) {
+    if (list) {
+      list.hidden = false;
+      list.textContent = err;
+    }
+    gen.hidden = true;
+    return;
+  }
+  if (list) {
+    list.hidden = true;
+    list.textContent = "";
+  }
+  gen.hidden = false;
+  if (render)
     highlightXml(state.htmlText, gen);
   else
-    gen.textContent = state.htmlText;
+    highlightSv(state.svText, gen);
 }
 function setResultTab(which) {
+  document.querySelector("#rtab-render")?.setAttribute("aria-selected", String(which === "render"));
   document.querySelector("#rtab-sv")?.setAttribute("aria-selected", String(which === "sv"));
-  document.querySelector("#rtab-html")?.setAttribute("aria-selected", String(which === "html"));
   paintResult();
 }
 function namesInErrors(errors) {
@@ -593,18 +754,18 @@ function namesInErrors(errors) {
   return [...out];
 }
 function markProcessed(names) {
-  const root = document.querySelector("#aw-live");
-  if (!root)
+  const view = document.querySelector("#aw-live-view");
+  if (!view)
     return;
-  for (const el of root.querySelectorAll(".tn-err"))
-    el.classList.remove("tn-err");
+  for (const el of view.querySelectorAll(".err"))
+    el.classList.remove("err");
   if (names.length === 0)
     return;
   const want = new Set(names);
-  const keys = ["name", "id", "port", "mod", "to", "match"];
-  for (const el of root.querySelectorAll("*")) {
-    if (keys.some((k) => want.has(el.getAttribute(k) ?? "")))
-      el.classList.add("tn-err");
+  for (const row of view.querySelectorAll(".leaf, details")) {
+    const text = row.querySelector(":scope > summary, :scope")?.textContent ?? "";
+    if ([...want].some((n) => text.includes(n)))
+      row.classList.add("err");
   }
 }
 function snapshotOf(id) {
@@ -614,38 +775,43 @@ function snapshotOf(id) {
   return AW.serializeSnapshot(entry.doc);
 }
 function showErrors(errors) {
-  const list = document.querySelector("#error-list");
-  if (list) {
-    list.hidden = false;
-    list.textContent = errors.join(`
+  state.renderError = errors.join(`
 `);
-  }
-  document.querySelector("#result-tabs")?.setAttribute("hidden", "");
-  $("#aw-generated").hidden = true;
   markProcessed(namesInErrors(errors));
   setAuthorTab("processed");
+  const tabs = document.querySelector("#result-tabs");
+  if (tabs) {
+    tabs.removeAttribute("hidden");
+    setResultTab("render");
+  } else
+    paintResult();
+}
+function showSvError(message) {
+  state.svError = message;
+  const tabs = document.querySelector("#result-tabs");
+  if (tabs) {
+    tabs.removeAttribute("hidden");
+    setResultTab("sv");
+  } else
+    paintResult();
 }
 function showResult(sv, html) {
   if (sv !== null)
     state.svText = sv;
   if (html !== null)
     state.htmlText = html;
-  const list = document.querySelector("#error-list");
-  if (list) {
-    list.hidden = true;
-    list.textContent = "";
-  }
+  if (sv !== null)
+    state.svError = "";
+  if (html !== null)
+    state.renderError = "";
   markProcessed([]);
   const tabs = document.querySelector("#result-tabs");
   if (tabs) {
     tabs.removeAttribute("hidden");
-    const which = state.svText ? "sv" : "html";
-    setResultTab(which);
+    setResultTab(state.svText ? "sv" : "render");
     return;
   }
-  const gen = $("#aw-generated");
-  gen.hidden = false;
-  gen.textContent = state.svText || state.htmlText;
+  paintResult();
 }
 function downloadText(text, filename) {
   const blob = new Blob([text], { type: "text/plain" });
@@ -812,6 +978,7 @@ async function compileUnit(entry, id, runScripts) {
     if (runScripts)
       await runClassicScripts(container, unitOf(id)?.html ?? "");
     state.dirty.delete(id);
+    refreshView("#aw-live");
   } finally {
     releaseObs();
   }
@@ -838,6 +1005,7 @@ async function loadUnit(id) {
         source.appendChild(document.importNode(child, true));
     }
     $("#aw-source").appendChild(source);
+    refreshView("#aw-source");
     const entry = {
       source,
       doc: document.createElement("div"),
@@ -980,6 +1148,7 @@ async function runRender(id) {
   const res = withCurrentUnit(id, () => AW.elaborate(entry.doc, ctx));
   if (res.errors.length === 0)
     entry.rendered = true;
+  refreshView("#aw-live");
   return res;
 }
 async function runView(id) {
@@ -1034,6 +1203,13 @@ async function runBeforeDumpOnly(id) {
   showGenerated(text);
   return { files: [text] };
 }
+function setBtnState(which, s) {
+  document.querySelector(`#btn-${which}`)?.setAttribute("data-state", s);
+}
+function resetBtnStates() {
+  for (const b of ["check", "elaborate", "run"])
+    setBtnState(b, "idle");
+}
 async function runChain({
   select,
   check,
@@ -1041,6 +1217,7 @@ async function runChain({
   run
 }) {
   setStatus("running", "running…");
+  resetBtnStates();
   try {
     if (select)
       await selectModule(select);
@@ -1049,27 +1226,55 @@ async function runChain({
       throw new Error("no unit selected");
     const summary = [];
     if (run) {
-      const res = await runView(id);
-      summary.push(`check: ok; elaborate: ok; source: ${res.files.length} unit(s) as .sv in view`);
+      setBtnState("check", "running");
+      try {
+        const res = await runView(id);
+        setBtnState("check", "done");
+        setBtnState("elaborate", "done");
+        setBtnState("run", "done");
+        summary.push(`check: ok; elaborate: ok; source: ${res.files.length} unit(s) as .sv in view`);
+      } catch (e) {
+        const msg = e.message;
+        if (msg.startsWith("check failed")) {
+          setBtnState("check", "error");
+          showErrors([msg]);
+        } else if (msg.startsWith("render failed")) {
+          setBtnState("check", "done");
+          setBtnState("elaborate", "error");
+          showErrors([msg]);
+        } else {
+          setBtnState("check", "done");
+          setBtnState("elaborate", "done");
+          setBtnState("run", "error");
+          showSvError(msg);
+        }
+        throw e;
+      }
     } else {
       if (check || elaborate) {
+        setBtnState("check", "running");
         const res = await runCheck(id);
         summary.push(res.errors.length > 0 ? `check: ${res.errors.length} error(s)` : `check: ok${res.warnings.length > 0 ? ` (${res.warnings.length} warning(s))` : ""}`);
         if (res.errors.length > 0) {
+          setBtnState("check", "error");
           showErrors(res.errors);
           throw new Error(res.errors[0]);
         }
+        setBtnState("check", "done");
         showResult("", snapshotOf(id));
         setAuthorTab("processed");
         if (res.warnings.length > 0)
           console.warn("[autowire check warnings]", res.warnings);
       }
       if (elaborate) {
+        setBtnState("elaborate", "running");
         const res = await runRender(id);
         if (res.errors.length > 0) {
+          setBtnState("elaborate", "error");
           showErrors(res.errors);
           throw new Error(res.errors[0]);
         }
+        setBtnState("elaborate", "done");
         summary.push("elaborate: ok");
         showResult("", snapshotOf(id));
         setAuthorTab("processed");
@@ -1166,9 +1371,18 @@ function buildUnitList() {
   }
 }
 async function selectModule(name) {
-  showModuleWorkspace();
-  $("#right-title").textContent = name;
-  const body = $("#right-body");
+  state.rtlModule = name;
+  const rtlPane = document.querySelector("#aw-rtl");
+  if (rtlPane) {
+    setAuthorTab("rtl");
+    await renderRtlDetail(name, rtlPane);
+    return;
+  }
+  const title = document.querySelector("#right-title");
+  const body = document.querySelector("#right-body");
+  if (!title || !body)
+    return;
+  title.textContent = name;
   body.innerHTML = "";
   for (const [, entry] of state.docs) {
     const mod = entry.container.querySelector(`aw-mod[name="${CSS.escape(name)}"]`);
@@ -1194,6 +1408,68 @@ async function selectModule(name) {
     "packed",
     "unpacked"
   ]));
+}
+async function renderRtlDetail(name, host) {
+  host.replaceChildren();
+  host.classList.add("aw-tree");
+  const title = document.createElement("div");
+  title.className = "rtl-title";
+  title.textContent = name;
+  host.appendChild(title);
+  const res = await fetch(`/api/module?name=${encodeURIComponent(name)}`);
+  if (!res.ok) {
+    const err = document.createElement("div");
+    err.textContent = (await res.json()).error ?? "unknown module";
+    host.appendChild(err);
+    return;
+  }
+  const leaf = await res.json();
+  host.appendChild(rtlSection("params", leaf.params ?? [], [
+    "name",
+    "kind",
+    "dataType",
+    "defaultText"
+  ]));
+  host.appendChild(rtlSection("imports", leaf.imports ?? [], ["package", "symbol"]));
+  host.appendChild(rtlSection("ports", leaf.ports ?? [], [
+    "name",
+    "dir",
+    "dataType",
+    "packed",
+    "unpacked"
+  ]));
+  if (leaf.instances && leaf.instances.length > 0)
+    host.appendChild(rtlSection("instances", leaf.instances, ["id", "mod", "module"]));
+}
+function rtlSection(title, rows, cols) {
+  const sec = document.createElement("details");
+  sec.open = true;
+  const head = document.createElement("summary");
+  const mk = document.createElement("span");
+  mk.className = "mk";
+  mk.textContent = String(rows.length);
+  head.appendChild(mk);
+  head.appendChild(document.createTextNode(title));
+  sec.appendChild(head);
+  const table = document.createElement("table");
+  const hr = document.createElement("tr");
+  for (const c of cols) {
+    const th = document.createElement("th");
+    th.textContent = c;
+    hr.appendChild(th);
+  }
+  table.appendChild(hr);
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    for (const c of cols) {
+      const td = document.createElement("td");
+      td.textContent = String(row[c] ?? "");
+      tr.appendChild(td);
+    }
+    table.appendChild(tr);
+  }
+  sec.appendChild(table);
+  return sec;
 }
 function serializeForView(render) {
   const lines = [];
@@ -1233,9 +1509,9 @@ function tableOf(title, rows, cols) {
   return wrap;
 }
 function refreshRightIfRendered() {
-  const title = $("#right-title").textContent;
-  if (title && title !== "(no module selected)")
-    selectModule(title);
+  const title = document.querySelector("#right-title");
+  if (title?.textContent && title.textContent !== "(no module selected)")
+    selectModule(title.textContent);
 }
 async function resetAll() {
   holdObs();
@@ -1245,6 +1521,9 @@ async function resetAll() {
     state.dirty.clear();
     state.svText = "";
     state.htmlText = "";
+    state.renderError = "";
+    state.svError = "";
+    state.rtlModule = null;
     $("#aw-live").innerHTML = "";
     $("#aw-source").innerHTML = "";
     const gen = $("#aw-generated");
@@ -1256,7 +1535,10 @@ async function resetAll() {
       list.textContent = "";
     }
     document.querySelector("#result-tabs")?.setAttribute("hidden", "");
-    showUnitWorkspace();
+    const rtl = document.querySelector("#aw-rtl");
+    if (rtl)
+      rtl.replaceChildren();
+    resetBtnStates();
     setAuthorTab("source");
     if (!state.current)
       throw new Error("no unit selected");
@@ -1313,8 +1595,9 @@ async function init() {
   document.querySelector("#tab-connect")?.addEventListener("click", () => setSideTab("connect"));
   document.querySelector("#atab-source")?.addEventListener("click", () => setAuthorTab("source"));
   document.querySelector("#atab-proc")?.addEventListener("click", () => setAuthorTab("processed"));
+  document.querySelector("#atab-rtl")?.addEventListener("click", () => setAuthorTab("rtl"));
+  document.querySelector("#rtab-render")?.addEventListener("click", () => setResultTab("render"));
   document.querySelector("#rtab-sv")?.addEventListener("click", () => setResultTab("sv"));
-  document.querySelector("#rtab-html")?.addEventListener("click", () => setResultTab("html"));
   watchInputs();
   await buildSummary();
   if (!minimal)

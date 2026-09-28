@@ -130,6 +130,6 @@ wishbone 可以登记自己的相位和参数，例如只印 regfile、只印某
 
 ## 5. 不改的边界
 
-- `init` 留在顶层。它创建 `autowire.toml` 和 `AGENTS-AUTOWIRE.md`（仓库根目录 `AGENTS.md` 的副本）；任一已存在则两个都不写。
+- `init <name>` 留在顶层。它创建 `autowire.toml`（带 `[workspace] name`）和 `AGENTS-AUTOWIRE.md`（仓库根目录 `AGENTS.md` 的副本）；任一已存在则两个都不写。
 - `plugin wishbone run` 不调用 `connect run`。生成出的 SV 仍要再经 `analysis run`，connect 才能把它当叶子例化。
 - 类型 B 若落地，展开仍是 connect 相位链里 check 之前的一步，不另做一个顶层 `run`。

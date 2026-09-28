@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-	DEFAULT_TOML,
+	defaultToml,
 	findWorkspace,
 	hdxmlArgs,
 	loadWorkspace,
@@ -11,17 +11,21 @@ import {
 
 function tempWorkspace(toml: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "aw_ws_test_"));
-	writeFileSync(join(dir, "autowire.toml"), toml);
+	const full = toml.includes("[workspace]")
+		? toml
+		: `[workspace]\nname = "test"\n\n${toml}`;
+	writeFileSync(join(dir, "autowire.toml"), full);
 	return dir;
 }
 
 describe("workspace", () => {
 	test("default template parses and maps to minimal args", async () => {
 		const dir = tempWorkspace(
-			DEFAULT_TOML.replace('walk_dirs = ["rtl"]', "walk_dirs = []"),
+			defaultToml("test").replace('walk_dirs = ["rtl"]', "walk_dirs = []"),
 		);
 		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
 		expect(cfg.root).toBe(dir);
+		expect(cfg.name).toBe("test");
 		expect(cfg.indexDir).toBe(join(dir, ".autowire/hdxml"));
 		expect(cfg.dumpDir).toBe(join(dir, "gen/connect"));
 		expect(cfg.connectDir).toBe(join(dir, "gen/connect"));
@@ -70,7 +74,7 @@ html = "connect/soc.html"
 [sim.tb]
 html = "sim/tb.html"
 deps = ["soc"]
-[dump]
+[workspace.dump]
 connect_dir = "gen/connect"
 sim_dir = "gen/sim"
 `);
@@ -172,8 +176,8 @@ DEPTH = 16
 		);
 	});
 
-	test("[hdxml] bin resolves against the workspace root; unset is null", async () => {
-		const withBin = tempWorkspace('[hdxml]\nbin = "tools/hdxml"\n');
+	test("[analysis] hdxml_bin resolves against the workspace root; unset is null", async () => {
+		const withBin = tempWorkspace('[analysis]\nhdxml_bin = "tools/hdxml"\n');
 		const cfg = await loadWorkspace(join(withBin, "autowire.toml"));
 		expect(cfg.hdxmlBin).toBe(join(withBin, "tools/hdxml"));
 		const without = tempWorkspace("[analysis.rtl]\n");
@@ -182,10 +186,10 @@ DEPTH = 16
 		).toBeNull();
 	});
 
-	test("[hdxml] bin must be a string", async () => {
-		const dir = tempWorkspace("[hdxml]\nbin = 42\n");
+	test("[analysis] hdxml_bin must be a non-empty string", async () => {
+		const dir = tempWorkspace("[analysis]\nhdxml_bin = 42\n");
 		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
-			"[hdxml] bin",
+			"hdxml_bin",
 		);
 	});
 
@@ -243,6 +247,37 @@ c = "fw/gen/bus"
 		const dir = tempWorkspace('[analysis.rtl]\nwalk_dirs = "rtl"\n');
 		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
 			"analysis.rtl.walk_dirs",
+		);
+	});
+
+	test("[workspace] name is required", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw_ws_test_"));
+		writeFileSync(join(dir, "autowire.toml"), "[analysis.rtl]\n");
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"[workspace] name is required",
+		);
+	});
+
+	test("[workspace] name must be a C-identifier", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw_ws_test_"));
+		writeFileSync(join(dir, "autowire.toml"), '[workspace]\nname = "1bad"\n');
+		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
+			"must match",
+		);
+	});
+
+	test("legacy top-level [dump] / [style] / [hdxml] are rejected", async () => {
+		const d1 = tempWorkspace('[dump]\nplugins_dir = "gen/plugins"\n');
+		await expect(loadWorkspace(join(d1, "autowire.toml"))).rejects.toThrow(
+			"[workspace.dump]",
+		);
+		const d2 = tempWorkspace("[style]\nport_align = true\n");
+		await expect(loadWorkspace(join(d2, "autowire.toml"))).rejects.toThrow(
+			"[workspace.style]",
+		);
+		const d3 = tempWorkspace('[hdxml]\nbin = "x"\n');
+		await expect(loadWorkspace(join(d3, "autowire.toml"))).rejects.toThrow(
+			"[analysis] hdxml_bin",
 		);
 	});
 });

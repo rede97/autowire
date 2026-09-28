@@ -8,7 +8,7 @@ import type { Command } from "commander";
 import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex, type RtlIndex } from "../rtl/rtlindex.ts";
 import { renderSummary, renderTrees } from "../rtl/tree.ts";
-import { DEFAULT_TOML, hdxmlArgs } from "../workspace.js";
+import { defaultToml, hdxmlArgs } from "../workspace.js";
 import { loadPack } from "./pack.ts";
 import { findHdxml, requireWorkspace } from "./shared.ts";
 
@@ -18,7 +18,15 @@ export function registerAnalysis(program: Command): void {
 		.description(
 			"Create default autowire.toml and AGENTS-AUTOWIRE.md in the current directory (refuses to overwrite either)",
 		)
-		.action(async () => {
+		.argument(
+			"<name>",
+			"workspace name (C-identifier); names the wishbone umbrella files",
+		)
+		.action(async (name: string) => {
+			if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+				console.error(`init: name "${name}" must match [A-Za-z_][A-Za-z0-9_]*`);
+				process.exit(1);
+			}
 			const tomlTarget = join(process.cwd(), "autowire.toml");
 			const agentsTarget = join(process.cwd(), "AGENTS-AUTOWIRE.md");
 			const existing = [tomlTarget, agentsTarget].filter((p) => existsSync(p));
@@ -32,7 +40,7 @@ export function registerAnalysis(program: Command): void {
 				console.error("docs pack has no AGENTS.md");
 				process.exit(1);
 			}
-			await Bun.write(tomlTarget, DEFAULT_TOML);
+			await Bun.write(tomlTarget, defaultToml(name));
 			await Bun.write(agentsTarget, contract.bytes);
 			console.log(`created ${tomlTarget}`);
 			console.log(`created ${agentsTarget}`);

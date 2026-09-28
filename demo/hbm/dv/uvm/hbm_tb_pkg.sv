@@ -9,7 +9,7 @@ package hbm_tb_pkg;
 
 	import uvm_pkg::*;
 	`include "uvm_macros.svh"
-	`include "ral_wishbone.sv"
+	`include "ral_hbm.sv"
 
 	//----------------------------------------------------------------------
 	// Wishbone agent (fabric clock domain)
