@@ -39,9 +39,15 @@ jobs:
         with:
           submodules: recursive
       - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
       - run: bun install --frozen-lockfile
       - run: bun run build:js
       - run: bun out/autowire.js --version
+      # Drive the shipped bundle end to end (demo/soc via the packaged CLI);
+      # catches bundle-only breakage unit tests against src/ never see.
+      - run: cargo build
+        working-directory: hdxml
+      - run: bun scripts/smoke-bundle.ts
       - uses: actions/upload-artifact@v4
         with:
           name: autowire-js

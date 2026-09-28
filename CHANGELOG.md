@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.2.1] - 2026-09-29
+
+- 发布 CI 的 `autowire-js` 构建后新增 bundle 冒烟（`scripts/smoke-bundle.ts`）：用打出来的 `autowire.js` 跑 `--version`、独立目录 `init`（含 `.autowire/dsl` 与拒绝覆盖）、完整驱动 demo/soc（analysis → wishbone → connect check/run），并用 `git diff` 验证生成产物与仓库逐字节一致（Excel 除外，其内嵌时间戳）。只测源码的单元测试覆盖不到的打包路径问题由此进 CI 门禁。
+
 ## [2.2.0] - 2026-09-28
 
 - 发布包冷启动优化：文档包收紧为"可运行的最小集"——`demo/*/ip/` 只打该 demo `.f` filelist 引用到的源文件（sdspi/picorv32 的上游文档、bench、PDF 不再进包），`vcs/work/`、`.git` 指针、`.github`、`*.xlsx`、`ucli.key`、`~$*` 全部排除；`demo/*/patches/` 的补丁打包时已应用；demo `sot/*.ts` 的 DSL 导入改写到 `.autowire/dsl/`，解包后的独立树可直接跑 `analysis run` → `plugin wishbone run` → `connect run`（再生产物与仓库已提交的 showcase 逐字节一致）。压缩从 gzip 换成 zstd level 22，内嵌形式从 80MB 的 `Uint8Array.from([...])` 字节数组字面量改成函数体内的 base64 字符串（函数体惰性解析，只在 `loadPack` 时解码）；exceljs 改为惰性加载。`autowire.js` 从 85MB 降到 4.8MB，冷启动从约 1.2s 降到约 0.2s。
