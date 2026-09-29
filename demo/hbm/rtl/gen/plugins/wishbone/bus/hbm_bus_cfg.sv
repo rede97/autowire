@@ -12,230 +12,228 @@
 //------------------------------------------------------------------------------
 
 module hbm_bus_cfg (
-	input  logic clk,
-	input  logic rst_n,
-	input  logic rb_grant_en,
+	input logic clk,
+	input logic rst_n,
+	input logic rb_grant_en,
 	// Master cfg — Configuration port (fabric clk, 800 MHz)
-	input  logic [18:0]cfg_o_wb_adr,
-	input  logic [31:0]cfg_o_wb_dat,
-	input  logic [3:0]cfg_o_wb_sel,
-	input  logic cfg_o_wb_cyc,
-	input  logic cfg_o_wb_stb,
-	input  logic cfg_o_wb_we,
-	output logic [31:0]cfg_i_wb_dat,
+	input logic [18:0] cfg_o_wb_adr,
+	input logic [31:0] cfg_o_wb_dat,
+	input logic [3:0] cfg_o_wb_sel,
+	input logic cfg_o_wb_cyc,
+	input logic cfg_o_wb_stb,
+	input logic cfg_o_wb_we,
+	output logic [31:0] cfg_i_wb_dat,
 	output logic cfg_i_wb_ack,
 	// Slave ch0 — HBM channel 0
-	output logic [18:0]ch0_i_wb_adr,
-	output logic [31:0]ch0_i_wb_dat,
-	output logic [3:0]ch0_i_wb_sel,
-	output logic [1:0]ch0_i_wb_tga_pstate,
+	output logic [18:0] ch0_i_wb_adr,
+	output logic [31:0] ch0_i_wb_dat,
+	output logic [3:0] ch0_i_wb_sel,
+	output logic [1:0] ch0_i_wb_tga_pstate,
 	output logic ch0_i_wb_cyc,
 	output logic ch0_i_wb_stb,
 	output logic ch0_i_wb_we,
-	input  logic [31:0]ch0_o_wb_dat,
-	input  logic ch0_o_wb_ack,
+	input logic [31:0] ch0_o_wb_dat,
+	input logic ch0_o_wb_ack,
 	// Slave ch1 — HBM channel 1
-	output logic [18:0]ch1_i_wb_adr,
-	output logic [31:0]ch1_i_wb_dat,
-	output logic [3:0]ch1_i_wb_sel,
-	output logic [1:0]ch1_i_wb_tga_pstate,
+	output logic [18:0] ch1_i_wb_adr,
+	output logic [31:0] ch1_i_wb_dat,
+	output logic [3:0] ch1_i_wb_sel,
+	output logic [1:0] ch1_i_wb_tga_pstate,
 	output logic ch1_i_wb_cyc,
 	output logic ch1_i_wb_stb,
 	output logic ch1_i_wb_we,
-	input  logic [31:0]ch1_o_wb_dat,
-	input  logic ch1_o_wb_ack,
+	input logic [31:0] ch1_o_wb_dat,
+	input logic ch1_o_wb_ack,
 	// Slave ch2 — HBM channel 2
-	output logic [18:0]ch2_i_wb_adr,
-	output logic [31:0]ch2_i_wb_dat,
-	output logic [3:0]ch2_i_wb_sel,
-	output logic [1:0]ch2_i_wb_tga_pstate,
+	output logic [18:0] ch2_i_wb_adr,
+	output logic [31:0] ch2_i_wb_dat,
+	output logic [3:0] ch2_i_wb_sel,
+	output logic [1:0] ch2_i_wb_tga_pstate,
 	output logic ch2_i_wb_cyc,
 	output logic ch2_i_wb_stb,
 	output logic ch2_i_wb_we,
-	input  logic [31:0]ch2_o_wb_dat,
-	input  logic ch2_o_wb_ack,
+	input logic [31:0] ch2_o_wb_dat,
+	input logic ch2_o_wb_ack,
 	// Slave ch3 — HBM channel 3
-	output logic [18:0]ch3_i_wb_adr,
-	output logic [31:0]ch3_i_wb_dat,
-	output logic [3:0]ch3_i_wb_sel,
-	output logic [1:0]ch3_i_wb_tga_pstate,
+	output logic [18:0] ch3_i_wb_adr,
+	output logic [31:0] ch3_i_wb_dat,
+	output logic [3:0] ch3_i_wb_sel,
+	output logic [1:0] ch3_i_wb_tga_pstate,
 	output logic ch3_i_wb_cyc,
 	output logic ch3_i_wb_stb,
 	output logic ch3_i_wb_we,
-	input  logic [31:0]ch3_o_wb_dat,
-	input  logic ch3_o_wb_ack,
+	input logic [31:0] ch3_o_wb_dat,
+	input logic ch3_o_wb_ack,
 	// Slave ch4 — HBM channel 4
-	output logic [18:0]ch4_i_wb_adr,
-	output logic [31:0]ch4_i_wb_dat,
-	output logic [3:0]ch4_i_wb_sel,
-	output logic [1:0]ch4_i_wb_tga_pstate,
+	output logic [18:0] ch4_i_wb_adr,
+	output logic [31:0] ch4_i_wb_dat,
+	output logic [3:0] ch4_i_wb_sel,
+	output logic [1:0] ch4_i_wb_tga_pstate,
 	output logic ch4_i_wb_cyc,
 	output logic ch4_i_wb_stb,
 	output logic ch4_i_wb_we,
-	input  logic [31:0]ch4_o_wb_dat,
-	input  logic ch4_o_wb_ack,
+	input logic [31:0] ch4_o_wb_dat,
+	input logic ch4_o_wb_ack,
 	// Slave ch5 — HBM channel 5
-	output logic [18:0]ch5_i_wb_adr,
-	output logic [31:0]ch5_i_wb_dat,
-	output logic [3:0]ch5_i_wb_sel,
-	output logic [1:0]ch5_i_wb_tga_pstate,
+	output logic [18:0] ch5_i_wb_adr,
+	output logic [31:0] ch5_i_wb_dat,
+	output logic [3:0] ch5_i_wb_sel,
+	output logic [1:0] ch5_i_wb_tga_pstate,
 	output logic ch5_i_wb_cyc,
 	output logic ch5_i_wb_stb,
 	output logic ch5_i_wb_we,
-	input  logic [31:0]ch5_o_wb_dat,
-	input  logic ch5_o_wb_ack,
+	input logic [31:0] ch5_o_wb_dat,
+	input logic ch5_o_wb_ack,
 	// Slave ch6 — HBM channel 6
-	output logic [18:0]ch6_i_wb_adr,
-	output logic [31:0]ch6_i_wb_dat,
-	output logic [3:0]ch6_i_wb_sel,
-	output logic [1:0]ch6_i_wb_tga_pstate,
+	output logic [18:0] ch6_i_wb_adr,
+	output logic [31:0] ch6_i_wb_dat,
+	output logic [3:0] ch6_i_wb_sel,
+	output logic [1:0] ch6_i_wb_tga_pstate,
 	output logic ch6_i_wb_cyc,
 	output logic ch6_i_wb_stb,
 	output logic ch6_i_wb_we,
-	input  logic [31:0]ch6_o_wb_dat,
-	input  logic ch6_o_wb_ack,
+	input logic [31:0] ch6_o_wb_dat,
+	input logic ch6_o_wb_ack,
 	// Slave ch7 — HBM channel 7
-	output logic [18:0]ch7_i_wb_adr,
-	output logic [31:0]ch7_i_wb_dat,
-	output logic [3:0]ch7_i_wb_sel,
-	output logic [1:0]ch7_i_wb_tga_pstate,
+	output logic [18:0] ch7_i_wb_adr,
+	output logic [31:0] ch7_i_wb_dat,
+	output logic [3:0] ch7_i_wb_sel,
+	output logic [1:0] ch7_i_wb_tga_pstate,
 	output logic ch7_i_wb_cyc,
 	output logic ch7_i_wb_stb,
 	output logic ch7_i_wb_we,
-	input  logic [31:0]ch7_o_wb_dat,
-	input  logic ch7_o_wb_ack,
+	input logic [31:0] ch7_o_wb_dat,
+	input logic ch7_o_wb_ack,
 	// Slave ch8 — HBM channel 8
-	output logic [18:0]ch8_i_wb_adr,
-	output logic [31:0]ch8_i_wb_dat,
-	output logic [3:0]ch8_i_wb_sel,
-	output logic [1:0]ch8_i_wb_tga_pstate,
+	output logic [18:0] ch8_i_wb_adr,
+	output logic [31:0] ch8_i_wb_dat,
+	output logic [3:0] ch8_i_wb_sel,
+	output logic [1:0] ch8_i_wb_tga_pstate,
 	output logic ch8_i_wb_cyc,
 	output logic ch8_i_wb_stb,
 	output logic ch8_i_wb_we,
-	input  logic [31:0]ch8_o_wb_dat,
-	input  logic ch8_o_wb_ack,
+	input logic [31:0] ch8_o_wb_dat,
+	input logic ch8_o_wb_ack,
 	// Slave ch9 — HBM channel 9
-	output logic [18:0]ch9_i_wb_adr,
-	output logic [31:0]ch9_i_wb_dat,
-	output logic [3:0]ch9_i_wb_sel,
-	output logic [1:0]ch9_i_wb_tga_pstate,
+	output logic [18:0] ch9_i_wb_adr,
+	output logic [31:0] ch9_i_wb_dat,
+	output logic [3:0] ch9_i_wb_sel,
+	output logic [1:0] ch9_i_wb_tga_pstate,
 	output logic ch9_i_wb_cyc,
 	output logic ch9_i_wb_stb,
 	output logic ch9_i_wb_we,
-	input  logic [31:0]ch9_o_wb_dat,
-	input  logic ch9_o_wb_ack,
+	input logic [31:0] ch9_o_wb_dat,
+	input logic ch9_o_wb_ack,
 	// Slave ch10 — HBM channel 10
-	output logic [18:0]ch10_i_wb_adr,
-	output logic [31:0]ch10_i_wb_dat,
-	output logic [3:0]ch10_i_wb_sel,
-	output logic [1:0]ch10_i_wb_tga_pstate,
+	output logic [18:0] ch10_i_wb_adr,
+	output logic [31:0] ch10_i_wb_dat,
+	output logic [3:0] ch10_i_wb_sel,
+	output logic [1:0] ch10_i_wb_tga_pstate,
 	output logic ch10_i_wb_cyc,
 	output logic ch10_i_wb_stb,
 	output logic ch10_i_wb_we,
-	input  logic [31:0]ch10_o_wb_dat,
-	input  logic ch10_o_wb_ack,
+	input logic [31:0] ch10_o_wb_dat,
+	input logic ch10_o_wb_ack,
 	// Slave ch11 — HBM channel 11
-	output logic [18:0]ch11_i_wb_adr,
-	output logic [31:0]ch11_i_wb_dat,
-	output logic [3:0]ch11_i_wb_sel,
-	output logic [1:0]ch11_i_wb_tga_pstate,
+	output logic [18:0] ch11_i_wb_adr,
+	output logic [31:0] ch11_i_wb_dat,
+	output logic [3:0] ch11_i_wb_sel,
+	output logic [1:0] ch11_i_wb_tga_pstate,
 	output logic ch11_i_wb_cyc,
 	output logic ch11_i_wb_stb,
 	output logic ch11_i_wb_we,
-	input  logic [31:0]ch11_o_wb_dat,
-	input  logic ch11_o_wb_ack,
+	input logic [31:0] ch11_o_wb_dat,
+	input logic ch11_o_wb_ack,
 	// Slave ch12 — HBM channel 12
-	output logic [18:0]ch12_i_wb_adr,
-	output logic [31:0]ch12_i_wb_dat,
-	output logic [3:0]ch12_i_wb_sel,
-	output logic [1:0]ch12_i_wb_tga_pstate,
+	output logic [18:0] ch12_i_wb_adr,
+	output logic [31:0] ch12_i_wb_dat,
+	output logic [3:0] ch12_i_wb_sel,
+	output logic [1:0] ch12_i_wb_tga_pstate,
 	output logic ch12_i_wb_cyc,
 	output logic ch12_i_wb_stb,
 	output logic ch12_i_wb_we,
-	input  logic [31:0]ch12_o_wb_dat,
-	input  logic ch12_o_wb_ack,
+	input logic [31:0] ch12_o_wb_dat,
+	input logic ch12_o_wb_ack,
 	// Slave ch13 — HBM channel 13
-	output logic [18:0]ch13_i_wb_adr,
-	output logic [31:0]ch13_i_wb_dat,
-	output logic [3:0]ch13_i_wb_sel,
-	output logic [1:0]ch13_i_wb_tga_pstate,
+	output logic [18:0] ch13_i_wb_adr,
+	output logic [31:0] ch13_i_wb_dat,
+	output logic [3:0] ch13_i_wb_sel,
+	output logic [1:0] ch13_i_wb_tga_pstate,
 	output logic ch13_i_wb_cyc,
 	output logic ch13_i_wb_stb,
 	output logic ch13_i_wb_we,
-	input  logic [31:0]ch13_o_wb_dat,
-	input  logic ch13_o_wb_ack,
+	input logic [31:0] ch13_o_wb_dat,
+	input logic ch13_o_wb_ack,
 	// Slave ch14 — HBM channel 14
-	output logic [18:0]ch14_i_wb_adr,
-	output logic [31:0]ch14_i_wb_dat,
-	output logic [3:0]ch14_i_wb_sel,
-	output logic [1:0]ch14_i_wb_tga_pstate,
+	output logic [18:0] ch14_i_wb_adr,
+	output logic [31:0] ch14_i_wb_dat,
+	output logic [3:0] ch14_i_wb_sel,
+	output logic [1:0] ch14_i_wb_tga_pstate,
 	output logic ch14_i_wb_cyc,
 	output logic ch14_i_wb_stb,
 	output logic ch14_i_wb_we,
-	input  logic [31:0]ch14_o_wb_dat,
-	input  logic ch14_o_wb_ack,
+	input logic [31:0] ch14_o_wb_dat,
+	input logic ch14_o_wb_ack,
 	// Slave ch15 — HBM channel 15
-	output logic [18:0]ch15_i_wb_adr,
-	output logic [31:0]ch15_i_wb_dat,
-	output logic [3:0]ch15_i_wb_sel,
-	output logic [1:0]ch15_i_wb_tga_pstate,
+	output logic [18:0] ch15_i_wb_adr,
+	output logic [31:0] ch15_i_wb_dat,
+	output logic [3:0] ch15_i_wb_sel,
+	output logic [1:0] ch15_i_wb_tga_pstate,
 	output logic ch15_i_wb_cyc,
 	output logic ch15_i_wb_stb,
 	output logic ch15_i_wb_we,
-	input  logic [31:0]ch15_o_wb_dat,
-	input  logic ch15_o_wb_ack,
+	input logic [31:0] ch15_o_wb_dat,
+	input logic ch15_o_wb_ack,
 	// Master host — SoC APB host (100 MHz PCLK) [APB + wb_cdc]
-	input  logic host_pclk,
-	input  logic host_presetn,
-	input  logic [18:0]host_paddr,
-	input  logic host_psel,
-	input  logic host_penable,
-	input  logic host_pwrite,
-	input  logic [31:0]host_pwdata,
-	input  logic [3:0]host_pstrb,
-	input  logic [2:0]host_pprot,
-	output logic [31:0]host_prdata,
+	input logic host_pclk,
+	input logic host_presetn,
+	input logic [18:0] host_paddr,
+	input logic host_psel,
+	input logic host_penable,
+	input logic host_pwrite,
+	input logic [31:0] host_pwdata,
+	input logic [3:0] host_pstrb,
+	input logic [2:0] host_pprot,
+	output logic [31:0] host_prdata,
 	output logic host_pready,
 	output logic host_pslverr,
 	// Regfile center hang center sidebands
 	// Field / shadow sidebands
 	// RW register out: enable — One bit per channel
-	output logic [15:0]rg_enable,
+	output logic [15:0] rg_enable,
 	// RO status in: all_cal_done — Every enabled channel calibrated
-	input  logic ro_all_cal_done,
+	input logic ro_all_cal_done,
 	// RO status in: err_ch — First channel reporting an error
-	input  logic [3:0]ro_err_ch
+	input logic [3:0] ro_err_ch
 );
-
 	// Internal WB: fabric slave center ↔ center_regfile
-	logic [18:0]center_i_wb_adr;
-	logic [31:0]center_i_wb_dat;
-	logic [3:0]center_i_wb_sel;
+	logic [18:0] center_i_wb_adr;
+	logic [31:0] center_i_wb_dat;
+	logic [3:0] center_i_wb_sel;
 	logic center_i_wb_cyc;
 	logic center_i_wb_stb;
 	logic center_i_wb_we;
-	logic [31:0]center_o_wb_dat;
+	logic [31:0] center_o_wb_dat;
 	logic center_o_wb_ack;
-
-	//------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------
 	//  Master host — SoC APB host (100 MHz PCLK) [APB + wb_cdc]
-	//------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------
 	logic [18:0] host_fab_adr;
 	logic [31:0] host_fab_wdat;
-	logic [3:0]  host_fab_sel;
-	logic        host_fab_cyc;
-	logic        host_fab_stb;
-	logic        host_fab_we;
+	logic [3:0] host_fab_sel;
+	logic host_fab_cyc;
+	logic host_fab_stb;
+	logic host_fab_we;
 	logic [31:0] host_fab_rdat;
-	logic        host_fab_ack;
-	logic        host_src_cyc;
-	logic        host_src_stb;
-	logic        host_src_we;
+	logic host_fab_ack;
+	logic host_src_cyc;
+	logic host_src_stb;
+	logic host_src_we;
 	logic [18:0] host_src_adr;
 	logic [31:0] host_src_wdat;
-	logic [3:0]  host_src_sel;
-	logic        host_src_ack;
-	logic        host_src_err;
+	logic [3:0] host_src_sel;
+	logic host_src_ack;
+	logic host_src_err;
 	logic [31:0] host_src_rdat;
 
 	wb_apb2wb #(
@@ -243,57 +241,55 @@ module hbm_bus_cfg (
 		.PPROT_MASK(3'b000),
 		.PPROT_VAL(3'b000)
 	) u_host_apb (
-		.pclk   (host_pclk),
+		.pclk(host_pclk),
 		.presetn(host_presetn),
-		.paddr  (host_paddr),
-		.psel   (host_psel),
+		.paddr(host_paddr),
+		.psel(host_psel),
 		.penable(host_penable),
-		.pwrite (host_pwrite),
-		.pwdata (host_pwdata),
-		.pstrb  (host_pstrb),
-		.pprot  (host_pprot),
-		.prdata (host_prdata),
-		.pready (host_pready),
+		.pwrite(host_pwrite),
+		.pwdata(host_pwdata),
+		.pstrb(host_pstrb),
+		.pprot(host_pprot),
+		.prdata(host_prdata),
+		.pready(host_pready),
 		.pslverr(host_pslverr),
-		.wb_cyc (host_src_cyc),
-		.wb_stb (host_src_stb),
-		.wb_we  (host_src_we),
-		.wb_adr (host_src_adr),
-		.wb_dat (host_src_wdat),
-		.wb_sel (host_src_sel),
-		.wb_ack (host_src_ack),
-		.wb_err (host_src_err),
+		.wb_cyc(host_src_cyc),
+		.wb_stb(host_src_stb),
+		.wb_we(host_src_we),
+		.wb_adr(host_src_adr),
+		.wb_dat(host_src_wdat),
+		.wb_sel(host_src_sel),
+		.wb_ack(host_src_ack),
+		.wb_err(host_src_err),
 		.wb_rdat(host_src_rdat)
 	);
-
 	wb_cdc #(
 		.AW(19),
 		.TW(0),
 		.TIMEOUT(64)
 	) u_host_cdc (
-		.s_clk  (host_pclk),
+		.s_clk(host_pclk),
 		.s_rst_n(host_presetn),
-		.s_cyc  (host_src_cyc),
-		.s_stb  (host_src_stb),
-		.s_we   (host_src_we),
-		.s_adr  (host_src_adr),
-		.s_dat  (host_src_wdat),
-		.s_sel  (host_src_sel),
-		.s_ack  (host_src_ack),
-		.s_err  (host_src_err),
-		.s_rdat (host_src_rdat),
-		.clk    (clk),
-		.rst_n  (rst_n),
-		.m_cyc  (host_fab_cyc),
-		.m_stb  (host_fab_stb),
-		.m_we   (host_fab_we),
-		.m_adr  (host_fab_adr),
-		.m_dat  (host_fab_wdat),
-		.m_sel  (host_fab_sel),
-		.m_ack  (host_fab_ack),
-		.m_rdat (host_fab_rdat)
+		.s_cyc(host_src_cyc),
+		.s_stb(host_src_stb),
+		.s_we(host_src_we),
+		.s_adr(host_src_adr),
+		.s_dat(host_src_wdat),
+		.s_sel(host_src_sel),
+		.s_ack(host_src_ack),
+		.s_err(host_src_err),
+		.s_rdat(host_src_rdat),
+		.clk(clk),
+		.rst_n(rst_n),
+		.m_cyc(host_fab_cyc),
+		.m_stb(host_fab_stb),
+		.m_we(host_fab_we),
+		.m_adr(host_fab_adr),
+		.m_dat(host_fab_wdat),
+		.m_sel(host_fab_sel),
+		.m_ack(host_fab_ack),
+		.m_rdat(host_fab_rdat)
 	);
-
 	hbm_interconnect u_interconnect (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -467,7 +463,6 @@ module hbm_bus_cfg (
 		.ch15_o_wb_dat(ch15_o_wb_dat),
 		.ch15_o_wb_ack(ch15_o_wb_ack)
 	);
-
 	center_regfile u_center (
 		.i_clk(clk),
 		.i_rst_n(rst_n),

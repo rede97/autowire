@@ -93,9 +93,14 @@ export async function generateDef(
 	if (await writeIfChanged(outPath, sv, force)) paths.push(outPath);
 	const wrap = emitBusSystemSv(def, {
 		portAlign: ws.stylePortAlign,
-		signalAlign: ws.styleSignalAlign,
+		paramAlign: ws.styleParamAlign,
 		instPortAlign: ws.styleInstPortAlign,
 		instParamAlign: ws.styleInstParamAlign,
+		instPortDir: ws.styleInstPortDir,
+		instPortDirFormat: ws.styleInstPortDirFormat,
+		instPortWidth: ws.styleInstPortWidth,
+		signalAlign: ws.styleSignalAlign,
+		netType: ws.styleNetType,
 	});
 	if (wrap) {
 		const wrapPath = join(outDir, `${busSystemModuleName(def)}.sv`);

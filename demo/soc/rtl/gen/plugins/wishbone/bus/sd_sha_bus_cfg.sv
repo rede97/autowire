@@ -11,156 +11,154 @@
 //------------------------------------------------------------------------------
 
 module sd_sha_bus_cfg (
-	input  logic       clk,
-	input  logic       rst_n,
-	input  logic       rb_grant_en,
+	input  logic        clk,
+	input  logic        rst_n,
+	input  logic        rb_grant_en,
 	// Master eng — sd_rd_dma engine
-	input  logic [11:0]eng_o_wb_adr,
-	input  logic [31:0]eng_o_wb_dat,
-	input  logic [3:0] eng_o_wb_sel,
-	input  logic [1:0] eng_o_wb_tga_bank,
-	input  logic       eng_o_wb_cyc,
-	input  logic       eng_o_wb_stb,
-	input  logic       eng_o_wb_we,
-	output logic [31:0]eng_i_wb_dat,
-	output logic       eng_i_wb_ack,
+	input  logic [11:0] eng_o_wb_adr,
+	input  logic [31:0] eng_o_wb_dat,
+	input  logic [3:0]  eng_o_wb_sel,
+	input  logic [1:0]  eng_o_wb_tga_bank,
+	input  logic        eng_o_wb_cyc,
+	input  logic        eng_o_wb_stb,
+	input  logic        eng_o_wb_we,
+	output logic [31:0] eng_i_wb_dat,
+	output logic        eng_i_wb_ack,
 	// Slave sd — sdspi CSR
-	output logic [11:0]sd_i_wb_adr,
-	output logic [31:0]sd_i_wb_dat,
-	output logic [3:0] sd_i_wb_sel,
-	output logic       sd_i_wb_cyc,
-	output logic       sd_i_wb_stb,
-	output logic       sd_i_wb_we,
-	input  logic [31:0]sd_o_wb_dat,
-	input  logic       sd_o_wb_ack,
+	output logic [11:0] sd_i_wb_adr,
+	output logic [31:0] sd_i_wb_dat,
+	output logic [3:0]  sd_i_wb_sel,
+	output logic        sd_i_wb_cyc,
+	output logic        sd_i_wb_stb,
+	output logic        sd_i_wb_we,
+	input  logic [31:0] sd_o_wb_dat,
+	input  logic        sd_o_wb_ack,
 	// Slave dma — sd_rd_dma CSR
-	output logic [11:0]dma_i_wb_adr,
-	output logic [31:0]dma_i_wb_dat,
-	output logic [3:0] dma_i_wb_sel,
-	output logic       dma_i_wb_cyc,
-	output logic       dma_i_wb_stb,
-	output logic       dma_i_wb_we,
-	input  logic [31:0]dma_o_wb_dat,
-	input  logic       dma_o_wb_ack,
+	output logic [11:0] dma_i_wb_adr,
+	output logic [31:0] dma_i_wb_dat,
+	output logic [3:0]  dma_i_wb_sel,
+	output logic        dma_i_wb_cyc,
+	output logic        dma_i_wb_stb,
+	output logic        dma_i_wb_we,
+	input  logic [31:0] dma_o_wb_dat,
+	input  logic        dma_o_wb_ack,
 	// Cascade uplink (slave face toward parent decoder)
-	input  logic [11:0]i_wb_adr,
-	input  logic [31:0]i_wb_dat,
-	input  logic [3:0] i_wb_sel,
-	input  logic [1:0] i_wb_tga_bank,
-	input  logic       i_wb_cyc,
-	input  logic       i_wb_stb,
-	input  logic       i_wb_we,
-	output logic [31:0]o_wb_dat,
-	output logic       o_wb_ack,
+	input  logic [11:0] i_wb_adr,
+	input  logic [31:0] i_wb_dat,
+	input  logic [3:0]  i_wb_sel,
+	input  logic [1:0]  i_wb_tga_bank,
+	input  logic        i_wb_cyc,
+	input  logic        i_wb_stb,
+	input  logic        i_wb_we,
+	output logic [31:0] o_wb_dat,
+	output logic        o_wb_ack,
 	// Regfile sha256 hang sha256 sidebands
 	// Field / shadow sidebands
 	// RW register out: soft_reset — Soft reset hash core
-	output logic       rg_soft_reset,
+	output logic        rg_soft_reset,
 	// W1P write-1 pulse out: done_clear — Write 1 → pulse; glue clears sticky done
-	output logic       p_rg_done_clear,
+	output logic        p_rg_done_clear,
 	// RO status in: busy — Hash core busy
-	input  logic       ro_busy,
+	input  logic        ro_busy,
 	// RO status in: done — Sticky done (from glue)
-	input  logic       ro_done,
+	input  logic        ro_done,
 	// RO status in: hash0 — hash0
-	input  logic [31:0]ro_hash0,
+	input  logic [31:0] ro_hash0,
 	// RO status in: hash1 — hash1
-	input  logic [31:0]ro_hash1,
+	input  logic [31:0] ro_hash1,
 	// RO status in: hash2 — hash2
-	input  logic [31:0]ro_hash2,
+	input  logic [31:0] ro_hash2,
 	// RO status in: hash3 — hash3
-	input  logic [31:0]ro_hash3,
+	input  logic [31:0] ro_hash3,
 	// RO status in: hash4 — hash4
-	input  logic [31:0]ro_hash4,
+	input  logic [31:0] ro_hash4,
 	// RO status in: hash5 — hash5
-	input  logic [31:0]ro_hash5,
+	input  logic [31:0] ro_hash5,
 	// RO status in: hash6 — hash6
-	input  logic [31:0]ro_hash6,
+	input  logic [31:0] ro_hash6,
 	// RO status in: hash7 — hash7
-	input  logic [31:0]ro_hash7
+	input  logic [31:0] ro_hash7
 );
-
 	// Internal WB: fabric slave sha256 ↔ sha256_regfile
-	logic [11:0]sha256_i_wb_adr;
-	logic [31:0]sha256_i_wb_dat;
-	logic [3:0] sha256_i_wb_sel;
-	logic       sha256_i_wb_cyc;
-	logic       sha256_i_wb_stb;
-	logic       sha256_i_wb_we;
-	logic [31:0]sha256_o_wb_dat;
-	logic       sha256_o_wb_ack;
+	logic [11:0] sha256_i_wb_adr;
+	logic [31:0] sha256_i_wb_dat;
+	logic [3:0]  sha256_i_wb_sel;
+	logic        sha256_i_wb_cyc;
+	logic        sha256_i_wb_stb;
+	logic        sha256_i_wb_we;
+	logic [31:0] sha256_o_wb_dat;
+	logic        sha256_o_wb_ack;
 
 	sd_sha_interconnect u_interconnect (
-		.clk                 (clk              ),
-		.rst_n               (rst_n            ),
-		.rb_grant_en         (rb_grant_en      ),
-		.uplink_o_wb_adr     (i_wb_adr         ),
-		.uplink_o_wb_dat     (i_wb_dat         ),
-		.uplink_o_wb_sel     (i_wb_sel         ),
-		.uplink_o_wb_tga_bank(i_wb_tga_bank    ),
-		.uplink_o_wb_cyc     (i_wb_cyc         ),
-		.uplink_o_wb_stb     (i_wb_stb         ),
-		.uplink_o_wb_we      (i_wb_we          ),
-		.uplink_i_wb_dat     (o_wb_dat         ),
-		.uplink_i_wb_ack     (o_wb_ack         ),
-		.eng_o_wb_adr        (eng_o_wb_adr     ),
-		.eng_o_wb_dat        (eng_o_wb_dat     ),
-		.eng_o_wb_sel        (eng_o_wb_sel     ),
-		.eng_o_wb_tga_bank   (eng_o_wb_tga_bank),
-		.eng_o_wb_cyc        (eng_o_wb_cyc     ),
-		.eng_o_wb_stb        (eng_o_wb_stb     ),
-		.eng_o_wb_we         (eng_o_wb_we      ),
-		.eng_i_wb_dat        (eng_i_wb_dat     ),
-		.eng_i_wb_ack        (eng_i_wb_ack     ),
-		.sd_i_wb_adr         (sd_i_wb_adr      ),
-		.sd_i_wb_dat         (sd_i_wb_dat      ),
-		.sd_i_wb_sel         (sd_i_wb_sel      ),
-		.sd_i_wb_cyc         (sd_i_wb_cyc      ),
-		.sd_i_wb_stb         (sd_i_wb_stb      ),
-		.sd_i_wb_we          (sd_i_wb_we       ),
-		.sd_o_wb_dat         (sd_o_wb_dat      ),
-		.sd_o_wb_ack         (sd_o_wb_ack      ),
-		.dma_i_wb_adr        (dma_i_wb_adr     ),
-		.dma_i_wb_dat        (dma_i_wb_dat     ),
-		.dma_i_wb_sel        (dma_i_wb_sel     ),
-		.dma_i_wb_cyc        (dma_i_wb_cyc     ),
-		.dma_i_wb_stb        (dma_i_wb_stb     ),
-		.dma_i_wb_we         (dma_i_wb_we      ),
-		.dma_o_wb_dat        (dma_o_wb_dat     ),
-		.dma_o_wb_ack        (dma_o_wb_ack     ),
-		.sha256_i_wb_adr     (sha256_i_wb_adr  ),
-		.sha256_i_wb_dat     (sha256_i_wb_dat  ),
-		.sha256_i_wb_sel     (sha256_i_wb_sel  ),
-		.sha256_i_wb_cyc     (sha256_i_wb_cyc  ),
-		.sha256_i_wb_stb     (sha256_i_wb_stb  ),
-		.sha256_i_wb_we      (sha256_i_wb_we   ),
-		.sha256_o_wb_dat     (sha256_o_wb_dat  ),
-		.sha256_o_wb_ack     (sha256_o_wb_ack  )
+		.clk                 (clk              ), // i
+		.rst_n               (rst_n            ), // i
+		.rb_grant_en         (rb_grant_en      ), // i
+		.uplink_o_wb_adr     (i_wb_adr         ), // i [11:0]
+		.uplink_o_wb_dat     (i_wb_dat         ), // i [31:0]
+		.uplink_o_wb_sel     (i_wb_sel         ), // i [3:0]
+		.uplink_o_wb_tga_bank(i_wb_tga_bank    ), // i [1:0]
+		.uplink_o_wb_cyc     (i_wb_cyc         ), // i
+		.uplink_o_wb_stb     (i_wb_stb         ), // i
+		.uplink_o_wb_we      (i_wb_we          ), // i
+		.uplink_i_wb_dat     (o_wb_dat         ), // o [31:0]
+		.uplink_i_wb_ack     (o_wb_ack         ), // o
+		.eng_o_wb_adr        (eng_o_wb_adr     ), // i [11:0]
+		.eng_o_wb_dat        (eng_o_wb_dat     ), // i [31:0]
+		.eng_o_wb_sel        (eng_o_wb_sel     ), // i [3:0]
+		.eng_o_wb_tga_bank   (eng_o_wb_tga_bank), // i [1:0]
+		.eng_o_wb_cyc        (eng_o_wb_cyc     ), // i
+		.eng_o_wb_stb        (eng_o_wb_stb     ), // i
+		.eng_o_wb_we         (eng_o_wb_we      ), // i
+		.eng_i_wb_dat        (eng_i_wb_dat     ), // o [31:0]
+		.eng_i_wb_ack        (eng_i_wb_ack     ), // o
+		.sd_i_wb_adr         (sd_i_wb_adr      ), // o [11:0]
+		.sd_i_wb_dat         (sd_i_wb_dat      ), // o [31:0]
+		.sd_i_wb_sel         (sd_i_wb_sel      ), // o [3:0]
+		.sd_i_wb_cyc         (sd_i_wb_cyc      ), // o
+		.sd_i_wb_stb         (sd_i_wb_stb      ), // o
+		.sd_i_wb_we          (sd_i_wb_we       ), // o
+		.sd_o_wb_dat         (sd_o_wb_dat      ), // i [31:0]
+		.sd_o_wb_ack         (sd_o_wb_ack      ), // i
+		.dma_i_wb_adr        (dma_i_wb_adr     ), // o [11:0]
+		.dma_i_wb_dat        (dma_i_wb_dat     ), // o [31:0]
+		.dma_i_wb_sel        (dma_i_wb_sel     ), // o [3:0]
+		.dma_i_wb_cyc        (dma_i_wb_cyc     ), // o
+		.dma_i_wb_stb        (dma_i_wb_stb     ), // o
+		.dma_i_wb_we         (dma_i_wb_we      ), // o
+		.dma_o_wb_dat        (dma_o_wb_dat     ), // i [31:0]
+		.dma_o_wb_ack        (dma_o_wb_ack     ), // i
+		.sha256_i_wb_adr     (sha256_i_wb_adr  ), // o [11:0]
+		.sha256_i_wb_dat     (sha256_i_wb_dat  ), // o [31:0]
+		.sha256_i_wb_sel     (sha256_i_wb_sel  ), // o [3:0]
+		.sha256_i_wb_cyc     (sha256_i_wb_cyc  ), // o
+		.sha256_i_wb_stb     (sha256_i_wb_stb  ), // o
+		.sha256_i_wb_we      (sha256_i_wb_we   ), // o
+		.sha256_o_wb_dat     (sha256_o_wb_dat  ), // i [31:0]
+		.sha256_o_wb_ack     (sha256_o_wb_ack  )  // i
 	);
-
 	sha256_regfile u_sha256 (
-		.i_clk               (clk              ),
-		.i_rst_n             (rst_n            ),
-		.sha256_i_wb_cyc     (sha256_i_wb_cyc  ),
-		.sha256_i_wb_stb     (sha256_i_wb_stb  ),
-		.sha256_i_wb_we      (sha256_i_wb_we   ),
-		.sha256_i_wb_adr     (sha256_i_wb_adr  ),
-		.sha256_i_wb_dat     (sha256_i_wb_dat  ),
-		.sha256_i_wb_sel     (sha256_i_wb_sel  ),
-		.sha256_o_wb_ack     (sha256_o_wb_ack  ),
-		.sha256_o_wb_dat     (sha256_o_wb_dat  ),
-		.rg_soft_reset       (rg_soft_reset    ),
-		.p_rg_done_clear     (p_rg_done_clear  ),
-		.ro_busy             (ro_busy          ),
-		.ro_done             (ro_done          ),
-		.ro_hash0            (ro_hash0         ),
-		.ro_hash1            (ro_hash1         ),
-		.ro_hash2            (ro_hash2         ),
-		.ro_hash3            (ro_hash3         ),
-		.ro_hash4            (ro_hash4         ),
-		.ro_hash5            (ro_hash5         ),
-		.ro_hash6            (ro_hash6         ),
-		.ro_hash7            (ro_hash7         )
+		.i_clk               (clk              ), // i
+		.i_rst_n             (rst_n            ), // i
+		.sha256_i_wb_cyc     (sha256_i_wb_cyc  ), // i
+		.sha256_i_wb_stb     (sha256_i_wb_stb  ), // i
+		.sha256_i_wb_we      (sha256_i_wb_we   ), // i
+		.sha256_i_wb_adr     (sha256_i_wb_adr  ), // i [31:0]
+		.sha256_i_wb_dat     (sha256_i_wb_dat  ), // i [31:0]
+		.sha256_i_wb_sel     (sha256_i_wb_sel  ), // i [3:0]
+		.sha256_o_wb_ack     (sha256_o_wb_ack  ), // o
+		.sha256_o_wb_dat     (sha256_o_wb_dat  ), // o [31:0]
+		.rg_soft_reset       (rg_soft_reset    ), // o
+		.p_rg_done_clear     (p_rg_done_clear  ), // o
+		.ro_busy             (ro_busy          ), // i
+		.ro_done             (ro_done          ), // i
+		.ro_hash0            (ro_hash0         ), // i [31:0]
+		.ro_hash1            (ro_hash1         ), // i [31:0]
+		.ro_hash2            (ro_hash2         ), // i [31:0]
+		.ro_hash3            (ro_hash3         ), // i [31:0]
+		.ro_hash4            (ro_hash4         ), // i [31:0]
+		.ro_hash5            (ro_hash5         ), // i [31:0]
+		.ro_hash6            (ro_hash6         ), // i [31:0]
+		.ro_hash7            (ro_hash7         )  // i [31:0]
 	);
 
 endmodule

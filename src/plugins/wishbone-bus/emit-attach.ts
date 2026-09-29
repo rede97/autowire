@@ -1,6 +1,13 @@
 // Type-A wrapper: fabric + attached wishbone-regfile leaves.
 // Connect HTML instantiates this module instead of the attached *_regfile insts.
 
+import {
+	type PrintStyle,
+	printSv,
+	type RenderInst,
+	type RenderModule,
+	type RenderSignal,
+} from "../../core/printer.ts";
 import { collectPorts, type PortDecl } from "../wishbone-regfile/emit.ts";
 import { layoutRegfile } from "../wishbone-regfile/layout.ts";
 import {
@@ -20,22 +27,18 @@ import { attachedSlaves } from "./emit-map.ts";
 import {
 	bridgedFabricNet,
 	bridgedMasters,
-	emitMasterBlocks,
 	isBridgedFabricPort,
 	masterFacePorts,
-	masterInstPairs,
-	masterParamPairs,
+	masterModel,
 	masterSummary,
 } from "./emit-master.ts";
 import { tagPlan, tagPort } from "./tag.ts";
 
-/** The [workspace.style] switches this wrapper follows. */
-export type WrapperStyle = {
-	portAlign: boolean;
-	signalAlign: boolean;
-	instPortAlign: boolean;
-	/** [style] inst_param_align: parameter overrides share the port columns. */
-	instParamAlign: boolean;
+/** The [workspace.style] switches this wrapper follows (PrintStyle) plus the
+ *  net keyword: the plugin's own modules are all logic, so "auto" inherits
+ *  logic here; "wire" writes wire. */
+export type WrapperStyle = PrintStyle & {
+	netType: "logic" | "wire" | "auto";
 };
 
 function hex(n: number): string {
@@ -153,57 +156,6 @@ function leafWbFromFabric(
 	return `${table}_${suffix}`;
 }
 
-function packedPad(p: string, width: number): string {
-	return (p.length > 0 ? p : "").padEnd(width);
-}
-
-function svPort(
-	dir: "input" | "output",
-	packed: string,
-	name: string,
-	unpacked: string | undefined,
-	packWidth: number,
-): string {
-	const unp = unpacked ? ` ${unpacked}` : "";
-	return `\t${dir.padEnd(6)} logic ${packedPad(packed, packWidth)}${name}${unp}`;
-}
-
-function svNet(
-	packed: string,
-	name: string,
-	unpacked: string | undefined,
-	packWidth: number,
-): string {
-	const unp = unpacked ? ` ${unpacked}` : "";
-	return `\tlogic ${packedPad(packed, packWidth)}${name}${unp};`;
-}
-
-function formatPortList(
-	ports: Array<{
-		dir: "input" | "output";
-		packed: string;
-		name: string;
-		unpacked?: string;
-		comment?: string;
-	}>,
-	align: boolean,
-): string[] {
-	const packWidth = align
-		? Math.max(0, ...ports.map((p) => p.packed.length))
-		: 0;
-	const lines: string[] = [];
-	for (const [i, p] of ports.entries()) {
-		if (p.comment) {
-			for (const c of p.comment.split("\n")) {
-				lines.push(`\t// ${c}`);
-			}
-		}
-		const body = svPort(p.dir, p.packed, p.name, p.unpacked, packWidth);
-		lines.push(i === ports.length - 1 ? body : `${body},`);
-	}
-	return lines;
-}
-
 function sidebandPorts(slave: WbSlave): PortDecl[] {
 	const rf = slave.regfile;
 	if (!rf) return [];
@@ -264,43 +216,16 @@ function wrapperPorts(def: BusDef): Array<{
 	return ports;
 }
 
-function instConns(
-	pairs: Array<{ port: string; net: string }>,
-	portPad: number,
-	netPad: number,
-): string[] {
-	const lines: string[] = [];
-	for (const [i, x] of pairs.entries()) {
-		const comma = i === pairs.length - 1 ? "" : ",";
-		lines.push(
-			`\t\t.${x.port.padEnd(portPad)}(${x.net.padEnd(netPad)})${comma}`,
-		);
-	}
-	return lines;
-}
-
-function maxPort(names: string[]): number {
-	return Math.max(0, ...names.map((n) => n.length));
-}
-
-function fabricInst(def: BusDef, portPad: number, netPad: number): string[] {
-	const fabric = listFabricPorts(def);
-	const ic = busModuleName(def);
-	const pairs = fabric.map((p) => ({
-		port: p.name,
-		net: bridgedFabricNet(def, p.name) ?? cascadeNet(p.name, def),
-	}));
-	return [
-		`\t${ic} u_${busModuleKind(def)} (`,
-		...instConns(pairs, portPad, netPad),
-		"\t);",
-	];
-}
-
 function leafPairs(
 	def: BusDef,
 	slave: WbSlave,
-): Array<{ port: string; net: string }> {
+): Array<{
+	port: string;
+	net: string;
+	dir: string;
+	packed: string;
+	unpacked: string;
+}> {
 	const rf = slave.regfile;
 	if (!rf) return [];
 	const laid = layoutRegfile(rf);
@@ -309,14 +234,21 @@ function leafPairs(
 	const wbPorts = listFabricPorts(def).filter((p) =>
 		isSlaveWbPort(p.name, slave.name),
 	);
-	const pairs: Array<{ port: string; net: string }> = [];
+	const pairs: Array<{
+		port: string;
+		net: string;
+		dir: string;
+		packed: string;
+		unpacked: string;
+	}> = [];
 	for (const p of ports) {
+		const meta = { dir: p.dir, packed: p.packed, unpacked: p.unpacked ?? "" };
 		if (p.name === "i_clk") {
-			pairs.push({ port: p.name, net: "clk" });
+			pairs.push({ port: p.name, net: "clk", ...meta });
 			continue;
 		}
 		if (p.name === "i_rst_n") {
-			pairs.push({ port: p.name, net: "rst_n" });
+			pairs.push({ port: p.name, net: "rst_n", ...meta });
 			continue;
 		}
 		if (isLeafWb(p.name, table)) {
@@ -328,53 +260,76 @@ function leafPairs(
 					`wishbone-bus: wrapper ${slave.name} missing fabric port for ${p.name}`,
 				);
 			}
-			pairs.push({ port: p.name, net: fabric.name });
+			pairs.push({ port: p.name, net: fabric.name, ...meta });
 			continue;
 		}
 		pairs.push({
 			port: p.name,
 			net: promoteName(slave.name, table, p.name),
+			...meta,
 		});
 	}
 	return pairs;
 }
 
-function leafInst(
-	def: BusDef,
-	slave: WbSlave,
-	portPad: number,
-	netPad: number,
-): string[] {
+function leafInst(def: BusDef, slave: WbSlave): RenderInst | null {
 	const rf = slave.regfile;
-	if (!rf) return [];
-	const mod = `${rf.name.toLowerCase()}_regfile`;
-	return [
-		`\t${mod} u_${slave.name} (`,
-		...instConns(leafPairs(def, slave), portPad, netPad),
-		"\t);",
-	];
+	if (!rf) return null;
+	return {
+		id: `u_${slave.name}`,
+		mod: `${rf.name.toLowerCase()}_regfile`,
+		params: [],
+		connects: leafPairs(def, slave).map((x) => ({
+			port: x.port,
+			to: x.net,
+			part: "",
+			type: "",
+			dir: x.dir,
+			portPacked: x.packed,
+			portUnpacked: x.unpacked,
+		})),
+	};
 }
 
-function internalWbNets(def: BusDef, align: boolean): string[] {
-	const wb = attachedSlaves(def).flatMap((s) =>
-		listFabricPorts(def).filter((p) => isSlaveWbPort(p.name, s.name)),
-	);
-	const packWidth = align ? Math.max(0, ...wb.map((p) => p.packed.length)) : 0;
-	const lines: string[] = [];
+/** Internal WB nets: fabric slave face ↔ attached regfile leaf. */
+function internalWbSignals(def: BusDef, nt: string): RenderSignal[] {
+	const out: RenderSignal[] = [];
 	for (const s of attachedSlaves(def)) {
-		const wb: FabricPort[] = listFabricPorts(def).filter((p) =>
+		const wb = listFabricPorts(def).filter((p) =>
 			isSlaveWbPort(p.name, s.name),
 		);
-		if (wb.length === 0) continue;
-		lines.push(
-			`\t// Internal WB: fabric slave ${s.name} ↔ ${s.regfile?.name}_regfile`,
-		);
-		for (const p of wb) {
-			lines.push(svNet(p.packed, p.name, undefined, packWidth));
+		for (const [i, p] of wb.entries()) {
+			out.push({
+				name: p.name,
+				packed: p.packed,
+				unpacked: "",
+				nettype: nt,
+				comment:
+					i === 0
+						? `Internal WB: fabric slave ${s.name} ↔ ${s.regfile?.name}_regfile`
+						: undefined,
+			});
 		}
-		lines.push("");
 	}
-	return lines;
+	return out;
+}
+
+/** Fabric instance: every fabric port onto its wrapper net. */
+function fabricInst(def: BusDef): RenderInst {
+	return {
+		id: `u_${busModuleKind(def)}`,
+		mod: busModuleName(def),
+		params: [],
+		connects: listFabricPorts(def).map((p) => ({
+			port: p.name,
+			to: bridgedFabricNet(def, p.name) ?? cascadeNet(p.name, def),
+			part: "",
+			type: "",
+			dir: p.dir,
+			portPacked: p.packed,
+			portUnpacked: "",
+		})),
+	};
 }
 
 export function emitBusSystemSv(
@@ -387,16 +342,18 @@ export function emitBusSystemSv(
 	if (attached.length === 0 && !cascade && !bridged) return null;
 	const mod = busSystemModuleName(def);
 	const ic = busModuleName(def);
-	const lines: string[] = [
+	// The plugin's own modules are all logic: auto inherits logic here.
+	const nt = style.netType === "wire" ? "wire" : "logic";
+	const header: string[] = [
 		`// Generated by autowire plugin wishbone (system ${def.name}). Do not edit.`,
 		"// Type-A wrapper: fabric + attached wishbone-regfile leaves (analysis → RtlIndex).",
 	];
 	if (cascade) {
-		lines.push(
+		header.push(
 			'// Cascade face Master("uplink") is remapped to i_wb_* / o_wb_* (parent SlaveBus).',
 		);
 	}
-	lines.push(
+	header.push(
 		"//",
 		"//------------------------------------------------------------------------------",
 		`//  Module: ${mod}`,
@@ -407,72 +364,46 @@ export function emitBusSystemSv(
 	for (const s of attached) {
 		const rf = s.regfile;
 		if (!rf) continue;
-		lines.push(
+		header.push(
 			`//    ${s.name}  ${rf.name}_regfile  base=0x${hex(s.base)}  mask=0x${hex(s.mask)}`,
 		);
 	}
 	if (bridged) {
-		lines.push("//  Bridged masters (bridge / wb_cdc before the fabric):");
-		lines.push(...masterSummary(def));
+		header.push("//  Bridged masters (bridge / wb_cdc before the fabric):");
+		header.push(...masterSummary(def));
 	}
-	lines.push(
+	header.push(
 		"//------------------------------------------------------------------------------",
 		"",
 	);
-	lines.push(`module ${mod} (`);
-	lines.push(...formatPortList(wrapperPorts(def), style.portAlign));
-	lines.push(");", "");
-	lines.push(...internalWbNets(def, style.signalAlign));
-	// inst_port_align: one column width for every instance in the file, the
-	// same rule the printer uses for connect output. Bridges, the fabric, and
-	// attached leaves share it.
-	const instPairs = [
-		...masterInstPairs(def),
-		...listFabricPorts(def).map((p) => ({
-			port: p.name,
-			net: bridgedFabricNet(def, p.name) ?? cascadeNet(p.name, def),
+	const masters = masterModel(def, nt);
+	const m: RenderModule = {
+		name: mod,
+		header,
+		params: [],
+		imports: [],
+		localparams: [],
+		ports: wrapperPorts(def).map((p) => ({
+			name: p.name,
+			dir: p.dir,
+			packed: p.packed,
+			unpacked: p.unpacked ?? "",
+			nettype: nt,
+			interface: "",
+			modport: "",
+			comment: p.comment,
 		})),
-		...attached.flatMap((s) => leafPairs(def, s)),
-	];
-	const params = masterParamPairs(def);
-	const portPad = style.instPortAlign
-		? maxPort(instPairs.map((p) => p.port))
-		: 0;
-	const netPad = style.instPortAlign ? maxPort(instPairs.map((p) => p.net)) : 0;
-	// inst_param_align shares the port columns only when both are on, matching
-	// the printer: the column is the longest of port names and param names.
-	const namePad = Math.max(portPad, maxPort(params.map((p) => p.name)));
-	const valuePad = Math.max(netPad, maxPort(params.map((p) => p.value)));
-	const sharedPort = style.instPortAlign
-		? style.instParamAlign
-			? namePad
-			: portPad
-		: 0;
-	const sharedNet = style.instPortAlign
-		? style.instParamAlign
-			? valuePad
-			: netPad
-		: 0;
-	lines.push(
-		...emitMasterBlocks(def, {
-			portPad: sharedPort,
-			netPad: sharedNet,
-			paramPad: style.instParamAlign
-				? style.instPortAlign
-					? namePad
-					: maxPort(params.map((p) => p.name))
-				: 0,
-			paramValuePad: style.instParamAlign
-				? style.instPortAlign
-					? valuePad
-					: maxPort(params.map((p) => p.value))
-				: 0,
-		}),
-	);
-	lines.push(...fabricInst(def, sharedPort, sharedNet), "");
-	for (const s of attached) {
-		lines.push(...leafInst(def, s, sharedPort, sharedNet), "");
-	}
-	lines.push("endmodule", "");
-	return lines.join("\n");
+		signals: [...internalWbSignals(def, nt), ...masters.signals],
+		insts: [
+			...masters.insts,
+			fabricInst(def),
+			...attached.flatMap((s) => {
+				const inst = leafInst(def, s);
+				return inst ? [inst] : [];
+			}),
+		],
+		assigns: masters.assigns,
+		children: [],
+	};
+	return printSv(m, mod, style);
 }

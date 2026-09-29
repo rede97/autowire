@@ -35,6 +35,7 @@ const ALIGNED: WrapperStyle = {
 	signalAlign: true,
 	instPortAlign: true,
 	instParamAlign: true,
+	netType: "logic",
 };
 
 describe("wishbone-bus", () => {

@@ -13,103 +13,100 @@
 //------------------------------------------------------------------------------
 
 module hbm_ch_bus_cfg (
-	input  logic clk,
-	input  logic rst_n,
+	input logic clk,
+	input logic rst_n,
 	// Cascade uplink (slave face toward parent decoder)
-	input  logic [11:0]i_wb_adr,
-	input  logic [31:0]i_wb_dat,
-	input  logic [3:0]i_wb_sel,
-	input  logic [1:0]i_wb_tga_pstate,
-	input  logic i_wb_cyc,
-	input  logic i_wb_stb,
-	input  logic i_wb_we,
-	output logic [31:0]o_wb_dat,
+	input logic [11:0] i_wb_adr,
+	input logic [31:0] i_wb_dat,
+	input logic [3:0] i_wb_sel,
+	input logic [1:0] i_wb_tga_pstate,
+	input logic i_wb_cyc,
+	input logic i_wb_stb,
+	input logic i_wb_we,
+	output logic [31:0] o_wb_dat,
 	output logic o_wb_ack,
 	// Regfile aword hang aword sidebands
 	// Field / shadow sidebands
 	// RO status in: cal_done — Calibration done
-	input  logic ro_cal_done,
+	input logic ro_cal_done,
 	// RO status in: err_code — Last error code
-	input  logic [7:0]ro_err_code,
+	input logic [7:0] ro_err_code,
 	// RW register out: trcd — RAS-to-CAS delay (clk)
-	output logic [7:0]rg_trcd,
+	output logic [7:0] rg_trcd,
 	// Address-tag select: pstate (4 copies, TGA 1:0)
-	output logic [1:0]o_pstate_sel,
+	output logic [1:0] o_pstate_sel,
 	// Sideband mux select: pstate (not the address tag)
-	input  logic [1:0]i_pstate_mux_sel,
+	input logic [1:0] i_pstate_mux_sel,
 	// RW register out: trp — Row precharge (clk)
-	output logic [7:0]rg_trp,
+	output logic [7:0] rg_trp,
 	// RW register out: ca_drive — CA driver strength
-	output logic [3:0]rg_ca_drive,
+	output logic [3:0] rg_ca_drive,
 	// Regfile dword hang dword0 sidebands
 	// Field / shadow sidebands
 	// RO status in: train_done — Read training done
-	input  logic dword0_ro_train_done,
+	input logic dword0_ro_train_done,
 	// RO status in: eye_width — Measured eye width
-	input  logic [7:0]dword0_ro_eye_width,
+	input logic [7:0] dword0_ro_eye_width,
 	// RO status in: train_pass_n — 0 = lane passed read training
-	input  logic dword0_ro_train_pass_n,
+	input logic dword0_ro_train_pass_n,
 	// RW register out: level — VREF DAC code
-	output logic [6:0]dword0_rg_level,
+	output logic [6:0] dword0_rg_level,
 	// Address-tag select: pstate (4 copies, TGA 1:0)
-	output logic [1:0]dword0_o_pstate_sel,
+	output logic [1:0] dword0_o_pstate_sel,
 	// Sideband mux select: pstate (not the address tag)
-	input  logic [1:0]dword0_i_pstate_mux_sel,
+	input logic [1:0] dword0_i_pstate_mux_sel,
 	// RW register out: tap0 — DFE tap 0
-	output logic [4:0]dword0_rg_tap0,
+	output logic [4:0] dword0_rg_tap0,
 	// RW register out: tap1 — DFE tap 1
-	output logic [4:0]dword0_rg_tap1,
+	output logic [4:0] dword0_rg_tap1,
 	// Regfile dword hang dword1 sidebands
 	// Field / shadow sidebands
 	// RO status in: train_done — Read training done
-	input  logic dword1_ro_train_done,
+	input logic dword1_ro_train_done,
 	// RO status in: eye_width — Measured eye width
-	input  logic [7:0]dword1_ro_eye_width,
+	input logic [7:0] dword1_ro_eye_width,
 	// RO status in: train_pass_n — 0 = lane passed read training
-	input  logic dword1_ro_train_pass_n,
+	input logic dword1_ro_train_pass_n,
 	// RW register out: level — VREF DAC code
-	output logic [6:0]dword1_rg_level,
+	output logic [6:0] dword1_rg_level,
 	// Address-tag select: pstate (4 copies, TGA 1:0)
-	output logic [1:0]dword1_o_pstate_sel,
+	output logic [1:0] dword1_o_pstate_sel,
 	// Sideband mux select: pstate (not the address tag)
-	input  logic [1:0]dword1_i_pstate_mux_sel,
+	input logic [1:0] dword1_i_pstate_mux_sel,
 	// RW register out: tap0 — DFE tap 0
-	output logic [4:0]dword1_rg_tap0,
+	output logic [4:0] dword1_rg_tap0,
 	// RW register out: tap1 — DFE tap 1
-	output logic [4:0]dword1_rg_tap1
+	output logic [4:0] dword1_rg_tap1
 );
-
 	// Internal WB: fabric slave aword ↔ aword_regfile
-	logic [11:0]aword_i_wb_adr;
-	logic [31:0]aword_i_wb_dat;
-	logic [3:0]aword_i_wb_sel;
-	logic [1:0]aword_i_wb_tga_pstate;
+	logic [11:0] aword_i_wb_adr;
+	logic [31:0] aword_i_wb_dat;
+	logic [3:0] aword_i_wb_sel;
+	logic [1:0] aword_i_wb_tga_pstate;
 	logic aword_i_wb_cyc;
 	logic aword_i_wb_stb;
 	logic aword_i_wb_we;
-	logic [31:0]aword_o_wb_dat;
+	logic [31:0] aword_o_wb_dat;
 	logic aword_o_wb_ack;
-
 	// Internal WB: fabric slave dword0 ↔ dword_regfile
-	logic [11:0]dword0_i_wb_adr;
-	logic [31:0]dword0_i_wb_dat;
-	logic [3:0]dword0_i_wb_sel;
-	logic [1:0]dword0_i_wb_tga_pstate;
+	logic [11:0] dword0_i_wb_adr;
+	logic [31:0] dword0_i_wb_dat;
+	logic [3:0] dword0_i_wb_sel;
+	logic [1:0] dword0_i_wb_tga_pstate;
 	logic dword0_i_wb_cyc;
 	logic dword0_i_wb_stb;
 	logic dword0_i_wb_we;
-	logic [31:0]dword0_o_wb_dat;
+	logic [31:0] dword0_o_wb_dat;
 	logic dword0_o_wb_ack;
-
 	// Internal WB: fabric slave dword1 ↔ dword_regfile
-	logic [11:0]dword1_i_wb_adr;
-	logic [31:0]dword1_i_wb_dat;
-	logic [3:0]dword1_i_wb_sel;
-	logic [1:0]dword1_i_wb_tga_pstate;
+	logic [11:0] dword1_i_wb_adr;
+	logic [31:0] dword1_i_wb_dat;
+	logic [3:0] dword1_i_wb_sel;
+	logic [1:0] dword1_i_wb_tga_pstate;
 	logic dword1_i_wb_cyc;
 	logic dword1_i_wb_stb;
 	logic dword1_i_wb_we;
-	logic [31:0]dword1_o_wb_dat;
+	logic [31:0] dword1_o_wb_dat;
 	logic dword1_o_wb_ack;
 
 	hbm_ch_decoder u_decoder (
@@ -152,7 +149,6 @@ module hbm_ch_bus_cfg (
 		.dword1_o_wb_dat(dword1_o_wb_dat),
 		.dword1_o_wb_ack(dword1_o_wb_ack)
 	);
-
 	aword_regfile u_aword (
 		.i_clk(clk),
 		.i_rst_n(rst_n),
@@ -173,7 +169,6 @@ module hbm_ch_bus_cfg (
 		.rg_trp(rg_trp),
 		.rg_ca_drive(rg_ca_drive)
 	);
-
 	dword_regfile u_dword0 (
 		.i_clk(clk),
 		.i_rst_n(rst_n),
@@ -195,7 +190,6 @@ module hbm_ch_bus_cfg (
 		.rg_tap0(dword0_rg_tap0),
 		.rg_tap1(dword0_rg_tap1)
 	);
-
 	dword_regfile u_dword1 (
 		.i_clk(clk),
 		.i_rst_n(rst_n),

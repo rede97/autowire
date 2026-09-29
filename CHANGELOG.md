@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.2.7] - 2026-09-29
+
+- wishbone `<bus>_bus_cfg` wrapper 改经 connect 的 render IR + 共享 printer 生成：插件构造 ports/signals/insts 模型交给 `printSv`，删掉手工对齐的平行实现（含正则反解析已生成文本的 helper）。生成时传入**全部** `[workspace.style]`（对齐、端口方向/位宽注释、`net_type`），wrapper 与 connect 单元输出同款格式。四个 demo wrapper 重新生成；桥接实例的端口事实（dir/宽度）来自插件自有模板表。printer 的 RenderModule 增加可选 `header` / 端口与信号 `comment` / `assigns` 字段（connect 引擎不写，插件用）。
+
 ## [2.2.6] - 2026-09-29
 
 - 发布产物增加 `hdxml-windows-x64.zip`：`windows-2022` 上 MSVC 目标的 `hdxml.exe`。

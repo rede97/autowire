@@ -29,6 +29,7 @@ const ALIGNED: WrapperStyle = {
 	signalAlign: true,
 	instPortAlign: true,
 	instParamAlign: true,
+	netType: "logic",
 };
 
 function mb(tagWidth?: number) {

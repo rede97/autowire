@@ -12,163 +12,161 @@
 //------------------------------------------------------------------------------
 
 module soc_wb_bus_cfg (
-	input  logic       clk,
-	input  logic       rst_n,
-	input  logic       rb_grant_en,
+	input  logic        clk,
+	input  logic        rst_n,
+	input  logic        rb_grant_en,
 	// Master cpu — picorv32_wb
-	input  logic [31:0]cpu_o_wb_adr,
-	input  logic [31:0]cpu_o_wb_dat,
-	input  logic [3:0] cpu_o_wb_sel,
-	input  logic       cpu_o_wb_cyc,
-	input  logic       cpu_o_wb_stb,
-	input  logic       cpu_o_wb_we,
-	output logic [31:0]cpu_i_wb_dat,
-	output logic       cpu_i_wb_ack,
+	input  logic [31:0] cpu_o_wb_adr,
+	input  logic [31:0] cpu_o_wb_dat,
+	input  logic [3:0]  cpu_o_wb_sel,
+	input  logic        cpu_o_wb_cyc,
+	input  logic        cpu_o_wb_stb,
+	input  logic        cpu_o_wb_we,
+	output logic [31:0] cpu_i_wb_dat,
+	output logic        cpu_i_wb_ack,
 	// Slave sram — 64 KiB SRAM
-	output logic [31:0]sram_i_wb_adr,
-	output logic [31:0]sram_i_wb_dat,
-	output logic [3:0] sram_i_wb_sel,
-	output logic       sram_i_wb_cyc,
-	output logic       sram_i_wb_stb,
-	output logic       sram_i_wb_we,
-	input  logic [31:0]sram_o_wb_dat,
-	input  logic       sram_o_wb_ack,
+	output logic [31:0] sram_i_wb_adr,
+	output logic [31:0] sram_i_wb_dat,
+	output logic [3:0]  sram_i_wb_sel,
+	output logic        sram_i_wb_cyc,
+	output logic        sram_i_wb_stb,
+	output logic        sram_i_wb_we,
+	input  logic [31:0] sram_o_wb_dat,
+	input  logic        sram_o_wb_ack,
 	// Slave flash_xip — SPI flash XIP
-	output logic [31:0]flash_xip_i_wb_adr,
-	output logic [31:0]flash_xip_i_wb_dat,
-	output logic [3:0] flash_xip_i_wb_sel,
-	output logic       flash_xip_i_wb_cyc,
-	output logic       flash_xip_i_wb_stb,
-	output logic       flash_xip_i_wb_we,
-	input  logic [31:0]flash_xip_o_wb_dat,
-	input  logic       flash_xip_o_wb_ack,
+	output logic [31:0] flash_xip_i_wb_adr,
+	output logic [31:0] flash_xip_i_wb_dat,
+	output logic [3:0]  flash_xip_i_wb_sel,
+	output logic        flash_xip_i_wb_cyc,
+	output logic        flash_xip_i_wb_stb,
+	output logic        flash_xip_i_wb_we,
+	input  logic [31:0] flash_xip_o_wb_dat,
+	input  logic        flash_xip_o_wb_ack,
 	// Slave flash_cfg — SPI flash cfg
-	output logic [31:0]flash_cfg_i_wb_adr,
-	output logic [31:0]flash_cfg_i_wb_dat,
-	output logic [3:0] flash_cfg_i_wb_sel,
-	output logic       flash_cfg_i_wb_cyc,
-	output logic       flash_cfg_i_wb_stb,
-	output logic       flash_cfg_i_wb_we,
-	input  logic [31:0]flash_cfg_o_wb_dat,
-	input  logic       flash_cfg_o_wb_ack,
+	output logic [31:0] flash_cfg_i_wb_adr,
+	output logic [31:0] flash_cfg_i_wb_dat,
+	output logic [3:0]  flash_cfg_i_wb_sel,
+	output logic        flash_cfg_i_wb_cyc,
+	output logic        flash_cfg_i_wb_stb,
+	output logic        flash_cfg_i_wb_we,
+	input  logic [31:0] flash_cfg_o_wb_dat,
+	input  logic        flash_cfg_o_wb_ack,
 	// Slave uart — simpleuart
-	output logic [31:0]uart_i_wb_adr,
-	output logic [31:0]uart_i_wb_dat,
-	output logic [3:0] uart_i_wb_sel,
-	output logic       uart_i_wb_cyc,
-	output logic       uart_i_wb_stb,
-	output logic       uart_i_wb_we,
-	input  logic [31:0]uart_o_wb_dat,
-	input  logic       uart_o_wb_ack,
+	output logic [31:0] uart_i_wb_adr,
+	output logic [31:0] uart_i_wb_dat,
+	output logic [3:0]  uart_i_wb_sel,
+	output logic        uart_i_wb_cyc,
+	output logic        uart_i_wb_stb,
+	output logic        uart_i_wb_we,
+	input  logic [31:0] uart_o_wb_dat,
+	input  logic        uart_o_wb_ack,
 	// Slave testout — test output
-	output logic [31:0]testout_i_wb_adr,
-	output logic [31:0]testout_i_wb_dat,
-	output logic [3:0] testout_i_wb_sel,
-	output logic       testout_i_wb_cyc,
-	output logic       testout_i_wb_stb,
-	output logic       testout_i_wb_we,
-	input  logic [31:0]testout_o_wb_dat,
-	input  logic       testout_o_wb_ack,
+	output logic [31:0] testout_i_wb_adr,
+	output logic [31:0] testout_i_wb_dat,
+	output logic [3:0]  testout_i_wb_sel,
+	output logic        testout_i_wb_cyc,
+	output logic        testout_i_wb_stb,
+	output logic        testout_i_wb_we,
+	input  logic [31:0] testout_o_wb_dat,
+	input  logic        testout_o_wb_ack,
 	// Slave ch0 — SD + DMA + SHA256 channel interconnect (uplink + engine)
-	output logic [31:0]ch0_i_wb_adr,
-	output logic [31:0]ch0_i_wb_dat,
-	output logic [3:0] ch0_i_wb_sel,
-	output logic [1:0] ch0_i_wb_tga_bank,
-	output logic       ch0_i_wb_cyc,
-	output logic       ch0_i_wb_stb,
-	output logic       ch0_i_wb_we,
-	input  logic [31:0]ch0_o_wb_dat,
-	input  logic       ch0_o_wb_ack,
+	output logic [31:0] ch0_i_wb_adr,
+	output logic [31:0] ch0_i_wb_dat,
+	output logic [3:0]  ch0_i_wb_sel,
+	output logic [1:0]  ch0_i_wb_tga_bank,
+	output logic        ch0_i_wb_cyc,
+	output logic        ch0_i_wb_stb,
+	output logic        ch0_i_wb_we,
+	input  logic [31:0] ch0_o_wb_dat,
+	input  logic        ch0_o_wb_ack,
 	// Slave ch1 — SD + DMA + SHA256 channel interconnect (uplink + engine)
-	output logic [31:0]ch1_i_wb_adr,
-	output logic [31:0]ch1_i_wb_dat,
-	output logic [3:0] ch1_i_wb_sel,
-	output logic [1:0] ch1_i_wb_tga_bank,
-	output logic       ch1_i_wb_cyc,
-	output logic       ch1_i_wb_stb,
-	output logic       ch1_i_wb_we,
-	input  logic [31:0]ch1_o_wb_dat,
-	input  logic       ch1_o_wb_ack,
+	output logic [31:0] ch1_i_wb_adr,
+	output logic [31:0] ch1_i_wb_dat,
+	output logic [3:0]  ch1_i_wb_sel,
+	output logic [1:0]  ch1_i_wb_tga_bank,
+	output logic        ch1_i_wb_cyc,
+	output logic        ch1_i_wb_stb,
+	output logic        ch1_i_wb_we,
+	input  logic [31:0] ch1_o_wb_dat,
+	input  logic        ch1_o_wb_ack,
 	// Master dbg — External JTAG smoke (TDR behind demo_tap USER) [JTAG TDR (DFT TAP / SIB client) + wb_cdc]
-	input  logic       dbg_tck,
-	input  logic       dbg_trst_n,
-	input  logic       dbg_sel,
-	input  logic       dbg_capture_dr,
-	input  logic       dbg_shift_dr,
-	input  logic       dbg_update_dr,
-	input  logic       dbg_tdi,
-	output logic       dbg_tdo,
-	input  logic       dbg_en,
+	input  logic        dbg_tck,
+	input  logic        dbg_trst_n,
+	input  logic        dbg_sel,
+	input  logic        dbg_capture_dr,
+	input  logic        dbg_shift_dr,
+	input  logic        dbg_update_dr,
+	input  logic        dbg_tdi,
+	output logic        dbg_tdo,
+	input  logic        dbg_en,
 	// Regfile smoke hang smoke sidebands
 	// Field / shadow sidebands
 	// RO status in: busy — Busy (tied in HTML)
-	input  logic       ro_busy,
+	input  logic        ro_busy,
 	// RO status in: code — Status code
-	input  logic [7:0] ro_code,
+	input  logic [7:0]  ro_code,
 	// RW register out: enable — Enable
-	output logic       rg_enable,
+	output logic        rg_enable,
 	// RW register out: mode — Mode
-	output logic [2:0] rg_mode,
+	output logic [2:0]  rg_mode,
 	// RWW register out: capture — Capture
-	output logic [15:0]rg_capture,
+	output logic [15:0] rg_capture,
 	// RWW hardware write strobe: capture — Capture
-	input  logic       rg_capture_strb,
+	input  logic        rg_capture_strb,
 	// RWW hardware write data: capture — Capture
-	input  logic [15:0]rg_capture_hwdata,
+	input  logic [15:0] rg_capture_hwdata,
 	// RWE external window read data in: data — External data
-	input  logic [31:0]ext_data,
+	input  logic [31:0] ext_data,
 	// RWE external window write data: data — External data
-	output logic [31:0]ext_data_wdata,
+	output logic [31:0] ext_data_wdata,
 	// RWE external window write enable: data — External data
-	output logic       ext_data_wren,
+	output logic        ext_data_wren,
 	// RWE external window write byte strobes (wren-qualified): data — External data
-	output logic [3:0] ext_data_wstrb,
+	output logic [3:0]  ext_data_wstrb,
 	// RWE external window read enable: data — External data
-	output logic       ext_data_rden,
+	output logic        ext_data_rden,
 	// RWE external window reset: data — External data
-	output logic       ext_data_rst,
+	output logic        ext_data_rst,
 	// RWE external window ready (may stall ACK): data — External data
-	input  logic       ext_data_ready,
+	input  logic        ext_data_ready,
 	// W1P write-1 pulse out: go — Go pulse
-	output logic       p_rg_go,
+	output logic        p_rg_go,
 	// W1C write-1 clear sticky out: sticky — Sticky IRQ
-	output logic       c_rg_sticky,
+	output logic        c_rg_sticky,
 	// W1C sticky set in (hardware set; set wins over clear): sticky — Sticky IRQ
-	input  logic       c_rg_sticky_set,
+	input  logic        c_rg_sticky_set,
 	// RW register out: cfg — Per-bank cfg
-	output logic [7:0] rg_cfg,
+	output logic [7:0]  rg_cfg,
 	// Address-tag select: bank (4 copies, TGA 1:0)
-	output logic [1:0] o_bank_sel,
+	output logic [1:0]  o_bank_sel,
 	// Sideband mux select: bank (not the address tag)
-	input  logic [1:0] i_bank_mux_sel,
+	input  logic [1:0]  i_bank_mux_sel,
 	// RW register out: bank_sel — Working bank
-	output logic [1:0] rg_bank_sel,
+	output logic [1:0]  rg_bank_sel,
 	// RO status in: value — Working copy of BANK.cfg
-	input  logic [7:0] ro_value,
+	input  logic [7:0]  ro_value,
 	// RW register out: rb_grant_en — Arbiter: 0=fixed prio, 1=round-robin
-	output logic       rg_rb_grant_en,
+	output logic        rg_rb_grant_en,
 	// RW register out: key_0 — 96-bit key (key[31:0] of [95:0])
-	output logic [31:0]rg_key_0,
+	output logic [31:0] rg_key_0,
 	// RW register out: key_1 — 96-bit key (key[63:32] of [95:0])
-	output logic [31:0]rg_key_1,
+	output logic [31:0] rg_key_1,
 	// RW register out: key_2 — 96-bit key (key[95:64] of [95:0])
-	output logic [31:0]rg_key_2
+	output logic [31:0] rg_key_2
 );
-
 	// Internal WB: fabric slave smoke ↔ smoke_regfile
-	logic [31:0]smoke_i_wb_adr;
-	logic [31:0]smoke_i_wb_dat;
-	logic [3:0] smoke_i_wb_sel;
-	logic [1:0] smoke_i_wb_tga_bank;
-	logic       smoke_i_wb_cyc;
-	logic       smoke_i_wb_stb;
-	logic       smoke_i_wb_we;
-	logic [31:0]smoke_o_wb_dat;
-	logic       smoke_o_wb_ack;
-
-	//------------------------------------------------------------------------------
+	logic [31:0] smoke_i_wb_adr;
+	logic [31:0] smoke_i_wb_dat;
+	logic [3:0]  smoke_i_wb_sel;
+	logic [1:0]  smoke_i_wb_tga_bank;
+	logic        smoke_i_wb_cyc;
+	logic        smoke_i_wb_stb;
+	logic        smoke_i_wb_we;
+	logic [31:0] smoke_o_wb_dat;
+	logic        smoke_o_wb_ack;
+	// ------------------------------------------------------------------------------
 	//  Master dbg — External JTAG smoke (TDR behind demo_tap USER) [JTAG TDR (DFT TAP / SIB client) + wb_cdc]
-	//------------------------------------------------------------------------------
+	// ------------------------------------------------------------------------------
 	logic [31:0] dbg_fab_adr;
 	logic [31:0] dbg_fab_wdat;
 	logic [3:0]  dbg_fab_sel;
@@ -190,181 +188,178 @@ module soc_wb_bus_cfg (
 	wb_jtag_tdr #(
 		.AW                 (32                 )
 	) u_dbg_jtag (
-		.tck                (dbg_tck            ),
-		.trst_n             (dbg_trst_n         ),
-		.sel                (dbg_sel            ),
-		.capture_dr         (dbg_capture_dr     ),
-		.shift_dr           (dbg_shift_dr       ),
-		.update_dr          (dbg_update_dr      ),
-		.tdi                (dbg_tdi            ),
-		.tdo                (dbg_tdo            ),
-		.en                 (dbg_en             ),
-		.wb_cyc             (dbg_src_cyc        ),
-		.wb_stb             (dbg_src_stb        ),
-		.wb_we              (dbg_src_we         ),
-		.wb_adr             (dbg_src_adr        ),
-		.wb_dat             (dbg_src_wdat       ),
-		.wb_sel             (dbg_src_sel        ),
-		.wb_ack             (dbg_src_ack        ),
-		.wb_err             (dbg_src_err        ),
-		.wb_rdat            (dbg_src_rdat       )
+		.tck                (dbg_tck            ), // i
+		.trst_n             (dbg_trst_n         ), // i
+		.sel                (dbg_sel            ), // i
+		.capture_dr         (dbg_capture_dr     ), // i
+		.shift_dr           (dbg_shift_dr       ), // i
+		.update_dr          (dbg_update_dr      ), // i
+		.tdi                (dbg_tdi            ), // i
+		.tdo                (dbg_tdo            ), // o
+		.en                 (dbg_en             ), // i
+		.wb_cyc             (dbg_src_cyc        ), // o
+		.wb_stb             (dbg_src_stb        ), // o
+		.wb_we              (dbg_src_we         ), // o
+		.wb_adr             (dbg_src_adr        ), // o [31:0]
+		.wb_dat             (dbg_src_wdat       ), // o [31:0]
+		.wb_sel             (dbg_src_sel        ), // o [3:0]
+		.wb_ack             (dbg_src_ack        ), // i
+		.wb_err             (dbg_src_err        ), // i
+		.wb_rdat            (dbg_src_rdat       )  // i [31:0]
 	);
-
 	wb_cdc #(
 		.AW                 (32                 ),
 		.TW                 (0                  ),
 		.TIMEOUT            (0                  )
 	) u_dbg_cdc (
-		.s_clk              (dbg_tck            ),
-		.s_rst_n            (dbg_trst_n         ),
-		.s_cyc              (dbg_src_cyc        ),
-		.s_stb              (dbg_src_stb        ),
-		.s_we               (dbg_src_we         ),
-		.s_adr              (dbg_src_adr        ),
-		.s_dat              (dbg_src_wdat       ),
-		.s_sel              (dbg_src_sel        ),
-		.s_ack              (dbg_src_ack        ),
-		.s_err              (dbg_src_err        ),
-		.s_rdat             (dbg_src_rdat       ),
-		.clk                (clk                ),
-		.rst_n              (rst_n              ),
-		.m_cyc              (dbg_fab_cyc        ),
-		.m_stb              (dbg_fab_stb        ),
-		.m_we               (dbg_fab_we         ),
-		.m_adr              (dbg_fab_adr        ),
-		.m_dat              (dbg_fab_wdat       ),
-		.m_sel              (dbg_fab_sel        ),
-		.m_ack              (dbg_fab_ack        ),
-		.m_rdat             (dbg_fab_rdat       )
+		.s_clk              (dbg_tck            ), // i
+		.s_rst_n            (dbg_trst_n         ), // i
+		.s_cyc              (dbg_src_cyc        ), // i
+		.s_stb              (dbg_src_stb        ), // i
+		.s_we               (dbg_src_we         ), // i
+		.s_adr              (dbg_src_adr        ), // i [31:0]
+		.s_dat              (dbg_src_wdat       ), // i [31:0]
+		.s_sel              (dbg_src_sel        ), // i [3:0]
+		.s_ack              (dbg_src_ack        ), // o
+		.s_err              (dbg_src_err        ), // o
+		.s_rdat             (dbg_src_rdat       ), // o [31:0]
+		.clk                (clk                ), // i
+		.rst_n              (rst_n              ), // i
+		.m_cyc              (dbg_fab_cyc        ), // o
+		.m_stb              (dbg_fab_stb        ), // o
+		.m_we               (dbg_fab_we         ), // o
+		.m_adr              (dbg_fab_adr        ), // o [31:0]
+		.m_dat              (dbg_fab_wdat       ), // o [31:0]
+		.m_sel              (dbg_fab_sel        ), // o [3:0]
+		.m_ack              (dbg_fab_ack        ), // i
+		.m_rdat             (dbg_fab_rdat       )  // i [31:0]
 	);
-
 	soc_wb_interconnect u_interconnect (
-		.clk                (clk                ),
-		.rst_n              (rst_n              ),
-		.rb_grant_en        (rb_grant_en        ),
-		.cpu_o_wb_adr       (cpu_o_wb_adr       ),
-		.cpu_o_wb_dat       (cpu_o_wb_dat       ),
-		.cpu_o_wb_sel       (cpu_o_wb_sel       ),
-		.cpu_o_wb_cyc       (cpu_o_wb_cyc       ),
-		.cpu_o_wb_stb       (cpu_o_wb_stb       ),
-		.cpu_o_wb_we        (cpu_o_wb_we        ),
-		.cpu_i_wb_dat       (cpu_i_wb_dat       ),
-		.cpu_i_wb_ack       (cpu_i_wb_ack       ),
-		.dbg_o_wb_adr       (dbg_fab_adr        ),
-		.dbg_o_wb_dat       (dbg_fab_wdat       ),
-		.dbg_o_wb_sel       (dbg_fab_sel        ),
-		.dbg_o_wb_cyc       (dbg_fab_cyc        ),
-		.dbg_o_wb_stb       (dbg_fab_stb        ),
-		.dbg_o_wb_we        (dbg_fab_we         ),
-		.dbg_i_wb_dat       (dbg_fab_rdat       ),
-		.dbg_i_wb_ack       (dbg_fab_ack        ),
-		.sram_i_wb_adr      (sram_i_wb_adr      ),
-		.sram_i_wb_dat      (sram_i_wb_dat      ),
-		.sram_i_wb_sel      (sram_i_wb_sel      ),
-		.sram_i_wb_cyc      (sram_i_wb_cyc      ),
-		.sram_i_wb_stb      (sram_i_wb_stb      ),
-		.sram_i_wb_we       (sram_i_wb_we       ),
-		.sram_o_wb_dat      (sram_o_wb_dat      ),
-		.sram_o_wb_ack      (sram_o_wb_ack      ),
-		.flash_xip_i_wb_adr (flash_xip_i_wb_adr ),
-		.flash_xip_i_wb_dat (flash_xip_i_wb_dat ),
-		.flash_xip_i_wb_sel (flash_xip_i_wb_sel ),
-		.flash_xip_i_wb_cyc (flash_xip_i_wb_cyc ),
-		.flash_xip_i_wb_stb (flash_xip_i_wb_stb ),
-		.flash_xip_i_wb_we  (flash_xip_i_wb_we  ),
-		.flash_xip_o_wb_dat (flash_xip_o_wb_dat ),
-		.flash_xip_o_wb_ack (flash_xip_o_wb_ack ),
-		.flash_cfg_i_wb_adr (flash_cfg_i_wb_adr ),
-		.flash_cfg_i_wb_dat (flash_cfg_i_wb_dat ),
-		.flash_cfg_i_wb_sel (flash_cfg_i_wb_sel ),
-		.flash_cfg_i_wb_cyc (flash_cfg_i_wb_cyc ),
-		.flash_cfg_i_wb_stb (flash_cfg_i_wb_stb ),
-		.flash_cfg_i_wb_we  (flash_cfg_i_wb_we  ),
-		.flash_cfg_o_wb_dat (flash_cfg_o_wb_dat ),
-		.flash_cfg_o_wb_ack (flash_cfg_o_wb_ack ),
-		.uart_i_wb_adr      (uart_i_wb_adr      ),
-		.uart_i_wb_dat      (uart_i_wb_dat      ),
-		.uart_i_wb_sel      (uart_i_wb_sel      ),
-		.uart_i_wb_cyc      (uart_i_wb_cyc      ),
-		.uart_i_wb_stb      (uart_i_wb_stb      ),
-		.uart_i_wb_we       (uart_i_wb_we       ),
-		.uart_o_wb_dat      (uart_o_wb_dat      ),
-		.uart_o_wb_ack      (uart_o_wb_ack      ),
-		.testout_i_wb_adr   (testout_i_wb_adr   ),
-		.testout_i_wb_dat   (testout_i_wb_dat   ),
-		.testout_i_wb_sel   (testout_i_wb_sel   ),
-		.testout_i_wb_cyc   (testout_i_wb_cyc   ),
-		.testout_i_wb_stb   (testout_i_wb_stb   ),
-		.testout_i_wb_we    (testout_i_wb_we    ),
-		.testout_o_wb_dat   (testout_o_wb_dat   ),
-		.testout_o_wb_ack   (testout_o_wb_ack   ),
-		.ch0_i_wb_adr       (ch0_i_wb_adr       ),
-		.ch0_i_wb_dat       (ch0_i_wb_dat       ),
-		.ch0_i_wb_sel       (ch0_i_wb_sel       ),
-		.ch0_i_wb_tga_bank  (ch0_i_wb_tga_bank  ),
-		.ch0_i_wb_cyc       (ch0_i_wb_cyc       ),
-		.ch0_i_wb_stb       (ch0_i_wb_stb       ),
-		.ch0_i_wb_we        (ch0_i_wb_we        ),
-		.ch0_o_wb_dat       (ch0_o_wb_dat       ),
-		.ch0_o_wb_ack       (ch0_o_wb_ack       ),
-		.ch1_i_wb_adr       (ch1_i_wb_adr       ),
-		.ch1_i_wb_dat       (ch1_i_wb_dat       ),
-		.ch1_i_wb_sel       (ch1_i_wb_sel       ),
-		.ch1_i_wb_tga_bank  (ch1_i_wb_tga_bank  ),
-		.ch1_i_wb_cyc       (ch1_i_wb_cyc       ),
-		.ch1_i_wb_stb       (ch1_i_wb_stb       ),
-		.ch1_i_wb_we        (ch1_i_wb_we        ),
-		.ch1_o_wb_dat       (ch1_o_wb_dat       ),
-		.ch1_o_wb_ack       (ch1_o_wb_ack       ),
-		.smoke_i_wb_adr     (smoke_i_wb_adr     ),
-		.smoke_i_wb_dat     (smoke_i_wb_dat     ),
-		.smoke_i_wb_sel     (smoke_i_wb_sel     ),
-		.smoke_i_wb_tga_bank(smoke_i_wb_tga_bank),
-		.smoke_i_wb_cyc     (smoke_i_wb_cyc     ),
-		.smoke_i_wb_stb     (smoke_i_wb_stb     ),
-		.smoke_i_wb_we      (smoke_i_wb_we      ),
-		.smoke_o_wb_dat     (smoke_o_wb_dat     ),
-		.smoke_o_wb_ack     (smoke_o_wb_ack     )
+		.clk                (clk                ), // i
+		.rst_n              (rst_n              ), // i
+		.rb_grant_en        (rb_grant_en        ), // i
+		.cpu_o_wb_adr       (cpu_o_wb_adr       ), // i [31:0]
+		.cpu_o_wb_dat       (cpu_o_wb_dat       ), // i [31:0]
+		.cpu_o_wb_sel       (cpu_o_wb_sel       ), // i [3:0]
+		.cpu_o_wb_cyc       (cpu_o_wb_cyc       ), // i
+		.cpu_o_wb_stb       (cpu_o_wb_stb       ), // i
+		.cpu_o_wb_we        (cpu_o_wb_we        ), // i
+		.cpu_i_wb_dat       (cpu_i_wb_dat       ), // o [31:0]
+		.cpu_i_wb_ack       (cpu_i_wb_ack       ), // o
+		.dbg_o_wb_adr       (dbg_fab_adr        ), // i [31:0]
+		.dbg_o_wb_dat       (dbg_fab_wdat       ), // i [31:0]
+		.dbg_o_wb_sel       (dbg_fab_sel        ), // i [3:0]
+		.dbg_o_wb_cyc       (dbg_fab_cyc        ), // i
+		.dbg_o_wb_stb       (dbg_fab_stb        ), // i
+		.dbg_o_wb_we        (dbg_fab_we         ), // i
+		.dbg_i_wb_dat       (dbg_fab_rdat       ), // o [31:0]
+		.dbg_i_wb_ack       (dbg_fab_ack        ), // o
+		.sram_i_wb_adr      (sram_i_wb_adr      ), // o [31:0]
+		.sram_i_wb_dat      (sram_i_wb_dat      ), // o [31:0]
+		.sram_i_wb_sel      (sram_i_wb_sel      ), // o [3:0]
+		.sram_i_wb_cyc      (sram_i_wb_cyc      ), // o
+		.sram_i_wb_stb      (sram_i_wb_stb      ), // o
+		.sram_i_wb_we       (sram_i_wb_we       ), // o
+		.sram_o_wb_dat      (sram_o_wb_dat      ), // i [31:0]
+		.sram_o_wb_ack      (sram_o_wb_ack      ), // i
+		.flash_xip_i_wb_adr (flash_xip_i_wb_adr ), // o [31:0]
+		.flash_xip_i_wb_dat (flash_xip_i_wb_dat ), // o [31:0]
+		.flash_xip_i_wb_sel (flash_xip_i_wb_sel ), // o [3:0]
+		.flash_xip_i_wb_cyc (flash_xip_i_wb_cyc ), // o
+		.flash_xip_i_wb_stb (flash_xip_i_wb_stb ), // o
+		.flash_xip_i_wb_we  (flash_xip_i_wb_we  ), // o
+		.flash_xip_o_wb_dat (flash_xip_o_wb_dat ), // i [31:0]
+		.flash_xip_o_wb_ack (flash_xip_o_wb_ack ), // i
+		.flash_cfg_i_wb_adr (flash_cfg_i_wb_adr ), // o [31:0]
+		.flash_cfg_i_wb_dat (flash_cfg_i_wb_dat ), // o [31:0]
+		.flash_cfg_i_wb_sel (flash_cfg_i_wb_sel ), // o [3:0]
+		.flash_cfg_i_wb_cyc (flash_cfg_i_wb_cyc ), // o
+		.flash_cfg_i_wb_stb (flash_cfg_i_wb_stb ), // o
+		.flash_cfg_i_wb_we  (flash_cfg_i_wb_we  ), // o
+		.flash_cfg_o_wb_dat (flash_cfg_o_wb_dat ), // i [31:0]
+		.flash_cfg_o_wb_ack (flash_cfg_o_wb_ack ), // i
+		.uart_i_wb_adr      (uart_i_wb_adr      ), // o [31:0]
+		.uart_i_wb_dat      (uart_i_wb_dat      ), // o [31:0]
+		.uart_i_wb_sel      (uart_i_wb_sel      ), // o [3:0]
+		.uart_i_wb_cyc      (uart_i_wb_cyc      ), // o
+		.uart_i_wb_stb      (uart_i_wb_stb      ), // o
+		.uart_i_wb_we       (uart_i_wb_we       ), // o
+		.uart_o_wb_dat      (uart_o_wb_dat      ), // i [31:0]
+		.uart_o_wb_ack      (uart_o_wb_ack      ), // i
+		.testout_i_wb_adr   (testout_i_wb_adr   ), // o [31:0]
+		.testout_i_wb_dat   (testout_i_wb_dat   ), // o [31:0]
+		.testout_i_wb_sel   (testout_i_wb_sel   ), // o [3:0]
+		.testout_i_wb_cyc   (testout_i_wb_cyc   ), // o
+		.testout_i_wb_stb   (testout_i_wb_stb   ), // o
+		.testout_i_wb_we    (testout_i_wb_we    ), // o
+		.testout_o_wb_dat   (testout_o_wb_dat   ), // i [31:0]
+		.testout_o_wb_ack   (testout_o_wb_ack   ), // i
+		.ch0_i_wb_adr       (ch0_i_wb_adr       ), // o [31:0]
+		.ch0_i_wb_dat       (ch0_i_wb_dat       ), // o [31:0]
+		.ch0_i_wb_sel       (ch0_i_wb_sel       ), // o [3:0]
+		.ch0_i_wb_tga_bank  (ch0_i_wb_tga_bank  ), // o [1:0]
+		.ch0_i_wb_cyc       (ch0_i_wb_cyc       ), // o
+		.ch0_i_wb_stb       (ch0_i_wb_stb       ), // o
+		.ch0_i_wb_we        (ch0_i_wb_we        ), // o
+		.ch0_o_wb_dat       (ch0_o_wb_dat       ), // i [31:0]
+		.ch0_o_wb_ack       (ch0_o_wb_ack       ), // i
+		.ch1_i_wb_adr       (ch1_i_wb_adr       ), // o [31:0]
+		.ch1_i_wb_dat       (ch1_i_wb_dat       ), // o [31:0]
+		.ch1_i_wb_sel       (ch1_i_wb_sel       ), // o [3:0]
+		.ch1_i_wb_tga_bank  (ch1_i_wb_tga_bank  ), // o [1:0]
+		.ch1_i_wb_cyc       (ch1_i_wb_cyc       ), // o
+		.ch1_i_wb_stb       (ch1_i_wb_stb       ), // o
+		.ch1_i_wb_we        (ch1_i_wb_we        ), // o
+		.ch1_o_wb_dat       (ch1_o_wb_dat       ), // i [31:0]
+		.ch1_o_wb_ack       (ch1_o_wb_ack       ), // i
+		.smoke_i_wb_adr     (smoke_i_wb_adr     ), // o [31:0]
+		.smoke_i_wb_dat     (smoke_i_wb_dat     ), // o [31:0]
+		.smoke_i_wb_sel     (smoke_i_wb_sel     ), // o [3:0]
+		.smoke_i_wb_tga_bank(smoke_i_wb_tga_bank), // o [1:0]
+		.smoke_i_wb_cyc     (smoke_i_wb_cyc     ), // o
+		.smoke_i_wb_stb     (smoke_i_wb_stb     ), // o
+		.smoke_i_wb_we      (smoke_i_wb_we      ), // o
+		.smoke_o_wb_dat     (smoke_o_wb_dat     ), // i [31:0]
+		.smoke_o_wb_ack     (smoke_o_wb_ack     )  // i
 	);
-
 	smoke_regfile u_smoke (
-		.i_clk              (clk                ),
-		.i_rst_n            (rst_n              ),
-		.smoke_i_wb_cyc     (smoke_i_wb_cyc     ),
-		.smoke_i_wb_stb     (smoke_i_wb_stb     ),
-		.smoke_i_wb_we      (smoke_i_wb_we      ),
-		.smoke_i_wb_adr     (smoke_i_wb_adr     ),
-		.smoke_i_wb_dat     (smoke_i_wb_dat     ),
-		.smoke_i_wb_sel     (smoke_i_wb_sel     ),
-		.smoke_i_wb_tga_bank(smoke_i_wb_tga_bank),
-		.smoke_o_wb_ack     (smoke_o_wb_ack     ),
-		.smoke_o_wb_dat     (smoke_o_wb_dat     ),
-		.ro_busy            (ro_busy            ),
-		.ro_code            (ro_code            ),
-		.rg_enable          (rg_enable          ),
-		.rg_mode            (rg_mode            ),
-		.rg_capture         (rg_capture         ),
-		.rg_capture_strb    (rg_capture_strb    ),
-		.rg_capture_hwdata  (rg_capture_hwdata  ),
-		.ext_data           (ext_data           ),
-		.ext_data_wdata     (ext_data_wdata     ),
-		.ext_data_wren      (ext_data_wren      ),
-		.ext_data_wstrb     (ext_data_wstrb     ),
-		.ext_data_rden      (ext_data_rden      ),
-		.ext_data_rst       (ext_data_rst       ),
-		.ext_data_ready     (ext_data_ready     ),
-		.p_rg_go            (p_rg_go            ),
-		.c_rg_sticky        (c_rg_sticky        ),
-		.c_rg_sticky_set    (c_rg_sticky_set    ),
-		.rg_cfg             (rg_cfg             ),
-		.o_bank_sel         (o_bank_sel         ),
-		.i_bank_mux_sel     (i_bank_mux_sel     ),
-		.rg_bank_sel        (rg_bank_sel        ),
-		.ro_value           (ro_value           ),
-		.rg_rb_grant_en     (rg_rb_grant_en     ),
-		.rg_key_0           (rg_key_0           ),
-		.rg_key_1           (rg_key_1           ),
-		.rg_key_2           (rg_key_2           )
+		.i_clk              (clk                ), // i
+		.i_rst_n            (rst_n              ), // i
+		.smoke_i_wb_cyc     (smoke_i_wb_cyc     ), // i
+		.smoke_i_wb_stb     (smoke_i_wb_stb     ), // i
+		.smoke_i_wb_we      (smoke_i_wb_we      ), // i
+		.smoke_i_wb_adr     (smoke_i_wb_adr     ), // i [31:0]
+		.smoke_i_wb_dat     (smoke_i_wb_dat     ), // i [31:0]
+		.smoke_i_wb_sel     (smoke_i_wb_sel     ), // i [3:0]
+		.smoke_i_wb_tga_bank(smoke_i_wb_tga_bank), // i [1:0]
+		.smoke_o_wb_ack     (smoke_o_wb_ack     ), // o
+		.smoke_o_wb_dat     (smoke_o_wb_dat     ), // o [31:0]
+		.ro_busy            (ro_busy            ), // i
+		.ro_code            (ro_code            ), // i [7:0]
+		.rg_enable          (rg_enable          ), // o
+		.rg_mode            (rg_mode            ), // o [2:0]
+		.rg_capture         (rg_capture         ), // o [15:0]
+		.rg_capture_strb    (rg_capture_strb    ), // i
+		.rg_capture_hwdata  (rg_capture_hwdata  ), // i [15:0]
+		.ext_data           (ext_data           ), // i [31:0]
+		.ext_data_wdata     (ext_data_wdata     ), // o [31:0]
+		.ext_data_wren      (ext_data_wren      ), // o
+		.ext_data_wstrb     (ext_data_wstrb     ), // o [3:0]
+		.ext_data_rden      (ext_data_rden      ), // o
+		.ext_data_rst       (ext_data_rst       ), // o
+		.ext_data_ready     (ext_data_ready     ), // i
+		.p_rg_go            (p_rg_go            ), // o
+		.c_rg_sticky        (c_rg_sticky        ), // o
+		.c_rg_sticky_set    (c_rg_sticky_set    ), // i
+		.rg_cfg             (rg_cfg             ), // o [7:0]
+		.o_bank_sel         (o_bank_sel         ), // o [1:0]
+		.i_bank_mux_sel     (i_bank_mux_sel     ), // i [1:0]
+		.rg_bank_sel        (rg_bank_sel        ), // o [1:0]
+		.ro_value           (ro_value           ), // i [7:0]
+		.rg_rb_grant_en     (rg_rb_grant_en     ), // o
+		.rg_key_0           (rg_key_0           ), // o [31:0]
+		.rg_key_1           (rg_key_1           ), // o [31:0]
+		.rg_key_2           (rg_key_2           )  // o [31:0]
 	);
 
 endmodule
