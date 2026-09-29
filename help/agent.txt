@@ -30,7 +30,7 @@ Pipeline
 
 Cold start
   Standalone autowire.js does not contain hdxml. Lookup: help analysis.
-  When the filelist names generated files that are not on disk yet:
+  When the filelist names plugins_dir leaves that are not on disk yet:
     plugin wishbone run, then analysis run, then connect run.
   analysis run names which of those to run.
   A demo this unpack did not write is not in the bundle. See help docs.

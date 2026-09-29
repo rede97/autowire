@@ -28,9 +28,11 @@ hdxml never reads toml; autowire maps everything.
 Paths in toml are relative to the workspace root (toml location).
 No [analysis.rtl] sources configured → error.
 Error files keep the index usable; hdxml exit code is passed through.
-A filelist entry under plugins_dir, connect_dir, or sim_dir that is not on
-disk yet is not an hdxml failure: analysis run stops and names the writer
-(plugin wishbone run, or connect run). Generate those, then re-run analysis.
+A filelist entry under plugins_dir that is not on disk yet is not an hdxml
+failure: analysis run stops and names the writer (plugin wishbone run).
+connect_dir / sim_dir entries are connect run outputs, not analysis inputs:
+analysis run rejects them. Keep wrappers and TB in a simulation-only filelist
+combined with the analysis filelist (demo/soc: -f rtl/soc.f -f rtl/gen.f).
 --force: analysis is incremental by default — unchanged files are reused from the
   RtlIndex dir. --force maps to hdxml --refresh (full re-parse, rewrites the cache).
 

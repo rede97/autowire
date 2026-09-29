@@ -12,10 +12,10 @@ filelist 已经点名 `rtl/gen` 时，先跑插件，再分析，再连线。bus
 ```text
 IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/patches/`**，checkout 后跑 `patches/apply.sh`，禁止在上游子模块落本地 commit）
   → 手写集成叶子（rtl/*.v，英文注释）
-  → rtl/soc.f（filelist，路径相对工作区根；.svh 禁止入内）
+  → rtl/soc.f（analysis filelist：手写 RTL + plugins_dir 叶子；路径相对工作区根；.svh 禁止入内）
   → autowire.toml（[analysis.rtl] filelists + [connect.<id>] DAG）
   → sot/connect/*.html（aw-content 作者面；wishbone ts= 同树 wb_reg_*.ts / wb_bus_*.ts）
-  → bun <repo>/index.ts plugin wishbone run   # filelist 已点名 rtl/gen 时必须先于 analysis
+  → bun <repo>/index.ts plugin wishbone run   # plugins_dir 叶子必须先于 analysis
   → bun <repo>/index.ts analysis run          # hdxml → RtlIndex；缺生成物时直接指出该先跑哪条命令
   → bun <repo>/index.ts connect run           # happy-dom 写 rtl/gen/connect|sim，并按 DAG 写 snapshot
   → bun <repo>/index.ts connect check         # 不写盘；依赖 snapshot 还不存在时会报 snapshot missing
@@ -25,7 +25,7 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
 
 `rtl/gen/`、`fw/gen/`、`dv/ral/`、`.autowire/` 都是生成物，不是源。生成结果不对就改 SoT（Wishbone TypeScript 或 connect HTML）再跑写出命令，不要改这些文件。`.autowire/` 可整目录删：`hdxml/`（RtlIndex）、`connect/<id>.xml`（抽象模块快照，唯一形式，无 html 快照）、`dsl/`（`plugin wishbone run` 缺失时补回）、`dump/<id>.html`（调试落盘）。
 
-`analysis run` 会指出缺的是 `plugins_dir` 还是 `connect_dir` / `sim_dir`，不再只透传 file not found。`connect check` 不写盘；依赖从未 `connect run` 时报 `snapshot missing`。独立包不含 hdxml，查找见 `help analysis`。这次 `docs unpack` 没有写出的 demo，不要到包外去找。译码、宽 field、tag 的注意点在 §5。
+`analysis run` 在 plugins_dir 叶子缺失时点名 `plugin wishbone run`，不再只透传 file not found；filelist 里出现 `connect_dir` / `sim_dir` 产物（wrapper、TB）直接报错——它们属于仿真 filelist（demo：`rtl/gen.f`，仿真 `-f rtl/soc.f -f rtl/gen.f` 合并）。`connect check` 不写盘；依赖从未 `connect run` 时报 `snapshot missing`。独立包不含 hdxml，查找见 `help analysis`。这次 `docs unpack` 没有写出的 demo，不要到包外去找。译码、宽 field、tag 的注意点在 §5。
 
 ## 2. connect HTML 实战模式
 

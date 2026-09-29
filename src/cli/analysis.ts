@@ -15,14 +15,20 @@ import { findHdxml, requireWorkspace } from "./shared.ts";
 
 export type DumpKind = "plugins" | "connect" | "sim";
 
-/** Filelist paths under [workspace.dump] that are not on disk yet. */
-export function generatedFilelistGaps(
-	cfg: Pick<
-		WorkspaceConfig,
-		"root" | "filelists" | "pluginsDir" | "connectDir" | "simDir"
-	>,
-): { path: string; kind: DumpKind }[] {
-	const gaps: { path: string; kind: DumpKind }[] = [];
+interface FilelistDumpEntry {
+	path: string;
+	kind: DumpKind;
+	onDisk: boolean;
+}
+
+type DumpDirs = Pick<
+	WorkspaceConfig,
+	"root" | "filelists" | "pluginsDir" | "connectDir" | "simDir"
+>;
+
+/** Filelist entries that fall under a [workspace.dump] directory. */
+function scanFilelistDumpEntries(cfg: DumpDirs): FilelistDumpEntry[] {
+	const entries: FilelistDumpEntry[] = [];
 	const seen = new Set<string>();
 	const posix = (abs: string) => relative(cfg.root, abs).split(sep).join("/");
 	const kindOf = (abs: string): DumpKind | null => {
@@ -53,40 +59,60 @@ export function generatedFilelistGaps(
 				.trim();
 			if (!line || line.startsWith("-") || line.startsWith("+")) continue;
 			const abs = isAbsolute(line) ? line : join(cfg.root, line);
-			if (existsSync(abs)) continue;
 			const kind = kindOf(abs);
-			if (kind) gaps.push({ path: posix(abs), kind });
+			if (kind)
+				entries.push({ path: posix(abs), kind, onDisk: existsSync(abs) });
 		}
 	}
-	return gaps;
+	return entries;
 }
 
-/** What to run before analysis when the filelist names generated files. */
+/** plugins_dir leaves the analysis filelist names but that are not on disk yet. */
+export function generatedFilelistGaps(
+	cfg: DumpDirs,
+): { path: string; kind: DumpKind }[] {
+	return scanFilelistDumpEntries(cfg)
+		.filter((entry) => entry.kind === "plugins" && !entry.onDisk)
+		.map(({ path, kind }) => ({ path, kind }));
+}
+
+/** connect_dir / sim_dir entries: connect run outputs are not analysis inputs. */
+export function misplacedDumpEntries(cfg: DumpDirs): string[] {
+	return scanFilelistDumpEntries(cfg)
+		.filter((entry) => entry.kind === "connect" || entry.kind === "sim")
+		.map((entry) => entry.path);
+}
+
+/** What to run before analysis when the filelist names missing plugins_dir leaves. */
 export function formatGeneratedGaps(
 	gaps: readonly { path: string; kind: DumpKind }[],
 ): string {
-	const plugins = gaps.some((gap) => gap.kind === "plugins");
-	const connect = gaps.some(
-		(gap) => gap.kind === "connect" || gap.kind === "sim",
-	);
 	const shown = gaps
 		.slice(0, 8)
 		.map((gap) => `  ${gap.path}`)
 		.join("\n");
 	const more = gaps.length > 8 ? `\n  ... and ${gaps.length - 8} more` : "";
-	const writers = [
-		plugins ? "`plugin wishbone run` writes plugins_dir" : "",
-		connect
-			? "`connect run` writes connect_dir and sim_dir, and the .autowire/connect snapshots that `connect check` needs"
-			: "",
-	]
-		.filter((line) => line.length > 0)
-		.join(". ");
 	const noun = gaps.length === 1 ? "entry is" : "entries are";
 	return [
-		`analysis: ${gaps.length} filelist ${noun} under [workspace.dump] but not on disk yet:`,
+		`analysis: ${gaps.length} filelist ${noun} under plugins_dir but not on disk yet:`,
 		shown + more,
-		`${writers}. Generate those, then re-run analysis.`,
+		"`plugin wishbone run` writes plugins_dir. Generate those, then re-run analysis.",
+	].join("\n");
+}
+
+/** connect_dir / sim_dir filelist entries belong to a simulation filelist. */
+export function formatMisplacedDump(entries: readonly string[]): string {
+	const shown = entries
+		.slice(0, 8)
+		.map((path) => `  ${path}`)
+		.join("\n");
+	const more =
+		entries.length > 8 ? `\n  ... and ${entries.length - 8} more` : "";
+	const noun = entries.length === 1 ? "entry is" : "entries are";
+	return [
+		`analysis: ${entries.length} filelist ${noun} under connect_dir / sim_dir (connect run outputs are not analysis inputs):`,
+		shown + more,
+		"Move them to a simulation-only filelist and combine it with the analysis filelist for simulation (demo/soc: -f rtl/soc.f -f rtl/gen.f).",
 	].join("\n");
 }
 
@@ -170,6 +196,11 @@ export function registerAnalysis(program: Command): void {
 					console.error(
 						"autowire.toml: configure at least one of [analysis.rtl] filelists/walk_dirs/sources",
 					);
+					process.exit(1);
+				}
+				const misplaced = misplacedDumpEntries(cfg);
+				if (misplaced.length > 0) {
+					console.error(formatMisplacedDump(misplaced));
 					process.exit(1);
 				}
 				const gaps = generatedFilelistGaps(cfg);

@@ -9,6 +9,7 @@
 - `help agent` 的 Cold start 只留启动顺序。hdxml 查找留在 `help analysis`，`snapshot missing` 留在 `help check`，解包缺 demo 留在 `help docs`，`adr & ~mask`、分片口、tga tie-off、`TagFromAddr` 地址位留在 `help status` 的 wishbone 条目旁。
 - `help agent` 的 Init 按 Writes / Attach / Ask / Defaults 分块。实战顺序和踩坑在 `docs/skills/autowire-soc-integration.md`：filelist 已点名 `rtl/gen` 时先 `plugin wishbone run`，再 `analysis run`，再 `connect run`。
 - `help` 正文改到 `help/<topic>.txt`，`src/cli/help.ts` 只负责读入；这些文件打进 `autowire.js`，不必先 `docs unpack`。`docs/dev/cdp-debug.md` 挪到 `docs/skills/cdp-debug.md`。工具与 MCP 的边界收进 `docs/architecture.md` §3，删掉没有实现的 `docs/mcp/`。
+- 分析与仿真的 filelist 分开：`[analysis]` filelist 只装手写 RTL 和 `plugins_dir` 叶子；`connect run` 的产物（wrapper、TB）不进索引，放仿真专用 filelist（demo/soc 新增 `rtl/gen.f`，仿真按 `-f rtl/soc.f -f rtl/gen.f` 合并，两个仿真 filelist 不再各自抄一份）。`analysis run` 对 filelist 里的 `connect_dir` / `sim_dir` 条目直接报错，不再提示「先跑 connect run」。demo/soc 重新生成 `sd_sha_ch.sv`（hdxml 去掉 localparam 行尾注释后产物一直未同步，release 冒烟抓到漂移）。
 
 ## [2.2.2] - 2026-09-29
 

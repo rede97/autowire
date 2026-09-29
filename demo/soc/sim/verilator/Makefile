@@ -44,10 +44,11 @@ endif
 
 all: $(OBJ_DIR)/V$(TOP)
 
-# RTL sources from filelist.f (comments/blanks stripped) — rebuild on leaf edits.
-RTL_SRCS := $(shell grep -vE '^\s*(#|$$)' $(VL_DIR)/filelist.f | sed 's|^|$(SOC_ROOT)/|')
+# RTL sources from the combined filelists (comments/blanks/-f stripped) — rebuild on leaf edits.
+RTL_LISTS := $(VL_DIR)/filelist.f $(SOC_ROOT)/rtl/soc.f $(SOC_ROOT)/rtl/gen.f
+RTL_SRCS := $(shell grep -hvE '^\s*(#|-f|$$)' $(RTL_LISTS) | sed 's|^|$(SOC_ROOT)/|')
 
-$(OBJ_DIR)/V$(TOP): $(VL_DIR)/filelist.f $(VL_DIR)/tb_soc_vl.sv $(VL_DIR)/spiflash_vl.sv $(VL_DIR)/jtag_host.h $(SRCS) $(RTL_SRCS)
+$(OBJ_DIR)/V$(TOP): $(RTL_LISTS) $(VL_DIR)/tb_soc_vl.sv $(VL_DIR)/spiflash_vl.sv $(VL_DIR)/jtag_host.h $(SRCS) $(RTL_SRCS)
 	cd $(SOC_ROOT) && $(VERILATOR) $(VL_FLAGS) \
 		-f $(VL_DIR)/filelist.f \
 		$(SRCS) \
@@ -55,12 +56,12 @@ $(OBJ_DIR)/V$(TOP): $(VL_DIR)/filelist.f $(VL_DIR)/tb_soc_vl.sv $(VL_DIR)/spifla
 
 # aw-tb-mod dump top (rtl/gen/sim/tb_soc.sv + sim/*.svh): pure SV, --binary.
 TB_OBJ  := $(VL_DIR)/obj_dir_tb
-TB_RTL  := $(filter-out %/tb_soc_vl.sv,$(RTL_SRCS))
+TB_RTL  := $(filter-out %/tb_soc_vl.sv %/gen/sim/tb_soc.sv,$(RTL_SRCS))
 TB_SVH  := $(wildcard $(SOC_ROOT)/sim/*.svh)
 
 tb_mod: $(TB_OBJ)/Vtb_soc
 
-$(TB_OBJ)/Vtb_soc: $(VL_DIR)/filelist.f $(SOC_ROOT)/rtl/gen/sim/tb_soc.sv $(TB_SVH) $(TB_RTL)
+$(TB_OBJ)/Vtb_soc: $(RTL_LISTS) $(SOC_ROOT)/rtl/gen/sim/tb_soc.sv $(TB_SVH) $(TB_RTL)
 	cd $(SOC_ROOT) && $(VERILATOR) --binary --timing -j 0 \
 		--top-module tb_soc \
 		--Mdir $(TB_OBJ) \
