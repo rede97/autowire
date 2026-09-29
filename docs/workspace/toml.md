@@ -201,7 +201,8 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 5. 两目录均可删重建；删后须重新 `analysis run`，再按需 `connect run` 出 connect 快照。
 
 - **`.svh` 不进 filelist**（hdxml 跳过并警告）：宏头文件只有两条合法路径——源内 `` `include ``（预处理）或 `define_headers`（独立加载，等价 EDA「.f 头部 svh」的全局宏）。降级方案：EDA 侧用 `eda_load.f`（头部 svh + 共享 `rtl.f`），分析器只用纯源码 `rtl.f`，两侧行为一致。  
-- **`connect_dir` / `sim_dir` 产物不进 `[analysis]` filelist**：wrapper 与 TB 是 `connect run` 的输出，不是分析输入，`analysis run` 遇到这两类条目直接报错。仿真侧用独立 filelist 与分析 filelist 合并（demo/soc：`rtl/gen.f`，`-f rtl/soc.f -f rtl/gen.f`）。`plugins_dir` 叶子是分析输入；缺失时 `analysis run` 点名 `plugin wishbone run`，不透传 hdxml 的 file not found。
+- **`[analysis]` filelist 只放分析输入**：手写 RTL，和 `plugin wishbone run` 写出的叶子（`plugins_dir`）。叶子还没生成时，`analysis run` 停下来并告诉你先跑 `plugin wishbone run`，不再把 hdxml 的 file not found 原样抛出来。
+- **`connect run` 的产物不进 `[analysis]` filelist**：wrapper（`connect_dir`）和 testbench（`sim_dir`）是连线的输出，放进去 `analysis run` 直接报错。仿真另写一个 filelist，再和它合并（demo/soc：`rtl/gen.f`，仿真命令用 `-f rtl/soc.f -f rtl/gen.f`）。
 ## 5. 与 elaboration 的衔接（总流水线）
 
 宏 ≠ 模块 `aw-param`。顺序 **必须**为：

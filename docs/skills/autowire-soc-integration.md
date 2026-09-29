@@ -25,7 +25,12 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
 
 `rtl/gen/`、`fw/gen/`、`dv/ral/`、`.autowire/` 都是生成物，不是源。生成结果不对就改 SoT（Wishbone TypeScript 或 connect HTML）再跑写出命令，不要改这些文件。`.autowire/` 可整目录删：`hdxml/`（RtlIndex）、`connect/<id>.xml`（抽象模块快照，唯一形式，无 html 快照）、`dsl/`（`plugin wishbone run` 缺失时补回）、`dump/<id>.html`（调试落盘）。
 
-`analysis run` 在 plugins_dir 叶子缺失时点名 `plugin wishbone run`，不再只透传 file not found；filelist 里出现 `connect_dir` / `sim_dir` 产物（wrapper、TB）直接报错——它们属于仿真 filelist（demo：`rtl/gen.f`，仿真 `-f rtl/soc.f -f rtl/gen.f` 合并）。`connect check` 不写盘；依赖从未 `connect run` 时报 `snapshot missing`。独立包不含 hdxml，查找见 `help analysis`。这次 `docs unpack` 没有写出的 demo，不要到包外去找。译码、宽 field、tag 的注意点在 §5。
+`[analysis]` 的 filelist 只放两类输入：手写 RTL，和 `plugin wishbone run` 写出的叶子（`plugins_dir`，demo 里是 `rtl/gen/plugins/`）。
+
+- 叶子还没生成时，`analysis run` 停下来并告诉你先跑 `plugin wishbone run`，不再把 hdxml 的 file not found 原样抛出来。
+- `connect run` 的产物不进这个 filelist：wrapper（`connect_dir`，`rtl/gen/connect/`）和 testbench（`sim_dir`，`rtl/gen/sim/`）。放进去 `analysis run` 直接报错。仿真另写一个 filelist，再和它合并。demo/soc 是 `rtl/gen.f`，仿真命令用 `-f rtl/soc.f -f rtl/gen.f`。
+
+`connect check` 只检查、不写文件。被依赖的单元还没跑过 `connect run` 时，报 `snapshot missing`。独立包不含 hdxml，二进制怎么找见 `help analysis`。这次 `docs unpack` 没有写出的 demo，不要到包外去找。译码、宽 field、tag 的注意点在 §5。
 
 ## 2. connect HTML 实战模式
 
