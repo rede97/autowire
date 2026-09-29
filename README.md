@@ -1,6 +1,16 @@
 # Autowire
 
+[![CI](https://github.com/rede97/autowire/workflows/release/badge.svg)](https://github.com/rede97/autowire/actions/workflows/release.yml)
+[![Release](https://img.shields.io/github/v/release/rede97/autowire)](https://github.com/rede97/autowire/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+
 Connectivity description is **HTML + script**. A browser runs the script; the live DOM is the netlist. Autowire takes the rendered result and writes SystemVerilog, which flows on to DV.
+
+## Why
+
+**Fast.** RTL analysis is Rust + rayon (parallel, incremental: unchanged files are reused from the index cache — a warm re-index of the demo SoC is ~0.1s vs ~1.4s cold). The connect engine is profiled and tuned (engine pipeline −20% in the 2.2.8 pass; see [docs/dev/core-perf.md](docs/dev/core-perf.md)). Index reads can switch to a JSON mirror that parses ~2x faster than XML for large workspaces.
+
+**Built for AI agents.** One file — `autowire.js` — plus the `hdxml` binary is the whole install. `autowire init` drops an `AGENTS-AUTOWIRE.md` contract into the workspace so any agent picks up the project conventions with zero prompt engineering; `autowire help agent` is the machine-readable entry point. The full docs and runnable demos ship inside the bundle (`autowire docs unpack`) — an agent can drive a large project end to end (index → generate → simulate) with a handful of CLI commands and no bespoke tooling.
 
 **Agents: run `bun index.ts help agent` first (working contract — do not invent a project prompt). Command index: `bun index.ts help`. Behavior changes must update `help/<topic>.txt` in lockstep. Format constraints live in [`docs/`](docs/README.md).**
 
