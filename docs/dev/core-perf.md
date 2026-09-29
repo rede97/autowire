@@ -16,7 +16,7 @@
 | 7 | `aw.ts` submods 拓扑 | sibs.find 按名查，O(k²) | 建 Map<name,Element> | 已做 |
 | 8 | `happydom.ts` 错误过滤 | 每 error 摊开 session keys | 循环外取一次 | 已做 |
 | 10 | `printer.ts` printInsts | rows.flat() 两遍、Math.max(...大数组) | 复用 flat；循环求 max | 已做 |
-| 3 | `aw.ts` writeRender + connectedCallback | 逐节点 DOM API 建 aw-render，热点全在 happy-dom 属性机器 | innerHTML 一次写入 / detached 子树 | **最后单独处理**（动 DOM 构建路径，风险最高，需单独验证） |
+| 3 | `aw.ts` writeRender + connectedCallback | 逐节点 DOM API 建 aw-render，热点全在 happy-dom 属性机器 | **已尝试 innerHTML 一次写入：实测无收益（soc_top renderUnit 新旧均 ~37ms，解析成本抵消 attribute 节省），已回退** |
 | 9 | `happydom.ts` check+elaborate 两遍遍历 | check 不跑脚本、elaborate 跑脚本，是设计结果 | 不动 | 不做 |
 
 ## 不做的事
@@ -30,6 +30,10 @@
 - `printer.ts` string[] + join 单遍输出，正则全为模块级常量。
 - `connectxml.ts` 单遍序列化/解析；`topoUnits` DFS + Set；LeafDb per-module 缓存。
 - check 侧 Map/Set 查重，无 includes/find 套循环。
+
+## #3 实验记录（2026-09-30，已回退）
+
+writeRender 改为整棵子树拼 HTML 字符串 + 单次 `innerHTML`：功能正确（201 测试全过、demo/soc 生成物逐字节一致），但 20 次 soc_top renderUnit 微基准新旧均 ~37ms——happy-dom 的 HTML 解析成本恰好抵消掉逐节点 attribute 机器（NamedNodeMap/MutationRecord）的节省。soc_top 的 render 树约数百节点，innerHTML 的盈亏平衡点不在这个规模。结论：保留 DOM API 路径，不再投入。
 
 ## 复测方法
 
