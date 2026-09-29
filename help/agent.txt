@@ -73,8 +73,11 @@ Init
 
   Defaults
     1. Name. A C identifier. Default: the directory name.
-    2. RTL inputs. Default: one hand-written filelist, rtl/<name>.f.
-       Add walk_dirs or sources only if they say that list is not enough.
+    2. RTL inputs. Two common sources; ask which one they have:
+         filelist   a hand-written .f. Default: rtl/<name>.f.
+         walk_dirs  a directory walked for sources, no filelist.
+       sources= is for loose files that fit neither. Use one, and add the
+       other only if they say the first does not cover the RTL.
     3. Headers and macros. Default: none. Ask only if the RTL has `include
        or -D: incdirs for headers, [analysis.defines] NAME="value" to
        expand, keep_raw to leave a macro as text. Do not put .svh in a
@@ -85,10 +88,17 @@ Init
          plugins_dir   rtl/gen/plugins   bus and regfile SV
          connect_dir   rtl/gen/connect   wrappers
          sim_dir       rtl/gen/sim       testbench
-       C headers, uvm_reg, and Excel stay under fw/gen and dv/ral via
-       [plugins.wishbone]. RtlIndex is .autowire/hdxml. Connect snapshots
-       are .autowire/connect.
-    6. Style. Default is the [workspace.style] block init writes (aligned
+       RtlIndex is .autowire/hdxml. Connect snapshots are
+       .autowire/connect.
+    6. Register-file exports. plugin wishbone run always writes the bus and
+       regfile SV. The other exports are optional; ask which to include:
+         C headers     [plugins.wishbone] c=    default fw/gen/wishbone
+         uvm_reg model [plugins.wishbone] uvm=  default dv/ral
+       "ralf" is the name people use for that model. The output is uvm_reg
+       SystemVerilog, not a .ralf file. Excel (export=, default
+       bus_regfiles.xlsx) is the address-map document; include it unless
+       they say no.
+    7. Style. Default is the [workspace.style] block init writes (aligned
        ports, params, instances, signals, uppercase localparams, short
        port-map comments). Ask once.
 
