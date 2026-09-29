@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.2.6] - 2026-09-29
+
+- 发布产物增加 `hdxml-windows-x64.zip`：`windows-2022` 上 MSVC 目标的 `hdxml.exe`。
+
 ## [2.2.5] - 2026-09-29
 
 - Wishbone 总线封装模块改名 `<bus>_system` → `<bus>_bus_cfg`（生成物；引用封装名的 `aw-inst`、filelist、脚本都要同步改）。demo/soc、demo/hbm 已跟随。
