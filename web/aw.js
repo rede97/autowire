@@ -79,6 +79,7 @@ function evalPart(part) {
   });
   return segs.join(":");
 }
+var DIM_SYMBOL = /`?[A-Za-z_][A-Za-z0-9_]*/g;
 function canonicalDims(t) {
   return t && !t.startsWith("[") ? `[${t}]` : t;
 }
@@ -91,7 +92,7 @@ function foldDims(text, vals) {
   }).join(":");
   let t = text;
   for (let i = 0;i < 4; i++) {
-    const next = t.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (s) => vals.has(s) ? `(${vals.get(s)})` : s);
+    const next = t.replace(DIM_SYMBOL, (s) => !s.startsWith("`") && vals.has(s) ? `(${vals.get(s)})` : s);
     if (next === t)
       break;
     t = next;
@@ -337,7 +338,9 @@ function classifyExpr(expr, scope) {
 function rewriteDims(text, instParams, uniqName, leafParams, res, where) {
   if (!text)
     return text;
-  const once = (t) => t.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (sym) => {
+  const once = (t) => t.replace(DIM_SYMBOL, (sym) => {
+    if (sym.startsWith("`"))
+      return sym;
     if (instParams.has(sym))
       return uniqName(instParams.get(sym));
     const leaf = leafParams.get(sym);

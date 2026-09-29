@@ -205,7 +205,7 @@ fn bare_define_means_one_and_gates_ifdef() {
 }
 
 #[test]
-fn keep_raw_macro_kept_verbatim_as_sentinel() {
+fn keep_raw_macro_exported_as_backtick_text() {
     let c = Case::new("raw");
     let top = c.write("top.sv", "module top(output logic [`W-1:0] o);\nendmodule\n");
     let (code, _) = c.run(&[
@@ -218,9 +218,14 @@ fn keep_raw_macro_kept_verbatim_as_sentinel() {
     ]);
     assert_eq!(code, 0);
     let xml = std::fs::read_to_string(c.find_out("top.sv.xml").unwrap()).unwrap();
+    // 哨兵只活在分析文本；XML 承诺可直接落 SV 的原文（module-info.md B-6）
     assert!(
-        xml.contains("packed=\"[__MACRO__DEFINE__W-1:0]\""),
-        "raw macro must stay as sentinel in dims: {xml}"
+        xml.contains("packed=\"[`W-1:0]\""),
+        "raw macro dims must be exported as `W: {xml}"
+    );
+    assert!(
+        !xml.contains("__MACRO__DEFINE__"),
+        "the analysis-phase sentinel must not leak into the XML: {xml}"
     );
 }
 

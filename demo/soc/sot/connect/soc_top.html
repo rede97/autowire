@@ -170,6 +170,14 @@
                 <aw-connect port="o_irq" to="irq_bus" width="31:0"></aw-connect>
               </aw-template>
             </aw-inst>
+
+            <!-- Macro-width probe: the macro-width signal passes up through this
+                 wrapper and is tied to constant 0 here (stays inside soc_top). -->
+            <aw-inst id="u_macro_probe" mod="macro_width_probe">
+              <aw-template>
+                <aw-connect port="macro_width_signal" to="0" type="const"></aw-connect>
+              </aw-template>
+            </aw-inst>
           </aw-insts>
         </aw-content>
         <aw-submods></aw-submods>

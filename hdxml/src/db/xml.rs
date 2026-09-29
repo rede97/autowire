@@ -92,8 +92,7 @@ impl<'a> XmlExport<'a> {
         // 本次产物集合：源文件 → 相对 out_dir 的 XML 路径（镜像源码相对路径）
         let mut index_of: BTreeMap<&PathBuf, String> = BTreeMap::new();
         for f in &inputs {
-            let rel = file_xml_rel(f, &cwd);
-            index_of.insert(*f, rel.to_string_lossy().into_owned());
+            index_of.insert(*f, file_xml_rel(f, &cwd));
         }
 
         // GC：删除旧 manifest 中本次不再产出的 XML（源码已删除/移出输入集），并修剪空目录
@@ -216,10 +215,10 @@ impl<'a> XmlExport<'a> {
                         ("kind", p.kind.as_str().to_string()),
                     ];
                     if let Some(t) = &p.data_type {
-                        a.push(("dataType", t.clone()));
+                        a.push(("dataType", restore_raw_macros(t)));
                     }
                     if let Some(d) = &p.default {
-                        a.push(("default", d.text.clone()));
+                        a.push(("default", restore_raw_macros(&d.text)));
                         push_deps(&mut a, d);
                     }
                     a.push(("span", span_text(p.span)));
@@ -263,7 +262,7 @@ impl<'a> XmlExport<'a> {
                         if let Some(n) = &c.name {
                             a.push(("name", n.clone()));
                         }
-                        a.push(("value", c.value.clone()));
+                        a.push(("value", restore_raw_macros(&c.value)));
                         w.empty("param", &a);
                     }
                     w.close("instance");
@@ -425,13 +424,32 @@ fn span_text(span: [usize; 2]) -> String {
 
 fn push_deps(attrs: &mut Vec<(&'static str, String)>, e: &ExprText) {
     if !e.deps.is_empty() {
-        attrs.push(("deps", e.deps.join(",")));
+        attrs.push(("deps", restore_raw_macros(&e.deps.join(","))));
     }
+}
+
+/// 保原文宏还原：分析文本里的哨兵 `__MACRO__DEFINE__NAME` 写出为 SV 原文 `` `NAME ``。
+/// 哨兵只是预处理期的占位手段（标识符形，不扰 span/`ifdef`），不属于对外格式；
+/// XML 承诺类型/维度/缺省表达式是可直接落 SV 的原文（docs/hdxml/rtlindex-xml.md §4.2）。
+/// 已还原文本二次调用为 no-op——增量缓存回读自产 XML 时依赖这个幂等性。
+fn restore_raw_macros(text: &str) -> String {
+    if !text.contains(super::MACRO_RAW_PREFIX) {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(super::MACRO_RAW_PREFIX) {
+        out.push_str(&rest[..at]);
+        out.push('`');
+        rest = &rest[at + super::MACRO_RAW_PREFIX.len()..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn dims_text(dims: &[ExprText]) -> String {
     dims.iter()
-        .map(|d| format!("[{}]", d.text))
+        .map(|d| format!("[{}]", restore_raw_macros(&d.text)))
         .collect::<Vec<_>>()
         .join("")
 }
@@ -440,7 +458,7 @@ fn port_attrs(p: &PortInfo) -> Vec<(&'static str, String)> {
     // 方向由标签名承载（<input>/<output>/…），不再重复 dir 属性
     let mut a = vec![("name", p.name.clone())];
     if let Some(t) = &p.data_type {
-        a.push(("dataType", t.clone()));
+        a.push(("dataType", restore_raw_macros(t)));
     }
     if let Some(i) = &p.interface {
         a.push(("interface", i.clone()));
@@ -455,7 +473,7 @@ fn port_attrs(p: &PortInfo) -> Vec<(&'static str, String)> {
         a.push(("unpacked", dims_text(&p.unpacked)));
     }
     if let Some(d) = &p.default {
-        a.push(("default", d.text.clone()));
+        a.push(("default", restore_raw_macros(&d.text)));
     }
     a.push(("span", span_text(p.span)));
     a
@@ -464,7 +482,9 @@ fn port_attrs(p: &PortInfo) -> Vec<(&'static str, String)> {
 
 /// 每文件 XML 相对路径：镜像源码相对 CWD 的路径并追加 .xml（`src/foo.sv` → `src/foo.sv.xml`）。
 /// CWD 之外的路径剥掉根/父级分量，保留可辨识层级；按构造唯一，无需哈希。
-fn file_xml_rel(path: &Path, cwd: &Path) -> PathBuf {
+/// 分隔符**恒为 `/`**（契约 §4.3 `index`）：产物与 GC 比对在 Linux/macOS/Windows 上
+/// 一致，消费方 join 时两种分隔符都能用，无需按平台归一化。
+fn file_xml_rel(path: &Path, cwd: &Path) -> String {
     let rel: PathBuf = match path.strip_prefix(cwd) {
         Ok(r) => r.to_path_buf(),
         Err(_) => path
@@ -476,7 +496,14 @@ fn file_xml_rel(path: &Path, cwd: &Path) -> PathBuf {
             .collect(),
     };
     let name = format!("{}.xml", rel.file_name().unwrap_or_default().to_string_lossy());
-    rel.with_file_name(name)
+    let rel = rel.with_file_name(name);
+    rel.components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<String>>()
+        .join("/")
 }
 
 /// 读旧 index.xml 的产物清单（`<file index="…">`；自产格式行扫描即可）
@@ -660,8 +687,90 @@ mod tests {
         assert!(i1.contains("<node module=\"sub\">"));
         // 模块映射
         assert!(i1.contains("<module name=\"sub\" index=\"nonexistent/top.sv.xml\"/>"));
+        // index 分隔符恒为 '/'：断言不依赖运行平台的 MAIN_SEPARATOR
+        assert!(
+            i1.contains("index=\"nonexistent/top.sv.xml\""),
+            "index paths must use '/' on every platform: {i1}"
+        );
         let _ = std::fs::remove_dir_all(&d1);
         let _ = std::fs::remove_dir_all(&d2);
+    }
+
+    #[test]
+    fn param_port_dims_reach_the_xml_attributes() {
+        // 端口维度引用 param 时，XML 属性必须是原文：多维拼接 [d0][d1]，
+        // unpacked 同式，param default 原文 + deps。端口本身不带 deps（契约 §7）。
+        let f = PathBuf::from("/nonexistent/parm.sv");
+        let m = ModuleDecl {
+            imports: vec![],
+            name: "parm".into(),
+            kind: ModKind::Module,
+            norm_hash: "n".into(),
+            file: f.clone(),
+            span: [0, 50],
+            params: vec![
+                ParamInfo {
+                    name: "W".into(),
+                    kind: ParamKind::Parameter,
+                    data_type: Some("int unsigned".into()),
+                    default: Some(ExprText::new("8")),
+                    span: [10, 20],
+                },
+                ParamInfo {
+                    name: "MSB".into(),
+                    kind: ParamKind::Localparam,
+                    data_type: None,
+                    default: Some(ExprText::new("W-1")),
+                    span: [21, 30],
+                },
+            ],
+            ports: vec![PortInfo {
+                name: "lanes".into(),
+                dir: Some(PortDir::Output),
+                data_type: Some("logic".into()),
+                interface: None,
+                modport: None,
+                packed: vec![ExprText::new("3:0"), ExprText::new("W-1:0")],
+                unpacked: vec![ExprText::new("0:Depth-1")],
+                default: None,
+                span: [31, 40],
+            }],
+            instances: vec![InstanceInfo {
+                inst: "u0".into(),
+                target: "leaf".into(),
+                params: vec![crate::db::ParamConn {
+                    name: Some("PW".into()),
+                    value: "W-1".into(),
+                }],
+                span: [60, 70],
+            }],
+            content_hash: "h".into(),
+            interface_sig: "s".into(),
+        };
+        let mut defs = BTreeMap::new();
+        defs.insert("parm".to_string(), m);
+        let db = DesignDb::new(defs, BTreeMap::new());
+        let files = vec![f.clone()];
+        let dir = tmpdir("param_dims");
+        XmlExport::with_generated(&db, &files, &[], &BTreeMap::new(), &[], 0)
+            .write(&dir)
+            .unwrap();
+        let body = std::fs::read_to_string(dir.join("nonexistent/parm.sv.xml")).unwrap();
+        assert!(body.contains("packed=\"[3:0][W-1:0]\""), "{body}");
+        assert!(body.contains("unpacked=\"[0:Depth-1]\""), "{body}");
+        assert!(
+            body.contains("name=\"W\" kind=\"parameter\" dataType=\"int unsigned\" default=\"8\""),
+            "{body}"
+        );
+        // param 缺省表达式带 deps；端口维度的 deps 不进 XML
+        assert!(body.contains("default=\"W-1\" deps=\"W\""), "{body}");
+        let port_line = body
+            .lines()
+            .find(|l| l.contains("name=\"lanes\""))
+            .expect("port line");
+        assert!(!port_line.contains("deps="), "{port_line}");
+        assert!(body.contains("<param name=\"PW\" value=\"W-1\"/>"), "{body}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -766,5 +875,73 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir_raw);
         assert_ne!(fp_of(&defs_a), fp_of(&defs_raw), "expanded and raw must be distinguishable");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn raw_macro_sentinel_is_restored_on_export() {
+        // 哨兵只活在分析阶段；XML 必须给出可直接落 SV 的 `NAME 原文
+        let pfx = crate::db::MACRO_RAW_PREFIX;
+        let f = PathBuf::from("/nonexistent/macro.sv");
+        let m = ModuleDecl {
+            imports: vec![],
+            name: "macro_probe".into(),
+            kind: ModKind::Module,
+            norm_hash: "n".into(),
+            file: f.clone(),
+            span: [0, 50],
+            params: vec![ParamInfo {
+                name: "W".into(),
+                kind: ParamKind::Parameter,
+                data_type: None,
+                default: Some(ExprText::new(&format!("{pfx}MACRO_W"))),
+                span: [10, 20],
+            }],
+            ports: vec![PortInfo {
+                name: "d".into(),
+                dir: Some(PortDir::Input),
+                data_type: Some(format!("logic [{pfx}MACRO_W-1:0]")),
+                interface: None,
+                modport: None,
+                packed: vec![ExprText::new(&format!("{pfx}MACRO_W-1:0"))],
+                unpacked: vec![ExprText::new(&format!("0:{pfx}MACRO_DEPTH-1"))],
+                default: None,
+                span: [21, 30],
+            }],
+            instances: vec![InstanceInfo {
+                inst: "u0".into(),
+                target: "leaf".into(),
+                params: vec![crate::db::ParamConn {
+                    name: Some("PW".into()),
+                    value: format!("{pfx}MACRO_W"),
+                }],
+                span: [60, 70],
+            }],
+            content_hash: "h".into(),
+            interface_sig: "s".into(),
+        };
+        let mut defs = BTreeMap::new();
+        defs.insert("macro_probe".to_string(), m);
+        let db = DesignDb::new(defs, BTreeMap::new());
+        let files = vec![f.clone()];
+        let dir = tmpdir("raw_macro");
+        XmlExport::with_generated(&db, &files, &[], &BTreeMap::new(), &[], 0)
+            .write(&dir)
+            .unwrap();
+        let body = std::fs::read_to_string(dir.join("nonexistent/macro.sv.xml")).unwrap();
+        assert!(!body.contains(pfx), "sentinel must not reach the XML: {body}");
+        assert!(body.contains("dataType=\"logic [`MACRO_W-1:0]\""), "{body}");
+        assert!(body.contains("packed=\"[`MACRO_W-1:0]\""), "{body}");
+        assert!(body.contains("unpacked=\"[0:`MACRO_DEPTH-1]\""), "{body}");
+        assert!(body.contains("default=\"`MACRO_W\""), "{body}");
+        assert!(body.contains("value=\"`MACRO_W\""), "{body}");
+        let _ = std::fs::remove_dir_all(&dir);
+        // 幂等：增量缓存回读的是已还原文本，再导出不得二次改写
+        assert_eq!(restore_raw_macros("[`MACRO_W-1:0]"), "[`MACRO_W-1:0]");
+        assert_eq!(restore_raw_macros("W-1:0"), "W-1:0");
+        assert_eq!(
+            restore_raw_macros(&format!("{pfx}A+{pfx}B")),
+            "`A+`B",
+            "every sentinel in one expression is restored"
+        );
     }
 }

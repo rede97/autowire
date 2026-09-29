@@ -234,6 +234,12 @@ function evalPart(part: string | null): string | null {
 	return segs.join(":");
 }
 
+/** Symbol scan for dimension text. The optional leading backtick is part of the
+ *  match so a macro reference (`` `WIDTH ``) is never mistaken for a param named
+ *  WIDTH: raw macros are unevaluable by contract (docs/hdxml/module-info.md B-6)
+ *  and must survive folding / rewriting verbatim. */
+const DIM_SYMBOL = /`?[A-Za-z_][A-Za-z0-9_]*/g;
+
 /** Canonical packed/unpacked form: bare ranges get brackets ("15:0" → "[15:0]"). */
 function canonicalDims(t: string | null): string | null {
 	return t && !t.startsWith("[") ? `[${t}]` : t;
@@ -258,8 +264,8 @@ function foldDims(
 	let t = text;
 	// Fixpoint: substituted text may itself name another localparam.
 	for (let i = 0; i < 4; i++) {
-		const next = t.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (s) =>
-			vals.has(s) ? `(${vals.get(s)})` : s,
+		const next = t.replace(DIM_SYMBOL, (s) =>
+			!s.startsWith("`") && vals.has(s) ? `(${vals.get(s)})` : s,
 		);
 		if (next === t) break;
 		t = next;
@@ -625,7 +631,8 @@ function rewriteDims(
 ): string | null {
 	if (!text) return text;
 	const once = (t: string): string =>
-		t.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (sym: string) => {
+		t.replace(DIM_SYMBOL, (sym: string) => {
+			if (sym.startsWith("`")) return sym; // raw macro: never evaluated
 			if (instParams.has(sym)) return uniqName(instParams.get(sym)!);
 			const leaf = leafParams.get(sym);
 			if (leaf) {

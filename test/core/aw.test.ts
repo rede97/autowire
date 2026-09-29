@@ -332,6 +332,41 @@ describe("elaborate (render)", () => {
 		expect(at("en_i", "port-packed")).toBeNull();
 	});
 
+	test("raw macro dims survive folding even when the macro name collides with a param", () => {
+		// hdxml exports keep-raw macros as `NAME (docs/hdxml/module-info.md B-6):
+		// unevaluable by contract. The collision is the point: the leaf also has a
+		// param named Width, and an override exists, so a name-blind rewrite would
+		// corrupt the dim into `(8) / `m__u__Width.
+		const macroLeaf = leafOf(
+			[
+				{ name: "d_i", dir: "input", packed: "[`Width-1:0]" },
+				{ name: "mem_i", dir: "input", unpacked: "[0:`Depth-1]" },
+				{ name: "q_o", dir: "output", packed: "[Width-1:0]" },
+			],
+			[
+				{ name: "Width", defaultText: "8" },
+				{ name: "Depth", defaultText: "16" },
+			],
+		);
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="u" mod="macro_leaf"><aw-template>
+					<aw-param name="Width" expr="4"></aw-param>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ macro_leaf: macroLeaf }));
+		expect(res.errors).toEqual([]);
+		const at = (port: string, name: string) =>
+			mustQuery(doc, `aw-render aw-connect[port="${port}"]`).getAttribute(name);
+		expect(at("d_i", "port-packed")).toBe("[`Width-1:0]");
+		expect(at("mem_i", "port-unpacked")).toBe("[0:`Depth-1]");
+		// Same name without the backtick still folds through the override.
+		expect(at("q_o", "port-packed")).toBe("[3:0]");
+		const sig = mustQuery(doc, 'aw-signals aw-signal[name="d_i"]');
+		expect(sig.getAttribute("packed")).toBe("[`Width-1:0]");
+	});
+
 	test("param folding (style param=localparam): constant folds; module param name stays symbolic; expression kept", () => {
 		const doc = docOf(
 			`<aw-mod name="m"><aw-content>

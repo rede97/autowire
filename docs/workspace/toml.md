@@ -52,7 +52,7 @@ name = "chip_top"
 # hdxml 二进制路径（相对本文件解析）。不设置 = 默认查找：
 # --hdxml CLI > toml [analysis] hdxml_bin > $HDXML_BIN > 仓库 hdxml/target/{release,debug} > PATH
 # hdxml_bin = "hdxml/target/release/hdxml"
-# 保原文宏（端口表达式保留 `NAME 原文，`ifdef 判真，dump 时还原；经 --keep-raw 传入）
+# 保原文宏（端口表达式在 XML 中即为 `NAME 原文，`ifdef 判真，连线层禁止求值；经 --keep-raw 传入）
 keep_raw = ["WIDTH", "ENV_MACRO"]
 
 [analysis.rtl]

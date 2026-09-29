@@ -437,5 +437,8 @@ module soc_top (
 		.i_ints            (irq_srcs          ), // i [5:0]
 		.o_irq             (irq_bus           )  // o [31:0]
 	);
+	macro_width_probe u_macro_probe (
+		.macro_width_signal(0                 )  // i [`MACRO_WIDTH_SIGNAL_W-1:0]
+	);
 
 endmodule

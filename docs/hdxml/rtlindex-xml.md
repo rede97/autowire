@@ -85,9 +85,9 @@
 |---|---|---|---|
 | `name` | string | 是 | 宏名 |
 | `value` | string | 是 | 宏值文本（`-D NAME` 无值按 EDA 惯例记为 `1`；来自 `-D` 与 `--define-headers`） |
-| `raw` | bool | 否 | `true` = 登记未展开的保原文宏（哨兵展开，见 module-info.md §3）；此时**必须**无 `value` |
+| `raw` | bool | 否 | `true` = 登记未展开的保原文宏（分析期哨兵，见 module-info.md §3）；此时**必须**无 `value` |
 
-只有本组宏参与展开：`raw="true"` 的宏以哨兵占位符形式出现在类型/维度/缺省表达式中（消费方禁止求值，module-info.md B-6）；**未登记**的宏引用使生产者预处理报 `DefineNotFound`。
+只有本组宏参与展开：`raw="true"` 的宏在类型/维度/缺省表达式中以 SV 原文 `` `NAME `` 出现（分析期哨兵已在导出时还原，module-info.md B-6）——消费方**禁止求值**，按标识符重写表达式时必须跳过带前导反引号的记号；**未登记**的宏引用使生产者预处理报 `DefineNotFound`。
 
 预处理结果由宏集合决定，因此宏是索引有效性的一部分：消费方**必须**以当前宏集合按同一规则计算指纹并与 `definesFp` 比对，不一致不得使用该索引。
 
@@ -96,7 +96,7 @@
 | 属性 | 类型 | 必须 | 含义 |
 |---|---|---|---|
 | `source` | string | 是 | 源文件路径（生产者收集时的路径形式） |
-| `index` | string | 是 | 对应文件 XML 相对索引目录的路径（§2 命名规则） |
+| `index` | string | 是 | 对应文件 XML 相对索引目录的路径（§2 命名规则）；分隔符**恒为 `/`**（含 Windows），消费方直接 join 即可 |
 | `status` | `ok` \| `error` | 是 | `error` 表示该文件存在分析错误（细节见其 XML 的 `<error>`） |
 | `modules` | int | 是 | 该文件贡献的模块数（可为 0） |
 | `mtime` | int | 是 | 源文件 mtime；不可得时为 `0` |
@@ -106,7 +106,7 @@
 | 属性 | 类型 | 必须 | 含义 |
 |---|---|---|---|
 | `name` | string | 是 | 模块名，全局唯一（重复定义见 §6） |
-| `index` | string | 是 | 声明所在文件 XML 的相对路径 |
+| `index` | string | 是 | 声明所在文件 XML 的相对路径（分隔符恒为 `/`，同 §4.3） |
 
 ### 4.5 `<packages>/<package>`（每个已定义 package 一条）
 
@@ -215,6 +215,8 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 | `unpacked` | string | 否 | 非打包维度，格式同上 |
 | `default` | string | 否 | 缺省值表达式原文 |
 | `span` | `int:int` | 是 | 声明范围 |
+
+> `dataType` / `packed` / `unpacked` / `default` 均为**可直接落 SV 的原文**：保原文宏写作 `` `NAME ``（§4.2、module-info.md B-6），消费方不得求值、不得按标识符改写反引号记号。
 
 > `<ref>` 仅为事实记录：模块级 `ref` 端口面向验证代码，主流综合工具不支持；可综合 RTL 中不应出现。分析层无条件收集（零功能特判），消费方连线层遇到 `<ref>` 端口**应当**告警并跳过，不得为其生成连接。
 

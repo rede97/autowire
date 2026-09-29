@@ -11,6 +11,10 @@ filelists = ["rtl/soc.f"]
 incdirs = []
 exclude_filenames = []
 
+[analysis]
+# Macro header (.svh; not a filelist entry): the macro-width probe leaf's port width.
+define_headers = ["rtl/soc_macros.svh"]
+
 [analysis.defines]
 
 [analysis.index]
@@ -68,10 +72,14 @@ html = "sot/connect/sha256wb.html"
 html = "sot/connect/sd_sha_ch.html"
 deps = ["sha256wb"]
 
-# SoC top: cross-unit reference to sd_sha_ch -> deps
+# SoC top: cross-unit references to sd_sha_ch + macro_width_probe -> deps
 [connect.soc_top]
 html = "sot/connect/soc_top.html"
-deps = ["sd_sha_ch"]
+deps = ["sd_sha_ch", "macro_width_probe"]
+
+# Macro-width signal probe (independent connect unit; not wired into soc_top)
+[connect.macro_width_probe]
+html = "sot/connect/macro_width_probe.html"
 
 # DV TB top (aw-tb-mod) — dump → rtl/gen/sim/
 [sim.soc_tb]

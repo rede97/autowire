@@ -12,6 +12,8 @@ rtl/smoke_wb.v
 rtl/soc_reset.v
 rtl/soc_irqmerge.v
 rtl/demo_tap.v
+# Connect probe leaf (macro-width port; not instantiated by the SoC)
+rtl/macro_probe.sv
 
 # Type-A wishbone (CPU + JTAG interconnect + two sd_sha channel interconnects + leaves)
 rtl/gen/plugins/wishbone/bus/wb_cfg_pipe.sv

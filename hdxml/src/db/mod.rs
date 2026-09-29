@@ -440,7 +440,8 @@ use std::collections::HashMap;
 use sv_parser::{Define, DefineText};
 
 /// 保原文宏的展开哨兵前缀（svo `__MACRO__DEFINE__` 同式）：
-/// `` `WIDTH `` 展开为 `__MACRO__DEFINE__WIDTH`，消费方 dump 时 strip_prefix 还原。
+/// `` `WIDTH `` 展开为 `__MACRO__DEFINE__WIDTH`，仅存在于分析文本；
+/// 导出 XML 时由 `db::xml::restore_raw_macros` 还原为 `` `WIDTH ``。
 /// （sv-parser-pp 0.13.4 的 None 值是**删除**宏引用而非原文保留，故不能用 None。）
 pub const MACRO_RAW_PREFIX: &str = "__MACRO__DEFINE__";
 

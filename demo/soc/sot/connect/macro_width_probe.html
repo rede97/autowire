@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  Connect unit "macro_width_probe": macro-width signal probe.
+    Instantiates macro_probe (one input whose width is the macro
+    `MACRO_WIDTH_SIGNAL_W) and connects that macro-width port to the net
+    macro_width_signal, which is exported so the caller can drive it.
+    Instantiated by soc_top, where the signal is tied to constant 0.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>macro_width_probe</title>
+  </head>
+  <body>
+    <autowire>
+      <aw-mod name="macro_width_probe">
+        <aw-content>
+          <aw-imports></aw-imports>
+          <aw-params></aw-params>
+          <aw-localparams></aw-localparams>
+          <aw-ports></aw-ports>
+          <aw-templates></aw-templates>
+          <aw-insts>
+            <aw-inst id="u_probe" mod="macro_probe">
+              <aw-template>
+                <aw-connect port="i_macro_width_signal" to="macro_width_signal"></aw-connect>
+                <aw-connect port="o_probe_ok" type="open"></aw-connect>
+              </aw-template>
+            </aw-inst>
+          </aw-insts>
+        </aw-content>
+        <aw-submods></aw-submods>
+        <aw-render></aw-render>
+      </aw-mod>
+    </autowire>
+  </body>
+</html>
