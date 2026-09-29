@@ -1,0 +1,17 @@
+autowire help [topic]
+
+  agent      Agent contract (read this before editing)
+  status     landed / not landed
+  workspace  autowire.toml
+  analysis   init + analysis
+  connect    HTML dialect
+  web        local page
+  check      validate HTML + deps
+  dump       write-back RTL
+  cli        happy-dom render
+  deps       dependency tree
+  dont       forbidden items
+  docs       unpack bundled docs and demos
+  cdp        drive connect web from any CDP browser
+
+Default (no topic): command index.

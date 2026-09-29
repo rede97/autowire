@@ -1,0 +1,19 @@
+Autowire — commands
+
+  help [topic]              topic reference (see help topics)
+  init <name>               toml + AGENTS-AUTOWIRE.md + .autowire/{hdxml,dsl}
+  analysis run              hdxml from autowire.toml       → help analysis
+  analysis deps [module]    RTL dependency trees           → help deps
+  analysis search <pattern> fuzzy or regex index search    → help analysis
+  analysis info <module>    params and ports               → help analysis
+  connect run [unit]       happy-dom check then write .sv  → help cli
+  connect check [unit]     author-face rules, no write    → help check
+  connect elaborate [unit] check + elaborate, no write    → help cli
+  connect web [unit]       static session page            → help web
+  plugin wishbone run      generate regfiles and buses    → help status
+  docs unpack <dir>        write bundled docs/, demo/, AGENTS.md → help docs
+
+Also: help status | connect | dont
+Reference: docs/ (contracts) + demo/ (examples) — read these first; keep help in sync
+
+Agents: run `bun index.ts help agent` — that is the working contract; do not invent a project prompt.

@@ -9,6 +9,7 @@ import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex, type RtlIndex } from "../rtl/rtlindex.ts";
 import { renderSummary, renderTrees } from "../rtl/tree.ts";
 import { defaultToml, hdxmlArgs, type WorkspaceConfig } from "../workspace.js";
+import { INIT_ATTACH_NOTE } from "./help.ts";
 import { ensureWishboneDsl, loadPack } from "./pack.ts";
 import { findHdxml, requireWorkspace } from "./shared.ts";
 
@@ -130,6 +131,7 @@ export function registerAnalysis(program: Command): void {
 			console.log(`created ${agentsTarget}`);
 			console.log(`created ${indexDir}/`);
 			console.log(`created .autowire/dsl/ (${dslFiles.length} files)`);
+			console.log(INIT_ATTACH_NOTE);
 		});
 
 	const analysis = program

@@ -1,0 +1,24 @@
+CDP browsers — driving connect web from any CDP client
+
+Playwright is only the CDP client here. Any CDP-speaking headless browser works:
+Playwright Chromium (dev/CI default), obscura (CDP, CentOS 7-compatible; production, parked).
+
+  obscura_c7 serve --port 9222 --allow-private-network   # CDP endpoint
+  bun index.ts connect web soc_top --port 4173           # page session (demo/soc)
+  chromium.connectOverCDP("http://127.0.0.1:9222")       // attach
+
+Driver helpers: scripts/cdp-helper.ts (connectCdp / openPage / runSession /
+authorFaceText / installEngine). Pattern and quirks: docs/skills/cdp-debug.md.
+
+Minimal-browser quirks (obscura-verified)
+  no lifecycle events   goto(domcontentloaded) only; setContent/addScriptTag hang
+  no blob:/data: URLs   import the engine over http: await import("/aw.js")
+  downloads navigate    stub HTMLAnchorElement.prototype.click to read save text
+  SSRF guard            --allow-private-network for 127.0.0.1
+
+Tests: launchBrowser() (scripts/cdp-helper.ts) tries chromium.launch first,
+then spawns obscura serve + CDP; AW_CDP_ENDPOINT points at a live endpoint.
+
+Equivalence baseline: the page and connect run must produce byte-identical
+snapshots and .sv. Port order is semantic (connect sort key); the connect
+sidecar keeps ports in declaration order.

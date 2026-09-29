@@ -2,7 +2,7 @@
 
 HTML plus `<script>` is the connectivity source. After the script runs, the live DOM is the netlist. `connect run` writes `.sv` from `aw-render`. The page shows the same text and does not write the workspace. Product overview: [`README.md`](README.md). Constraints: [`docs/`](docs/README.md).
 
-Start with `bun index.ts help agent`. Do not invent a command that `help status` does not list as landed. Behavior changes MUST update `src/cli/help.ts` and the matching doc.
+Start with `bun index.ts help agent`. Do not invent a command that `help status` does not list as landed. Behavior changes MUST update `help/<topic>.txt` and the matching doc. `src/cli/help.ts` only loads those files.
 
 **Reference — top priority.** Project best practices live in [`docs/`](docs/README.md) (contracts and constraints) and [`demo/`](demo/) (runnable examples). Before changing behavior, read the relevant `docs/` and `demo/` files first; they are the authoritative reference, not guesswork. (Same rule in `help agent`.)
 
@@ -15,11 +15,11 @@ Three processes, never linked into one binary. Details: [`docs/dev/release.md`](
 | autowire | Workspace CLI: analysis, connect, `plugin wishbone run`. `connect run` writes `.sv` with happy-dom, no browser. Tests use `bun index.ts`. Production is `out/autowire.js` (one Bun script: deps, page assets, zstd of `docs/` and the runnable demo sources — `demo/*/ip/` is trimmed to the filelist closure, patches pre-applied, sot imports rewritten to `.autowire/dsl/`) or `out/autowire` (that script plus the Bun runtime). Unpack with `docs unpack <dir>`. See [`docs/dev/release.md`](docs/dev/release.md) section 1.1 | RTL parse; a bundled browser; shipping `index.ts` or `node_modules` | Dev/CI: `bun index.ts help`, `help topics`, `help docs`. Production: `autowire help` or `bun autowire.js help`|
 | hdxml | Read-only RTL analysis to RtlIndex XML. No subcommands. `analysis run` maps `autowire.toml` onto its flags | Connect, print `.sv`, Wishbone | [`docs/hdxml/cli.md`](docs/hdxml/cli.md). Scoped rules: [`hdxml/AGENTS.md`](hdxml/AGENTS.md) |
 | Playwright + Chromium | Dev and CI page tests and debug (`test/e2e-web.test.ts`, `.mcp.json`) | Production package; writing `.sv` | Page contract: [`docs/workspace/web-ui.md`](docs/workspace/web-ui.md) |
-| obscura | Production debug browser only (`mcp`, `serve`; CDP, CentOS 7-compatible build). Same HTML as happy-dom | Dev/CI today; writing `.sv`. Do not switch `.mcp.json` to it until the package exists | [`docs/dev/release.md`](docs/dev/release.md) sections 1-2; CDP pattern: [`docs/dev/cdp-debug.md`](docs/dev/cdp-debug.md) |
+| obscura | Production debug browser only (`mcp`, `serve`; CDP, CentOS 7-compatible build). Same HTML as happy-dom | Dev/CI today; writing `.sv`. Do not switch `.mcp.json` to it until the package exists | [`docs/dev/release.md`](docs/dev/release.md) sections 1-2; CDP pattern: [`docs/skills/cdp-debug.md`](docs/skills/cdp-debug.md) |
 
 Usual path when the filelist already names generated files that are not on disk: `plugin wishbone run` (plugins_dir) → `analysis run` → `connect run` (connect_dir, sim_dir, and `.autowire/connect` snapshots; deps first). `analysis run` stops and names that writer instead of passing hdxml's missing-file error through. A hand-RTL-only filelist, or a full demo unpack that already contains `rtl/gen`, can `analysis run` first; re-run `plugin wishbone run` when the TypeScript SoT changed. `connect check` does not write. Checking a unit before its deps have a snapshot fails with "snapshot missing". Standalone `autowire.js` does not embed hdxml: `--hdxml`, `[analysis] hdxml_bin`, `$HDXML_BIN`, then PATH. If `docs unpack` has no demo a doc cites, that demo was trimmed; use the contracts and the demos that unpacked. Open `connect web` and drive it with Playwright only to inspect the live page. The page does not write files.
 
-Any CDP-speaking headless browser can drive the page (Playwright is only the client). Pattern + helpers: [`docs/dev/cdp-debug.md`](docs/dev/cdp-debug.md), `scripts/cdp-helper.ts`, or `help cdp`.
+Any CDP-speaking headless browser can drive the page (Playwright is only the client). Pattern + helpers: [`docs/skills/cdp-debug.md`](docs/skills/cdp-debug.md), `scripts/cdp-helper.ts`, or `help cdp`.
 
 ## Commands
 
@@ -49,7 +49,7 @@ Commands above are the dev and test entry (`index.ts`). Do not tell a production
 - Leaf ports: RtlIndex under `.autowire/hdxml/`. Do not reparse RTL in the page.
 - Printer input: `aw-render` only. Do not treat `aw-content` as the netlist.
 
-Generated and MUST NOT be hand-edited: `web/aw.js`, `web/page.js` (`bun run build:web`), `rtl/gen/`, `plugins_dir/`, and `fw/gen/`. `demo/soc/ip/sdspi` stays at upstream `dfb16c8`; its FIFO patch is applied only for a smoke and then discarded.
+Generated and MUST NOT be hand-edited: `web/aw.js`, `web/page.js` (`bun run build:web`), `rtl/gen/`, `plugins_dir/`, `fw/gen/`, `dv/ral/`, and `.autowire/`. A wrong generated file is fixed by changing the SoT (Wishbone TypeScript or connect HTML) and re-running the writer. `demo/soc/ip/sdspi` stays at upstream `dfb16c8`; its FIFO patch is applied only for a smoke and then discarded.
 
 ## Constraints
 

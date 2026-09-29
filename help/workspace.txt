@@ -1,0 +1,63 @@
+autowire.toml — workspace config
+
+Full constraints: docs/workspace/toml.md
+Commands: autowire init | autowire analysis  (see help analysis)
+
+Shared by deps / web / cli for the RTL universe:
+  [workspace] name="…"  workspace identity (C-identifier): names wishbone umbrella files + guards
+  [analysis] hdxml_bin="…"  hdxml binary path (unset: --hdxml > $HDXML_BIN > repo target > PATH)
+  [analysis.*]  .f / sources / walk / incdirs / defines / keep_raw / index dir
+  Author SoT            one tree (demo: sot/): connect HTML under sot/connect/;
+                        wishbone ts= as wb_reg_*.ts / wb_bus_*.ts;
+                        sim HTML stays under sim/ (DE vs DV)
+  [connect.<id>]        DE unit: html= + optional deps= (DAG; aw-mod root; → connect_dir)
+  [sim.<id>]            DV TB unit: html= under sim/; aw-tb-mod root; deps may list
+                        connect ids; dump → sim_dir (no .autowire/connect XML)
+  [wishbone.<source>]   wishbone SoT file: ts=; optional exports=[]; omit = all
+                        RegfileDef and/or BusDef exports (types stay separate)
+  [plugins.wishbone]    packed software: export= Excel (bus_regfiles.xlsx: field sheets regfile_<sheet> +
+                        one indented Address Map sheet bus_map_<bus> per bus tree);
+                        c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + <name>.h;
+                        TagFromAddr aliases
+                        and broadcast windows); uvm= uvm_reg dir (regfile/ + bus/ + ral_<name>.sv; model only, no RALF)
+  [workspace.dump]      product dirs (docs §4.0; legacy dir= still accepted with warn):
+                        connect_dir="gen/connect"  DE wrappers
+                        sim_dir="gen/sim"          DV TB tops
+                        plugins_dir="gen/plugins"  type-A plugins; subdirs per plugin id
+                        dir="gen"                  deprecated single sink (compat warn)
+                        demo/soc dump → rtl/gen/{connect,sim,plugins}
+  [workspace.style] param_inline  true (default) inline simple overrides | false: fold all to Mod__Inst__Param
+  [workspace.style] port_align    declaration port columns: dir / type / packed, names left-aligned (default false)
+  [workspace.style] param_align   declaration parameter = column (default false)
+  [workspace.style] inst_port_align   instantiation .port ( and ) columns, file-wide (default false)
+  [workspace.style] inst_param_align  instantiation .PARAM ( and ) columns, file-wide (default false);
+                            with inst_port_align too, ports + params share one column pair
+  [workspace.style] inst_port_dir     append // input|output|inout to instance port-map rows (default false)
+  [workspace.style] inst_port_dir_format  "full" (input/output/inout, default) | "short" (i/o/io)
+  [workspace.style] inst_port_width   append the port width after the direction: // input [31:0];
+                            multi-dim packed as-is ([3:0][7:0]); unpacked after ';'
+                            ([7:0];[0:15], ;[0:3]); 1-bit ports show none (default false)
+  [workspace.style] signal_align      internal signal columns: nettype / packed, names left-aligned (default false)
+  [workspace.style] localparam_upper  uppercase generated Mod__Inst__Param names (default false)
+
+Dirs
+  .autowire/          generated temp (deletable; never hand-authored)
+  .autowire/hdxml/    RtlIndex XML — web loads ONLY via GET /api/rtlindex|/api/module
+  .autowire/connect/  per-unit snapshot: <id>.xml only (abstract module info,
+                      hdxml-style, no timestamps/hashes) — connect run + cross-unit deps
+                      via GET /api/connect?id=; never author SoT; no html snapshot
+
+Load rules (docs/workspace/toml.md §4.2 / docs/workspace/web-ui.md §5)
+  leaf ports: hdxml only (missing/stale definesFp → error when needed)
+  cross-unit: require dep unit snapshot under connect/ (or elaborate deps first)
+  browser never reads workspace files directly; connect run never reloads author html=
+
+Macro policy (hdxml)
+  expanding: -D / [analysis.defines] NAME="v"
+  keep_raw: [analysis] keep_raw=[...] only (empty-string removed)
+  undeclared macro = DefineNotFound (strict)
+
+Boundaries
+  toml = project config; HTML = connectivity SoT (no wiring in toml)
+  DE vs DV: [connect.*] vs [sim.*] — separate HTML trees; never one file for both
+  connect deps: missing ref = error; unused dep = warn (at elaborate); cycle = error; DAG enables parallel elaborate

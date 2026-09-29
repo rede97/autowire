@@ -1,5 +1,5 @@
 // CDP driver helpers for headless browsers that speak CDP (Playwright
-// Chromium, obscura). Pattern doc: docs/dev/cdp-debug.md.
+// Chromium, obscura). Pattern doc: docs/skills/cdp-debug.md.
 //
 // Hard-won quirks encoded here (obscura 0.2.x):
 // - No page lifecycle events: use goto(domcontentloaded); setContent /

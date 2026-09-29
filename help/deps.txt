@@ -1,0 +1,7 @@
+autowire analysis deps
+
+  autowire analysis deps [module] [--depth n] [--workspace dir|file]
+
+Reads the workspace RtlIndex. Omit module to print every dependency tree.
+A module name prints only that tree. Missing index → error; run analysis run first.
+Does not parse RTL and does not write files.

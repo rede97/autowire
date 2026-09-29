@@ -1,0 +1,54 @@
+Connect HTML dialect (landed: web/aw.js)
+
+Constraints:
+  docs/connect/html.md
+  docs/connect/rules.md
+  docs/connect/to-rules.md
+  docs/connect/check.md
+  docs/connect/lifecycle.md
+  docs/examples/connect/
+  docs/workspace/toml.md   ([connect.<id>] html + deps DAG;
+                           missing cross-unit ref = error; unused dep = warn at check)
+
+Two layers; do not mix
+  aw-content   imports / params / localparams / ports; aw-template; inst + overwrite
+  aw-render    imports / localparams / instances / signals / export ports / connects
+  aw-submods   nested aw-mod; sibling refs only via aw-mod@deps (path-accumulated visible set)
+
+Dump / golden only accept aw-render (every related mod; nested + multi-HTML).
+aw-rewrite: RegExp match + String.replace ($1 / $& / $<name>) + ${…}; match+to only.
+aw-connect@to: net (default) | const | open — const/open must declare type=; docs/connect/to-rules.md;
+  same-name → identity (omit; not a warning); rename → prefer one aw-rewrite RegExp ($1/$&);
+  do not list identity ports one-by-one; open/rename to avoid short circuits;
+  aw-param@expr / aw-template@inst_name: variable expressions only (no $1).
+aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlIndex form),
+  unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; default wire);
+  to is net name only — no [] suffix. See docs/connect/html.md §3.5.1–3.5.2.
+  A localparam default is the expression only; a following // comment is not part of it.
+  If a width still contains a comment, set packed= explicitly.
+  multidim example: docs/examples/connect/04-author-multidim.html.
+Lifecycle scripts: docs/connect/lifecycle.md —
+  classic <script>; aw-content@on-init(content, mods); aw-inst@on-template(inst, mod).
+  Helpers: aw.inst / aw.connect / aw.rewrite / aw.param / aw.port / aw.localparam.
+  check is static (no scripts). elaborate runs scripts and hooks, then freezes aw-render.
+  No author before-dump. Type-A plugin wishbone run stays outside this pipeline (docs/plugins/).
+Templates are per-aw-mod only. Connected nets → aw-signals; identity/export may auto-export ports.
+aw-imports → SV import at module head (deduped).
+
+Skeleton
+  <autowire>
+    <aw-mod name="…">
+      <aw-content>  aw-imports / aw-params / aw-localparams / aw-ports / aw-templates / aw-insts  </aw-content>
+      <aw-submods>  nested aw-mod (optional deps="sibling_a sibling_b") …  </aw-submods>
+      <aw-render>   aw-params / aw-imports / aw-localparams / aw-ports / aw-signals / aw-insts  </aw-render>
+    </aw-mod>
+  </autowire>
+
+aw-template: only rule container under aw-inst; overwrite / multi-template later wins.
+aw-template@inst_name defaults to ${id}.
+aw-port: dir=input|output|inout|interface; interface requires interface=, optional modport=.
+aw-param → Mod__Inst__Param; fold constants / inherited params / internal localparams;
+           do not fold expressions or macros.
+
+Elaboration: children first → on-init → each inst on-template → expand rules → identity nets → wires → frozen aw-render.
+  check does not run scripts. elaborate does not write files (docs/connect/lifecycle.md).

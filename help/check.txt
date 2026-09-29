@@ -1,0 +1,22 @@
+autowire connect check
+
+  autowire connect check [unit]
+
+Validate author-face connect HTML (aw-content + aw-submods) and dependency graphs.
+Static only: does not run <script>, on-init, or on-template.
+Does NOT inspect aw-render as SoT. Does NOT write .sv. Does NOT require a browser.
+Full checklist: docs/connect/check.md.
+
+Must check (author-face + RtlIndex/deps context)
+  dialect constraints on aw-content (docs/connect/html.md / docs/connect/rules.md)
+  type=/to legality (docs/connect/to-rules.md) without needing expand results
+  toml deps: missing cross-unit ref = error; unknown id / cycle / self-dep = error
+  unused dep = warning (does not fail check)
+  a dep never connect run fails with "snapshot missing" (.autowire/connect/<id>.xml); run deps first
+
+Not check's job
+  printing .sv (connect run)
+  editing author HTML
+
+connect run depends on this check and refuses to write when it fails.
+Check green is not a substitute for reading the written RTL.

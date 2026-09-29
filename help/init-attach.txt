@@ -1,0 +1,5 @@
+Attach AGENTS-AUTOWIRE.md before other autowire work.
+It is not on the default reading list. Update the workspace AGENTS.md:
+add that file, put it in the prompt directory this agent already reads,
+or add one line — when using autowire, read AGENTS-AUTOWIRE.md.
+Do not write a second autowire prompt. Setup questions: autowire help agent.

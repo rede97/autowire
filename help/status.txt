@@ -1,0 +1,160 @@
+Status (code is truth; do not invent finished commands)
+
+Landed
+  autowire help [topic]
+  autowire init / analysis run   workspace autowire.toml → hdxml
+  autowire analysis deps|search|info   read the RtlIndex; no write
+  hdxml sidecar             analysis → RtlIndex XML
+  aw.js                     engine: src/core/aw.ts → build:web → web/aw.js (generated; guarded)
+  autowire connect web [unit]  static session; buttons; no workspace write
+  autowire connect check [unit] static author-face legality + deps; no scripts, no write
+  autowire connect elaborate [unit] classic scripts + on-init / on-template + aw-render (no write)
+  Playwright env            headless Chromium; MCP via .mcp.json (127.0.0.1 only)
+  Page session              window.aw.session: check, elaborate, before-dump, run,
+                            save / save-sv, save-html, help.
+                            Run shows the .sv text (same as connect run writes).
+                            Saves are browser downloads. The page does not write files.
+  aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir
+  plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/{regfile,bus}/ (docs/cli.md)
+
+Landed (release)
+  Release 0.9.1 CI          push to main publishes hdxml (linux-x64 glibc 2.17,
+                            macos arm64/x64) and single-file autowire.js
+                            (docs/dev/release.md).
+                            Version + notes come from the top CHANGELOG.md entry.
+  autowire --version        version / commit / build time (baked into the bundle)
+  autowire init             also writes AGENTS-AUTOWIRE.md (copy of repo AGENTS.md)
+  docs unpack <dir>         bundled tree also contains AGENTS.md
+
+Not landed (parked; do not implement until a later ask)
+  Production package        obscura binary, installer/PATH layout, linux aarch64,
+                            compiled out/autowire. Dev/CI stays Playwright.
+  Workspace HTML edit       no node-edit MCP. This stage: the agent drives the
+                            browser, then saves locally. Direct HTML-node edit is
+                            not required (docs/architecture.md).
+  Plugin type B             expand custom tags into core aw-*. Parked. No aw-*
+                            plugin tags in use. Type A wishbone run is landed.
+  Wishbone open items       extra arbiter policies, crossbar, SlaveBus downlink,
+                            posted async FIFO, CDC constraints, real DFT TAP.
+                            Parked (docs/plugins/wishbone-bus.md §8). Tag domains
+                            (ShadowDomain / TagFrom*) are landed.
+  Multiple autowire.toml    one file per workspace. Nested copies and dep closure
+                            are not needed (docs/workspace/toml.md §6).
+
+Parallel (does not block connect)
+  Plugin registry (docs/plugins/): type A = generate → plugins_dir → analysis/RtlIndex leaf
+    (hash incremental; no plugin-private port API);
+    type B = expand custom aw-* tags like submods; parked, no such tags in use;
+  Wishbone — landed (docs/plugins/wishbone-regfile.md + wishbone-bus.md);
+    one plugin id wishbone (wishbone-regfile / wishbone-bus are not command aliases);
+    two DSL types stay: RegfileDef vs BusDef (no merged IR);
+    draft API + samples: docs/examples/regfile/regfile.ts;
+    toml [wishbone.<source>] ts= (one file may export either or both; optional exports=);
+    [plugins.wishbone] packed software (SoT exports only; no reverse to TS):
+    export= Excel workbook (default name bus_regfiles.xlsx: field sheets regfile_<sheet> + one
+    Address Map sheet bus_map_<bus> per bus tree: column A absolute address, one 2-row x 3-column
+    block per item indented 3 columns per level, leaves stop at a regfile or an
+    empty port, repeated subtrees and broadcast ports are not expanded, pastel fill
+    per type; field .note() continues that Description cell after a newline;
+    regfile .note() is the header Description comment;
+    trunk columns; leaf offset; no empty A / ADDRWIDTH),
+    c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + <name>.h umbrella at the root),
+    uvm= uvm_reg dir (regfile/ral_<SHEET>.sv with cell classes + leaf ral_block_<SHEET>,
+    bus/ral_block_* hang
+    leaves via add_submap; uvm_reg model only, no RALF)
+    (one block per bus; TagFromAddr splits that level into one instance per copy;
+    a pass-through child is not split again; broadcast windows are addresses);
+    git-tracked showcase fw/gen/wishbone (do not delete);
+    generate: listed + attached-leaf SV, then fabric/wrapper;
+    RTL → plugins_dir/wishbone/regfile/ (leaves) and plugins_dir/wishbone/bus/ (fabric);
+    demo/soc: one sha256_regfile RTL, one hang per sd_sha channel via SlaveRegfile;
+    C sha256.h; smoke identity-match (id = RegfileDef.name);
+    firmware uses generated cell unions; soc_map.h aliases software map macros;
+    SoT = TypeScript exports; no HTML field tree;
+    attached leaves are inside the bus Type-A wrapper (no HTML *_regfile inst);
+    string slaves (SRAM/UART) stay aw-inst (prefer SlaveRegion+Size);
+    SlaveBus is SlaveRegion sugar: hang a child BusDef as a window; child RTL
+    once, N instances; child Master("uplink") remaps to i_wb_* / o_wb_* on
+    <bus>_system; parent forwards window-offset ADR (adr & ~mask; not base subtraction; cannot invert an address bit; the window must contain its own base);
+    demo: top soc_wb = interconnect (cpu + JTAG dbg master behind demo_tap USER);
+    two SlaveBus(sd_sha) channels (ch0/ch1);
+    HTML sot/connect/sd_sha_ch.html wraps sd+dma+sha256wb; DMA SRC is relative;
+    channel DMA cannot reach parent SRAM/flash (no downlink);
+    no awx-regfile;
+    sheet empty = name (C/UVM/Excel stem); shared sheet = one header if two names
+    share layout; same sheet + different layout → generate error;
+    toml ts= not html=;
+    C/UVM/Excel field-layout emit: per-cell struct+bitfield / uvm_reg /
+    trunk sheet; shadow as comments; Excel documents leaf cell offset;
+    address map + TGA/shadow tag packed in the same Excel / C / uvm_reg set;
+    DAT=32 ADR=byte; write posted at fabric slave PIPE / read blocks to leaf;
+    RWE read_write_block default false (posted fabric: true risks bus lock);
+    WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
+    SEL byte-masked writes (RW/RWW RMW, W1C/W1P masked); RWE ext_<field>_wstrb;
+    W1C c_rg_<field>_set hw set (set wins); RWW same-cycle SW > HW;
+    RWE o_<domain>_sel (lowest set bit, address tag only) + i_<domain>_mux_sel
+    (inner_shadow_mux sideband index; not o_<domain>_sel) + optional ext_<field>_ready;
+    tag domains (docs/plugins/wishbone-bus.md §2.1, landed):
+      hoist ShadowDomain(name, copies, width) to its own shared export;
+      Bus tags= declares TGA order + source — bare name = pass through from
+      uplink, TagFromAddr/TagFromPin/TagFromReg = produced at this level;
+      one source per domain per path;
+      Bus addrWidth is required (the allocated address space, no default 32);
+      a child addrWidth may not exceed its parent, nor the bits the parent
+      window actually forwards;
+      one TagFromAddr per decoder, sitting directly above the slave windows
+      and not past addrWidth-1 (bits above the tag and inside addrWidth are
+      discarded; decode keeps only the low bits; no hole, no re-pack);
+      a second tag belongs on the next decoder; extra tags are ordered high
+      bit first and are not stable; TagFromAddr bits are stripped from slave
+      decode (one window covers all aliases) and must not overlap any window;
+      TagFromAddr "hi:lo" is the address-bit authority (alias i sits at i<<lo; a comment or host header that shifts another bit is drift);
+      SlaveBus tag derives from the child bus, never hand-written;
+    Access RC = ReadConst (reset= baked readback);
+    wide-field split: ports stay per-slice (rg_<field>_0 = LSB), not one
+    concatenated vector; comments/desc name[hi:lo] of [W-1:0] (index 0 = LSB);
+    named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
+    NM>1 → interconnect (arbiter: rb_grant_en 0=fixed lowest-index /
+    1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
+    demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives each channel rb_grant_en;
+    basic_smoke checks cascade SHA MMIO + grant CSR; --sd is channel DMA+SHA;
+    demo/soc sot/wb_bus_soc.ts → soc_wb_interconnect + soc_wb_system (+ JTAG TDR / wb_cdc);
+    demo sim: Verilator only (sim/verilator/run.sh; --tb-mod runs the aw-tb-mod
+    dump tb_soc); external JTAG smoke runs concurrently with the firmware;
+    sot/wb_bus_sd_sha.ts → sd_sha_interconnect + sd_sha_system (mixed slave PIPE);
+    ADR=byte; fabric addr_width parametrized;
+    TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out; a declared tag adds {master}_o_wb_tga_<domain> on every master, including one that does not produce it (tie that input off, or it becomes a parent port);
+    slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
+    blocking read; PIPE=0 combo; TGA ports always on the module, omitted at
+    instance when Slave has no tag);
+    master PIPE: Master(..., { pipe: N }) default 0; N>0 inserts wb_cfg_pipe
+    in front of the arbiter (decoder: in front of decode); the arbiter holds
+    the grant from the pipe s_cyc so a posted write keeps the bus until it drains;
+    decode: localparam SLOT_<SLAVE> indexes slot_sel (no bare slot_sel[6]);
+    SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag?, broadcast?,
+    broadcastBy? }): string window by span; broadcast emits broadcast_<name> and
+    has no WB data port; broadcast and broadcastBy are mutually exclusive;
+    broadcast writes fan out to every subscriber, broadcast reads return the
+    bitwise OR of subscriber DAT (any-1 status readback);
+    subscribers of one broadcast must share pipe depth;
+    raw Slave cannot broadcast; ACK waits for every selected subscriber;
+    Slave(name, desc, base, mask, ...) is a raw port (no overlap check);
+    SlaveRegfile is SlaveRegion sugar: Size(layout span) + leaf; optional size=;
+    SlaveBus is SlaveRegion sugar: Size(child span) + child BusDef; optional size=;
+    child must declare Master("uplink") (cascade face);
+    Bus rejects overlapping Region/Regfile/SlaveBus windows; raw Slave is excluded;
+    tag defaults to leaf tga_width; TGA must match; id defaults to RegfileDef.name;
+    Type-A wrapper <bus>_system instantiates interconnect + attached *_regfile
+    (sidebands promoted; WB internalized; HTML aw-inst soc_wb_system / sd_sha_system);
+    uplink master ports become i_wb_* / o_wb_* on the child wrapper;
+    master faces (docs/plugins/wishbone-master.md): Master(name, desc, { apb | jtag | cdc,
+    timeout? }); bridge in the source clock → wb_cdc (4-phase req/ack, non-posted) → fabric;
+    fabric RTL unchanged, all bridge logic inside <bus>_system ({m}_fab_* nets);
+    wb_cdc ERR on fabric reset / timeout / drain (never hangs); APB PPROT mismatch → PSLVERR;
+    JTAG = TDR client of the DFT-owned chip TAP / SIB (no private TAP): shift {op,adr,dat},
+    capture {st,adr,rdat}; launch + poll (st 1 busy / 2 err sticky, nop clears); {m}_en gate;
+    emits wb_sync_cell / wb_cdc / wb_apb2wb / wb_jtag_tdr.sv + <bus>_system.icl/.pdl;
+    cascade face (uplink) cannot be bridged; duplicate master names rejected
+  Register Table + Block/Cell (data); Excel is documentation only
+  Leaf port tables from RtlIndex (read-only on the connect page)
+  Do not treat connect aw-submods as a code-gen hook — generators emit SV then aw-inst

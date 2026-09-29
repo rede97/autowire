@@ -2,7 +2,7 @@
 
 连接描述是一份 **HTML + script**。浏览器跑完 script，活 DOM 就是连接关系。把渲染结果交给 autowire，由它写成 RTL，后面走 DV。
 
-**Agent 接手：先跑 `bun index.ts help agent`（工作约定；不要另写项目提示词）。命令总览：`bun index.ts help`。改行为时同步改 `src/cli/help.ts`。格式约束见 [`docs/`](docs/README.md)。**
+**Agent 接手：先跑 `bun index.ts help agent`（工作约定；不要另写项目提示词）。命令总览：`bun index.ts help`。改行为时同步改 `help/<topic>.txt`。格式约束见 [`docs/`](docs/README.md)。**
 
 ---
 
@@ -24,7 +24,7 @@
 
 - **先文档约束，后实现**：未在 help status 开放的步骤不实现、不假装能渲染或 dump。
 - **用例约束后端**：无头 `cli` 后做，且必须通过现有 Web / Playwright 测试（同一 HTML → 同一 RTL）；先做 cli、再补测试，不允许。
-- **单一事实源**：用法与思路只写 `src/cli/help.ts`；格式与实现约束只写 `docs/`；二者同步，不为项目复制提示词。
+- **单一事实源**：用法与思路只写 `help/<topic>.txt`；格式与实现约束只写 `docs/`；二者同步，不为项目复制提示词。
 
 ## 流水线
 
@@ -48,5 +48,5 @@ autowire.toml（.f + svh/宏）
 - 浏览器直接写工作区
 - 先做 cli 再补 Web 用例
 - 两套连线语义（Web 与 cli 必须同一 `aw.js` + 同一 golden）
-- 为每个芯片项目复制一份连接提示词（改 `src/cli/help.ts`）
+- 为每个芯片项目复制一份连接提示词（改 `help/agent.txt`）
 - 把连接细节写进 `autowire.toml`（toml 里连接只有 `[connect] html` 文件清单：仅路径，无 top、无连线语义）

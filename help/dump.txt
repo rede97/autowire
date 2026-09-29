@@ -1,0 +1,6 @@
+Write-back is connect run, not a web POST.
+
+  autowire connect run [unit]
+
+Reads aw-render after check and elaborate. Writes .sv and, for connect units,
+the <id>.xml snapshot, deps first. The web session does not call this and does not write.

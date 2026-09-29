@@ -1,0 +1,43 @@
+autowire init / analysis (docs/cli.md)
+
+  autowire init <name>
+  autowire analysis run [--workspace dir|file] [--hdxml bin] [--sub-bars] [--force]
+  autowire analysis deps [module] [--depth n]
+  autowire analysis search [--module|--port|--package|--enum] [--regex] <pattern>
+  autowire analysis info <module>
+
+init <name>: create default autowire.toml (with [workspace] name), AGENTS-AUTOWIRE.md
+(the bundled AGENTS.md copy), .autowire/hdxml/ (fixed RtlIndex dir) and .autowire/dsl/
+(wishbone DSL sources for standalone SoT imports; self-healed by plugin wishbone run).
+Refuses to overwrite an existing toml/AGENTS file.
+After writing, init tells the agent to attach AGENTS-AUTOWIRE.md from the workspace
+AGENTS.md. The setup questions (what / why / how, then ask; defaults first) are in
+help agent, so they can be read before init.
+analysis run: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
+(docs/workspace/toml.md):
+  [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames / exclude_dirs
+      → -f / -s / -w / --exclude-filenames / --exclude-dirs
+  [analysis.defines] NAME="v" → -D NAME=v
+  [analysis] keep_raw = [...] → --keep-raw
+  RtlIndex dir is fixed: .autowire/hdxml → -o/--output-dir (init creates it)
+  [analysis] hdxml_bin → binary path only (not an hdxml arg; must exist if set)
+
+hdxml binary lookup: --hdxml > toml [analysis] hdxml_bin > $HDXML_BIN
+  > repo hdxml/target/{release,debug} > PATH
+hdxml never reads toml; autowire maps everything.
+Paths in toml are relative to the workspace root (toml location).
+No [analysis.rtl] sources configured → error.
+Error files keep the index usable; hdxml exit code is passed through.
+A filelist entry under plugins_dir, connect_dir, or sim_dir that is not on
+disk yet is not an hdxml failure: analysis run stops and names the writer
+(plugin wishbone run, or connect run). Generate those, then re-run analysis.
+--force: analysis is incremental by default — unchanged files are reused from the
+  RtlIndex dir. --force maps to hdxml --refresh (full re-parse, rewrites the cache).
+
+analysis deps: print dependency trees from the existing index. Omit module for every
+  tree. It does not parse RTL; missing index → error (run analysis run first).
+analysis search: one kind at a time. Default kind is module. Pattern is a fuzzy
+  substring unless --regex. Each hit prints the name, the index XML, and the RTL file.
+  --enum searches localparam names inside packages.
+analysis info: exact module name. Prints params and ports plus the XML and RTL paths.
+  Unknown name is an error; it does not fall back to fuzzy search.

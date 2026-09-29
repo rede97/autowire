@@ -2,6 +2,14 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.2.3] - 2026-09-29
+
+- `help agent`、`help dont`、仓库 `AGENTS.md`（`init` 抄成 `AGENTS-AUTOWIRE.md`）和 init 的 toml 注释写明：`rtl/gen/`、`fw/gen/`、`dv/ral/`、`.autowire/` 是生成物，不是源。生成结果不对就改 SoT 再跑写出命令，不要改这些文件。
+- 初始化约定整段写在 `help agent` 的 Init：先讲清工具再按默认项问用户，并说明怎么把 `AGENTS-AUTOWIRE.md` 接到工作区 `AGENTS.md`。没跑过 `init` 也能读到。`init` 写完文件后会再打一行同样的挂接提示。
+- `help agent` 的 Cold start 只留启动顺序。hdxml 查找留在 `help analysis`，`snapshot missing` 留在 `help check`，解包缺 demo 留在 `help docs`，`adr & ~mask`、分片口、tga tie-off、`TagFromAddr` 地址位留在 `help status` 的 wishbone 条目旁。
+- `help agent` 的 Init 按 Writes / Attach / Ask / Defaults 分块。实战顺序和踩坑在 `docs/skills/autowire-soc-integration.md`：filelist 已点名 `rtl/gen` 时先 `plugin wishbone run`，再 `analysis run`，再 `connect run`。
+- `help` 正文改到 `help/<topic>.txt`，`src/cli/help.ts` 只负责读入；这些文件打进 `autowire.js`，不必先 `docs unpack`。`docs/dev/cdp-debug.md` 挪到 `docs/skills/cdp-debug.md`。工具与 MCP 的边界收进 `docs/architecture.md` §3，删掉没有实现的 `docs/mcp/`。
+
 ## [2.2.2] - 2026-09-29
 
 - 冷启动契约写进 `help agent`、仓库 `AGENTS.md`（`init` 抄成 `AGENTS-AUTOWIRE.md`）和 init 的 toml 注释：独立包的 hdxml 走 `--hdxml` / `$HDXML_BIN` / PATH；filelist 点名了还不存在的 dump 路径时先生成再 analysis；`connect check` 依赖已有 snapshot；文档引用的 demo 若这次 unpack 没有，就不要到包外去找。同时写明 `adr & ~mask` 不能做基址相减或翻位、宽 field 旁路是分片口、声明了 tag 的总线每个 master 都有 tga 口要 tie-off、`TagFromAddr "hi:lo"` 才是地址位权威。

@@ -85,18 +85,17 @@ autowire connect run [unit]
 
 发给用户的生产包目标仍是三颗并排二进制：`autowire`、`hdxml`、`obscura`（CDP 协议、CentOS 7 兼容的调试浏览器）。这个阶段不写打包脚本，开发与 CI 仍用 Playwright Chromium。约束见 [dev/release.md](./dev/release.md)。
 
-## 3. Agent MCP：工具边界与双途径
+## 3. Agent MCP：工具边界
 
-根本原则与分途见 [`mcp/README.md`](./mcp/README.md)。
+**工具**负责生成与流水线：elaborate、check、`connect run`、analysis、打印机、`plugin wishbone run`。产出是 RtlIndex、`aw-render`、`.sv`、快照。
+
+**MCP**只做交互。它可以调用 `analysis run`、打开 `connect web`，**禁止**在 MCP 进程里重做一套连接语义，也禁止「改连接节点 → 实时网表/RTL」一体机。页面可以展示同一份源码，但不写文件。要落盘，MCP 读 `#aw-generated` 自己存，或显式调用 `connect run`。
 
 | 途径 | 场景 | 状态 |
 |---|---|---|
 | **工具** | analysis / connect check / connect run / 插件 wishbone run | 已落地；`connect run` 为 happy-dom，是唯一写 RTL 路径 |
-| **A. Playwright MCP** | 隔离调试：活 DOM 与 `#aw-generated`，不另做连线 outline MCP | 已落地（`.mcp.json`） |
-| **B. 工作区 MCP** | 直接改作者 HTML 节点 | **暂时不做**。这个阶段 Agent 驱动浏览器，再把可见源码存到本地 |
-
-**禁止** MCP 内「改连接节点 → 实时网表/RTL」一体机（旧设计糊了工具与 MCP）。  
-A 只打浏览器调试工作区；B 只改作者面/索引。页面不写文件。要落盘，MCP 读 `#aw-generated` 自己存，或显式调用 `connect run`。
+| **Playwright MCP** | 隔离调试：活 DOM 与 `#aw-generated` | 已落地（`.mcp.json`）。步骤见 [skills/cdp-debug.md](./skills/cdp-debug.md) |
+| **工作区节点编辑** | 按节点改作者 HTML | **暂时不做**。检索用 `analysis search` / `info` / `deps`。这个阶段 Agent 驱动浏览器，再把可见源码存到本地 |
 
 ### 3.1 Playwright 隔离调试
 

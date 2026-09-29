@@ -40,7 +40,7 @@
 - 成果栏 **必须**是两个并列 tab：**Rendered**（`aw-render` 快照树，来自本次 elaborate 或 `connect run` 写出的快照）与 **SystemVerilog**（本次 Run 印出的 `.sv` 文本）。当前选中 tab 的文本 **必须**落在 `#aw-generated`；`?run=1` 后 **默认**停在 **SystemVerilog**，即 `#aw-generated` 是 `.sv`（不含 `aw-render` 字样）。无头页只有纯文本 `#aw-generated`（`.sv`），不做 tab 与着色。Save SV 始终下载 `.sv` 字符串，不下载着色后的 HTML。
 - **成果栏错误按阶段分栏**：`Check`（作者面静态检查）与 `elaborate` / render 阶段报错 → 错误文本进 **Rendered** tab（check 失败会挡住 elaborate/render，归同一栏）；`Run` 的 `.sv` 打印阶段报错 → 进 **SystemVerilog** tab。出错的 tab **应当**自动选中，另一 tab 保留上次成功的产物或空。无论进哪栏，都 **必须**照 §4 落全局 `#aw-status` / 出错按钮 / 标题。
 - 节点 **应当**带可访问名字（docs/connect/html.md §3.8），便于 Playwright snapshot。
-- CDP 驱动（obscura / Chromium 等讲 CDP 的浏览器通用）：[`../dev/cdp-debug.md`](../dev/cdp-debug.md)（`bun index.ts help cdp`）。
+- CDP 驱动（obscura / Chromium 等讲 CDP 的浏览器通用）：[`../skills/cdp-debug.md`](../skills/cdp-debug.md)（`bun index.ts help cdp`）。
 
 ## 2. 两种模式
 

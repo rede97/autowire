@@ -1,0 +1,25 @@
+Do not
+
+  connectivity SoT in XML / one-file-per-level files (RtlIndex XML is an index, not connectivity)
+  blur tools vs MCP: no MCP that mutates connect and returns live netlist/RTL in-process
+    (old outline/apply/rewrite all-in-one). Allowed: Playwright MCP (debug).
+    Workspace MCP node edit is parked (docs/architecture.md). Generate still via web/cli tools only
+  browser writing the workspace directly
+  build a second RTL writer in the browser (connect run writes .sv; the page only shows it)
+  two wiring semantics (the page and connect run must share aw.js)
+  copy a per-chip connect prompt (edit help/agent.txt instead)
+  make README a second contract without updating help
+  put wiring into autowire.toml ([connect.<id>] allows only html= + deps= — no top, no wiring)
+  patch aw-render after it is filled (lifecycle: on-init edits aw-content, on-template edits that inst's template; the engine alone writes aw-render)
+  rely on document-order "forward" sibling refs inside aw-submods (use aw-mod@deps; visible set accumulates down the path)
+  treat connect run as the only validation (use connect check on aw-content + deps)
+  generate regfile/cfgbus from connect aw-submods custom tags (use: plugin wishbone run; docs/plugins/)
+  treat Excel / C headers / uvm_reg as register SoT, or reverse-generate TS from them
+  treat Workspace MCP html_write as elaborate (must still run web check/render/dump for netlist)
+  list same-name ports one-by-one in aw-connect (identity omits them; rename → one aw-rewrite RegExp)
+  ship Playwright or Chromium in the production package (docs/dev/release.md: autowire + hdxml + obscura)
+  link obscura into the autowire binary
+  ship the repo source as the production entry (use out/autowire.js or out/autowire)
+  docs unpack over a tree you did not mean to replace (it writes AGENTS.md, docs/ and demo/)
+  search outside docs unpack for a demo this bundle did not contain
+  edit generated outputs (rtl/gen/, fw/gen/, dv/ral/, .autowire/). Change the SoT and re-run the writer

@@ -574,7 +574,8 @@ exclude_dirs = []
 # RtlIndex is fixed at .autowire/hdxml (created by init; deletable cache).
 
 [workspace.dump]
-# Product dirs (docs/workspace/toml.md §4.0)
+# Generated outputs, not sources. Do not edit these dirs or .autowire/.
+# Change the SoT and re-run the writer (docs/workspace/toml.md §4.0).
 connect_dir = "rtl/gen/connect"
 sim_dir = "rtl/gen/sim"
 plugins_dir = "rtl/gen/plugins"

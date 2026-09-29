@@ -37,13 +37,6 @@
 | [hdxml/cli.md](./hdxml/cli.md) | hdxml `analysis` CLI | 已实现 |
 | [hdxml/testing.md](./hdxml/testing.md) | fetch/scan/smoke 与错误基线 | 已实现 |
 
-## Agent · [`mcp/`](./mcp/)
-
-| 文档 | 内容 | 状态 |
-|---|---|---|
-| [mcp/](./mcp/) | 工具 vs MCP；Playwright 已落地 | 工作区节点编辑暂时不做 |
-| [mcp/workspace.md](./mcp/workspace.md) | 直接改 HTML 节点的合同 | 暂时不做；检索用 analysis 子命令 |
-
 ## 并列插件 · [`plugins/`](./plugins/)
 
 | 文档 | 内容 | 状态 |
@@ -60,15 +53,15 @@
 |---|---|---|
 | [dev/windows-msys2.md](./dev/windows-msys2.md) | Windows：MSYS2 UCRT64 工具链、PATH、LF 行尾、原生 vs UCRT64 分工 | 已实现 |
 | [dev/release.md](./dev/release.md) | 生产包：0.9.1 起发布 `hdxml` + `autowire.js`；obscura 等仍不做 | 部分落地 |
-| [dev/cdp-debug.md](./dev/cdp-debug.md) | CDP 无头浏览器驱动 connect 页面（obscura/Chromium 通用范式 + 坑位） | 已实现 |
 
 ## 实战与报告
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [skills/autowire-soc-integration.md](./skills/autowire-soc-integration.md) | demo/soc 集成 / 验证 / MCP 调试 | 实战手册 |
+| [skills/cdp-debug.md](./skills/cdp-debug.md) | CDP 无头浏览器驱动 connect 页面（步骤和坑） | 实战手册 |
 
 ## 不做
 
 - 把连接关系写进 `autowire.toml`（toml 只做工程/RTL 宇宙配置）。
-- 把 README 写成第二套约定却不改 `src/cli/help.ts` / 本目录约束文。
+- 把 README 写成第二套约定却不改 `help/<topic>.txt` / 本目录约束文。

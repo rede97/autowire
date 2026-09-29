@@ -7,12 +7,8 @@
 
 ## 1. 全流程速查
 
+filelist 已经点名 `rtl/gen` 时，先跑插件，再分析，再连线。bus 和 regfile 是同一次 `plugin wishbone run`。
 
-作者面三原则（2026-09-09 起为引擎语义，见 docs/connect/html.md §3.5.5 / §4.1）：
-1. **`aw-ports` 一般不写**：无驱动网自动导出 input、被驱动但本层无负载网自动导出 output；只写需要显式控制的端口。
-2. **同名连接省略不写**：未被规则覆盖的端口自动连同名网（同名网合流）；显式规则/`type="open"` 永远优先。底层 IP 统一换名时 HTML 零同步成本。
-3. **同名 output 多驱动是错误**：全网 output 驱动 >1 → 短路报错；多例化同名 output（如 sdspi `o_debug`）必须显式 open 或改名。
-4. **不同名批量改名 → 一条 `aw-rewrite` 正则**（`$1`/`$&` + `` `${id}` ``）；禁止把同束口拆成多条逐端口 rewrite，也禁止抄同名 `aw-connect`。
 ```text
 IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/patches/`**，checkout 后跑 `patches/apply.sh`，禁止在上游子模块落本地 commit）
   → 手写集成叶子（rtl/*.v，英文注释）
@@ -27,9 +23,18 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
   → verilator 冒烟                         # sim/verilator/run.sh[+ --sd | --regfile | --tb-mod]；见 §6 / fw/README.md（仅 Verilator）
 ```
 
-`.autowire/` 全部是可删生成物：`hdxml/`（RtlIndex）、`connect/<id>.xml`（抽象模块快照，唯一形式，无 html 快照）、`dump/<id>.html`（调试落盘）。
+`rtl/gen/`、`fw/gen/`、`dv/ral/`、`.autowire/` 都是生成物，不是源。生成结果不对就改 SoT（Wishbone TypeScript 或 connect HTML）再跑写出命令，不要改这些文件。`.autowire/` 可整目录删：`hdxml/`（RtlIndex）、`connect/<id>.xml`（抽象模块快照，唯一形式，无 html 快照）、`dsl/`（`plugin wishbone run` 缺失时补回）、`dump/<id>.html`（调试落盘）。
+
+`analysis run` 会指出缺的是 `plugins_dir` 还是 `connect_dir` / `sim_dir`，不再只透传 file not found。`connect check` 不写盘；依赖从未 `connect run` 时报 `snapshot missing`。独立包不含 hdxml，查找见 `help analysis`。这次 `docs unpack` 没有写出的 demo，不要到包外去找。译码、宽 field、tag 的注意点在 §5。
 
 ## 2. connect HTML 实战模式
+
+作者面（2026-09-09 起为引擎语义，见 docs/connect/html.md §3.5.5 / §4.1）：
+
+1. **`aw-ports` 一般不写**：无驱动网自动导出 input、被驱动但本层无负载网自动导出 output；只写需要显式控制的端口。
+2. **同名连接省略不写**：未被规则覆盖的端口自动连同名网（同名网合流）；显式规则/`type="open"` 永远优先。底层 IP 统一换名时 HTML 零同步成本。
+3. **同名 output 多驱动是错误**：全网 output 驱动 >1 → 短路报错；多例化同名 output（如 sdspi `o_debug`）必须显式 open 或改名。
+4. **不同名批量改名 → 一条 `aw-rewrite` 正则**（`$1`/`$&` + `` `${id}` ``）；禁止把同束口拆成多条逐端口 rewrite，也禁止抄同名 `aw-connect`。
 
 - **口名对齐总线**：手写叶子 CSR 用 `i_wb_adr`/`i_wb_dat`/`o_wb_dat`（勿 `addr`/`data`），则 `wb_slv` 一条 `^([io]_wb_.+)$ → ${id}_$1` 即可；第三方 sdspi 仍 `addr`/`data` 时才额外 override。
 - **扁平向量总线**：interconnect 主从端口全部摊平成 `m_*[NM*32-1:0]` / `s_*[NS*32-1:0]` 大向量，连接侧用 `part` 算术切片：`part="32*${idx}+31:32*${idx}"`、单位 bit 用 `part="${idx}"`。net 各连接点的 `width` 写法必须**逐字一致**（文本级一致性检查）。
@@ -79,14 +84,18 @@ Playwright MCP（浏览器 A 面）
 6. 多个 `always @*` 共享同一个 `integer` 循环变量 → 事件驱动仿真器下互相重触发、仿真时间爬行。**每块独立 loop var**。
 7. 组合 ack 链路里把 `ack` 反馈进 `we`（`we = sel & ack & we_i` 且 `ack` 依赖 `wait(we)`）→ 零延迟振荡隐患；写使能别过 ack。
 8. 固定地址 DMA 读内存缓冲 → 同一 word 重复 32 次。FIFO 固定地址 / 内存扫址两种模式要分开（`src_inc`）。
-11. picorv32 WB 读事务 `sel=0`：ZipCPU `sdspi` 仅在 `sel!=0` 时推进 FIFO 指针——**不要**用 CPU `lw` 抽 FIFO，用 DMA（`sel=0xF`）。
-12. `sdspi` 流水 ACK：主设备若一直拉高 STB 直到 ACK，FIFO 指针会每拍自增；已在 `sdspi.v` 用 `!dly_stb` 限制为每事务一次（与 `sd_rd_dma` 兼容）。
-9. filelist 路径相对**工作区根**而非 `.f` 所在目录。
-10. 子模块缺失模块（如 sdspi 的 llsdspi）→ analysis 报 blackbox，补齐进 soc.f 即可。
+9. picorv32 WB 读事务 `sel=0`：ZipCPU `sdspi` 仅在 `sel!=0` 时推进 FIFO 指针——**不要**用 CPU `lw` 抽 FIFO，用 DMA（`sel=0xF`）。
+10. `sdspi` 流水 ACK：主设备若一直拉高 STB 直到 ACK，FIFO 指针会每拍自增；已在 `sdspi.v` 用 `!dly_stb` 限制为每事务一次（与 `sd_rd_dma` 兼容）。
+11. filelist 路径相对**工作区根**而非 `.f` 所在目录。
+12. 子模块缺失模块（如 sdspi 的 llsdspi）→ analysis 报 blackbox，补齐进 soc.f 即可。
+13. 窗口转发是 `adr & ~mask`，不是基址相减，也不能翻某一位。窗口必须包含自己的基址。`wb_uart` 注释里想用 `~adr[2]` 把 `0x02000004` 收成 offset 0，生成器做不到；不要用重叠窗口去凑。
+14. 宽 field 旁路口保持分片：`rg_<field>_0` 是低 32 位，不会拼成 `rg_<field>[W-1:0]`。
+15. 总线一旦声明 tag，每个 master 都有 `{master}_o_wb_tga_<domain>`。不产生该 tag 的 master（如 DMA `eng`）也要在上层接掉，否则变成父模块输入。
+16. `TagFromAddr "hi:lo"` 才是地址位，别名 `i` 在 `i<<lo`。注释或 host 头写成别的移位时以 SoT 为准（`jtag_host.h` 曾是 `<< 27`，固件和 `bank "27:26"` 是 `<< 26`）。`basic_smoke` 只打 bank0，看不出这个错，也看不出 Flash 窗口上沿和 UART 译码。
 
 ## 6. 下一步开发的已知边界
 
-- 工作区节点编辑（docs/mcp/workspace.md）：暂时不做。这个阶段用 Playwright 操作页面，再把 `#aw-generated` 存到本地。检索用 `analysis search` / `info` / `deps`。
+- 工作区节点编辑：暂时不做（[`../architecture.md`](../architecture.md) §3）。这个阶段用 Playwright 操作页面，再把 `#aw-generated` 存到本地。检索用 `analysis search` / `info` / `deps`。无头浏览器的步骤和坑见 [`cdp-debug.md`](./cdp-debug.md)。
 - 插件类型 B（把自定义标签展开成 `aw-*`）：暂时不做。`plugin wishbone run` 已落地。Wishbone §8 的开放项等后续需求再追加。
 - 生产包与多份 `autowire.toml`：暂时不做。一个工作区一份 toml，只认直接 `deps`。
 - demo/soc 验证路线（与 `fw/README.md` 对齐；**仅 Verilator**）：

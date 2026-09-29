@@ -1,0 +1,21 @@
+autowire docs unpack
+
+  autowire docs unpack <dir>
+
+The release script contains the full docs/ tree, the runnable demo sources,
+and the repo AGENTS.md, zstd-compressed.
+This command writes that tree under <dir> so an agent can read the contract and
+the examples. Dev builds read the repo instead of the bundle.
+
+  <dir>/AGENTS.md
+  <dir>/docs/...
+  <dir>/demo/soc/...
+  <dir>/demo/hbm/...
+
+Existing files at those paths are replaced. The bundle skips local build output
+(.autowire, firmware build/, Verilator obj_dir*, vcs/work), git metadata, and
+Excel exports; demo ip/ carries only the sources its filelists reference, with
+demo patches already applied and sot imports pointed at .autowire/dsl/.
+Shell scripts (*.sh) are unpacked executable. A bundle may omit a demo: a doc
+citation of a path this unpack did not write is not a second copy of that demo.
+Do not search outside the unpack. See docs/dev/release.md section 1.1.

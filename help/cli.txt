@@ -1,0 +1,13 @@
+autowire connect run (happy-dom, no browser)
+
+  autowire connect run [unit] [--force]
+
+Runs the settled-design pipeline and writes .sv. Unchanged files are skipped.
+--force rewrites them. The same flag on analysis run and plugin wishbone run
+forces those outputs too.
+  classic <script> → elaborate (on-init / on-template) → write .sv
+
+Scripts are classic <script> (not type="module"). Functions live on window.
+src resolves next to the author HTML. aw.inst / aw.connect / aw.port build nodes.
+happy-dom and Chromium must produce the same snapshot for the same HTML.
+Playwright remains the debug path. No browser is required to write RTL.

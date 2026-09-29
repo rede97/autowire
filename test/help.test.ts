@@ -26,10 +26,22 @@ test("agent topic holds the working contract", () => {
 	expect(text).toContain("top-priority reference");
 	expect(text).toContain("demo/");
 	expect(text).toContain("Cold start");
-	expect(text).toContain("HDXML_BIN");
-	expect(text).toContain("snapshot missing");
-	expect(text).toContain("adr & ~mask");
-	expect(text).toContain("per-slice");
+	expect(text).toContain(
+		"plugin wishbone run, then analysis run, then connect run",
+	);
+	expect(renderHelp("analysis")).toContain("HDXML_BIN");
+	expect(renderHelp("check")).toContain("snapshot missing");
+	expect(renderHelp("status")).toContain("adr & ~mask");
+	expect(renderHelp("status")).toContain("per-slice");
+	expect(renderHelp("status")).toContain("tie that input off");
+	expect(renderHelp("status")).toContain("address-bit authority");
+	expect(renderHelp("docs")).toContain("Do not search outside the unpack");
+	expect(text).toContain("Generated outputs are not sources");
+	expect(text).toContain("when using autowire, read AGENTS-AUTOWIRE.md");
+	expect(text).toContain("Offer the default on each question");
+	expect(renderHelp("analysis")).toContain("help agent");
+	expect(renderHelp("analysis")).toContain("attach AGENTS-AUTOWIRE.md");
+	expect(renderHelp("dont")).toContain("edit generated outputs");
 });
 
 test("each slice prints independently", () => {
@@ -93,7 +105,7 @@ test("each slice prints independently", () => {
 	expect(renderHelp("status")).toContain("packed in the same Excel");
 	expect(renderHelp("workspace")).toContain("c= C dir");
 	expect(renderHelp("dont")).toContain("C headers / uvm_reg");
-	expect(renderHelp("agent")).toContain("docs/mcp/");
+	expect(renderHelp("agent")).toContain("docs/architecture.md");
 	expect(renderHelp("status")).toContain("docs/dev/release.md");
 	expect(renderHelp("status")).toContain("obscura");
 	expect(renderHelp("agent")).toContain("docs/dev/release.md");

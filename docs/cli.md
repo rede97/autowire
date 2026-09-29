@@ -99,7 +99,7 @@ autowire analysis info <module>
 
 `info` 只接受一个准确模块名。输出该模块在 index 里的 param、port，以及对应的 XML 文件和 RTL 文件。名字不存在就报错，不退回模糊搜索。
 
-这四条都不修改作者 HTML、`.sv` 或 connect 快照。`run` 只更新 RtlIndex。`search` 和 `info` 是 [`mcp/workspace.md`](./mcp/workspace.md) 里快速检索的命令形态；MCP 若要查索引，调用这些命令，不另做一套检索。
+这四条都不修改作者 HTML、`.sv` 或 connect 快照。`run` 只更新 RtlIndex。`search` 和 `info` 是索引检索的命令形态。MCP 若要查索引，调用这些命令，不另做一套检索。直接改作者 HTML 节点的工作区 MCP 暂时不做，见 [`architecture.md`](./architecture.md) §3。
 
 ## 4. 插件各自的 `run`
 
@@ -130,6 +130,6 @@ wishbone 可以登记自己的相位和参数，例如只印 regfile、只印某
 
 ## 5. 不改的边界
 
-- `init <name>` 留在顶层。它创建 `autowire.toml`（带 `[workspace] name`，风格对齐 demo/soc）、`AGENTS-AUTOWIRE.md`（仓库根目录 `AGENTS.md` 的副本）、`.autowire/hdxml/`（RtlIndex 固定目录）和 `.autowire/dsl/`（wishbone DSL 源码，独立工作区 SoT 从这里 import；属可删缓存，`plugin wishbone run` 缺失时自动补回）；toml 或 AGENTS-AUTOWIRE.md 已存在则都不写。
+- `init <name>` 留在顶层。它创建 `autowire.toml`（带 `[workspace] name`，风格对齐 demo/soc）、`AGENTS-AUTOWIRE.md`（仓库根目录 `AGENTS.md` 的副本）、`.autowire/hdxml/`（RtlIndex 固定目录）和 `.autowire/dsl/`（wishbone DSL 源码，独立工作区 SoT 从这里 import；属可删缓存，`plugin wishbone run` 缺失时自动补回）；toml 或 AGENTS-AUTOWIRE.md 已存在则都不写。写完后提示把 `AGENTS-AUTOWIRE.md` 接到工作区 `AGENTS.md`。初始化前要问什么、默认是什么，写在 `help agent` 的 Init，不依赖已经跑过 `init`。
 - `plugin wishbone run` 不调用 `connect run`。生成出的 SV 仍要再经 `analysis run`，connect 才能把它当叶子例化。
 - 类型 B 若落地，展开仍是 connect 相位链里 check 之前的一步，不另做一个顶层 `run`。

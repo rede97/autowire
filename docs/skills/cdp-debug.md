@@ -1,8 +1,8 @@
 # CDP 调试范式（无头浏览器驱动 connect 页面）
 
 > 状态：已验证（2026-09-28，obscura 0.2.3 / VCS 工作流联调）。  
-> 辅助函数集：[`scripts/cdp-helper.ts`](../../scripts/cdp-helper.ts)。  
-> 相关：[`../workspace/web-ui.md`](../workspace/web-ui.md)（页面契约）、[`../mcp/README.md`](../mcp/README.md)（途径 A）。
+> 辅助函数集：[`scripts/cdp-helper.ts`](../../../scripts/cdp-helper.ts)。  
+> 相关：[`../workspace/web-ui.md`](../workspace/web-ui.md)（页面契约）、[`../architecture.md`](../architecture.md) §3（工具与 MCP 的边界）。
 
 任何讲 CDP 协议的无头浏览器都可以驱动 `connect web` 页面：Playwright Chromium、obscura。手段统一为 **Playwright `chromium.connectOverCDP`**——Playwright 只做 CDP 客户端，不启动自己的浏览器。
 

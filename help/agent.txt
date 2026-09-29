@@ -1,0 +1,117 @@
+Autowire — Agent contract
+
+This topic is the working contract; do not invent a separate project prompt.
+Other topics are command/dialect reference: autowire help topics
+
+Reference (top priority)
+  Best practices live in docs/ (contracts and constraints) and demo/ (runnable examples).
+  Before changing behavior, extract and read the relevant docs/ and demo/ files first —
+  this is the top-priority reference. Start with docs/README.md, docs/workspace/toml.md,
+  docs/plugins/, docs/connect/, and the demos demo/soc + demo/hbm.
+
+What it is
+  Connectivity is one HTML + <script>. After the browser runs the script, the live DOM is the netlist.
+  connect run writes .sv from that netlist. The page shows the same text and does not write.
+  Early path: aw.js + connect web; debug via Playwright MCP (browser, isolated).
+  Settled path: autowire connect run — happy-dom runs the same HTML + module scripts,
+  then the same check → elaborate → before-dump pipeline. Playwright stays for debug.
+  MCP vs tools: tools own check and connect run; MCPs must not be a live netlist engine.
+  Playwright MCP drives the page. Saving is the browser download or the driver storing
+  #aw-generated locally. Direct HTML-node edit is parked (docs/architecture.md).
+  RtlIndex lookup is analysis search / info / deps.
+
+Pipeline
+  autowire.toml (.f + svh / macros)
+      →  analysis run → hdxml → RtlIndex (read-only)
+      →  HTML aw-content (+ aw-submods)
+      →  connect check (author HTML legality + deps; no write; not aw-render)
+      →  elaboration → aw-render
+      →  connect run writes .sv → DV
+
+Cold start
+  Standalone autowire.js does not contain hdxml. Lookup: help analysis.
+  When the filelist names generated files that are not on disk yet:
+    plugin wishbone run, then analysis run, then connect run.
+  analysis run names which of those to run.
+  A demo this unpack did not write is not in the bundle. See help docs.
+  Decode, wide fields, and tags: help status. The worked path is
+  docs/skills/autowire-soc-integration.md.
+
+Init
+  Read this before autowire init, even when the workspace has no
+  AGENTS-AUTOWIRE.md yet.
+
+  Writes
+    autowire init <name> writes autowire.toml, AGENTS-AUTOWIRE.md,
+    .autowire/hdxml/, and .autowire/dsl/, then prints the attach step.
+    It refuses if autowire.toml or AGENTS-AUTOWIRE.md already exists.
+
+  Attach
+    AGENTS-AUTOWIRE.md is not on the default reading list. Before other
+    autowire work, update the workspace AGENTS.md. Do one, and do not
+    write a second autowire prompt:
+      add that file to the workspace AGENTS.md
+      put it in the prompt directory this agent already reads
+      add one line: when using autowire, read AGENTS-AUTOWIRE.md
+
+  Ask
+    Before writing or extending autowire.toml, explain the tool, then ask.
+    Offer the default on each question. After each answer, ask whether the
+    rest can stay at the defaults. Stop when they say yes. Write only the
+    keys they accepted. init already writes the defaults. Do not invent
+    units, paths, or a style switch. Ask before editing a toml you did not
+    just create.
+    What: autowire.toml is project config, not the design. Connectivity
+      is HTML ([connect.<id>] / [sim.<id>] html=). Wishbone registers and
+      buses are TypeScript ([wishbone.<id>] ts=). Excel, C headers, and
+      uvm_reg are exports.
+    Why: rtl/gen/, fw/gen/, dv/ral/, and .autowire/ are generated. A wrong
+      file is fixed by changing that SoT and re-running the writer.
+    How: plugin wishbone run writes bus and regfile SV, analysis run
+      indexes the RTL, then connect run writes wrappers and the testbench
+      (deps first).
+
+  Defaults
+    1. Name. A C identifier. Default: the directory name.
+    2. RTL inputs. Default: one hand-written filelist, rtl/<name>.f.
+       Add walk_dirs or sources only if they say that list is not enough.
+    3. Headers and macros. Default: none. Ask only if the RTL has `include
+       or -D: incdirs for headers, [analysis.defines] NAME="value" to
+       expand, keep_raw to leave a macro as text. Do not put .svh in a
+       filelist.
+    4. SoT paths. Default: Wishbone TypeScript in sot/, connect HTML in
+       sot/connect/, testbench HTML in sim/. No units until they name one.
+    5. Output dirs. Keep these unless they ask to move them:
+         plugins_dir   rtl/gen/plugins   bus and regfile SV
+         connect_dir   rtl/gen/connect   wrappers
+         sim_dir       rtl/gen/sim       testbench
+       C headers, uvm_reg, and Excel stay under fw/gen and dv/ral via
+       [plugins.wishbone]. RtlIndex is .autowire/hdxml. Connect snapshots
+       are .autowire/connect.
+    6. Style. Default is the [workspace.style] block init writes (aligned
+       ports, params, instances, signals, uppercase localparams, short
+       port-map comments). Ask once.
+
+You can do now
+  1. Follow help dont; use help status for landed vs not landed.
+  2. autowire init: read Init above, ask, then update the workspace AGENTS.md.
+     analysis run builds the RtlIndex.
+  3. Author connect HTML per docs/connect/html.md.
+  4. autowire connect web [unit]; wait for first paint.
+  5. Playwright MCP: navigate / snapshot / evaluate / click — inspect live DOM, not source HTML.
+     Do not add a node-edit MCP. Search the index with analysis search / info / deps.
+  6. connect check reports author-face errors and warnings. It does not write.
+  7. connect run writes .sv from aw-render. The browser session does not write.
+     Same module scripts and aw-render as the page. Unchanged files are skipped.
+
+Rules of engagement
+  Generated outputs are not sources. Do not edit rtl/gen/, fw/gen/, dv/ral/,
+  or .autowire/. Change the SoT (Wishbone TypeScript or connect HTML) and
+  re-run the writer.
+  Edit help/<topic>.txt when behavior changes; src/cli/help.ts only loads those files. Format constraints live in docs/.
+  Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
+  Windows: MSYS2 UCRT64 toolchain, ucrt64/bin on PATH, LF checkout (docs/dev/windows-msys2.md).
+  Release CI (0.9.1) publishes hdxml + autowire.js only (docs/dev/release.md):
+    no installer, no obscura binary; dev/CI stays Playwright + Chromium.
+  Connect authoring (docs/connect/html.md §3.5.5): same-name → identity (omit);
+    rename batch → one aw-rewrite RegExp — never list identity ports one-by-one.
