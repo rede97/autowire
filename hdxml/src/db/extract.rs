@@ -679,14 +679,18 @@ impl<'a> Extractor<'a> {
         match cap {
             Cap::PackedDim => {
                 if let Some(p) = self.cur_port() {
-                    p.packed.push(ExprText::new(strip_brackets(text)));
+                    // 维度窗口会吞进紧随其后的行注释（sdspi 的 `// }}}` 折叠标记）。
+                    p.packed
+                        .push(ExprText::new(strip_brackets(&strip_sv_comments(text))));
                 }
             }
             Cap::UnpackedDim => {
+                let stripped = strip_sv_comments(text);
+                let cleaned = strip_brackets(&stripped);
                 if let Some(p) = self.cur_port() {
-                    p.unpacked.push(ExprText::new(strip_brackets(text)));
+                    p.unpacked.push(ExprText::new(&cleaned));
                 } else if let Some(p) = self.cur_param() {
-                    p.unpacked.push(ExprText::new(strip_brackets(text)));
+                    p.unpacked.push(ExprText::new(&cleaned));
                 }
             }
             Cap::DataType => {
@@ -1053,6 +1057,23 @@ endmodule
         assert_eq!(m.instances[1].params[0].name, None);
         assert_eq!(m.instances[1].params[0].value, "8");
         assert_eq!(m.instances[1].params[1].value, "16");
+    }
+
+    #[test]
+    fn port_dim_drops_following_line_comment() {
+        // sdspi: `[DW-1:0]` 的 `]` 后面紧跟一行 `// }}}` 折叠标记。
+        let src = r#"module sdspi_mini #(
+  localparam DW = 32
+) (
+  input wire [DW-1:0] i_wb_data,
+		// }}}
+  output reg [DW/8-1:0] o_sel
+);
+endmodule
+"#;
+        let (mods, _) = extract_src("sdspi_mini", src);
+        assert_eq!(mods[0].ports[0].packed[0].text, "DW-1:0");
+        assert_eq!(mods[0].ports[1].packed[0].text, "DW/8-1:0");
     }
 
     #[test]
