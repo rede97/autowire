@@ -55,9 +55,9 @@ obscura 自带协议服务，生产包不再附带 Chromium、Playwright 或 chr
 
 ## 3. 平台
 
-- Linux x86_64、Linux aarch64、macOS。
+- Linux x86_64、Linux aarch64、macOS、Windows x64（仅 hdxml；`hdxml.exe`）。
 - obscura 以 CentOS 7（glibc 2.17）为基线，覆盖老发行版；musl（如 Alpine）不在支持列表。
-- 无原生 Windows 构建。Windows 上开发、测试、跑 demo 继续走 [windows-msys2.md](./windows-msys2.md)。
+- autowire 与 obscura 无原生 Windows 构建。Windows 上开发、测试、跑 demo 继续走 [windows-msys2.md](./windows-msys2.md)；发布的 `hdxml.exe` 可直接用。
 
 ## 4. 许可证与版本
 
@@ -68,7 +68,7 @@ obscura 自带协议服务，生产包不再附带 Chromium、Playwright 或 chr
 
 - 触发：推送 `main` 或手动 `workflow_dispatch`，见 `.github/workflows/release.yml`。
 - 版本与 Release 说明取 `CHANGELOG.md` 最上面一条 `## [x.y.z]`；`package.json` 的 `version` 必须一致（`scripts/check-version.ts` 把关）。hdxml 用自己的版本（`hdxml/Cargo.toml`），不受 autowire 版本约束。
-- 产物：`autowire.js`（单文件 Bun 脚本，内嵌版本/提交/构建时间）、`hdxml-linux-x64.tar.xz`（Ubuntu 22.04 跑 `hdxml/dist.sh`，glibc 2.17）、`hdxml-macos-arm64.tar.xz`、`hdxml-macos-x64.tar.xz`。
+- 产物：`autowire.js`（单文件 Bun 脚本，内嵌版本/提交/构建时间）、`hdxml-linux-x64.tar.xz`（Ubuntu 22.04 跑 `hdxml/dist.sh`，glibc 2.17）、`hdxml-macos-arm64.tar.xz`、`hdxml-macos-x64.tar.xz`、`hdxml-windows-x64.zip`（`windows-2022` 上 MSVC 目标的 `hdxml.exe`）。
 - 同一版本再次发布会删除重建 tag `v<x.y.z>`。换版本只需改 `CHANGELOG.md` 与 `package.json`。
 - `doc-pack.generated.ts` 每次构建由 `scripts/pack-docs.ts` 重新生成，不入库；文档包含仓库根目录 `AGENTS.md`。
 

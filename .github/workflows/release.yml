@@ -104,8 +104,25 @@ jobs:
           path: hdxml/hdxml-${{ matrix.suffix }}.tar.xz
           if-no-files-found: error
 
+  hdxml-windows:
+    needs: check
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          cargo build --release --locked --target-dir target/dist
+          .\target\dist\release\hdxml.exe --version
+          Compress-Archive -Path .\target\dist\release\hdxml.exe -DestinationPath .\hdxml-windows-x64.zip
+        working-directory: hdxml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hdxml-windows
+          path: hdxml/hdxml-windows-x64.zip
+          if-no-files-found: error
+
   publish:
-    needs: [autowire-js, hdxml-linux, hdxml-macos]
+    needs: [autowire-js, hdxml-linux, hdxml-macos, hdxml-windows]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -125,6 +142,7 @@ jobs:
           cp artifacts/hdxml-linux/hdxml-linux-x64.tar.xz .
           cp artifacts/hdxml-macos-arm64/hdxml-macos-arm64.tar.xz .
           cp artifacts/hdxml-macos-x64/hdxml-macos-x64.tar.xz .
+          cp artifacts/hdxml-windows/hdxml-windows-x64.zip .
       - name: publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -138,4 +156,4 @@ jobs:
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file /tmp/notes.md \
-            autowire.js hdxml-linux-x64.tar.xz hdxml-macos-arm64.tar.xz hdxml-macos-x64.tar.xz
+            autowire.js hdxml-linux-x64.tar.xz hdxml-macos-arm64.tar.xz hdxml-macos-x64.tar.xz hdxml-windows-x64.zip
