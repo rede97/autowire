@@ -510,7 +510,7 @@ fn packages_and_imports_exported_and_cached() {
 }
 
 // ---------------------------------------------------------------------------
-// JSON 镜像（--format json；XML 仍是缓存 SoT）
+// JSON 模式（--format json；只写 JSON，缓存载荷即 JSON）
 
 /// 剥离 index.json 的 generated 时间戳（等价性比较基准）
 fn strip_json_generated(body: &str) -> String {
@@ -521,8 +521,16 @@ fn strip_json_generated(body: &str) -> String {
     format!("{head}\"generated\": X{}", &rest[end..])
 }
 
+/// 输出目录中指定后缀的文件数
+fn count_suffix(dir: &Path, suffix: &str) -> usize {
+    walk(dir)
+        .iter()
+        .filter(|p| p.to_string_lossy().ends_with(suffix))
+        .count()
+}
+
 #[test]
-fn json_mirror_export_parity_determinism_and_gc() {
+fn json_mode_export_determinism_and_gc() {
     let c = Case::new("json");
     let pkg = c.write("pkg.sv", "package p;\n  typedef int T;\nendpackage\n");
     let top = c.write(
@@ -550,10 +558,11 @@ fn json_mirror_export_parity_determinism_and_gc() {
     let (code, text) = c.run(&args(&c.out()));
     assert_ne!(code, 0, "parse-error file → exit 1: {text}");
 
-    // index.json + 每文件 .json 存在且 XML 同写（XML 是缓存载体）
+    // (a) json 模式只写 JSON：零 .xml 产物
     let idx = c.out().join("index.json");
     assert!(idx.exists(), "index.json written");
-    assert!(c.out().join("index.xml").exists(), "XML always written");
+    assert!(!c.out().join("index.xml").exists(), "no index.xml in json mode");
+    assert_eq!(count_suffix(&c.out(), ".xml"), 0, "zero .xml artifacts in json mode");
     let top_json = c.find_out("top.sv.json").expect("top.sv.json written");
     let bad_json = c.find_out("bad.sv.json").expect("bad.sv.json written");
 
@@ -563,16 +572,13 @@ fn json_mirror_export_parity_determinism_and_gc() {
     for key in ["\"files\"", "\"defines\"", "\"definesFp\"", "\"incdirsFp\"", "\"modules\"", "\"packages\"", "\"hierarchy\""] {
         assert!(idx_body.contains(key), "index.json has {key}");
     }
-    // index 指向 .json twins；模块清单与 XML 一致
     assert!(idx_body.contains("top.sv.json"), "file index points at .json twin");
-    let idx_xml = std::fs::read_to_string(c.out().join("index.xml")).unwrap();
     for m in ["top", "sub"] {
-        assert!(idx_xml.contains(&format!("name=\"{m}\"")), "index.xml has {m}");
         assert!(idx_body.contains(&format!("\"name\": \"{m}\"")), "index.json has {m}");
     }
     assert!(idx_body.contains("\"name\": \"p\""), "package listed");
 
-    // 内容 parity spot-check：模块/参数/端口/import 值与 XML 一致
+    // 内容 spot-check：模块/参数/端口/import/实例值
     let top_body = std::fs::read_to_string(&top_json).unwrap();
     for frag in [
         "\"name\": \"top\"",
@@ -594,19 +600,23 @@ fn json_mirror_export_parity_determinism_and_gc() {
     ] {
         assert!(top_body.contains(frag), "top.sv.json contains {frag}:\n{top_body}");
     }
-    let top_xml = std::fs::read_to_string(c.find_out("top.sv.xml").unwrap()).unwrap();
-    for frag in ["dataType=\"int\"", "packed=\"[W-1:0]\"", "default=\"8\""] {
-        assert!(top_xml.contains(frag), "top.sv.xml contains {frag}");
-    }
-    // span 一致性：同模块在两种格式中的 span 相同
-    let jspan = top_body.split("\"span\": \"").nth(1).unwrap().split('"').next().unwrap().to_string();
-    assert!(top_xml.contains(&format!("span=\"{jspan}\"")), "span parity: {jspan}");
 
     // 错误文件：errors 数组 + 无缓存元数据（srcHash 缺失）
     let bad_body = std::fs::read_to_string(&bad_json).unwrap();
     assert!(bad_body.contains("\"errors\""), "error file has errors array:\n{bad_body}");
     assert!(!bad_body.contains("\"srcHash\""), "no cache meta for error file");
-    assert!(bad_body.contains("\"status\": \"error\"") || idx_body.contains("\"status\": \"error\""));
+    assert!(idx_body.contains("\"status\": \"error\""));
+
+    // (b) 第二次 json 运行：JSON 缓存重建命中（reused > 0；错误文件不可缓存每次重解析）
+    let (code, text) = c.run(&args(&c.out()));
+    assert_ne!(code, 0, "{text}");
+    let reused: usize = text
+        .split("reused ")
+        .nth(1)
+        .and_then(|r| r.split(' ').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0);
+    assert_eq!(reused, 3, "json cache rebuild reuses the 3 good files: {text}");
 
     // 确定性：两次导出字节一致（剥离 generated）
     let out2 = c.dir.join("out2");
@@ -628,5 +638,45 @@ fn json_mirror_export_parity_determinism_and_gc() {
     ]);
     assert_eq!(code, 0, "{text}");
     assert!(c.find_out("bad.sv.json").is_none(), "stale .json collected");
-    assert!(c.find_out("bad.sv.xml").is_none(), "stale .xml collected too");
+}
+
+/// (c) 跨格式切换：xml → json → xml，盘上始终只有当前格式的产物
+#[test]
+fn format_switch_purges_other_format() {
+    let c = Case::new("switch");
+    let a = c.write("a.sv", "module a #(parameter int W = 8) (output logic [W-1:0] o);\n  b u0();\nendmodule\n");
+    let b = c.write("b.sv", "module b;\nendmodule\n");
+    let base = || vec!["-s".into(), s(&a), s(&b), "-o".into(), s(&c.out())];
+
+    // xml 模式（默认）：仅 XML
+    let (code, text) = c.run(&base());
+    assert_eq!(code, 0, "{text}");
+    assert!(c.out().join("index.xml").exists());
+    assert!(c.find_out("a.sv.xml").is_some());
+    assert_eq!(count_suffix(&c.out(), ".json"), 0, "xml mode writes no json");
+
+    // 切 json：XML 产物被清空，仅 JSON
+    let mut args = base();
+    args.extend(["--format".into(), "json".into()]);
+    let (code, text) = c.run(&args);
+    assert_eq!(code, 0, "{text}");
+    assert!(c.out().join("index.json").exists());
+    assert!(c.find_out("a.sv.json").is_some());
+    assert!(!c.out().join("index.xml").exists(), "index.xml purged on switch");
+    assert_eq!(count_suffix(&c.out(), ".xml"), 0, "xml artifacts purged on switch");
+
+    // json 缓存可增量复用（重建自 JSON 载荷）
+    let (code, text) = c.run(&args);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("reused 2 files"), "json cache reused: {text}");
+
+    // 切回 xml：JSON 产物被清空，仅 XML，且 xml 增量照旧工作
+    let (code, text) = c.run(&base());
+    assert_eq!(code, 0, "{text}");
+    assert!(c.out().join("index.xml").exists());
+    assert!(!c.out().join("index.json").exists(), "index.json purged on switch back");
+    assert_eq!(count_suffix(&c.out(), ".json"), 0, "json artifacts purged on switch back");
+    let (code, text) = c.run(&base());
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("reused 2 files"), "xml cache reused after switch back: {text}");
 }

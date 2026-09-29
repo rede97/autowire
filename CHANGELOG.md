@@ -2,6 +2,12 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.3.0] - 2026-09-30
+
+- 索引/快照单格式：`--format json` 时 hdxml 只写 JSON（不再双写 XML）；增量缓存回读按格式分发（serde_json），验证逻辑（指纹/mtime/blake3 仲裁）原样。格式切换会清掉另一种格式的残留文件。connect 快照同理：`format = "json"` 时 `.autowire/connect/` 只写 `<id>.json`。
+- `[analysis.index] format` 的 JSON 模式标记为测试状态；demo 与默认路径保持 XML（稳定支持）。
+- README 重写为英文并补充性能与 Agent 适配说明、CI/Release 徽标；仓库以 GPL-3.0 开源。
+
 ## [2.2.9] - 2026-09-30
 
 - RtlIndex JSON 消费模式：`[analysis.index] format = "json"` 时 hdxml（0.4.0，`--format json`）在 XML 之外再写 `index.json` + 每文件 `.json` 镜像；connect/web/`analysis deps|search|info` 直接 JSON.parse（真实索引上约为 Bun.XML 的 2.1 倍吞吐）。XML 始终写出，仍是增量缓存本体与文档化契约；增量逻辑不变。

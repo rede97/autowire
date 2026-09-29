@@ -661,21 +661,22 @@ pub fn analyze_files(d: &Drive) -> Result<(DesignDb, BTreeMap<PathBuf, cache::Ca
     Ok((assemble(d, out.by_file, out.errors), out.stamps))
 }
 
-/// 增量分析（有输出目录即默认）：以 xml_dir 旧产物为缓存——全局闸门（tool/definesFp/incdirsFp）
-/// 一致且每文件指纹（源码 + `include 闭包）新鲜的文件直接由缓存 XML 重建声明，只重解析
-/// 失效文件；`refresh` 无视缓存强制全量。返回（db, 缓存指纹表, 缓存命中文件数）。
+/// 增量分析（有输出目录即默认）：以输出目录旧产物为缓存——全局闸门（tool/definesFp/incdirsFp）
+/// 一致且每文件指纹（源码 + `include 闭包）新鲜的文件直接由缓存产物重建声明，只重解析
+/// 失效文件；`refresh` 无视缓存强制全量。缓存载荷格式由 `payload` 指定（与导出格式一致）。
+/// 返回（db, 缓存指纹表, 缓存命中文件数）。
 pub fn analyze_incremental(
     d: &Drive,
     define_pairs: &[(String, Option<String>)],
     xml_dir: &Path,
     refresh: bool,
+    payload: cache::Payload,
 ) -> Result<(DesignDb, BTreeMap<PathBuf, cache::CacheMeta>, usize)> {
     let files = d.files;
     let mut cached: BTreeMap<PathBuf, Vec<ModuleDecl>> = BTreeMap::new();
     let mut stamps: BTreeMap<PathBuf, cache::CacheMeta> = BTreeMap::new();
     if !refresh
-        && let Some(old) = cache::read_old_index(xml_dir)
-        && old.tool == format!("hdxml {}", env!("CARGO_PKG_VERSION"))
+        && let Some(old) = cache::read_old_index(xml_dir, payload)
         && old.defines_fp == cache::defines_fingerprint(define_pairs)
         && old.incdirs_fp == cache::incdirs_fingerprint(d.incdirs)
     {
@@ -683,7 +684,7 @@ pub fn analyze_incremental(
             let Some(rel) = old.manifest.get(f.to_string_lossy().as_ref()) else {
                 continue;
             };
-            let Some((mods, meta)) = cache::load_cached_file(&xml_dir.join(rel), f) else {
+            let Some((mods, meta)) = cache::load_cached_file(&xml_dir.join(rel), f, payload) else {
                 continue;
             };
             if !meta.is_fresh(f) {

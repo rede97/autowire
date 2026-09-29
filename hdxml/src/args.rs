@@ -75,8 +75,8 @@ pub struct InputArgs {
     pub incdirs: Vec<PathBuf>,
 }
 
-/// 导出格式：xml = 仅 XML（现状）；json = XML 之外再写 JSON 镜像（index.json + 每文件 *.json）。
-/// XML 始终写出——它是增量缓存的载体。
+/// 导出格式：盘上只写配置的格式（xml = index.xml + *.xml；json = index.json + *.json）。
+/// 增量缓存载荷即当前格式；切换格式时清空另一格式的遗留产物。
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OutFormat {
     #[default]
@@ -112,7 +112,7 @@ pub struct AnalysisArgs {
     #[arg(long)]
     pub summary: Option<PathBuf>,
 
-    /// Export format: xml (default) or json (JSON mirror alongside the XML cache)
+    /// Export format: xml (default) or json (only the configured format is written; it is the incremental cache payload)
     #[arg(long, value_enum, default_value_t = OutFormat::Xml)]
     pub format: OutFormat,
     /// Exit code 1 when blackbox (undef) modules exist

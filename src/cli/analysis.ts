@@ -221,9 +221,9 @@ export function registerAnalysis(program: Command): void {
 					stdout: "inherit",
 					stderr: "inherit",
 				});
-				if (!existsSync(join(cfg.indexDir, "index.xml"))) {
+				if (!existsSync(join(cfg.indexDir, indexFileName(cfg.indexFormat)))) {
 					console.error(
-						`hdxml analysis failed (exit ${proc.exitCode}); no index.xml`,
+						`hdxml analysis failed (exit ${proc.exitCode}); no ${indexFileName(cfg.indexFormat)}`,
 					);
 					process.exit(1);
 				}

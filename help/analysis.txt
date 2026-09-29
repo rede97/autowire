@@ -20,8 +20,8 @@ analysis run: load toml (upward from CWD, or --workspace) and run hdxml with map
   [analysis.defines] NAME="v" → -D NAME=v
   [analysis] keep_raw = [...] → --keep-raw
   RtlIndex dir is fixed: .autowire/hdxml → -o/--output-dir (init creates it)
-  [analysis.index] format = "json" → hdxml --format json: also writes
-      index.json + per-file .json; consumers read JSON (~2x faster parse)
+  [analysis.index] format = "json" (experimental) → hdxml --format json:
+      JSON-only index on disk; consumers read JSON (~2x faster parse)
   [analysis] hdxml_bin → binary path only (not an hdxml arg; must exist if set)
 
 hdxml binary lookup: --hdxml > toml [analysis] hdxml_bin > $HDXML_BIN

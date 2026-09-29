@@ -19,6 +19,33 @@ use super::{
     PortInfo, short_hash,
 };
 
+/// 缓存载荷格式（`--format`）：决定增量缓存读写 `index.xml`/`*.xml` 还是 `index.json`/`*.json`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Payload {
+    Xml,
+    Json,
+}
+
+/// manifest GC：删除 manifest 中不在 planned 的产物并逐级修剪空目录（两种格式共用，
+/// 也用于跨格式切换时清空另一格式的全部产物——planned 传空集）
+pub(crate) fn gc_stale(out_dir: &Path, manifest: Vec<String>, planned: &BTreeSet<&str>) {
+    for stale in manifest {
+        if planned.contains(stale.as_str()) {
+            continue;
+        }
+        let p = out_dir.join(&stale);
+        if std::fs::remove_file(&p).is_ok() {
+            let mut dir = p.parent();
+            while let Some(d) = dir {
+                if d == out_dir || std::fs::remove_dir(d).is_err() {
+                    break;
+                }
+                dir = d.parent();
+            }
+        }
+    }
+}
+
 /// 文件指纹：mtime+size 快路径 + blake3 内容哈希仲裁
 #[derive(Debug, Clone, PartialEq)]
 pub struct FileStamp {
@@ -138,7 +165,16 @@ pub struct OldIndex {
     pub manifest: BTreeMap<String, String>,
 }
 
-pub fn read_old_index(out_dir: &Path) -> Option<OldIndex> {
+/// 旧 index 的全局闸门与产物清单；按载荷格式分发（XML 行扫描 / JSON serde_json 解析）
+pub fn read_old_index(out_dir: &Path, payload: Payload) -> Option<OldIndex> {
+    match payload {
+        Payload::Xml => read_old_index_xml(out_dir),
+        Payload::Json => read_old_index_json(out_dir),
+    }
+}
+
+/// 旧 index.xml 的全局闸门与产物清单（行扫描自产格式）
+pub fn read_old_index_xml(out_dir: &Path) -> Option<OldIndex> {
     let body = std::fs::read_to_string(out_dir.join("index.xml")).ok()?;
     let mut tool = None;
     let mut defines_fp = None;
@@ -160,6 +196,24 @@ pub fn read_old_index(out_dir: &Path) -> Option<OldIndex> {
         tool: tool?,
         defines_fp: defines_fp?,
         incdirs_fp: incdirs_fp?,
+        manifest,
+    })
+}
+
+/// 旧 index.json 的全局闸门与产物清单（serde_json 解析；字段同 XML 闸门）
+pub fn read_old_index_json(out_dir: &Path) -> Option<OldIndex> {
+    let body = std::fs::read_to_string(out_dir.join("index.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let mut manifest = BTreeMap::new();
+    for f in v.get("files")?.as_array()? {
+        let src = f.get("source")?.as_str()?;
+        let idx = f.get("index")?.as_str()?;
+        manifest.insert(src.to_string(), idx.to_string());
+    }
+    Some(OldIndex {
+        tool: v.get("tool")?.as_str()?.to_string(),
+        defines_fp: v.get("definesFp")?.as_str()?.to_string(),
+        incdirs_fp: v.get("incdirsFp")?.as_str()?.to_string(),
         manifest,
     })
 }
@@ -275,12 +329,24 @@ fn resolve_include(name: &str, incdirs: &[PathBuf]) -> Option<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
-// 缓存 XML 读取（自产格式行扫描：每元素一行，属性值内 `"` 已转义为 &quot;）
+// 缓存读取：XML 行扫描（自产格式每元素一行）/ JSON serde_json 解析
 
-/// 从每文件 XML 重建模块声明与缓存元数据。
-/// None = 不可作为缓存：缺 srcHash/srcSize、含 <error>（解析/合并错误文件每次重解析）、
+/// 从每文件产物重建模块声明与缓存元数据；按载荷格式分发。
+/// None = 不可作为缓存：缺 srcHash/srcSize、含错误条目（解析/合并错误文件每次重解析）、
 /// 或格式漂移；调用方将其归入重解析集合。模块 file 字段取当前输入路径 `source`。
-pub fn load_cached_file(xml_path: &Path, source: &Path) -> Option<(Vec<ModuleDecl>, CacheMeta)> {
+pub fn load_cached_file(
+    path: &Path,
+    source: &Path,
+    payload: Payload,
+) -> Option<(Vec<ModuleDecl>, CacheMeta)> {
+    match payload {
+        Payload::Xml => load_cached_file_xml(path, source),
+        Payload::Json => load_cached_file_json(path, source),
+    }
+}
+
+/// XML 载荷重建（自产格式行扫描）。
+pub fn load_cached_file_xml(xml_path: &Path, source: &Path) -> Option<(Vec<ModuleDecl>, CacheMeta)> {
     let body = std::fs::read_to_string(xml_path).ok()?;
     let mut mods: Vec<ModuleDecl> = Vec::new();
     let mut stack: Vec<String> = Vec::new();
@@ -403,6 +469,123 @@ pub fn load_cached_file(xml_path: &Path, source: &Path) -> Option<(Vec<ModuleDec
         mods,
         CacheMeta {
             source: source_stamp,
+            includes,
+        },
+    ))
+}
+
+/// JSON 载荷重建（serde_json 解析；字段语义与 XML 载荷一一对应，重建结果相同）。
+pub fn load_cached_file_json(json_path: &Path, source: &Path) -> Option<(Vec<ModuleDecl>, CacheMeta)> {
+    let body = std::fs::read_to_string(json_path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    // 错误文件不入缓存：每次运行重解析（errors 键存在即判不可缓存）
+    if v.get("errors").is_some() {
+        return None;
+    }
+    fn jstr<'a>(o: &'a serde_json::Value, k: &str) -> Option<&'a str> {
+        o.get(k)?.as_str()
+    }
+    fn jnum(o: &serde_json::Value, k: &str) -> Option<u64> {
+        o.get(k)?.as_u64()
+    }
+    let src_stamp = FileStamp {
+        mtime: jnum(&v, "mtime")?,
+        size: jnum(&v, "srcSize")?,
+        hash: jstr(&v, "srcHash")?.to_string(),
+    };
+    let mut includes: Vec<IncludeStamp> = Vec::new();
+    if let Some(arr) = v.get("includes") {
+        for inc in arr.as_array()? {
+            includes.push(IncludeStamp {
+                path: PathBuf::from(jstr(inc, "path")?),
+                stamp: FileStamp {
+                    mtime: jnum(inc, "mtime")?,
+                    size: jnum(inc, "size")?,
+                    hash: jstr(inc, "hash")?.to_string(),
+                },
+            });
+        }
+    }
+    let mut mods: Vec<ModuleDecl> = Vec::new();
+    if let Some(arr) = v.get("modules") {
+        for m in arr.as_array()? {
+            let mut decl = ModuleDecl {
+                name: jstr(m, "name")?.to_string(),
+                kind: ModKind::parse(jstr(m, "kind")?)?,
+                file: source.to_path_buf(),
+                span: parse_span(jstr(m, "span")?)?,
+                params: Vec::new(),
+                ports: Vec::new(),
+                instances: Vec::new(),
+                imports: Vec::new(),
+                content_hash: jstr(m, "contentHash")?.to_string(),
+                norm_hash: jstr(m, "normHash")?.to_string(),
+                // package 无 interfaceSig（契约 §5.2）
+                interface_sig: jstr(m, "interfaceSig").unwrap_or_default().to_string(),
+            };
+            if let Some(arr) = m.get("imports") {
+                for i in arr.as_array()? {
+                    decl.imports.push(super::ImportInfo {
+                        package: jstr(i, "package")?.to_string(),
+                        symbol: jstr(i, "symbol")?.to_string(),
+                        via: super::ImportVia::parse(jstr(i, "via")?)?,
+                        span: parse_span(jstr(i, "span")?)?,
+                    });
+                }
+            }
+            if let Some(arr) = m.get("params") {
+                for p in arr.as_array()? {
+                    decl.params.push(ParamInfo {
+                        name: jstr(p, "name")?.to_string(),
+                        kind: ParamKind::parse(jstr(p, "kind")?)?,
+                        data_type: jstr(p, "dataType").map(str::to_string),
+                        default: jstr(p, "default").map(ExprText::new),
+                        span: parse_span(jstr(p, "span")?)?,
+                    });
+                }
+            }
+            if let Some(arr) = m.get("ports") {
+                for p in arr.as_array()? {
+                    let dir = jstr(p, "dir")?;
+                    decl.ports.push(PortInfo {
+                        name: jstr(p, "name")?.to_string(),
+                        dir: if dir == "port" { None } else { Some(PortDir::parse(dir)?) },
+                        data_type: jstr(p, "dataType").map(str::to_string),
+                        interface: jstr(p, "interface").map(str::to_string),
+                        modport: jstr(p, "modport").map(str::to_string),
+                        packed: parse_dims(jstr(p, "packed").unwrap_or(""))?,
+                        unpacked: parse_dims(jstr(p, "unpacked").unwrap_or(""))?,
+                        default: jstr(p, "default").map(ExprText::new),
+                        span: parse_span(jstr(p, "span")?)?,
+                    });
+                }
+            }
+            if let Some(arr) = m.get("instances") {
+                for i in arr.as_array()? {
+                    let mut inst = InstanceInfo {
+                        inst: jstr(i, "name")?.to_string(),
+                        target: jstr(i, "target")?.to_string(),
+                        params: Vec::new(),
+                        span: parse_span(jstr(i, "span")?)?,
+                    };
+                    if let Some(ps) = i.get("params") {
+                        for c in ps.as_array()? {
+                            inst.params.push(ParamConn {
+                                name: jstr(c, "name").map(str::to_string),
+                                value: jstr(c, "value")?.to_string(),
+                            });
+                        }
+                    }
+                    decl.instances.push(inst);
+                }
+            }
+            mods.push(decl);
+        }
+    }
+    Some((
+        mods,
+        CacheMeta {
+            source: src_stamp,
             includes,
         },
     ))
@@ -620,7 +803,7 @@ string s = "`include not_real";
             pc: &pc,
             sub_bars: false,
         };
-        let (db, stamps, reused) = db::analyze_incremental(&drive, &pairs, out, refresh).unwrap();
+        let (db, stamps, reused) = db::analyze_incremental(&drive, &pairs, out, refresh, crate::db::cache::Payload::Xml).unwrap();
         XmlExport::new(&db, &fx.files, &pairs, &stamps, &fx.incdirs)
             .write(out)
             .unwrap();

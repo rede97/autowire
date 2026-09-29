@@ -70,6 +70,10 @@ SYNTHESIS = "1"
 
 # RtlIndex 目录固定为 .autowire/hdxml（init 时创建；可删缓存）。
 # [analysis.index] dir 不再可配：写成别的值会直接报错。
+[analysis.index]
+# format = "json"（测试状态，非第一优先级）：索引只写 JSON（index.json +
+# 每文件 .json），消费方（connect/web/analysis deps）改读 JSON.parse
+#（同数据，解析约 2 倍快）。默认 "xml"——稳定支持路径。
 
 [workspace.dump]
 # 产物目录三分（DE / DV / 插件）；相对工作区根。
@@ -154,7 +158,7 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 3. **`deps` 图必须无环**：加载 toml 时做拓扑检查；成环 → **报错**。未知 id / 重复 id / 自依赖 → **报错**。  
 4. **并行 elaborate**：DAG 就绪后，**无依赖边的单元可以并行**处理；仅列表、无 deps 时只能保守串行——这是具名 `deps` 相对扁平 `html = []` 的结构优势。  
 5. toml **仍然禁止**连线细节；`deps` 只表达**包级**依赖。单文件内层级见 [`../connect/html.md`](../connect/html.md)（`aw-submods`）。  
-6. dump 写入 **`connect_dir`**；`.autowire/connect/` 快照按单元 id 落盘（`<id>.xml`；`[analysis.index] format = "json"` 时再写 `<id>.json` 镜像；生成物，可删重建）。  
+6. dump 写入 **`connect_dir`**；`.autowire/connect/` 快照按单元 id 落盘（`<id>.xml`；`[analysis.index] format = "json"` 时改为 `<id>.json`，一种格式只留一份；生成物，可删重建）。  
 7. **禁止** `deps` 指向 `[sim.<id>]`（DE 不例化 TB 顶）。
 
 ### 4.1.1 `[sim.<id>]`（DV 仿真顶单元）
@@ -182,7 +186,7 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 
 - **`.autowire/`** 是工作区**生成临时目录**（索引等缓存），可整体删除重建；**禁止**放入手写内容或任何 SoT。  
   - `.autowire/hdxml/` — RtlIndex  
-  - `.autowire/connect/` — 各连接单元 elaborate 后的快照，`<id>.xml`（抽象模块信息：params / ports / imports；hdxml 风格规范：属性承载、方向标签名、模块字典序、无时间戳/哈希；跨单元 deps 加载与 dump 都读它）。`format = "json"` 时另有 `<id>.json` 镜像，此时 deps 加载读 JSON。**完整 `aw-render` 不再落盘**（无 `<id>.html`）；dump 印 SV 只认 POST 体活 DOM。**禁止** dump 直接 load 作者 HTML
+  - `.autowire/connect/` — 各连接单元 elaborate 后的快照，`<id>.xml`（抽象模块信息：params / ports / imports；hdxml 风格规范：属性承载、方向标签名、模块字典序、无时间戳/哈希；跨单元 deps 加载与 dump 都读它）。`format = "json"` 时快照为 `<id>.json`（只写 JSON），deps 加载读 JSON。**完整 `aw-render` 不再落盘**（无 `<id>.html`）；dump 印 SV 只认 POST 体活 DOM。**禁止** dump 直接 load 作者 HTML
   - 产物目录：`connect_dir` / `sim_dir` / `plugins_dir`（§4.0），与临时目录分开。
 
 

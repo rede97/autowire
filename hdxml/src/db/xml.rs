@@ -113,6 +113,10 @@ impl<'a> XmlExport<'a> {
             }
         }
 
+        // 跨格式切换清理：删除遗留 JSON 产物（index.json + 其 manifest 列出的 *.json）
+        super::cache::gc_stale(out_dir, super::json::read_old_manifest(out_dir), &BTreeSet::new());
+        let _ = std::fs::remove_file(out_dir.join("index.json"));
+
         for f in &inputs {
             let xml_rel = &index_of[f];
             let mods = by_file.get(f).map(Vec::as_slice).unwrap_or(&[]);
@@ -507,7 +511,7 @@ pub(crate) fn file_xml_rel(path: &Path, cwd: &Path) -> String {
 }
 
 /// 读旧 index.xml 的产物清单（`<file index="…">`；自产格式行扫描即可）
-fn read_old_manifest(out_dir: &Path) -> Vec<String> {
+pub(crate) fn read_old_manifest(out_dir: &Path) -> Vec<String> {
     let Ok(body) = std::fs::read_to_string(out_dir.join("index.xml")) else {
         return Vec::new();
     };

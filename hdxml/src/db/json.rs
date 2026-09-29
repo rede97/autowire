@@ -1,7 +1,8 @@
-//! RtlIndex JSON 导出器：XML 产物的逐字段镜像（docs/hdxml/rtlindex-xml.md §JSON）。
+//! RtlIndex JSON 导出器：XML 产物的逐字段镜像（docs/hdxml/rtlindex-xml.md §8）。
 //!
 //! 与 XML 共用同一份数据与排序规则（路径字典序 / BTreeMap 序 / 声明序），
-//! 输出因此同样字节确定。XML 始终是增量缓存的载体；JSON 仅供消费方读取。
+//! 输出因此同样字节确定。`--format json` 时 JSON 即增量缓存载荷
+//! （cache::load_cached_file_json 回读重建）；盘上只写当前格式。
 //! 文件名：`index.xml` → `index.json`，`ip/x.v.xml` → `ip/x.v.json`（同相对路径换后缀）。
 
 use super::cache::{CacheMeta, defines_fingerprint, incdirs_fingerprint};
@@ -92,21 +93,11 @@ impl<'a> JsonExport<'a> {
 
         // GC：删除旧 manifest 中本次不再产出的 JSON，并修剪空目录
         let planned: BTreeSet<&str> = index_of.values().map(String::as_str).collect();
-        for stale in read_old_manifest(out_dir) {
-            if planned.contains(stale.as_str()) {
-                continue;
-            }
-            let p = out_dir.join(&stale);
-            if std::fs::remove_file(&p).is_ok() {
-                let mut dir = p.parent();
-                while let Some(d) = dir {
-                    if d == out_dir || std::fs::remove_dir(d).is_err() {
-                        break;
-                    }
-                    dir = d.parent();
-                }
-            }
-        }
+        super::cache::gc_stale(out_dir, read_old_manifest(out_dir), &planned);
+
+        // 跨格式切换清理：删除遗留 XML 产物（index.xml + 其 manifest 列出的 *.xml）
+        super::cache::gc_stale(out_dir, super::xml::read_old_manifest(out_dir), &BTreeSet::new());
+        let _ = std::fs::remove_file(out_dir.join("index.xml"));
 
         for f in &inputs {
             let json_rel = &index_of[f];
@@ -414,7 +405,7 @@ fn json_rel(xml_rel: String) -> String {
 }
 
 /// 读旧 index.json 的产物清单（自产格式行扫描 `"index": "…"` 即可）
-fn read_old_manifest(out_dir: &Path) -> Vec<String> {
+pub(crate) fn read_old_manifest(out_dir: &Path) -> Vec<String> {
     let Ok(body) = std::fs::read_to_string(out_dir.join("index.json")) else {
         return Vec::new();
     };
@@ -665,5 +656,86 @@ mod tests {
         assert!(!dir.join("sub").exists(), "empty dir pruned");
         assert!(dir.join("index.json").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 缓存回读：JSON 载荷重建的 ModuleDecl 与导出源数据一致（ExprText::new 由原文重算 deps）
+    #[test]
+    fn cache_roundtrip_rebuilds_decls() {
+        use crate::db::*;
+        let file = PathBuf::from("ip/y.sv");
+        let m = ModuleDecl {
+            name: "y".into(),
+            kind: ModKind::Module,
+            file: file.clone(),
+            span: [0, 20],
+            params: vec![ParamInfo {
+                name: "W".into(),
+                kind: ParamKind::Parameter,
+                data_type: Some("int".into()),
+                default: Some(ExprText::new("A+B")),
+                span: [1, 5],
+            }],
+            ports: vec![PortInfo {
+                name: "o".into(),
+                dir: Some(PortDir::Output),
+                data_type: Some("logic".into()),
+                interface: None,
+                modport: None,
+                packed: vec![ExprText::new("W-1:0")],
+                unpacked: vec![],
+                default: None,
+                span: [2, 8],
+            }],
+            instances: vec![InstanceInfo {
+                inst: "u0".into(),
+                target: "z".into(),
+                params: vec![ParamConn {
+                    name: Some("W".into()),
+                    value: "W".into(),
+                }],
+                span: [9, 19],
+            }],
+            imports: vec![ImportInfo {
+                package: "p".into(),
+                symbol: "*".into(),
+                via: ImportVia::Decl,
+                span: [0, 0],
+            }],
+            content_hash: "c".into(),
+            norm_hash: "n".into(),
+            interface_sig: "sig".into(),
+        };
+        let mut defs = BTreeMap::new();
+        defs.insert("y".to_string(), m.clone());
+        let db = DesignDb::new(defs, BTreeMap::new());
+        // 写入真实文件以产生可用指纹（is_fresh 之外的重建正确性由本测试锁定）
+        let tmp = std::env::temp_dir().join(format!("hdxml_json_rt_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let src = tmp.join("y.sv");
+        std::fs::write(&src, b"module y; endmodule\n").unwrap();
+        let mut stamps = BTreeMap::new();
+        stamps.insert(file.clone(), cache::CacheMeta {
+            source: cache::FileStamp::capture(&src).unwrap(),
+            includes: vec![],
+        });
+        let defines: Vec<(String, Option<String>)> = vec![];
+        let incdirs: Vec<PathBuf> = vec![];
+        let files = vec![file.clone()];
+        let out = tmp.join("out");
+        JsonExport::with_generated(&db, &files, &defines, &stamps, &incdirs, 1)
+            .write(&out)
+            .unwrap();
+        let json = out.join("ip/y.sv.json");
+        let (mods, meta) = cache::load_cached_file_json(&json, &file).expect("cache rebuild");
+        assert_eq!(mods, vec![m], "rebuilt ModuleDecl identical to source");
+        // 虚拟路径 ip/y.sv 不在盘上，导出的 mtime=0；锁定 size/hash 一致性即可
+        assert_eq!(meta.source.size, stamps[&file].source.size);
+        assert_eq!(meta.source.hash, stamps[&file].source.hash);
+        // 错误文件不可缓存
+        let err_json = tmp.join("err.json");
+        std::fs::write(&err_json, "{\"errors\": [{\"message\": \"x\"}]}\n").unwrap();
+        assert!(cache::load_cached_file_json(&err_json, &file).is_none());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

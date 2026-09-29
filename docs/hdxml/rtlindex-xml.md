@@ -280,12 +280,15 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 2. 把 `source` 约束成相对项目根。当前是生产者收集时的路径，消费侧展示长路径。
 3. 给 `<error>` 加 `stage`（`preprocess` / `parse` / `duplicate`）属性。
 
-## 8. JSON 镜像（`--format json`）
+## 8. JSON 格式（`--format json`）
 
-面向消费方的 JSON 变体。XML 仍是缓存与契约的 SoT；JSON 由同一份数据、同一套排序规则
-（§1 固定排序）生成，因此同样字节确定（`generated` 除外）。文件名：`index.xml` →
-`index.json`，每文件 `ip/x.v.xml` → `ip/x.v.json`（同相对路径换后缀）；GC 语义同 §2
-（旧 `index.json` 产物集 − 本次产物集 = 删除，空目录修剪，`index.json` 最后写入）。
+XML 的逐字段 JSON 变体。**json 模式只写 JSON**（盘上零 XML 产物）；增量缓存载荷即配置的
+格式——json 模式由 `index.json` + `*.json` 回读重建缓存（闸门/指纹语义与 §5.1/§5.8 相同），
+切换格式时另一格式的遗留产物（其 index + manifest 列出的全部文件）被自动清空。
+JSON 由同一份数据、同一套排序规则（§1 固定排序）生成，因此同样字节确定（`generated`
+除外）。文件名：`index.xml` → `index.json`，每文件 `ip/x.v.xml` → `ip/x.v.json`
+（同相对路径换后缀）；GC 语义同 §2（旧 `index.json` 产物集 − 本次产物集 = 删除，
+空目录修剪，`index.json` 最后写入）。
 
 编码：2 空格缩进、文件尾换行；数字/布尔不加引号；字符串仅转义 `"`、`\` 与 < 0x20
 控制字符（`\uXXXX`），`/` 不转义。XML 属性值里的字符引用（`&amp;` 等）在 JSON 中为原字符。

@@ -67,8 +67,12 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
     };
     // 有输出目录即增量：未变更文件复用缓存（--refresh 强制全量）；无输出目录纯终端分析
     let mut inc: Option<(usize, usize)> = None; // (reused, parsed)，供 --summary
+    let payload = match a.format {
+        hdxml::args::OutFormat::Xml => db::cache::Payload::Xml,
+        hdxml::args::OutFormat::Json => db::cache::Payload::Json,
+    };
     let (db, stamps) = if let Some(dir) = &a.output_dir {
-        let (db, stamps, reused) = db::analyze_incremental(&drive, &define_pairs, dir, a.refresh)?;
+        let (db, stamps, reused) = db::analyze_incremental(&drive, &define_pairs, dir, a.refresh, payload)?;
         inc = Some((reused, files.len() - reused));
         pc.println(&format!(
             "incremental: reused {reused} files, parsed {} files{}",
@@ -102,24 +106,28 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
         }
     }
 
-    // XML 导出（-o/--output-dir）
+    // 索引导出（-o/--output-dir）：只写配置的格式——xml 仅 XML，json 仅 JSON；
+    // 导出器同时清空另一格式的遗留产物（跨格式切换清理）
     if let Some(dir) = &a.output_dir {
-        let stats = XmlExport::new(&db, &files, &define_pairs, &stamps, &incdirs).write(dir)?;
-        pc.println(&format!(
-            "XML written: {} (files {}, modules {})",
-            dir.display(),
-            stats.files,
-            stats.modules
-        ));
-        // JSON 镜像（--format json）：XML 之上再写 index.json + 每文件 *.json
-        if a.format == hdxml::args::OutFormat::Json {
-            let stats = JsonExport::new(&db, &files, &define_pairs, &stamps, &incdirs).write(dir)?;
-            pc.println(&format!(
-                "JSON written: {} (files {}, modules {})",
-                dir.display(),
-                stats.files,
-                stats.modules
-            ));
+        match payload {
+            db::cache::Payload::Xml => {
+                let s = XmlExport::new(&db, &files, &define_pairs, &stamps, &incdirs).write(dir)?;
+                pc.println(&format!(
+                    "XML written: {} (files {}, modules {})",
+                    dir.display(),
+                    s.files,
+                    s.modules
+                ));
+            }
+            db::cache::Payload::Json => {
+                let s = JsonExport::new(&db, &files, &define_pairs, &stamps, &incdirs).write(dir)?;
+                pc.println(&format!(
+                    "JSON written: {} (files {}, modules {})",
+                    dir.display(),
+                    s.files,
+                    s.modules
+                ));
+            }
         }
     }
 

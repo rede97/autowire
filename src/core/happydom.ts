@@ -227,15 +227,17 @@ async function writeSnapshot(
 		throw new Error(`render dump: "${unit.id}" snapshot has no module`);
 	if (unit.kind === "connect") {
 		await mkdir(connectDir(ws), { recursive: true });
-		await writeIfChanged(
-			join(connectDir(ws), `${unit.id}.xml`),
-			`${connectXml(unit.id, mods)}\n`,
-			force,
-		);
+		// One snapshot format per workspace, matching [analysis.index] format.
 		if (ws.indexFormat === "json") {
 			await writeIfChanged(
 				join(connectDir(ws), `${unit.id}.json`),
 				`${connectJson(unit.id, mods)}\n`,
+				force,
+			);
+		} else {
+			await writeIfChanged(
+				join(connectDir(ws), `${unit.id}.xml`),
+				`${connectXml(unit.id, mods)}\n`,
 				force,
 			);
 		}
