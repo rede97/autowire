@@ -114,7 +114,7 @@ describe("autowire web e2e", () => {
 
 	test("buttons: [Elaborate] auto-runs check; [Reset] restores author face", async () => {
 		const page = await ctx.newPage();
-		await page.goto(pageUrl());
+		await page.goto(pageUrl("unit=sha256wb"));
 		await page.waitForSelector("#aw-live aw-mod", { state: "attached" });
 		// Obscura's box model does not match hit testing, so a coordinate
 		// click lands on the author tree. Dispatch the button's own click.
