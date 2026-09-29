@@ -113,6 +113,10 @@ interface RuleConnect {
 	portPacked?: string | null;
 	/** Target port unpacked dims for this instance (overrides applied, folded). */
 	portUnpacked?: string | null;
+	/** Same dims after rewriteDims but before folding — resolveDims reuses them
+	 *  instead of rewriting the leaf text a second time. */
+	portPackedRaw?: string | null;
+	portUnpackedRaw?: string | null;
 }
 
 interface RenderInstDraft {
@@ -130,6 +134,9 @@ interface SignalEntry {
 	unpacked: string | null;
 	nettype: string | null;
 	interface?: string | null;
+	/** Cached foldDims(packed/unpacked) for mergeSignal comparisons. */
+	prevNormPacked?: string | null;
+	prevNormUnpacked?: string | null;
 }
 
 interface UniqLp {
@@ -1291,8 +1298,9 @@ function elaborateMod(
 				(attr(s, "deps") ?? "").split(/[\s,]+/).filter(Boolean),
 			]),
 		);
+		const sibByName = new Map(sibs.map((x) => [attr(x, "name") ?? "", x]));
 		for (const s of topoOrder(depsOf)) {
-			const el = sibs.find((x) => attr(x, "name") === s)!;
+			const el = sibByName.get(s)!;
 			const facts = elaborateMod(el, ctx, res, here, childRenders);
 			if (facts) childRenders.set(s, facts);
 		}
@@ -1323,22 +1331,54 @@ function elaborateMod(
 	const seenInstNames = new Set<string>();
 	const uniqLocalparams: UniqLp[] = [];
 	const usedUniqNames = new Set<string>();
+	// Per-target caches: N instances of one module share one facts lookup and
+	// one params/ports/order table build (was rebuilt per instance).
+	const factsCache = new Map<string, ModFacts | null>();
+	const factsOf = (target: string): ModFacts | null => {
+		let f = factsCache.get(target);
+		if (f === undefined) {
+			f =
+				(ctx.leaf?.(target) as ModFacts | undefined) ??
+				childRenders.get(target) ??
+				ctx.wrapper?.(target) ??
+				null;
+			factsCache.set(target, f);
+		}
+		return f;
+	};
+	const leafParamsCache = new Map<string, Map<string, ParamFacts>>();
+	const leafParamsOf = (target: string) => {
+		let m = leafParamsCache.get(target);
+		if (!m) {
+			m = new Map((factsOf(target)?.params ?? []).map((p) => [p.name, p]));
+			leafParamsCache.set(target, m);
+		}
+		return m;
+	};
+	const portFactsCache = new Map<string, Map<string, PortFacts>>();
+	const portFactsOf = (target: string) => {
+		let m = portFactsCache.get(target);
+		if (!m) {
+			m = new Map((factsOf(target)?.ports ?? []).map((p) => [p.name, p]));
+			portFactsCache.set(target, m);
+		}
+		return m;
+	};
+	const portOrderCache = new Map<string, string[]>();
 	const portOrderOf = (target: string): string[] => {
-		const leaf = ctx.leaf?.(target);
-		if (leaf) return leaf.ports.map((p) => p.name);
-		const w = childRenders.get(target) ?? ctx.wrapper?.(target);
-		return (w?.ports ?? []).map((p: PortFacts) => p.name);
+		let order = portOrderCache.get(target);
+		if (!order) {
+			order = (factsOf(target)?.ports ?? []).map((p: PortFacts) => p.name);
+			portOrderCache.set(target, order);
+		}
+		return order;
 	};
 
 	for (const inst of instEls) {
 		const id = attr(inst, "id") ?? "?";
 		const target = attr(inst, "mod") ?? "";
 		const iwhere = `${where} aw-inst "${id}"`;
-		const targetFacts =
-			ctx.leaf?.(target) ??
-			childRenders.get(target) ??
-			ctx.wrapper?.(target) ??
-			null;
+		const targetFacts = factsOf(target);
 		if (!targetFacts) {
 			res.errors.push(
 				`${iwhere}: unknown module "${target}" (no RtlIndex leaf and no elaborated wrapper)`,
@@ -1439,9 +1479,7 @@ function elaborateMod(
 			});
 		}
 		const ports = targetFacts.ports ?? [];
-		const leafParams = new Map(
-			(targetFacts?.params ?? []).map((p) => [p.name, p]),
-		);
+		const leafParams = leafParamsOf(target);
 		for (const pname of instParams.keys()) {
 			const target2 = leafParams.get(pname);
 			if (!target2) {
@@ -1552,38 +1590,32 @@ function elaborateMod(
 	// resolveDims; "logic" / "wire" fill untyped nets at materialization below.
 	const netMode = ctx.style?.netType ?? "logic";
 	for (const ri of renderInsts) {
-		const targetFacts =
-			ctx.leaf?.(ri.mod) ??
-			childRenders.get(ri.mod) ??
-			ctx.wrapper?.(ri.mod) ??
-			null;
-		const portFacts = new Map(
-			(targetFacts?.ports ?? []).map((p) => [p.name, p]),
-		);
+		const portFacts = portFactsOf(ri.mod);
 		for (const [port, c] of ri.connects) {
 			const pf = portFacts.get(port);
 			if (pf) {
 				c.dir = pf.dir;
 				// Scratch result: resolveDims below reports dim errors once.
 				const scratch: CheckResult = { errors: [], warnings: [] };
-				const portDims = (dims: string | null | undefined) =>
+				// rewriteDims once per port; the folded form is for the render
+				// attrs, the raw form feeds resolveDims (auto dims).
+				const rewritePort = (dims: string | null | undefined) =>
 					dims
-						? canonicalDims(
-								foldDims(
-									rewriteDims(
-										dims,
-										ri.params,
-										(p) => p.uniq,
-										ri.leafParams,
-										scratch,
-										`${where} port "${port}"`,
-									),
-									dimVals,
-								),
+						? rewriteDims(
+								dims,
+								ri.params,
+								(p) => p.uniq,
+								ri.leafParams,
+								scratch,
+								`${where} port "${port}"`,
 							)
 						: null;
-				c.portPacked = portDims(pf.packed);
-				c.portUnpacked = portDims(pf.unpacked);
+				c.portPackedRaw = rewritePort(pf.packed);
+				c.portUnpackedRaw = rewritePort(pf.unpacked);
+				const foldPort = (dims: string | null) =>
+					dims ? canonicalDims(foldDims(dims, dimVals)) : null;
+				c.portPacked = foldPort(c.portPackedRaw);
+				c.portUnpacked = foldPort(c.portUnpackedRaw);
 			}
 			if (c.open) {
 				// Explicit dangling pin: output/inout only (inputs must tie off).
@@ -1725,12 +1757,7 @@ function elaborateMod(
 	}
 	// Package-qualified leaf port types pull a wildcard import.
 	for (const ri of renderInsts) {
-		const targetFacts =
-			ctx.leaf?.(ri.mod) ??
-			childRenders.get(ri.mod) ??
-			ctx.wrapper?.(ri.mod) ??
-			null;
-		for (const p of targetFacts?.ports ?? []) {
+		for (const p of factsOf(ri.mod)?.ports ?? []) {
 			const m = /([A-Za-z_][A-Za-z0-9_]*)::/.exec(p.dataType ?? "");
 			if (m) addImport(m[1] ?? null, "*");
 		}
@@ -1906,9 +1933,14 @@ function resolveDims(
 	let unpacked = c.unpacked ?? null;
 	let nettype = c.nettype ?? null;
 	const auto = !packed && !unpacked;
+	// Auto dims: the caller already ran rewriteDims (c.portPackedRaw); reusing
+	// it skips a second rewrite pass over the same text.
+	let preRewritten = false;
 	if (auto && portFact) {
-		packed = portFact.packed ?? null;
-		unpacked = portFact.unpacked ?? null;
+		packed = c.portPackedRaw ?? portFact.packed ?? null;
+		unpacked = c.portUnpackedRaw ?? portFact.unpacked ?? null;
+		preRewritten =
+			c.portPackedRaw !== undefined || c.portUnpackedRaw !== undefined;
 		if (inheritNetType && !nettype) {
 			// net_type = "auto": inherit the submodule port's declaration. A dep
 			// snapshot carries the materialized nettype. For a leaf, hdxml
@@ -1925,7 +1957,7 @@ function resolveDims(
 		uniq: string;
 		renderValue: string;
 	}): string => p.uniq;
-	if (packed)
+	if (packed && !preRewritten)
 		packed = rewriteDims(
 			packed,
 			ri.params,
@@ -1934,7 +1966,7 @@ function resolveDims(
 			res,
 			where,
 		);
-	if (unpacked)
+	if (unpacked && !preRewritten)
 		unpacked = rewriteDims(
 			unpacked,
 			ri.params,
@@ -1971,10 +2003,16 @@ function mergeSignal(
 	}
 	// Semantic equality: textual forms that fold to the same constants agree
 	// (e.g. [A__Width-1:0] vs [B__Width-1:0] when both fold to [7:0]).
+	// The stored entry's norm is cached (prevNorm*) — only the incoming dims
+	// are folded per merge.
 	const norm = (t: string | null) => foldDims(t ?? "", foldVals);
+	if (prev.prevNormPacked === undefined)
+		prev.prevNormPacked = norm(prev.packed);
+	if (prev.prevNormUnpacked === undefined)
+		prev.prevNormUnpacked = norm(prev.unpacked);
 	if (
-		norm(prev.packed) !== norm(dims.packed) ||
-		norm(prev.unpacked) !== norm(dims.unpacked)
+		prev.prevNormPacked !== norm(dims.packed) ||
+		prev.prevNormUnpacked !== norm(dims.unpacked)
 	) {
 		res.errors.push(
 			`${where}: net "${net}" dimension conflict ([${prev.packed}][${prev.unpacked}] vs [${dims.packed}][${dims.unpacked}])`,
@@ -2078,11 +2116,10 @@ function writeRender(mod: Element, m: WriteModel): void {
 		const el = mk("aw-inst", { id: ri.id, mod: ri.mod });
 		for (const [pname, p] of ri.params)
 			el.appendChild(mk("aw-param", { name: pname, value: p.renderValue }));
-		const sorted = [...ri.connects.entries()].sort((a, b) => {
-			const ia = ri.order.indexOf(a[0]);
-			const ib = ri.order.indexOf(b[0]);
-			return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
-		});
+		const orderIdx = new Map(ri.order.map((n, i) => [n, i]));
+		const sorted = [...ri.connects.entries()].sort(
+			(a, b) => (orderIdx.get(a[0]) ?? 1e9) - (orderIdx.get(b[0]) ?? 1e9),
+		);
 		for (const [port, c] of sorted) {
 			const portAttrs = {
 				dir: c.dir,

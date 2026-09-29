@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.2.8] - 2026-09-30
+
+- src/core 性能优化（docs/dev/core-perf.md）：`unitModNames` 全量 HTML 解析从每 unit 一次降为每次命令一次（O(U²)→O(U)）；session dep facts 去掉 connectXml 序列化往返；elaborate 按 target 模块缓存 facts/params/ports/端口序；端口维度 rewriteDims 不再重复扫描；writeRender 端口排序改 Map 查表。生成物与优化前逐字节一致。
+- writeRender 的 DOM 构建路径（审查 #3）未动，留待单独处理。
+
 ## [2.2.7] - 2026-09-29
 
 - wishbone `<bus>_bus_cfg` wrapper 改经 connect 的 render IR + 共享 printer 生成：插件构造 ports/signals/insts 模型交给 `printSv`，删掉手工对齐的平行实现（含正则反解析已生成文本的 helper）。生成时传入**全部** `[workspace.style]`（对齐、端口方向/位宽注释、`net_type`），wrapper 与 connect 单元输出同款格式。四个 demo wrapper 重新生成；桥接实例的端口事实（dir/宽度）来自插件自有模板表。printer 的 RenderModule 增加可选 `header` / 端口与信号 `comment` / `assigns` 字段（connect 引擎不写，插件用）。

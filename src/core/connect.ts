@@ -122,9 +122,13 @@ export async function buildEngineCtx(
 	unit: ConnectUnit,
 	units: ConnectUnit[],
 	leafDb: LeafDb,
+	/** Pre-computed unitModNames result; computed here when omitted (per-call
+	 *  fallback). Callers looping over units should compute it once — parsing
+	 *  every unit's HTML per unit is O(units²). */
+	unitMods?: Map<string, string>,
 ): Promise<BuiltCtx> {
 	const errors: string[] = [];
-	const unitMods = await unitModNames(ws, units);
+	unitMods ??= await unitModNames(ws, units);
 	const wrappers = new Map<string, WrapperFacts>();
 	for (const dep of unit.deps) {
 		const facts = await loadDepWrappers(ws, dep);

@@ -495,13 +495,15 @@ function printInsts(m: RenderModule, style: PrintStyle): string[] {
 		})),
 	);
 	// With widths shown, pad directions file-wide so the width column aligns.
-	const dirPad = Math.max(
-		0,
-		...rows.flat().map((r) => (r.width ? r.dir.length : 0)),
-	);
+	// rows.flat() once; Math.max over a loop (spread on a huge array can hit
+	// the argument-count limit).
+	const flatRows = rows.flat();
+	let dirPad = 0;
+	for (const r of flatRows)
+		if (r.width) dirPad = Math.max(dirPad, r.dir.length);
 	const aligned = [
 		...(style.instPortAlign
-			? rows.flat().map((r) => ({ name: r.port, value: r.rhs }))
+			? flatRows.map((r) => ({ name: r.port, value: r.rhs }))
 			: []),
 		...(style.instParamAlign
 			? m.insts.flatMap((inst) =>
@@ -509,8 +511,12 @@ function printInsts(m: RenderModule, style: PrintStyle): string[] {
 				)
 			: []),
 	];
-	const namePad = Math.max(0, ...aligned.map((c) => c.name.length));
-	const valuePad = Math.max(0, ...aligned.map((c) => c.value.length));
+	let namePad = 0;
+	let valuePad = 0;
+	for (const c of aligned) {
+		namePad = Math.max(namePad, c.name.length);
+		valuePad = Math.max(valuePad, c.value.length);
+	}
 	const portPad = style.instPortAlign ? namePad : 0;
 	const rhsPad = style.instPortAlign ? valuePad : 0;
 	const paramPad = style.instParamAlign ? namePad : 0;

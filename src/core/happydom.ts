@@ -14,7 +14,7 @@ import {
 } from "../workspace.ts";
 import { check, elaborate, installGlobal, serializeSnapshot } from "./aw.ts";
 import { buildEngineCtx, connectDir, type WrapperFacts } from "./connect.ts";
-import { connectXml, parseConnectXml } from "./connectxml.ts";
+import { connectXml } from "./connectxml.ts";
 import {
 	assertModuleNames,
 	assertPrintable,
@@ -88,19 +88,27 @@ async function runClassicScripts(win: ScriptHost): Promise<void> {
 	}
 }
 
-function sessionFacts(dep: string, snapshot: string): WrapperFacts[] {
-	return parseConnectXml(connectXml(dep, parseSnapshot(snapshot))).map((m) => ({
-		name: m.name,
-		params: m.params,
-		ports: m.ports.map((p) => ({
-			name: p.name,
-			dir: p.dir,
-			packed: p.packed,
-			unpacked: p.unpacked,
-			nettype: p.nettype,
-		})),
-		imports: m.imports,
-	}));
+/** Live-dep facts straight from the parsed snapshot; mirrors the
+ *  connectXml→parseConnectXml roundtrip (flatten+sort, dir default "input",
+ *  empty dims → null, import symbol default "*") without the XML detour. */
+function sessionFacts(snapshot: string): WrapperFacts[] {
+	return flattenModules(parseSnapshot(snapshot))
+		.sort((a, b) => a.name.localeCompare(b.name))
+		.map((m) => ({
+			name: m.name,
+			params: m.params.map((p) => ({ name: p.name, value: p.value })),
+			ports: m.ports.map((p) => ({
+				name: p.name,
+				dir: p.dir || "input",
+				packed: p.packed || null,
+				unpacked: p.unpacked || null,
+				nettype: p.nettype || null,
+			})),
+			imports: m.imports.map((i) => ({
+				package: i.package,
+				symbol: i.symbol || "*",
+			})),
+		}));
 }
 
 /**
@@ -147,19 +155,29 @@ export async function renderUnit(
 	session: Map<string, RenderedUnit>,
 	force = false,
 	write = true,
+	/** Pre-computed unitModNames for the whole workspace (loop callers pass
+	 *  one shared map instead of re-parsing every unit's HTML per unit). */
+	unitMods?: Map<string, string>,
 ): Promise<RenderedUnit> {
 	const { win, doc } = await loadLiveUnitDoc(ws, unit);
 	try {
-		const built = await buildEngineCtx(ws, unit, allUnits(ws), leafDb);
+		const built = await buildEngineCtx(
+			ws,
+			unit,
+			allUnits(ws),
+			leafDb,
+			unitMods,
+		);
 		const sessionFactsByMod = new Map<string, WrapperFacts>();
 		for (const dep of unit.deps) {
 			const live = session.get(dep);
 			if (!live) continue;
-			for (const fact of sessionFacts(dep, live.snapshot))
+			for (const fact of sessionFacts(live.snapshot))
 				sessionFactsByMod.set(fact.name, fact);
 		}
+		const sessionIds = [...session.keys()];
 		const errors = built.errors.filter(
-			(error) => ![...session.keys()].some((id) => error.includes(`"${id}"`)),
+			(error) => !sessionIds.some((id) => error.includes(`"${id}"`)),
 		);
 		const ctx = {
 			...built.ctx,

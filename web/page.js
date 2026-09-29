@@ -321,13 +321,21 @@ function printInsts(m, style) {
     dir: style.instPortDir ? dirMark(c.dir, style.instPortDirFormat) : "",
     width: style.instPortWidth ? widthMark(c.portPacked, c.portUnpacked) : ""
   })));
-  const dirPad = Math.max(0, ...rows.flat().map((r) => r.width ? r.dir.length : 0));
+  const flatRows = rows.flat();
+  let dirPad = 0;
+  for (const r of flatRows)
+    if (r.width)
+      dirPad = Math.max(dirPad, r.dir.length);
   const aligned = [
-    ...style.instPortAlign ? rows.flat().map((r) => ({ name: r.port, value: r.rhs })) : [],
+    ...style.instPortAlign ? flatRows.map((r) => ({ name: r.port, value: r.rhs })) : [],
     ...style.instParamAlign ? m.insts.flatMap((inst) => inst.params.map((p) => ({ name: p.name, value: p.value }))) : []
   ];
-  const namePad = Math.max(0, ...aligned.map((c) => c.name.length));
-  const valuePad = Math.max(0, ...aligned.map((c) => c.value.length));
+  let namePad = 0;
+  let valuePad = 0;
+  for (const c of aligned) {
+    namePad = Math.max(namePad, c.name.length);
+    valuePad = Math.max(valuePad, c.value.length);
+  }
   const portPad = style.instPortAlign ? namePad : 0;
   const rhsPad = style.instPortAlign ? valuePad : 0;
   const paramPad = style.instParamAlign ? namePad : 0;

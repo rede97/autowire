@@ -834,8 +834,9 @@ function elaborateMod(mod, ctx, res, path, sibRenders) {
       attr(s, "name") ?? "",
       (attr(s, "deps") ?? "").split(/[\s,]+/).filter(Boolean)
     ]));
+    const sibByName = new Map(sibs.map((x) => [attr(x, "name") ?? "", x]));
     for (const s of topoOrder(depsOf)) {
-      const el = sibs.find((x) => attr(x, "name") === s);
+      const el = sibByName.get(s);
       const facts = elaborateMod(el, ctx, res, here, childRenders);
       if (facts)
         childRenders.set(s, facts);
@@ -859,18 +860,47 @@ function elaborateMod(mod, ctx, res, path, sibRenders) {
   const seenInstNames = new Set;
   const uniqLocalparams = [];
   const usedUniqNames = new Set;
+  const factsCache = new Map;
+  const factsOf = (target) => {
+    let f = factsCache.get(target);
+    if (f === undefined) {
+      f = ctx.leaf?.(target) ?? childRenders.get(target) ?? ctx.wrapper?.(target) ?? null;
+      factsCache.set(target, f);
+    }
+    return f;
+  };
+  const leafParamsCache = new Map;
+  const leafParamsOf = (target) => {
+    let m = leafParamsCache.get(target);
+    if (!m) {
+      m = new Map((factsOf(target)?.params ?? []).map((p) => [p.name, p]));
+      leafParamsCache.set(target, m);
+    }
+    return m;
+  };
+  const portFactsCache = new Map;
+  const portFactsOf = (target) => {
+    let m = portFactsCache.get(target);
+    if (!m) {
+      m = new Map((factsOf(target)?.ports ?? []).map((p) => [p.name, p]));
+      portFactsCache.set(target, m);
+    }
+    return m;
+  };
+  const portOrderCache = new Map;
   const portOrderOf = (target) => {
-    const leaf = ctx.leaf?.(target);
-    if (leaf)
-      return leaf.ports.map((p) => p.name);
-    const w = childRenders.get(target) ?? ctx.wrapper?.(target);
-    return (w?.ports ?? []).map((p) => p.name);
+    let order = portOrderCache.get(target);
+    if (!order) {
+      order = (factsOf(target)?.ports ?? []).map((p) => p.name);
+      portOrderCache.set(target, order);
+    }
+    return order;
   };
   for (const inst of instEls) {
     const id = attr(inst, "id") ?? "?";
     const target = attr(inst, "mod") ?? "";
     const iwhere = `${where} aw-inst "${id}"`;
-    const targetFacts = ctx.leaf?.(target) ?? childRenders.get(target) ?? ctx.wrapper?.(target) ?? null;
+    const targetFacts = factsOf(target);
     if (!targetFacts) {
       res.errors.push(`${iwhere}: unknown module "${target}" (no RtlIndex leaf and no elaborated wrapper)`);
       continue;
@@ -944,7 +974,7 @@ function elaborateMod(mod, ctx, res, path, sibRenders) {
       });
     }
     const ports = targetFacts.ports ?? [];
-    const leafParams = new Map((targetFacts?.params ?? []).map((p) => [p.name, p]));
+    const leafParams = leafParamsOf(target);
     for (const pname of instParams.keys()) {
       const target2 = leafParams.get(pname);
       if (!target2) {
@@ -1031,16 +1061,18 @@ function elaborateMod(mod, ctx, res, path, sibRenders) {
   const fullDrivers = new Map;
   const netMode = ctx.style?.netType ?? "logic";
   for (const ri of renderInsts) {
-    const targetFacts = ctx.leaf?.(ri.mod) ?? childRenders.get(ri.mod) ?? ctx.wrapper?.(ri.mod) ?? null;
-    const portFacts = new Map((targetFacts?.ports ?? []).map((p) => [p.name, p]));
+    const portFacts = portFactsOf(ri.mod);
     for (const [port, c] of ri.connects) {
       const pf = portFacts.get(port);
       if (pf) {
         c.dir = pf.dir;
         const scratch = { errors: [], warnings: [] };
-        const portDims = (dims) => dims ? canonicalDims(foldDims(rewriteDims(dims, ri.params, (p) => p.uniq, ri.leafParams, scratch, `${where} port "${port}"`), dimVals)) : null;
-        c.portPacked = portDims(pf.packed);
-        c.portUnpacked = portDims(pf.unpacked);
+        const rewritePort = (dims) => dims ? rewriteDims(dims, ri.params, (p) => p.uniq, ri.leafParams, scratch, `${where} port "${port}"`) : null;
+        c.portPackedRaw = rewritePort(pf.packed);
+        c.portUnpackedRaw = rewritePort(pf.unpacked);
+        const foldPort = (dims) => dims ? canonicalDims(foldDims(dims, dimVals)) : null;
+        c.portPacked = foldPort(c.portPackedRaw);
+        c.portUnpacked = foldPort(c.portUnpackedRaw);
       }
       if (c.open) {
         if (pf && pf.dir !== "output" && pf.dir !== "inout") {
@@ -1157,8 +1189,7 @@ function elaborateMod(mod, ctx, res, path, sibRenders) {
       addImport(i.package, i.symbol);
   }
   for (const ri of renderInsts) {
-    const targetFacts = ctx.leaf?.(ri.mod) ?? childRenders.get(ri.mod) ?? ctx.wrapper?.(ri.mod) ?? null;
-    for (const p of targetFacts?.ports ?? []) {
+    for (const p of factsOf(ri.mod)?.ports ?? []) {
       const m = /([A-Za-z_][A-Za-z0-9_]*)::/.exec(p.dataType ?? "");
       if (m)
         addImport(m[1] ?? null, "*");
@@ -1286,18 +1317,20 @@ function resolveDims(c, portFact, ri, modName, res, where, inheritNetType) {
   let unpacked = c.unpacked ?? null;
   let nettype = c.nettype ?? null;
   const auto = !packed && !unpacked;
+  let preRewritten = false;
   if (auto && portFact) {
-    packed = portFact.packed ?? null;
-    unpacked = portFact.unpacked ?? null;
+    packed = c.portPackedRaw ?? portFact.packed ?? null;
+    unpacked = c.portUnpackedRaw ?? portFact.unpacked ?? null;
+    preRewritten = c.portPackedRaw !== undefined || c.portUnpackedRaw !== undefined;
     if (inheritNetType && !nettype) {
       const dt = portFact.dataType ?? "";
       nettype = portFact.nettype ?? (/^(logic|reg)\b/.test(dt) ? "logic" : "wire");
     }
   }
   const uniqName = (p) => p.uniq;
-  if (packed)
+  if (packed && !preRewritten)
     packed = rewriteDims(packed, ri.params, uniqName, ri.leafParams, res, where);
-  if (unpacked)
+  if (unpacked && !preRewritten)
     unpacked = rewriteDims(unpacked, ri.params, uniqName, ri.leafParams, res, where);
   return {
     packed: canonicalDims(packed),
@@ -1312,7 +1345,11 @@ function mergeSignal(signals, net, dims, foldVals, res, where) {
     return;
   }
   const norm = (t) => foldDims(t ?? "", foldVals);
-  if (norm(prev.packed) !== norm(dims.packed) || norm(prev.unpacked) !== norm(dims.unpacked)) {
+  if (prev.prevNormPacked === undefined)
+    prev.prevNormPacked = norm(prev.packed);
+  if (prev.prevNormUnpacked === undefined)
+    prev.prevNormUnpacked = norm(prev.unpacked);
+  if (prev.prevNormPacked !== norm(dims.packed) || prev.prevNormUnpacked !== norm(dims.unpacked)) {
     res.errors.push(`${where}: net "${net}" dimension conflict ([${prev.packed}][${prev.unpacked}] vs [${dims.packed}][${dims.unpacked}])`);
   }
   if (dims.nettype && prev.nettype && dims.nettype !== prev.nettype) {
@@ -1399,11 +1436,8 @@ function writeRender(mod, m) {
     const el = mk("aw-inst", { id: ri.id, mod: ri.mod });
     for (const [pname, p] of ri.params)
       el.appendChild(mk("aw-param", { name: pname, value: p.renderValue }));
-    const sorted = [...ri.connects.entries()].sort((a, b) => {
-      const ia = ri.order.indexOf(a[0]);
-      const ib = ri.order.indexOf(b[0]);
-      return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
-    });
+    const orderIdx = new Map(ri.order.map((n, i) => [n, i]));
+    const sorted = [...ri.connects.entries()].sort((a, b) => (orderIdx.get(a[0]) ?? 1e9) - (orderIdx.get(b[0]) ?? 1e9));
     for (const [port, c] of sorted) {
       const portAttrs = {
         dir: c.dir,

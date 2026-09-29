@@ -3,7 +3,7 @@
 
 import type { Command } from "commander";
 import { check as awCheck } from "../core/aw.ts";
-import { buildEngineCtx, topoUnits } from "../core/connect.ts";
+import { buildEngineCtx, topoUnits, unitModNames } from "../core/connect.ts";
 import {
 	loadLiveUnitDoc,
 	type RenderedUnit,
@@ -39,6 +39,7 @@ export function registerConnect(program: Command): void {
 				const selected = selectUnits(cfg, unit);
 				const leafDb = new LeafDb(cfg.indexDir);
 				const session = new Map<string, RenderedUnit>();
+				const unitMods = await unitModNames(cfg, allUnits(cfg));
 				for (const u of selected) {
 					const rendered = await renderUnit(
 						cfg,
@@ -46,6 +47,8 @@ export function registerConnect(program: Command): void {
 						leafDb,
 						session,
 						opts.force ?? false,
+						true,
+						unitMods,
 					);
 					session.set(u.id, rendered);
 					for (const w of rendered.warnings)
@@ -68,6 +71,7 @@ export function registerConnect(program: Command): void {
 			const units = selectUnits(cfg, unit, false);
 			const leafDb = new LeafDb(cfg.indexDir);
 			const all = allUnits(cfg);
+			const unitMods = await unitModNames(cfg, all);
 			let failed = false;
 			for (const u of units) {
 				// Static check: do not run scripts and do not call on-init.
@@ -75,7 +79,7 @@ export function registerConnect(program: Command): void {
 					scripts: false,
 				});
 				try {
-					const built = await buildEngineCtx(cfg, u, all, leafDb);
+					const built = await buildEngineCtx(cfg, u, all, leafDb, unitMods);
 					await built.prewarm(doc as never);
 					const res = awCheck(doc as never, built.ctx);
 					const errors = [...built.errors, ...res.errors];
@@ -108,6 +112,7 @@ export function registerConnect(program: Command): void {
 			const selected = selectUnits(cfg, unit);
 			const leafDb = new LeafDb(cfg.indexDir);
 			const session = new Map<string, RenderedUnit>();
+			const unitMods = await unitModNames(cfg, allUnits(cfg));
 			let failed = false;
 			for (const u of selected) {
 				try {
@@ -118,6 +123,7 @@ export function registerConnect(program: Command): void {
 						session,
 						false,
 						false,
+						unitMods,
 					);
 					session.set(u.id, rendered);
 					for (const w of rendered.warnings)
