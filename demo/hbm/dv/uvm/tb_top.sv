@@ -1,4 +1,4 @@
-// HBM demo UVM top: hbm_system (interconnect + wb_apb2wb + wb_cdc) and
+// HBM demo UVM top: hbm_bus_cfg (interconnect + wb_apb2wb + wb_cdc) and
 // 16 channel systems. Fabric 800 MHz, APB host 100 MHz.
 // RO sidebands carry a deterministic per-channel pattern; train_pass_n lanes
 // are driven from UVM (hbm_bcast_read_seq) via uvm_hdl_deposit.
@@ -46,7 +46,7 @@ module tb_top;
 	// center CSR sidebands (CH_EN drives nothing in this TB; RO tied below)
 	logic [15:0] center_enable;
 
-	hbm_system u_sys (
+	hbm_bus_cfg u_sys (
 		.clk               (clk),
 		.rst_n             (rst_n),
 		.rb_grant_en       (rb_grant_en),
@@ -214,14 +214,14 @@ module tb_top;
 		.ch15_i_wb_we        (ch_we[15]),
 		.ch15_o_wb_dat       (ch_rdat[15]),
 		.ch15_o_wb_ack       (ch_ack[15]),
-		// center CSR (attached leaf inside hbm_system, offset 0x00000)
+		// center CSR (attached leaf inside hbm_bus_cfg, offset 0x00000)
 		.rg_enable           (center_enable),
 		.ro_all_cal_done     (1'b1),
 		.ro_err_ch           (4'h5)
 	);
 
 	for (genvar i = 0; i < 16; i++) begin : g_ch
-		hbm_ch_system u_ch (
+		hbm_ch_bus_cfg u_ch (
 			.clk                    (clk),
 			.rst_n                  (rst_n),
 			.i_wb_adr               (ch_adr[i][11:0]),

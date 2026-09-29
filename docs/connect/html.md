@@ -313,7 +313,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ```html
 <!-- good: attached leaves are inside the bus Type-A wrapper; HTML only insts the system -->
-<aw-inst id="u_ic" mod="soc_wb_system">
+<aw-inst id="u_interconnect" mod="soc_wb_bus_cfg">
   <aw-template>
     <aw-connect port="rst_n" to="rst_ni"></aw-connect>
     <aw-connect port="rb_grant_en" to="rg_rb_grant_en"></aw-connect>

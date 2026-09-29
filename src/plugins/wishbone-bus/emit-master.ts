@@ -1,4 +1,4 @@
-// Master faces inside `<bus>_system`: APB / JTAG bridges and wb_cdc.
+// Master faces inside `<bus>_bus_cfg`: APB / JTAG bridges and wb_cdc.
 // Contract: docs/plugins/wishbone-master.md. The fabric keeps plain WB master
 // ports; the wrapper hides them behind `{m}_fab_*` nets and exposes the native
 // protocol ports instead.
@@ -241,16 +241,54 @@ function srcNets(m: WbMaster, aw: number): string[] {
 	];
 }
 
-function conns(pairs: ReadonlyArray<readonly [string, string]>): string[] {
-	const pad = Math.max(...pairs.map(([p]) => p.length));
-	return pairs.map(
-		([p, n], i) =>
-			`\t\t.${p.padEnd(pad)}(${n})${i === pairs.length - 1 ? "" : ","}`,
-	);
+function conns(
+	pairs: ReadonlyArray<readonly [string, string]>,
+	align?: {
+		portPad: number;
+		netPad: number;
+		paramPad: number;
+		paramValuePad: number;
+	},
+): string[] {
+	const portPad =
+		align && align.portPad > 0
+			? align.portPad
+			: Math.max(...pairs.map(([p]) => p.length));
+	const netPad = align?.netPad ?? 0;
+	return pairs.map(([p, n], i) => {
+		const comma = i === pairs.length - 1 ? "" : ",";
+		const net = netPad > 0 ? n.padEnd(netPad) : n;
+		return `\t\t.${p.padEnd(portPad)}(${net})${comma}`;
+	});
 }
 
 function bits3(v: number): string {
 	return `3'b${v.toString(2).padStart(3, "0")}`;
+}
+
+/** One parameter override per line, same shape as the connect printer. */
+function paramHead(
+	mod: string,
+	params: ReadonlyArray<readonly [string, string]>,
+	inst: string,
+	align?: {
+		portPad: number;
+		netPad: number;
+		paramPad: number;
+		paramValuePad: number;
+	},
+): string[] {
+	const namePad = align?.paramPad ?? 0;
+	const valuePad = align?.paramValuePad ?? 0;
+	const lines = [`\t${mod} #(`];
+	for (const [i, [name, value]] of params.entries()) {
+		const comma = i === params.length - 1 ? "" : ",";
+		lines.push(
+			`\t\t.${name.padEnd(namePad)}(${value.padEnd(valuePad)})${comma}`,
+		);
+	}
+	lines.push(`\t) ${inst} (`);
+	return lines;
 }
 
 function cdcInst(
@@ -264,6 +302,12 @@ function cdcInst(
 		string
 	>,
 	sTga: string | undefined,
+	align?: {
+		portPad: number;
+		netPad: number;
+		paramPad: number;
+		paramValuePad: number;
+	},
 ): string[] {
 	const pairs: Array<readonly [string, string]> = [
 		["s_clk", clk],
@@ -292,8 +336,17 @@ function cdcInst(
 	if (tw > 0) pairs.push(["m_tga", fab(m, "tga")]);
 	pairs.push(["m_ack", fab(m, "ack")], ["m_rdat", fab(m, "rdat")]);
 	return [
-		`\twb_cdc #(.AW(${aw}), .TW(${tw}), .TIMEOUT(${m.timeout ?? 0})) u_${m.name}_cdc (`,
-		...conns(pairs),
+		...paramHead(
+			"wb_cdc",
+			[
+				["AW", String(aw)],
+				["TW", String(tw)],
+				["TIMEOUT", String(m.timeout ?? 0)],
+			],
+			`u_${m.name}_cdc`,
+			align,
+		),
+		...conns(pairs, align),
 		"\t);",
 	];
 }
@@ -312,7 +365,17 @@ function srcMap(m: WbMaster) {
 	};
 }
 
-function emitWbMaster(m: WbMaster, aw: number, tw: number): string[] {
+function emitWbMaster(
+	m: WbMaster,
+	aw: number,
+	tw: number,
+	align?: {
+		portPad: number;
+		netPad: number;
+		paramPad: number;
+		paramValuePad: number;
+	},
+): string[] {
 	const n = m.name;
 	return cdcInst(
 		m,
@@ -332,10 +395,21 @@ function emitWbMaster(m: WbMaster, aw: number, tw: number): string[] {
 			rdat: `${n}_i_wb_dat`,
 		},
 		tw > 0 ? tagPort(`${n}_o_wb`, "tag") : undefined,
+		align,
 	);
 }
 
-function emitApbMaster(m: WbMaster, aw: number, tw: number): string[] {
+function emitApbMaster(
+	m: WbMaster,
+	aw: number,
+	tw: number,
+	align?: {
+		portPad: number;
+		netPad: number;
+		paramPad: number;
+		paramValuePad: number;
+	},
+): string[] {
 	const n = m.name;
 	const out: string[] = [];
 	const w = m.cdc
@@ -356,73 +430,145 @@ function emitApbMaster(m: WbMaster, aw: number, tw: number): string[] {
 	const mask = m.pprot?.mask ?? 0;
 	const val = m.pprot?.value ?? 0;
 	out.push(
-		`\twb_apb2wb #(.AW(${aw}), .PPROT_MASK(${bits3(mask)}), .PPROT_VAL(${bits3(val)})) u_${n}_apb (`,
-		...conns([
-			["pclk", pclk],
-			["presetn", presetn],
-			["paddr", `${n}_paddr`],
-			["psel", `${n}_psel`],
-			["penable", `${n}_penable`],
-			["pwrite", `${n}_pwrite`],
-			["pwdata", `${n}_pwdata`],
-			["pstrb", `${n}_pstrb`],
-			["pprot", `${n}_pprot`],
-			["prdata", `${n}_prdata`],
-			["pready", `${n}_pready`],
-			["pslverr", `${n}_pslverr`],
-			["wb_cyc", w.cyc],
-			["wb_stb", w.stb],
-			["wb_we", w.we],
-			["wb_adr", w.adr],
-			["wb_dat", w.wdat],
-			["wb_sel", w.sel],
-			["wb_ack", w.ack],
-			["wb_err", w.err],
-			["wb_rdat", w.rdat],
-		]),
+		...paramHead(
+			"wb_apb2wb",
+			[
+				["AW", String(aw)],
+				["PPROT_MASK", bits3(mask)],
+				["PPROT_VAL", bits3(val)],
+			],
+			`u_${n}_apb`,
+			align,
+		),
+		...conns(
+			[
+				["pclk", pclk],
+				["presetn", presetn],
+				["paddr", `${n}_paddr`],
+				["psel", `${n}_psel`],
+				["penable", `${n}_penable`],
+				["pwrite", `${n}_pwrite`],
+				["pwdata", `${n}_pwdata`],
+				["pstrb", `${n}_pstrb`],
+				["pprot", `${n}_pprot`],
+				["prdata", `${n}_prdata`],
+				["pready", `${n}_pready`],
+				["pslverr", `${n}_pslverr`],
+				["wb_cyc", w.cyc],
+				["wb_stb", w.stb],
+				["wb_we", w.we],
+				["wb_adr", w.adr],
+				["wb_dat", w.wdat],
+				["wb_sel", w.sel],
+				["wb_ack", w.ack],
+				["wb_err", w.err],
+				["wb_rdat", w.rdat],
+			],
+			align,
+		),
 		"\t);",
 	);
 	if (m.cdc) {
-		out.push("", ...cdcInst(m, aw, tw, pclk, presetn, srcMap(m), undefined));
+		out.push(
+			"",
+			...cdcInst(m, aw, tw, pclk, presetn, srcMap(m), undefined, align),
+		);
 	} else if (tw > 0) {
 		out.push(`\tassign ${fab(m, "tga")} = ${tw}'d0;`);
 	}
 	return out;
 }
 
-function emitJtagMaster(m: WbMaster, aw: number, tw: number): string[] {
+function emitJtagMaster(
+	m: WbMaster,
+	aw: number,
+	tw: number,
+	align?: {
+		portPad: number;
+		netPad: number;
+		paramPad: number;
+		paramValuePad: number;
+	},
+): string[] {
 	const n = m.name;
 	const s = srcMap(m);
 	return [
-		`\twb_jtag_tdr #(.AW(${aw})) u_${n}_jtag (`,
-		...conns([
-			["tck", `${n}_tck`],
-			["trst_n", `${n}_trst_n`],
-			["sel", `${n}_sel`],
-			["capture_dr", `${n}_capture_dr`],
-			["shift_dr", `${n}_shift_dr`],
-			["update_dr", `${n}_update_dr`],
-			["tdi", `${n}_tdi`],
-			["tdo", `${n}_tdo`],
-			["en", `${n}_en`],
-			["wb_cyc", s.cyc],
-			["wb_stb", s.stb],
-			["wb_we", s.we],
-			["wb_adr", s.adr],
-			["wb_dat", s.wdat],
-			["wb_sel", s.sel],
-			["wb_ack", s.ack],
-			["wb_err", s.err],
-			["wb_rdat", s.rdat],
-		]),
+		...paramHead("wb_jtag_tdr", [["AW", String(aw)]], `u_${n}_jtag`, align),
+		...conns(
+			[
+				["tck", `${n}_tck`],
+				["trst_n", `${n}_trst_n`],
+				["sel", `${n}_sel`],
+				["capture_dr", `${n}_capture_dr`],
+				["shift_dr", `${n}_shift_dr`],
+				["update_dr", `${n}_update_dr`],
+				["tdi", `${n}_tdi`],
+				["tdo", `${n}_tdo`],
+				["en", `${n}_en`],
+				["wb_cyc", s.cyc],
+				["wb_stb", s.stb],
+				["wb_we", s.we],
+				["wb_adr", s.adr],
+				["wb_dat", s.wdat],
+				["wb_sel", s.sel],
+				["wb_ack", s.ack],
+				["wb_err", s.err],
+				["wb_rdat", s.rdat],
+			],
+			align,
+		),
 		"\t);",
 		"",
-		...cdcInst(m, aw, tw, `${n}_tck`, `${n}_trst_n`, s, undefined),
+		...cdcInst(m, aw, tw, `${n}_tck`, `${n}_trst_n`, s, undefined, align),
 	];
 }
 
+/** Parameter overrides of every bridge instance (file-wide param column). */
+export function masterParamPairs(
+	def: BusDef,
+): Array<{ name: string; value: string }> {
+	const pairs: Array<{ name: string; value: string }> = [];
+	let inParams = false;
+	for (const line of emitMasterBlocks(def)) {
+		if (/^\t\w+ #\(/.test(line)) {
+			inParams = true;
+			continue;
+		}
+		if (inParams && /^\t\) /.test(line)) {
+			inParams = false;
+			continue;
+		}
+		if (!inParams) continue;
+		const m = line.match(/^\t\t\.(\S+)\(([^)]*)\)/);
+		if (m?.[1] && m[2] !== undefined)
+			pairs.push({ name: m[1], value: m[2].trim() });
+	}
+	return pairs;
+}
+
+/** Port/net pairs of every bridge instance (file-wide port column). */
+export function masterInstPairs(
+	def: BusDef,
+): Array<{ port: string; net: string }> {
+	const pairs: Array<{ port: string; net: string }> = [];
+	for (const line of emitMasterBlocks(def)) {
+		const m = line.match(/^\t\t\.(\S+)\(([^)]*)\)/);
+		if (m?.[1] && m[2] !== undefined)
+			pairs.push({ port: m[1], net: m[2].trim() });
+	}
+	return pairs;
+}
+
 /** Internal nets + bridge / CDC instances for every bridged master. */
-export function emitMasterBlocks(def: BusDef): string[] {
+export function emitMasterBlocks(
+	def: BusDef,
+	align?: {
+		portPad: number;
+		netPad: number;
+		paramPad: number;
+		paramValuePad: number;
+	},
+): string[] {
 	const aw = def.addr_width;
 	const tw = tagDomainsWidth(tagPlan(def).inherited);
 	const out: string[] = [];
@@ -436,9 +582,9 @@ export function emitMasterBlocks(def: BusDef): string[] {
 		);
 		if (b !== "wb" && m.cdc) out.push(...srcNets(m, aw));
 		out.push("");
-		if (b === "apb") out.push(...emitApbMaster(m, aw, tw));
-		else if (b === "jtag") out.push(...emitJtagMaster(m, aw, tw));
-		else out.push(...emitWbMaster(m, aw, tw));
+		if (b === "apb") out.push(...emitApbMaster(m, aw, tw, align));
+		else if (b === "jtag") out.push(...emitJtagMaster(m, aw, tw, align));
+		else out.push(...emitWbMaster(m, aw, tw, align));
 		out.push("");
 	}
 	return out;
@@ -453,7 +599,7 @@ export function jtagDrWidth(def: BusDef): number {
 	return 2 + def.addr_width + 32;
 }
 
-/** IEEE 1687 ICL for the JTAG TDR clients on `<bus>_system`. */
+/** IEEE 1687 ICL for the JTAG TDR clients on `<bus>_bus_cfg`. */
 export function emitBusIcl(def: BusDef): string | null {
 	const jt = jtagMasters(def);
 	if (jt.length === 0) return null;

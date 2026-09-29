@@ -187,7 +187,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 
 - Decoder：地址窗 + 可选 §4.1 广播（写扇出 / 读 OR）；下行仍是 WB（`STB` 扇出，`ACK`/`DAT` 回并）。  
 - Arbiter：多 WB master；口 `rb_grant_en`：**0** = 固定优先级（最低 master 下标胜）；**1** = round-robin（上次 grant 之后的下一个请求者，绕回最低下标）。事务中 `CYC` 锁定 grant。demo/soc：`smoke` `FABRIC.rb_grant_en`（复位 0）驱动 **每个 channel** `rb_grant_en`；`basic_smoke` 写该 CSR，SD→SHA DMA 在 `--sd`。  
-- Bridge：仅边界协议转换（如 `apb2wb`）；**禁止**让 APB 成为 decoder/regfile 原生口。CDC / APB / JTAG master 见 [`wishbone-master.md`](./wishbone-master.md)：先转 WB，再在 arbiter 前做 `wb_cdc`，全部在 `<bus>_system` 内。  
+- Bridge：仅边界协议转换（如 `apb2wb`）；**禁止**让 APB 成为 decoder/regfile 原生口。CDC / APB / JTAG master 见 [`wishbone-master.md`](./wishbone-master.md)：先转 WB，再在 arbiter 前做 `wb_cdc`，全部在 `<bus>_bus_cfg` 内。  
 - 即便将来提供 `topology = crossbar`，slave 侧 **仍必须**有地址窗/选通；matrix **不能**取消译码职责。
 
 ### 4.1 Region 广播：写扇出 / 读 OR（LP6 `BroadcastAddr`）
@@ -259,7 +259,7 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 - **字符串窗口**：优先 `SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? })`。`Size` 是作者面跨度（字节）；底层 mask = `deriveWindowMask`（向上取 2 的幂）；`(base & mask) === base`。`Bus()` **必须**拒绝 Region 窗口两两重叠（含 `SlaveRegfile`）。原始 `Slave(name, desc, base, mask, …)` 是 **Raw** 口：**禁止**对它做对齐/重叠检查（demo `uart`）。**禁止**给 `Slave` / `SlaveRegion` 重载 `RegfileDef`。  
 - **`SlaveRegfile` = `SlaveRegion` 语法糖**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, size?, desc? })`。默认 `Size(layout span)` 再 2^N 对齐；`size=` 可放大窗口，**禁止**小于 span。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。  
 - **`SlaveBus` = `SlaveRegion` 语法糖**：`SlaveBus(child, base, { id?, pipe?, tag?, size?, desc?, uplink? })`。用于 **级联多级 decoder**（也允许子级是 interconnect）。`id` 缺省 = `BusDef.name`；同一 child 多挂用不同 `id`（demo：`sd_sha` ×2 → `ch0`/`ch1`）。默认 `Size(busByteSpan(child))`；`size=` 可放大，**禁止**小于 child span。子总线 **必须**声明 `Master("uplink")`（或 `uplink=`）：interconnect 上该 master 口在 Type-A wrapper 里 **remap** 成 `i_wb_*` / `o_wb_*`（父级 Slave 窗 identity）；decoder 子级 remap `m_*`。父级译码已下发窗内 offset（`adr & ~mask`），子地址是相对的，子 `addrWidth` **不得超过**这条窗口转发的位数（demo：`soc_wb` 的 4 KiB channel 窗转发 12 位，`sd_sha` 的 `addrWidth` 就是 12，不能再写 32）。channel 内 DMA 的 SRC **必须**写相对地址。**禁止**假设子 DMA 能打到父级 SRAM/flash（没有自动 downlink）。generate **必须**对 child RTL 只打一份，HTML 例化 N 次。  
-- 若 bus 上有挂接的 regfile **或** `Master("uplink")`：generate **必须**再打一份 Type-A **wrapper** `<bus>_system`。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
+- 若 bus 上有挂接的 regfile **或** `Master("uplink")`：generate **必须**再打一份 Type-A **wrapper** `<bus>_bus_cfg`。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
 - 软件地址图由同一插件打包：`[plugins.wishbone] c=` → `<bus>_map.h` + 字段 `.h` + `<name>.h`；`uvm=` → `ral_block_<bus>.sv` + `ral_<SHEET>.sv`（cell 类 + 叶子 `ral_block_<sheet>`）+ `ral_<name>.sv`。bus block 用 `add_submap` 挂叶子 block，不做前缀改名平铺。**只**出 uvm_reg 模型，不出 RALF（ralgen 流程不在本阶段范围）。
 
   RTL 仍是一个窗口：`TagFromAddr` 把这些地址位从译码里剥掉，所以硬件只看见一份相对地址。软件图在**产生这个 tag 的那一层**按副本拆开，每个副本一条绝对地址。只透传该 tag 的子总线和叶子**不再拆**：它们的地址相对父级已经命名的那一份。`pin` / `reg` 来源不产生地址别名。广播窗口是一条真实地址，一次写打中所有订阅者、一次读返回各订阅者 `DAT` 的按位或（§4.1 规则 5）；uvm_reg 里广播只作为注释，因为没有广播 frontdoor，验证时用原始总线事务（demo/hbm `wb_raw` / `apb_raw`）。
@@ -281,10 +281,10 @@ uvm = "dv/ral"           # bus/ral_block_<name>.sv（uvm_reg 模型；无 RALF�
 
 # out → plugins_dir/wishbone/bus/wb_cfg_pipe.sv
 #                      + bus/<name>_decoder.sv | bus/<name>_interconnect.sv
-#                      + bus/<name>_system.sv   # SlaveRegfile 和/或 Master("uplink")
+#                      + bus/<name>_bus_cfg.sv   # SlaveRegfile 和/或 Master("uplink")
 # NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）
 # demo/soc：顶层 soc_wb = interconnect（cpu + JTAG dbg，dbg 经 demo_tap USER）；两个 SlaveBus(sd_sha) channel
-#           HTML u_ic = soc_wb_system；u_ch0/u_ch1 = sd_sha_ch
+#           wrapper 内 fabric 例化名为 u_interconnect / u_decoder；HTML u_interconnect = soc_wb_bus_cfg；u_ch0/u_ch1 = sd_sha_ch
 #           各 slave PIPE 不等长（顶层 cascade 2/4 + channel 内 2/3）
 #           smoke FABRIC.rb_grant_en 驱动两个 channel rb_grant_en
 ```

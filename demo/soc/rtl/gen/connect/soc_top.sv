@@ -172,7 +172,7 @@ module soc_top (
 		.trace_data        (                  ), // o [35:0]
 		.mem_instr         (                  )  // o
 	);
-	soc_wb_system u_ic (
+	soc_wb_bus_cfg u_interconnect (
 		.clk               (clk               ), // i
 		.rst_n             (rst_ni            ), // i
 		.rb_grant_en       (rg_rb_grant_en    ), // i

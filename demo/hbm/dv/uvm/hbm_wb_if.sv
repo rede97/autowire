@@ -1,4 +1,4 @@
-// HBM demo UVM fabric: Wishbone Classic master face toward hbm_system (cfg port).
+// HBM demo UVM fabric: Wishbone Classic master face toward hbm_bus_cfg (cfg port).
 // Fabric clock domain (800 MHz).
 
 `ifndef HBM_WB_IF_SV

@@ -117,7 +117,7 @@ import SoT
   → 列出的 regfile
   → flatten SlaveBus
   → 挂接但未单列的叶子
-  → decoder / interconnect + <bus>_system
+  → decoder / interconnect + <bus>_bus_cfg
   → pipe / master 桥接模板
   → C / uvm_reg / Excel
 ```

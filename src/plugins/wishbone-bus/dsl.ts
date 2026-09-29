@@ -216,7 +216,7 @@ export function isRegionSize(v: unknown): v is RegionSize {
 	);
 }
 
-/** Native protocol on the `<bus>_system` face of a master. */
+/** Native protocol on the `<bus>_bus_cfg` face of a master. */
 export type WbMasterBridge = "wb" | "apb" | "jtag";
 
 export type ApbMasterOpts = {
@@ -264,7 +264,7 @@ export function masterBridge(m: WbMaster): WbMasterBridge {
 	return m.bridge ?? "wb";
 }
 
-/** Master needs bridge and/or CDC logic inside `<bus>_system`. */
+/** Master needs bridge and/or CDC logic inside `<bus>_bus_cfg`. */
 export function isBridgedMaster(m: WbMaster): boolean {
 	return masterBridge(m) !== "wb" || m.cdc === true;
 }

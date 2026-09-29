@@ -1,4 +1,4 @@
-// HBM demo UVM fabric: APB master face toward hbm_system (host port).
+// HBM demo UVM fabric: APB master face toward hbm_bus_cfg (host port).
 // APB clock domain (100 MHz PCLK), behind wb_apb2wb + wb_cdc inside the wrapper.
 
 `ifndef HBM_APB_IF_SV

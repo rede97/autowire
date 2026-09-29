@@ -1,7 +1,7 @@
 // SoC Wishbone fabric SoT. Top is a CPU + JTAG interconnect cascaded into two
 // parallel sd_sha channel interconnects (one BusDef, two SlaveBus hangs).
-// Generate → soc_wb_interconnect.sv + soc_wb_system.sv (smoke leaf, JTAG TDR
-// + wb_cdc inside) + soc_wb_system.icl/.pdl. The chip TAP is rtl/demo_tap.v
+// Generate → soc_wb_interconnect.sv + soc_wb_bus_cfg.sv (smoke leaf, JTAG TDR
+// + wb_cdc inside) + soc_wb_bus_cfg.icl/.pdl. The chip TAP is rtl/demo_tap.v
 // (DFT placeholder). Channel RTL is generated once (sd_sha_*); HTML
 // instantiates sd_sha_ch ×2.
 

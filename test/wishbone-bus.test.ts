@@ -22,12 +22,20 @@ import {
 	busModuleName,
 	emitBusSv,
 } from "../src/plugins/wishbone-bus/emit.ts";
+import type { WrapperStyle } from "../src/plugins/wishbone-bus/emit-attach.ts";
 import { emitBusSystemSv } from "../src/plugins/wishbone-bus/emit-attach.ts";
 import {
 	emitBusMapC,
 	emitBusMapUvm,
 } from "../src/plugins/wishbone-bus/emit-map.ts";
 import { loadWorkspace } from "../src/workspace.ts";
+
+const ALIGNED: WrapperStyle = {
+	portAlign: true,
+	signalAlign: true,
+	instPortAlign: true,
+	instParamAlign: true,
+};
 
 describe("wishbone-bus", () => {
 	test("single master degenerates to decoder", () => {
@@ -95,10 +103,10 @@ describe("wishbone-bus", () => {
 		expect(present("soc_wb_interconnect.sv")).toBe(true);
 		expect(present("wb_jtag_tdr.sv")).toBe(true);
 		expect(present("wb_cdc.sv")).toBe(true);
-		expect(present("soc_wb_system.icl")).toBe(true);
-		expect(present("soc_wb_system.sv")).toBe(true);
+		expect(present("soc_wb_bus_cfg.icl")).toBe(true);
+		expect(present("soc_wb_bus_cfg.sv")).toBe(true);
 		expect(present("sd_sha_interconnect.sv")).toBe(true);
-		expect(present("sd_sha_system.sv")).toBe(true);
+		expect(present("sd_sha_bus_cfg.sv")).toBe(true);
 		expect(present("wb_cfg_pipe.sv")).toBe(true);
 		expect(present("soc_wb_map.h")).toBe(true);
 		expect(present("sd_sha_map.h")).toBe(true);
@@ -486,21 +494,22 @@ ts = "${ts.replaceAll("\\", "/")}"
 	});
 
 	test("wrapper and software map cover attached hangs", () => {
-		const wrap = emitBusSystemSv(soc_wb);
-		expect(wrap).toContain("module soc_wb_system");
-		expect(wrap).toContain("soc_wb_interconnect u_ic");
-		expect(wrap).toContain("wb_jtag_tdr #(.AW(32)) u_dbg_jtag");
+		const wrap = emitBusSystemSv(soc_wb, ALIGNED);
+		expect(wrap).toContain("module soc_wb_bus_cfg");
+		expect(wrap).toContain("soc_wb_interconnect u_interconnect");
+		expect(wrap).toContain("wb_jtag_tdr #(");
+		expect(wrap).toContain(") u_dbg_jtag (");
 		expect(wrap).toContain("u_dbg_cdc");
 		expect(wrap).toContain("smoke_regfile u_smoke");
 		expect(wrap).not.toContain("sha256_regfile");
-		expect(wrap).toMatch(/\.rg_rb_grant_en\s+\(rg_rb_grant_en\)/);
+		expect(wrap).toMatch(/\.rg_rb_grant_en\s+\(\s*rg_rb_grant_en\s*\)/);
 		expect(wrap).not.toContain("sram_regfile");
-		const ch = emitBusSystemSv(sd_sha);
-		expect(ch).toContain("module sd_sha_system");
-		expect(ch).toContain("sd_sha_interconnect u_ic");
+		const ch = emitBusSystemSv(sd_sha, ALIGNED);
+		expect(ch).toContain("module sd_sha_bus_cfg");
+		expect(ch).toContain("sd_sha_interconnect u_interconnect");
 		expect(ch).toContain("sha256_regfile u_sha256");
-		expect(ch).toContain(".sha256_i_wb_cyc(sha256_i_wb_cyc)");
-		expect(ch).toMatch(/\.rg_soft_reset\s+\(rg_soft_reset\)/);
+		expect(ch).toMatch(/\.sha256_i_wb_cyc\s+\(\s*sha256_i_wb_cyc\s*\)/);
+		expect(ch).toMatch(/\.rg_soft_reset\s+\(\s*rg_soft_reset\s*\)/);
 		expect(ch).toContain("i_wb_cyc");
 		expect(ch).not.toMatch(/^\s*(input|output).*uplink_o_wb_cyc/m);
 		expect(ch).not.toMatch(/^\s*(input|output).*sha256_i_wb_cyc/m);
@@ -559,9 +568,9 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(parent.slaves.map((s) => s.name)).toEqual(["a", "b"]);
 		expect(busModuleKind(parent)).toBe("decoder");
 		expect(busModuleKind(child)).toBe("decoder");
-		const wrap = emitBusSystemSv(child);
+		const wrap = emitBusSystemSv(child, ALIGNED);
 		expect(wrap).toContain("i_wb_cyc");
-		expect(wrap).toMatch(/\.m_cyc_i\s+\(i_wb_cyc\)/);
+		expect(wrap).toMatch(/\.m_cyc_i\s+\(\s*i_wb_cyc\s*\)/);
 		expect(wrap).not.toMatch(/^\s*(input|output).*m_adr_i/m);
 		const wide = Bus("wide_child", "wider than the window it is hung in", {
 			addrWidth: 16,

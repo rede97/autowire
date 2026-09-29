@@ -64,7 +64,7 @@ module sd_sha_ch (
 	wire         axis_tready;
 	wire         axis_tlast;
 
-	sd_sha_system u_ic (
+	sd_sha_bus_cfg u_interconnect (
 		.clk              (clk             ), // i
 		.rst_n            (rst_n           ), // i
 		.rb_grant_en      (rb_grant_en     ), // i

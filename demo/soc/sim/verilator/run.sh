@@ -56,8 +56,8 @@ test -f rtl/gen/plugins/wishbone/bus/sd_sha_interconnect.sv || {
 	echo "missing rtl/gen/plugins/wishbone/bus/sd_sha_interconnect.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
-test -f rtl/gen/plugins/wishbone/bus/sd_sha_system.sv || {
-	echo "missing rtl/gen/plugins/wishbone/bus/sd_sha_system.sv — run: bun ../../index.ts plugin generate all" >&2
+test -f rtl/gen/plugins/wishbone/bus/sd_sha_bus_cfg.sv || {
+	echo "missing rtl/gen/plugins/wishbone/bus/sd_sha_bus_cfg.sv — run: bun ../../index.ts plugin generate all" >&2
 	exit 1
 }
 test -f rtl/gen/plugins/wishbone/regfile/sha256_regfile.sv || {
@@ -80,8 +80,8 @@ test -f fw/gen/wishbone/bus/soc_wb_map.h || {
 	echo "missing fw/gen/wishbone/bus/soc_wb_map.h — run: bun ../../index.ts plugin generate wishbone" >&2
 	exit 1
 }
-test -f rtl/gen/plugins/wishbone/bus/soc_wb_system.sv || {
-	echo "missing rtl/gen/plugins/wishbone/bus/soc_wb_system.sv — run: bun ../../index.ts plugin generate wishbone" >&2
+test -f rtl/gen/plugins/wishbone/bus/soc_wb_bus_cfg.sv || {
+	echo "missing rtl/gen/plugins/wishbone/bus/soc_wb_bus_cfg.sv — run: bun ../../index.ts plugin generate wishbone" >&2
 	exit 1
 }
 

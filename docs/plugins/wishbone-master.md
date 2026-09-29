@@ -1,7 +1,7 @@
 # Wishbone Master 接口：CDC / APB / JTAG
 
 > 状态：**已落地**（`Master(..., { apb | jtag | cdc })`、`wb_cdc` / `wb_apb2wb` / `wb_jtag_tdr`、ICL/PDL；demo/soc 已接 JTAG）。§8 暂时不动。  
-> 上位约束：[`wishbone-bus.md`](./wishbone-bus.md)（WB Classic 子集、arbiter、`<bus>_system` wrapper）。  
+> 上位约束：[`wishbone-bus.md`](./wishbone-bus.md)（WB Classic 子集、arbiter、`<bus>_bus_cfg` wrapper）。  
 > 参考主干：`master:autowire/cfgbus/cfg_apb.py`（`CfgApbBridge`）、`cfg_arbiter.py`（`CfgArbiter`）。  
 > 改本文时同步 `help status` 与 [`wishbone-bus.md`](./wishbone-bus.md) §1 / §8。
 
@@ -48,7 +48,7 @@
 
 1. **CDC 只写一份、验一份**。协议桥全是 **单时钟同步逻辑**，CDC 集中在 `wb_cdc`；签核只看一个结构。
 2. **WB Classic 单 outstanding** → **不需要 async FIFO**：四相 **req/ack 握手 + 数据束保持稳定（bundled data）**。只有 `req` / `ack` / `alive` 三个单 bit 走 `wb_sync_cell`；请求束由同步后的 `req` 在目标域重新打拍，应答束由同步后的 `ack` 在源域采样。**禁止**逐 bit 同步数据。
-3. 仲裁 / 译码 / regfile **保持单时钟**；fabric（`<bus>_decoder` / `<bus>_interconnect`）生成物 **不变**，全部桥接逻辑在 `<bus>_system` wrapper 内。
+3. 仲裁 / 译码 / regfile **保持单时钟**；fabric（`<bus>_decoder` / `<bus>_interconnect`）生成物 **不变**，全部桥接逻辑在 `<bus>_bus_cfg` wrapper 内。
 4. 延迟：每事务约 `2×(2~3)` 个对端时钟的握手往返。配置流量稀，可接受；大批量灌数按 [`wishbone-bus.md`](./wishbone-bus.md) §5.1 走 DMA。
 
 `wb_cdc` 规则（已实现）：
@@ -78,7 +78,7 @@
 
 - 芯片 TAP（IR、BYPASS、IDCODE、BSR、TLR）由 **DFT 流程拥有**（Tessent / TestMAX 等插入）。IEEE 1149.1 要求对外只有一个合规 TAP；IP 私自带 TAP 会破坏 BSDL / 边界扫描链。
 - 插件生成 `wb_jtag_tdr`：IEEE 1149.1 **user-DR 客户端**口形，同时是 IEEE 1687（IJTAG）的 ScanInterface，可挂在芯片 TAP 的 user 指令下，或挂在 SIB 网络里。
-- 同时生成 `<bus>_system.icl`（ScanInterface / ScanRegister / Alias）与 `<bus>_system.pdl`（`<m>_write` / `<m>_read`：launch → `iRunLoop idle -tck` → 轮询 `st`）。ICL **未**建模 CaptureSource（捕获值来自内部状态），接入前 **应当**由 DFT 评审方言差异。
+- 同时生成 `<bus>_bus_cfg.icl`（ScanInterface / ScanRegister / Alias）与 `<bus>_bus_cfg.pdl`（`<m>_write` / `<m>_read`：launch → `iRunLoop idle -tck` → 轮询 `st`）。ICL **未**建模 CaptureSource（捕获值来自内部状态），接入前 **应当**由 DFT 评审方言差异。
 - 私有 TAP：v1 **不**提供。
 
 ### 5.2 端口（TCK 域）
@@ -138,7 +138,7 @@ Bus("soc_wb", "SoC cfg", {
 
 - `apb` / `jtag` 互斥；`jtag` + `cdc: false` 报错；`timeout > 0` 需要 cdc。
 - 级联口 `Master("uplink")`（及 `SlaveBus(..., { uplink })` 指定的口）**禁止**带 apb/jtag/cdc；`Bus` 拒绝重名 master。
-- 有任一桥接 master 时 generate **必须**打 `<bus>_system`；fabric 上该 master 的 WB 口在 wrapper 内接 `{m}_fab_*`，协议桥源侧接 `{m}_src_*`。connect HTML 只看到：
+- 有任一桥接 master 时 generate **必须**打 `<bus>_bus_cfg`；fabric 上该 master 的 WB 口在 wrapper 内接 `{m}_fab_*`，协议桥源侧接 `{m}_src_*`。connect HTML 只看到：
 
 | 形态 | wrapper 口 |
 |---|---|
@@ -147,7 +147,7 @@ Bus("soc_wb", "SoC cfg", {
 | 异步 WB | `{m}_clk` / `{m}_rst_n`、`{m}_o_wb_*`（含 tga）→ `{m}_i_wb_dat` / `ack` / `err` |
 
 - TGA：异步 WB 口透传 `{m}_o_wb_tga`；APB / JTAG 桥把 tag 接 0。
-- 公共模块：任一 bus 有桥接 master 时，`plugins_dir/wishbone/` 额外出 `wb_sync_cell.sv`、`wb_cdc.sv`、`wb_apb2wb.sv`、`wb_jtag_tdr.sv`（模板在 [`rtl/`](./rtl/)，与 `wb_cfg_pipe` 同纪律）；有 JTAG master 的 bus 另出 `<bus>_system.icl` / `.pdl`（非 SV，不进 filelist）。
+- 公共模块：任一 bus 有桥接 master 时，`plugins_dir/wishbone/` 额外出 `wb_sync_cell.sv`、`wb_cdc.sv`、`wb_apb2wb.sv`、`wb_jtag_tdr.sv`（模板在 [`rtl/`](./rtl/)，与 `wb_cfg_pipe` 同纪律）；有 JTAG master 的 bus 另出 `<bus>_bus_cfg.icl` / `.pdl`（非 SV，不进 filelist）。
 - 单 master（NM=1 → decoder）同样适用：桥 / CDC 在 decoder 前。
 
 ## 7. 验证

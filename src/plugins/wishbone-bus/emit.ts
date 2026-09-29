@@ -42,7 +42,7 @@ export function busModuleName(def: BusDef): string {
 
 /** Type-A wrapper that instantiates the fabric + attached regfile leaves. */
 export function busSystemModuleName(def: BusDef): string {
-	return `${def.name.toLowerCase()}_system`;
+	return `${def.name.toLowerCase()}_bus_cfg`;
 }
 
 export type FabricPort = {

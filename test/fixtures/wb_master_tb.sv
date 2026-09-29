@@ -1,4 +1,4 @@
-// Testbench for mb_system (test/wishbone-master.test.ts): cpu (fabric WB),
+// Testbench for mb_bus_cfg (test/wishbone-master.test.ts): cpu (fabric WB),
 // host (APB + wb_cdc), dbg (JTAG TDR + wb_cdc), wbx (WB + wb_cdc) share one
 // TB memory slave. Prints PASS on success; any mismatch prints FAIL.
 
@@ -50,7 +50,7 @@ module tb;
 	logic [31:0] wbx_i_wb_dat;
 	logic        wbx_i_wb_ack, wbx_i_wb_err;
 
-	mb_system u_dut (.*);
+	mb_bus_cfg u_dut (.*);
 
 	//--------------------------------------------------------------------------
 	//  TB memory slave (fabric clk); mem_stall holds ACK low

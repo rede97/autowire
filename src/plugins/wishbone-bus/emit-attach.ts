@@ -23,9 +23,20 @@ import {
 	emitMasterBlocks,
 	isBridgedFabricPort,
 	masterFacePorts,
+	masterInstPairs,
+	masterParamPairs,
 	masterSummary,
 } from "./emit-master.ts";
 import { tagPlan, tagPort } from "./tag.ts";
+
+/** The [workspace.style] switches this wrapper follows. */
+export type WrapperStyle = {
+	portAlign: boolean;
+	signalAlign: boolean;
+	instPortAlign: boolean;
+	/** [style] inst_param_align: parameter overrides share the port columns. */
+	instParamAlign: boolean;
+};
 
 function hex(n: number): string {
 	return n.toString(16).padStart(8, "0");
@@ -142,23 +153,29 @@ function leafWbFromFabric(
 	return `${table}_${suffix}`;
 }
 
-function packedPad(p: string): string {
-	return (p.length > 0 ? p : "").padEnd(7);
+function packedPad(p: string, width: number): string {
+	return (p.length > 0 ? p : "").padEnd(width);
 }
 
 function svPort(
 	dir: "input" | "output",
 	packed: string,
 	name: string,
-	unpacked?: string,
+	unpacked: string | undefined,
+	packWidth: number,
 ): string {
 	const unp = unpacked ? ` ${unpacked}` : "";
-	return `\t${dir.padEnd(6)} logic ${packedPad(packed)}${name}${unp}`;
+	return `\t${dir.padEnd(6)} logic ${packedPad(packed, packWidth)}${name}${unp}`;
 }
 
-function svNet(packed: string, name: string, unpacked?: string): string {
+function svNet(
+	packed: string,
+	name: string,
+	unpacked: string | undefined,
+	packWidth: number,
+): string {
 	const unp = unpacked ? ` ${unpacked}` : "";
-	return `\tlogic ${packedPad(packed)}${name}${unp};`;
+	return `\tlogic ${packedPad(packed, packWidth)}${name}${unp};`;
 }
 
 function formatPortList(
@@ -169,7 +186,11 @@ function formatPortList(
 		unpacked?: string;
 		comment?: string;
 	}>,
+	align: boolean,
 ): string[] {
+	const packWidth = align
+		? Math.max(0, ...ports.map((p) => p.packed.length))
+		: 0;
 	const lines: string[] = [];
 	for (const [i, p] of ports.entries()) {
 		if (p.comment) {
@@ -177,7 +198,7 @@ function formatPortList(
 				lines.push(`\t// ${c}`);
 			}
 		}
-		const body = svPort(p.dir, p.packed, p.name, p.unpacked);
+		const body = svPort(p.dir, p.packed, p.name, p.unpacked, packWidth);
 		lines.push(i === ports.length - 1 ? body : `${body},`);
 	}
 	return lines;
@@ -245,38 +266,45 @@ function wrapperPorts(def: BusDef): Array<{
 
 function instConns(
 	pairs: Array<{ port: string; net: string }>,
-	align: number,
+	portPad: number,
+	netPad: number,
 ): string[] {
 	const lines: string[] = [];
 	for (const [i, x] of pairs.entries()) {
-		const pad = x.port.padEnd(align);
 		const comma = i === pairs.length - 1 ? "" : ",";
-		lines.push(`\t\t.${pad}(${x.net})${comma}`);
+		lines.push(
+			`\t\t.${x.port.padEnd(portPad)}(${x.net.padEnd(netPad)})${comma}`,
+		);
 	}
 	return lines;
 }
 
 function maxPort(names: string[]): number {
-	return Math.max(8, ...names.map((n) => n.length));
+	return Math.max(0, ...names.map((n) => n.length));
 }
 
-function fabricInst(def: BusDef): string[] {
+function fabricInst(def: BusDef, portPad: number, netPad: number): string[] {
 	const fabric = listFabricPorts(def);
 	const ic = busModuleName(def);
-	const align = maxPort(fabric.map((p) => p.name));
 	const pairs = fabric.map((p) => ({
 		port: p.name,
 		net: bridgedFabricNet(def, p.name) ?? cascadeNet(p.name, def),
 	}));
-	return [`\t${ic} u_ic (`, ...instConns(pairs, align), "\t);"];
+	return [
+		`\t${ic} u_${busModuleKind(def)} (`,
+		...instConns(pairs, portPad, netPad),
+		"\t);",
+	];
 }
 
-function leafInst(def: BusDef, slave: WbSlave): string[] {
+function leafPairs(
+	def: BusDef,
+	slave: WbSlave,
+): Array<{ port: string; net: string }> {
 	const rf = slave.regfile;
 	if (!rf) return [];
 	const laid = layoutRegfile(rf);
 	const table = rf.name;
-	const mod = `${table.toLowerCase()}_regfile`;
 	const ports = collectPorts(laid);
 	const wbPorts = listFabricPorts(def).filter((p) =>
 		isSlaveWbPort(p.name, slave.name),
@@ -308,11 +336,30 @@ function leafInst(def: BusDef, slave: WbSlave): string[] {
 			net: promoteName(slave.name, table, p.name),
 		});
 	}
-	const align = maxPort(pairs.map((p) => p.port));
-	return [`\t${mod} u_${slave.name} (`, ...instConns(pairs, align), "\t);"];
+	return pairs;
 }
 
-function internalWbNets(def: BusDef): string[] {
+function leafInst(
+	def: BusDef,
+	slave: WbSlave,
+	portPad: number,
+	netPad: number,
+): string[] {
+	const rf = slave.regfile;
+	if (!rf) return [];
+	const mod = `${rf.name.toLowerCase()}_regfile`;
+	return [
+		`\t${mod} u_${slave.name} (`,
+		...instConns(leafPairs(def, slave), portPad, netPad),
+		"\t);",
+	];
+}
+
+function internalWbNets(def: BusDef, align: boolean): string[] {
+	const wb = attachedSlaves(def).flatMap((s) =>
+		listFabricPorts(def).filter((p) => isSlaveWbPort(p.name, s.name)),
+	);
+	const packWidth = align ? Math.max(0, ...wb.map((p) => p.packed.length)) : 0;
 	const lines: string[] = [];
 	for (const s of attachedSlaves(def)) {
 		const wb: FabricPort[] = listFabricPorts(def).filter((p) =>
@@ -323,14 +370,17 @@ function internalWbNets(def: BusDef): string[] {
 			`\t// Internal WB: fabric slave ${s.name} ↔ ${s.regfile?.name}_regfile`,
 		);
 		for (const p of wb) {
-			lines.push(svNet(p.packed, p.name));
+			lines.push(svNet(p.packed, p.name, undefined, packWidth));
 		}
 		lines.push("");
 	}
 	return lines;
 }
 
-export function emitBusSystemSv(def: BusDef): string | null {
+export function emitBusSystemSv(
+	def: BusDef,
+	style: WrapperStyle,
+): string | null {
 	const attached = attachedSlaves(def);
 	const cascade = hasCascadeFace(def);
 	const bridged = bridgedMasters(def).length > 0;
@@ -370,13 +420,58 @@ export function emitBusSystemSv(def: BusDef): string | null {
 		"",
 	);
 	lines.push(`module ${mod} (`);
-	lines.push(...formatPortList(wrapperPorts(def)));
+	lines.push(...formatPortList(wrapperPorts(def), style.portAlign));
 	lines.push(");", "");
-	lines.push(...internalWbNets(def));
-	lines.push(...emitMasterBlocks(def));
-	lines.push(...fabricInst(def), "");
+	lines.push(...internalWbNets(def, style.signalAlign));
+	// inst_port_align: one column width for every instance in the file, the
+	// same rule the printer uses for connect output. Bridges, the fabric, and
+	// attached leaves share it.
+	const instPairs = [
+		...masterInstPairs(def),
+		...listFabricPorts(def).map((p) => ({
+			port: p.name,
+			net: bridgedFabricNet(def, p.name) ?? cascadeNet(p.name, def),
+		})),
+		...attached.flatMap((s) => leafPairs(def, s)),
+	];
+	const params = masterParamPairs(def);
+	const portPad = style.instPortAlign
+		? maxPort(instPairs.map((p) => p.port))
+		: 0;
+	const netPad = style.instPortAlign ? maxPort(instPairs.map((p) => p.net)) : 0;
+	// inst_param_align shares the port columns only when both are on, matching
+	// the printer: the column is the longest of port names and param names.
+	const namePad = Math.max(portPad, maxPort(params.map((p) => p.name)));
+	const valuePad = Math.max(netPad, maxPort(params.map((p) => p.value)));
+	const sharedPort = style.instPortAlign
+		? style.instParamAlign
+			? namePad
+			: portPad
+		: 0;
+	const sharedNet = style.instPortAlign
+		? style.instParamAlign
+			? valuePad
+			: netPad
+		: 0;
+	lines.push(
+		...emitMasterBlocks(def, {
+			portPad: sharedPort,
+			netPad: sharedNet,
+			paramPad: style.instParamAlign
+				? style.instPortAlign
+					? namePad
+					: maxPort(params.map((p) => p.name))
+				: 0,
+			paramValuePad: style.instParamAlign
+				? style.instPortAlign
+					? valuePad
+					: maxPort(params.map((p) => p.value))
+				: 0,
+		}),
+	);
+	lines.push(...fabricInst(def, sharedPort, sharedNet), "");
 	for (const s of attached) {
-		lines.push(...leafInst(def, s), "");
+		lines.push(...leafInst(def, s, sharedPort, sharedNet), "");
 	}
 	lines.push("endmodule", "");
 	return lines.join("\n");

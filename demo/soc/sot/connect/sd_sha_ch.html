@@ -2,9 +2,9 @@
 <!--
   Connect unit "sd_sha_ch": one SD + DMA + SHA256 channel.
     sdspi + sd_rd_dma (CSR slave "dma" / engine master "eng") + sha256wb
-    (AXIS glue + core). sha256_regfile lives inside sd_sha_system.
+    (AXIS glue + core). sha256_regfile lives inside sd_sha_bus_cfg.
   One BusDef (sd_sha) is instantiated twice from soc_top (ch0 / ch1).
-  Cascade face: sd_sha_system remaps Master("uplink") to i_wb_* / o_wb_*.
+  Cascade face: sd_sha_bus_cfg remaps Master("uplink") to i_wb_* / o_wb_*.
   Channel-relative map (parent window 4 KiB at ch0=0x0300_0000 / ch1=0x0300_1000):
     0x00  sd     sdspi
     0x10  dma    sd_rd_dma CSR
@@ -36,7 +36,7 @@
           </aw-templates>
           <aw-insts>
             <!-- Channel interconnect + attached sha256_regfile. Cascade = i_wb_*. -->
-            <aw-inst id="u_ic" mod="sd_sha_system">
+            <aw-inst id="u_interconnect" mod="sd_sha_bus_cfg">
               <aw-template>
                 <aw-connect port="rst_n" to="rst_n"></aw-connect>
                 <aw-connect port="rb_grant_en" to="rb_grant_en"></aw-connect>

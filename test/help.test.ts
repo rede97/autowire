@@ -112,7 +112,7 @@ test("each slice prints independently", () => {
 	expect(renderHelp("dont")).toContain("link obscura into the autowire binary");
 	expect(renderHelp("status")).toContain("Wishbone — landed");
 	expect(renderHelp("status")).toContain("no awx-regfile");
-	expect(renderHelp("status")).toContain("soc_wb_system");
+	expect(renderHelp("status")).toContain("soc_wb_bus_cfg");
 	expect(renderHelp("status")).toContain("SlaveRegfile");
 	expect(renderHelp("status")).toContain("SlaveRegion");
 	expect(renderHelp("status")).toContain("Size(bytes)");

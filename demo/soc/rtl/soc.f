@@ -21,9 +21,9 @@ rtl/gen/plugins/wishbone/bus/wb_sync_cell.sv
 rtl/gen/plugins/wishbone/bus/wb_cdc.sv
 rtl/gen/plugins/wishbone/bus/wb_jtag_tdr.sv
 rtl/gen/plugins/wishbone/bus/soc_wb_interconnect.sv
-rtl/gen/plugins/wishbone/bus/soc_wb_system.sv
+rtl/gen/plugins/wishbone/bus/soc_wb_bus_cfg.sv
 rtl/gen/plugins/wishbone/bus/sd_sha_interconnect.sv
-rtl/gen/plugins/wishbone/bus/sd_sha_system.sv
+rtl/gen/plugins/wishbone/bus/sd_sha_bus_cfg.sv
 rtl/gen/plugins/wishbone/regfile/sha256_regfile.sv
 rtl/gen/plugins/wishbone/regfile/smoke_regfile.sv
 

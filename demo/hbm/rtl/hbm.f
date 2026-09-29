@@ -8,6 +8,6 @@ rtl/gen/plugins/wishbone/regfile/aword_regfile.sv
 rtl/gen/plugins/wishbone/regfile/center_regfile.sv
 rtl/gen/plugins/wishbone/regfile/dword_regfile.sv
 rtl/gen/plugins/wishbone/bus/hbm_ch_decoder.sv
-rtl/gen/plugins/wishbone/bus/hbm_ch_system.sv
+rtl/gen/plugins/wishbone/bus/hbm_ch_bus_cfg.sv
 rtl/gen/plugins/wishbone/bus/hbm_interconnect.sv
-rtl/gen/plugins/wishbone/bus/hbm_system.sv
+rtl/gen/plugins/wishbone/bus/hbm_bus_cfg.sv

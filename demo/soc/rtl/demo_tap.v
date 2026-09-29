@@ -20,7 +20,7 @@ module demo_tap #(
 	input  wire jtag_trst_n,
 	output reg  jtag_tdo,
 
-	// TDR client (soc_wb_system dbg_*)
+	// TDR client (soc_wb_bus_cfg dbg_*)
 	output wire dbg_tck,
 	output wire dbg_trst_n,
 	output wire dbg_sel,
