@@ -4,7 +4,7 @@
 > **产出三分目录 + `[sim.<id>]`**：已落地（§4.0 / §4.1.1）。`connect_dir` / `sim_dir` / `plugins_dir` 优先；旧 `[dump] dir` 单槽仍兼容并告警，新配置不要再写。改实现时同步 help。
 > 摘要切片：`bun index.ts help workspace`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
-> 关联：[`../connect/html.md`](../connect/html.md)、[`../connect/tb-mod-proposal.md`](../connect/tb-mod-proposal.md)、[`hdxml/cli.md`](../hdxml/cli.md)、[`hdxml/rtlindex-xml.md`](../hdxml/rtlindex-xml.md)。
+> 关联：[`../connect/html.md`](../connect/html.md)、[`../connect/tb-mod.md`](../connect/tb-mod.md)、[`hdxml/cli.md`](../hdxml/cli.md)、[`hdxml/rtlindex-xml.md`](../hdxml/rtlindex-xml.md)。
 
 ## 1. 为什么要有一份顶层配置
 
@@ -68,9 +68,8 @@ exclude_dirs = []          # 按目录名排除（任一路径分量命中即剪
 # 带值 = 展开（经 hdxml -D 传入）；保原文宏不写在这里，列入上方 keep_raw
 SYNTHESIS = "1"
 
-[analysis.index]
-# RtlIndex XML 目录；固定在工作区生成临时目录 .autowire 下（见下方说明）
-dir = ".autowire/hdxml"
+# RtlIndex 目录固定为 .autowire/hdxml（init 时创建；可删缓存）。
+# [analysis.index] dir 不再可配：写成别的值会直接报错。
 
 [workspace.dump]
 # 产物目录三分（DE / DV / 插件）；相对工作区根。
@@ -167,7 +166,7 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 1. 与 §4.1 相同的缺边 / 多余 / 环纪律；**合入同一 DAG** 做拓扑（sim 为汇点）。  
 2. dump 写入 **`sim_dir`**；**不**写抽象接口到 `.autowire/connect/`（不可被例化）。  
 3. **禁止**与 DE 包装共文件；**禁止**登记在 `[connect.*]` 下充数。  
-4. 细则见 [`../connect/tb-mod-proposal.md`](../connect/tb-mod-proposal.md)。
+4. 细则见 [`../connect/tb-mod.md`](../connect/tb-mod.md)。
 
 说明：
 

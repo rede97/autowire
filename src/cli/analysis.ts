@@ -2,14 +2,14 @@
 // analysis run writes the RtlIndex. deps, search, and info only read it.
 
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Command } from "commander";
 import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex, type RtlIndex } from "../rtl/rtlindex.ts";
 import { renderSummary, renderTrees } from "../rtl/tree.ts";
 import { defaultToml, hdxmlArgs } from "../workspace.js";
-import { loadPack } from "./pack.ts";
+import { ensureWishboneDsl, loadPack } from "./pack.ts";
 import { findHdxml, requireWorkspace } from "./shared.ts";
 
 export function registerAnalysis(program: Command): void {
@@ -42,8 +42,17 @@ export function registerAnalysis(program: Command): void {
 			}
 			await Bun.write(tomlTarget, defaultToml(name));
 			await Bun.write(agentsTarget, contract.bytes);
+			// RtlIndex lives here (fixed location); pre-create so first analysis
+			// run has no surprise mkdir.
+			const indexDir = join(process.cwd(), ".autowire", "hdxml");
+			await mkdir(indexDir, { recursive: true });
+			// DSL sources so standalone SoT can import from .autowire/dsl/
+			// instead of a repo checkout (version travels with the bundle).
+			const dslFiles = await ensureWishboneDsl(process.cwd());
 			console.log(`created ${tomlTarget}`);
 			console.log(`created ${agentsTarget}`);
+			console.log(`created ${indexDir}/`);
+			console.log(`created .autowire/dsl/ (${dslFiles.length} files)`);
 		});
 
 	const analysis = program

@@ -18,8 +18,13 @@ function evalConst(expr) {
     const based = /^(\d+)'([bodhBODH])([0-9a-fA-FxXzZ?]+)$/.exec(m[0]);
     if (!based)
       return Number(m[0]);
-    const base = { b: 2, o: 8, d: 10, h: 16 }[based[2].toLowerCase()];
-    return Number.parseInt(based[3].replace(/[xXzZ?]/g, "0"), base);
+    const [, , baseCh, digits] = based;
+    if (baseCh === undefined || digits === undefined)
+      return null;
+    const base = { b: 2, o: 8, d: 10, h: 16 }[baseCh.toLowerCase()];
+    if (base === undefined)
+      return null;
+    return Number.parseInt(digits.replace(/[xXzZ?]/g, "0"), base);
   };
   const prim = () => {
     skip();
@@ -450,7 +455,7 @@ function checkUnitRefs(doc, ctx, res) {
   const used = new Set;
   for (const inst of all(doc, "aw-inst")) {
     const target = attr(inst, "mod") ?? "";
-    const owner = ctx.unitMods.get(target);
+    const owner = ctx.unitMods?.get(target);
     if (owner && owner !== ctx.unitId) {
       used.add(owner);
       if (!deps.has(owner)) {
@@ -1349,14 +1354,14 @@ function writeRender(mod, m) {
     render.appendChild(el);
   }
   for (const [n, v] of m.scope.params)
-    groups["aw-params"].appendChild(mk("aw-param", { name: n, value: v.value }));
+    groups["aw-params"]?.appendChild(mk("aw-param", { name: n, value: v.value }));
   for (const i of m.imports)
-    groups["aw-imports"].appendChild(mk("aw-import", { package: i.package, symbol: i.symbol }));
+    groups["aw-imports"]?.appendChild(mk("aw-import", { package: i.package, symbol: i.symbol }));
   for (const [n, v] of m.scope.localparams) {
-    groups["aw-localparams"].appendChild(mk("aw-localparam", { name: n, value: v.value }));
+    groups["aw-localparams"]?.appendChild(mk("aw-localparam", { name: n, value: v.value }));
   }
   for (const lp of m.uniqLocalparams) {
-    groups["aw-localparams"].appendChild(mk("aw-localparam", {
+    groups["aw-localparams"]?.appendChild(mk("aw-localparam", {
       name: lp.name,
       value: lp.value,
       folded: lp.folded ? "true" : "false",
@@ -1365,7 +1370,7 @@ function writeRender(mod, m) {
     }));
   }
   for (const p of m.portsOut) {
-    groups["aw-ports"].appendChild(mk("aw-port", {
+    groups["aw-ports"]?.appendChild(mk("aw-port", {
       name: p.name,
       dir: p.dir,
       packed: p.packed,
@@ -1376,7 +1381,7 @@ function writeRender(mod, m) {
     }));
   }
   for (const s of m.signals.values()) {
-    groups["aw-signals"].appendChild(mk("aw-signal", {
+    groups["aw-signals"]?.appendChild(mk("aw-signal", {
       name: s.name,
       packed: s.packed,
       unpacked: s.unpacked,
@@ -1400,7 +1405,7 @@ function writeRender(mod, m) {
       };
       el.appendChild(c.open ? mk("aw-connect", { port, type: "open", ...portAttrs }) : c.isRaw ? mk("aw-connect", { port, to: c.to, type: "raw", ...portAttrs }) : mk("aw-connect", { port, to: c.to, part: c.part, ...portAttrs }));
     }
-    groups["aw-insts"].appendChild(el);
+    groups["aw-insts"]?.appendChild(el);
   }
 }
 var SNAPSHOT_ATTR_ORDER = null;
@@ -1446,7 +1451,7 @@ function serializeModSnapshot(mod, indent, out) {
     if (postV)
       extras.push(`body-post-include="${escapeXml(postV)}"`);
   }
-  out.push(`${pad}<${tag} name="${name}"${extras.length ? " " + extras.join(" ") : ""}>`);
+  out.push(`${pad}<${tag} name="${name}"${extras.length ? ` ${extras.join(" ")}` : ""}>`);
   const render = child(mod, "aw-render");
   if (render)
     serializeEl(render, indent + 1, out);

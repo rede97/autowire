@@ -7,7 +7,7 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import type { BusDef, WbSlave, WbTagSource } from "../wishbone-bus/dsl.ts";
 import { windowBytes } from "../wishbone-bus/dsl.ts";
 import { effectiveSheet } from "./dsl.ts";
@@ -493,10 +493,13 @@ function applyMonoFont(wb: ExcelJS.Workbook): void {
 }
 
 /** Build one workbook: field sheets plus one sheet per independent bus tree. */
-export function buildRegfileWorkbook(
+export async function buildRegfileWorkbook(
 	tables: readonly LaidRegfile[],
 	buses: readonly BusDef[] = [],
-): ExcelJS.Workbook {
+): Promise<ExcelJS.Workbook> {
+	// Lazy: exceljs + jszip are ~1MB of the bundle and only the wishbone
+	// plugin's Excel export needs them — keep them off CLI startup.
+	const { default: ExcelJS } = await import("exceljs");
 	const wb = new ExcelJS.Workbook();
 	wb.creator = "autowire";
 	wb.lastModifiedBy = "autowire";
@@ -523,7 +526,7 @@ export async function writeRegfileExcel(
 	buses: readonly BusDef[] = [],
 ): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
-	const wb = buildRegfileWorkbook(tables, buses);
+	const wb = await buildRegfileWorkbook(tables, buses);
 	const buf = await wb.xlsx.writeBuffer();
 	await Bun.write(path, buf);
 }

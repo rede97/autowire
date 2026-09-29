@@ -18,7 +18,7 @@
 | [connect/to-rules.md](./connect/to-rules.md) | `to`：net / const / open；identity | 已实现 |
 | [connect/check.md](./connect/check.md) | check vs elaborate vs dump 职责清单 | 已实现 |
 | [connect/lifecycle.md](./connect/lifecycle.md) | 生命周期钩子（高级） | 已实现 |
-| [connect/tb-mod-proposal.md](./connect/tb-mod-proposal.md) | TB 顶层 `aw-tb-mod` / raw / include | **已落地** |
+| [connect/tb-mod.md](./connect/tb-mod.md) | TB 顶层 `aw-tb-mod` / raw / include | **已落地** |
 | [examples/connect/](./examples/connect/) | 作者面 + render 示意 | 草稿 |
 
 ## 工作区 · [`workspace/`](./workspace/)

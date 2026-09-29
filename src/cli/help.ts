@@ -308,15 +308,17 @@ autowire init / analysis (docs/cli.md)
   autowire analysis search [--module|--port|--package|--enum] [--regex] <pattern>
   autowire analysis info <module>
 
-init <name>: create default autowire.toml (with [workspace] name) and AGENTS-AUTOWIRE.md
-in CWD (refuses to overwrite either; AGENTS-AUTOWIRE.md is the bundled AGENTS.md copy).
+init <name>: create default autowire.toml (with [workspace] name), AGENTS-AUTOWIRE.md
+(the bundled AGENTS.md copy), .autowire/hdxml/ (fixed RtlIndex dir) and .autowire/dsl/
+(wishbone DSL sources for standalone SoT imports; self-healed by plugin wishbone run).
+Refuses to overwrite an existing toml/AGENTS file.
 analysis run: load toml (upward from CWD, or --workspace) and run hdxml with mapped args
 (docs/workspace/toml.md):
   [analysis.rtl] filelists / sources / walk_dirs / exclude_filenames / exclude_dirs
       → -f / -s / -w / --exclude-filenames / --exclude-dirs
   [analysis.defines] NAME="v" → -D NAME=v
   [analysis] keep_raw = [...] → --keep-raw
-  [analysis.index] dir → -o/--output-dir (default .autowire/hdxml)
+  RtlIndex dir is fixed: .autowire/hdxml → -o/--output-dir (init creates it)
   [analysis] hdxml_bin → binary path only (not an hdxml arg; must exist if set)
 
 hdxml binary lookup: --hdxml > toml [analysis] hdxml_bin > $HDXML_BIN
@@ -508,8 +510,8 @@ autowire docs unpack
 
   autowire docs unpack <dir>
 
-The release script contains the full docs/ tree, every demo/, and the repo
-AGENTS.md, gzip-compressed.
+The release script contains the full docs/ tree, the runnable demo sources,
+and the repo AGENTS.md, zstd-compressed.
 This command writes that tree under <dir> so an agent can read the contract and
 the examples. Dev builds read the repo instead of the bundle.
 
@@ -518,8 +520,11 @@ the examples. Dev builds read the repo instead of the bundle.
   <dir>/demo/soc/...
   <dir>/demo/hbm/...
 
-Existing files at those paths are replaced. The bundle skips .autowire, firmware
-build/, and Verilator obj_dir. See docs/dev/release.md section 1.1.
+Existing files at those paths are replaced. The bundle skips local build output
+(.autowire, firmware build/, Verilator obj_dir*, vcs/work), git metadata, and
+Excel exports; demo ip/ carries only the sources its filelists reference, with
+demo patches already applied and sot imports pointed at .autowire/dsl/. See
+docs/dev/release.md section 1.1.
 `,
 
 	cdp: `\
@@ -556,7 +561,7 @@ function commandIndex(): string {
 		"Autowire — commands",
 		"",
 		"  help [topic]              topic reference (see help topics)",
-		"  init <name>               create autowire.toml + AGENTS-AUTOWIRE.md in CWD",
+		"  init <name>               toml + AGENTS-AUTOWIRE.md + .autowire/{hdxml,dsl}",
 		"  analysis run              hdxml from autowire.toml       → help analysis",
 		"  analysis deps [module]    RTL dependency trees           → help deps",
 		"  analysis search <pattern> fuzzy or regex index search    → help analysis",

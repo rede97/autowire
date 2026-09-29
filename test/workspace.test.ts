@@ -21,16 +21,18 @@ function tempWorkspace(toml: string): string {
 describe("workspace", () => {
 	test("default template parses and maps to minimal args", async () => {
 		const dir = tempWorkspace(
-			defaultToml("test").replace('walk_dirs = ["rtl"]', "walk_dirs = []"),
+			defaultToml("test")
+				.replace('filelists = ["rtl/test.f"]', "filelists = []")
+				.replace('walk_dirs = ["rtl"]', "walk_dirs = []"),
 		);
 		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
 		expect(cfg.root).toBe(dir);
 		expect(cfg.name).toBe("test");
 		expect(cfg.indexDir).toBe(join(dir, ".autowire/hdxml"));
-		expect(cfg.dumpDir).toBe(join(dir, "gen/connect"));
-		expect(cfg.connectDir).toBe(join(dir, "gen/connect"));
-		expect(cfg.simDir).toBe(join(dir, "gen/sim"));
-		expect(cfg.pluginsDir).toBe(join(dir, "gen/plugins"));
+		expect(cfg.dumpDir).toBe(join(dir, "rtl/gen/connect"));
+		expect(cfg.connectDir).toBe(join(dir, "rtl/gen/connect"));
+		expect(cfg.simDir).toBe(join(dir, "rtl/gen/sim"));
+		expect(cfg.pluginsDir).toBe(join(dir, "rtl/gen/plugins"));
 		expect(cfg.simUnits).toEqual([]);
 		expect(cfg.wishboneExcelExport).toBeNull();
 		expect(cfg.wishboneCExport).toBeNull();

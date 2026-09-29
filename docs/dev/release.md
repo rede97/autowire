@@ -25,9 +25,9 @@
 | `out/autowire.js` | 单个脚本。`bun build index.ts --target bun`，依赖和 `web/aw.js`、`web/page.js` 都打进去 | 本机已有 Bun 时：`bun out/autowire.js help` |
 | `out/autowire` | 同上，再用 `bun build --compile` 把 Bun 运行时链进可执行文件 | 直接执行。Windows 上是 `autowire.exe` |
 
-两条命令都先跑 `build:web`，再把仓库的 `docs/` 和全部 `demo/` gzip 后嵌进同一个文件。页面脚本不会留在包外单独分发，文档和示例也不会。禁止让生产入口再去读仓库里的 `index.ts`、`src/` 或 `web/*.js`。hdxml 与 obscura 仍是旁边的独立进程，不链进这两个文件。
+两条命令都先跑 `build:web`，再把仓库的 `docs/` 和 `demo/` 的可运行源文件 zstd 压缩后嵌进同一个文件。页面脚本不会留在包外单独分发，文档和示例也不会。禁止让生产入口再去读仓库里的 `index.ts`、`src/` 或 `web/*.js`。hdxml 与 obscura 仍是旁边的独立进程，不链进这两个文件。
 
-打包跳过 `.autowire/`、固件 `build/` 和 Verilator 的 `obj_dir*`。Agent 要读契约或示例时：
+打包跳过本地构建产物（`.autowire/`、固件 `build/`、Verilator `obj_dir*`、`vcs/work/`）、git 元数据（`.git` 指针、`.github`）与导出物（`*.xlsx`、`ucli.key`、`~$*`）。`demo/*/ip/` 只打该 demo 的 `.f` filelist 引用到的源文件；`demo/*/patches/` 的补丁在打包时已应用；demo `sot/*.ts` 的 DSL 导入被改写到 `.autowire/dsl/`（独立树没有 `src/`）。解包后的 demo 可直接跑 `analysis run` → `plugin wishbone run` → `connect run` 全链路。Agent 要读契约或示例时：
 
 ```text
 autowire docs unpack <dir>

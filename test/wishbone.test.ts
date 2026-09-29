@@ -10,8 +10,8 @@ import { layoutRegfile } from "../src/plugins/wishbone-regfile/layout.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 
 describe("wishbone pack", () => {
-	test("Excel Address Map indents 2-row blocks and stops at regfile leaves", () => {
-		const wb = buildRegfileWorkbook([layoutRegfile(smoke)], [soc_wb]);
+	test("Excel Address Map indents 2-row blocks and stops at regfile leaves", async () => {
+		const wb = await buildRegfileWorkbook([layoutRegfile(smoke)], [soc_wb]);
 		const names = wb.worksheets.map((s) => s.name);
 		expect(names).toContain("regfile_smoke");
 		expect(names).toContain("bus_map_soc_wb");
