@@ -29,7 +29,7 @@ cargo run -- -w <rtl_dir> --tree   # 目录扫描 + 依赖树（无子命令）
 - 终端输出只走 ProgressCenter；功能代码不得直接 `println!`/indicatif。
 - **span 基准 = 预处理后文本**；两阶段流程必须 `parse_sv_pp` + `PreprocessedText.origins` 做源映射（`docs/hdxml/module-info.md` §3 勘定）。
 - 分析纯净性：DesignDb 无条件全量收集，零功能标志位。
-- release profile：`opt-level="z"`、`lto`、`codegen-units=1`、`strip`。发布构建：Linux x64（`dist.sh`，glibc 2.17）、macOS arm64/x64、Windows x64（`windows-2022` 上的 `hdxml.exe`，见仓库 `docs/dev/release.md`）。
+- release profile：`opt-level="z"`、`lto`、`codegen-units=1`、`strip`。发布构建：Linux x64（`dist.sh`，glibc 2.17）、macOS arm64/x64、Windows x64（`windows-2022` 上 `--target x86_64-pc-windows-msvc` 的 `hdxml.exe`，见仓库 `docs/dev/release.md`）。
 
 ## 测试语料
 

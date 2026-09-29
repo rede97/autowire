@@ -4,7 +4,7 @@
 
 ## [2.2.6] - 2026-09-29
 
-- 发布产物增加 `hdxml-windows-x64.zip`：`windows-2022` 上 MSVC 目标的 `hdxml.exe`。
+- 发布产物增加 `hdxml-windows-x64.zip`：`windows-2022` 上显式 `--target x86_64-pc-windows-msvc` 的 `hdxml.exe`。
 
 ## [2.2.5] - 2026-09-29
 
