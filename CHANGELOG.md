@@ -6,6 +6,7 @@
 
 - RtlIndex JSON 消费模式：`[analysis.index] format = "json"` 时 hdxml（0.4.0，`--format json`）在 XML 之外再写 `index.json` + 每文件 `.json` 镜像；connect/web/`analysis deps|search|info` 直接 JSON.parse（真实索引上约为 Bun.XML 的 2.1 倍吞吐）。XML 始终写出，仍是增量缓存本体与文档化契约；增量逻辑不变。
 - JSON 端口带显式 `dir` 字段（声明序）；消费侧按 PORT_DIRS 重排，与 XML 路径生成结果逐字节一致。
+- connect 快照同步支持：`format = "json"` 时 `connect run` 在 `.autowire/connect/<id>.xml` 之外写 `<id>.json` 镜像，deps 加载改读 JSON（`connectJson`/`parseConnectJson`，与 XML 往返结果全等有测试锁定）。
 
 ## [2.2.8] - 2026-09-30
 

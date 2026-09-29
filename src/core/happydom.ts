@@ -14,7 +14,7 @@ import {
 } from "../workspace.ts";
 import { check, elaborate, installGlobal, serializeSnapshot } from "./aw.ts";
 import { buildEngineCtx, connectDir, type WrapperFacts } from "./connect.ts";
-import { connectXml } from "./connectxml.ts";
+import { connectJson, connectXml } from "./connectxml.ts";
 import {
 	assertModuleNames,
 	assertPrintable,
@@ -232,6 +232,13 @@ async function writeSnapshot(
 			`${connectXml(unit.id, mods)}\n`,
 			force,
 		);
+		if (ws.indexFormat === "json") {
+			await writeIfChanged(
+				join(connectDir(ws), `${unit.id}.json`),
+				`${connectJson(unit.id, mods)}\n`,
+				force,
+			);
+		}
 	}
 	// Write each flattened module as <name>.sv (was printer.writeSvFiles;
 	// printer.ts is now pure so the page bundle can print too).

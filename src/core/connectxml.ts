@@ -145,3 +145,67 @@ export function parseConnectXml(text: string): ConnectXmlModule[] {
 	}
 	return out;
 }
+
+/** JSON mirror of the connect sidecar (same data as connectXml; written when
+ *  [analysis.index] format = "json"). Ports omit empty attrs; missing means
+ *  null on read, matching parseConnectXml. */
+export function connectJson(unitId: string, mods: RenderModule[]): string {
+	const flat = flattenModules(mods).sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	const modules = flat.map((m) => ({
+		name: m.name,
+		imports: m.imports.map((i) => ({ package: i.package, symbol: i.symbol })),
+		params: m.params.map((p) => ({ name: p.name, value: p.value })),
+		ports: m.ports.map((p) => {
+			const o: Record<string, string> = { name: p.name, dir: p.dir };
+			if (p.dir === "interface") {
+				o.interface = p.interface;
+				if (p.modport) o.modport = p.modport;
+			} else {
+				if (p.packed) o.packed = p.packed;
+				if (p.unpacked) o.unpacked = p.unpacked;
+				if (p.nettype) o.nettype = p.nettype;
+			}
+			return o;
+		}),
+	}));
+	return JSON.stringify({ tool: "autowire", id: unitId, modules }, null, 2);
+}
+
+/** Parse a JSON connect sidecar back into abstract module facts. */
+export function parseConnectJson(text: string): ConnectXmlModule[] {
+	const doc: unknown = JSON.parse(text);
+	const isObj = (v: unknown): v is Record<string, unknown> =>
+		typeof v === "object" && v !== null;
+	if (!isObj(doc) || !Array.isArray(doc.modules)) {
+		throw new Error("connect JSON: missing modules array");
+	}
+	const str = (v: unknown): string => (typeof v === "string" ? v : "");
+	const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+	const out: ConnectXmlModule[] = [];
+	for (const m of arr(doc.modules)) {
+		if (!isObj(m)) continue;
+		out.push({
+			name: str(m.name),
+			params: arr(m.params).map((p) => ({
+				name: str(isObj(p) ? p.name : ""),
+				value: str(isObj(p) ? p.value : ""),
+			})),
+			ports: arr(m.ports).map((p) => ({
+				name: str(isObj(p) ? p.name : ""),
+				dir: str(isObj(p) ? p.dir : "") || "input",
+				packed: str(isObj(p) ? p.packed : "") || null,
+				unpacked: str(isObj(p) ? p.unpacked : "") || null,
+				nettype: str(isObj(p) ? p.nettype : "") || null,
+				interface: str(isObj(p) ? p.interface : "") || null,
+				modport: str(isObj(p) ? p.modport : "") || null,
+			})),
+			imports: arr(m.imports).map((i) => ({
+				package: str(isObj(i) ? i.package : ""),
+				symbol: str(isObj(i) ? i.symbol : "") || "*",
+			})),
+		});
+	}
+	return out;
+}

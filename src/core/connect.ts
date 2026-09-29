@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { parseHTML } from "linkedom";
 import type { LeafDb, LeafModule } from "../rtl/leaf.ts";
 import type { ConnectUnit, WorkspaceConfig } from "../workspace.ts";
-import { parseConnectXml } from "./connectxml.ts";
+import { parseConnectJson, parseConnectXml } from "./connectxml.ts";
 
 export interface WrapperFacts {
 	name: string;
@@ -90,9 +90,14 @@ export async function loadDepWrappers(
 	ws: WorkspaceConfig,
 	depId: string,
 ): Promise<WrapperFacts[]> {
-	const xmlPath = join(connectDir(ws), `${depId}.xml`);
-	if (!existsSync(xmlPath)) return [];
-	const mods = parseConnectXml(await readFile(xmlPath, "utf8"));
+	const path = join(
+		connectDir(ws),
+		`${depId}.${ws.indexFormat === "json" ? "json" : "xml"}`,
+	);
+	if (!existsSync(path)) return [];
+	const text = await readFile(path, "utf8");
+	const mods =
+		ws.indexFormat === "json" ? parseConnectJson(text) : parseConnectXml(text);
 	return mods.map((m) => ({
 		name: m.name,
 		params: m.params,

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { connectXml, parseConnectXml } from "../src/core/connectxml.ts";
+import {
+	connectJson,
+	connectXml,
+	parseConnectJson,
+	parseConnectXml,
+} from "../src/core/connectxml.ts";
 import { parseSnapshot } from "../src/core/printer.ts";
 
 // The connect XML sidecar mirrors hdxml conventions minus timestamps/hashes.
@@ -41,6 +46,17 @@ describe("connect XML sidecar", () => {
 		expect(xml).toContain('<import package="cc_pkg" symbol="*"/>');
 		// no provenance fields (deterministic, diff-friendly)
 		expect(xml).not.toMatch(/generated|Hash|Fp|mtime/);
+	});
+
+	test("JSON mirror roundtrips to the same facts as XML", () => {
+		const mods = parseSnapshot(SNAP);
+		const viaXml = parseConnectXml(connectXml("u1", mods));
+		const viaJson = parseConnectJson(connectJson("u1", mods));
+		expect(viaJson).toEqual(viaXml);
+		// no provenance fields, deterministic
+		const again = connectJson("u1", parseSnapshot(SNAP));
+		expect(connectJson("u1", mods)).toBe(again);
+		expect(again).not.toMatch(/generated|Hash|Fp|mtime/);
 	});
 
 	test("roundtrip preserves the abstract module info", () => {
