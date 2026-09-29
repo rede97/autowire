@@ -5,7 +5,7 @@
 // - Field.offset() is bit offset inside the cell (distinct from Cell/Block address offset)
 // - DAT/cell fixed 32; field: width + optional offset (no bits=)
 // - cell bits_align default Align8; values: BitsAlign enum (1|2|4|8|16)
-// - block wide fields auto-split; sideband outputs auto-concat to full width; bytes_align ×4
+// - block wide fields auto-split; sideband ports stay per-slice (rg_<field>_0 = LSB); bytes_align ×4
 // - Field / Cell / Block / Regfile: desc is required (maintainability)
 // - opts: cascading XxxDefault.align(...).offset(...) (immutable)
 // - Field: fluent .offset() / .reset() / .note() (no per-field shadow)
@@ -203,7 +203,7 @@ export interface RegBlock {
 	readonly bytes_align?: BytesAlign;
 	/** Default shadow for child cells that omit CellDefault.shadow(...). */
 	readonly shadow?: string;
-	/** Cells and/or wide fields (width>32 → generate auto-splits; outputs auto-concat). */
+	/** Cells and/or wide fields (width>32 → generate auto-splits into per-slice ports). */
 	readonly children: readonly (RegCell | RegField)[];
 }
 

@@ -37,6 +37,38 @@ impl Win {
     }
 }
 
+/// 去掉行注释和块注释。表达式窗口有时会把 localparam 后面的行注释收进来
+/// （sdspi 的 `DW = 32` 下一行是折叠标记），默认值就会带上注释，
+/// connect 再代进 `[DW-1:0]` 就变成非法宽度。
+fn strip_sv_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '/' && chars.peek() == Some(&'/') {
+            chars.next();
+            for c in chars.by_ref() {
+                if c == '\n' {
+                    out.push('\n');
+                    break;
+                }
+            }
+            continue;
+        }
+        if ch == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            while let Some(c) = chars.next() {
+                if c == '*' && chars.peek() == Some(&'/') {
+                    chars.next();
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(ch);
+    }
+    out.trim().to_string()
+}
+
 fn ident_text(src: &str, id: &Identifier) -> String {
     match id {
         Identifier::SimpleIdentifier(s) => s.nodes.0.str(src).to_string(),
@@ -675,14 +707,19 @@ impl<'a> Extractor<'a> {
                 }
             }
             Cap::Expr => {
-                // 实例参数覆盖值：写入 InstB.pending_value，ParamConn 收尾时取用
+                // 实例参数覆盖值：写入 InstB.pending_value，ParamConn 收尾时取用。
+                // 窗口可能吞进紧随其后的行注释，先剥掉。
+                let cleaned = strip_sv_comments(text);
+                if cleaned.is_empty() {
+                    return;
+                }
                 if self.in_param_conn() {
                     if let Some(i) = self.cur_inst() {
-                        i.pending_value = Some(text.to_string());
+                        i.pending_value = Some(cleaned);
                     }
                     return;
                 }
-                let e = ExprText::new(text);
+                let e = ExprText::new(&cleaned);
                 if let Some(p) = self.cur_param()
                     && p.default.is_none()
                 {
@@ -1016,6 +1053,22 @@ endmodule
         assert_eq!(m.instances[1].params[0].name, None);
         assert_eq!(m.instances[1].params[0].value, "8");
         assert_eq!(m.instances[1].params[1].value, "16");
+    }
+
+    #[test]
+    fn param_default_drops_following_line_comment() {
+        // sdspi: `localparam AW = 2, DW = 32` 下一行是折叠标记。
+        let src = r#"module sdspi_mini #(
+  localparam AW = 2, DW = 32
+		// }}}
+) (
+  input wire [DW-1:0] i_wb_data
+);
+endmodule
+"#;
+        let (mods, _) = extract_src("sdspi_mini", src);
+        let dw = mods[0].params.iter().find(|p| p.name == "DW").unwrap();
+        assert_eq!(dw.default.as_ref().unwrap().text, "32");
     }
 
     #[test]

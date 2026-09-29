@@ -2,6 +2,12 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.2.2] - 2026-09-29
+
+- 冷启动契约写进 `help agent`、仓库 `AGENTS.md`（`init` 抄成 `AGENTS-AUTOWIRE.md`）和 init 的 toml 注释：独立包的 hdxml 走 `--hdxml` / `$HDXML_BIN` / PATH；filelist 点名了还不存在的 dump 路径时先生成再 analysis；`connect check` 依赖已有 snapshot；文档引用的 demo 若这次 unpack 没有，就不要到包外去找。同时写明 `adr & ~mask` 不能做基址相减或翻位、宽 field 旁路是分片口、声明了 tag 的总线每个 master 都有 tga 口要 tie-off、`TagFromAddr "hi:lo"` 才是地址位权威。
+- `analysis run` 在 filelist 列出 `plugins_dir` / `connect_dir` / `sim_dir` 下缺失文件时直接停住，并指出先跑 `plugin wishbone run` 或 `connect run`，不再只把 hdxml 的 file-not-found 透传出去。
+- `docs unpack` 把 `*.sh` 恢复为可执行。wishbone-regfile 契约改为与生成器一致：宽 field 模块口保持分片，不拼成一条向量。hdxml 从 localparam 默认值里去掉紧随其后的 `//` 注释（sdspi 的 `DW = 32` 下一行折叠标记不再进宽度表达式）。demo/soc 的 JTAG bank 别名与 `TagFromAddr bank "27:26"` 对齐。
+
 ## [2.2.1] - 2026-09-29
 
 - 发布 CI 的 `autowire-js` 构建后新增 bundle 冒烟（`scripts/smoke-bundle.ts`）：用打出来的 `autowire.js` 跑 `--version`、独立目录 `init`（含 `.autowire/dsl` 与拒绝覆盖）、完整驱动 demo/soc（analysis → wishbone → connect check/run），并用 `git diff` 验证生成产物与仓库逐字节一致（Excel 除外，其内嵌时间戳）。只测源码的单元测试覆盖不到的打包路径问题由此进 CI 门禁。

@@ -90,7 +90,7 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 | Cell / Block 地址 | 用可选 **`offset`**（相对 regfile / 父级）；**禁止**地址语义的 `addr` 字段名 |
 | 级联默认 | `CellDefault` / `BlockDefault` / `RegfileDefault`：`.align(...)` / `.byteAlign(...)` / `.offset(...)` / `.shadow(...)` / `.addrWidth(...)` / `.sheet(...)` / `.readWriteBlock(...)` / `.shadows(...)`（不可变） |
 | Shadow 配置 | **只在 Cell**（`CellDefault.shadow(...)`）；**Block**.`shadow(...)` 仅为下属 Cell 缺省。**禁止**同一 cell 内混不同 shadow；**拼车（同 cell 打包 field）必须同 shadow** |
-| 宽 field | Block 下自动拆 cell；模块口 **旁路/输出自动拼齐**为完整 `width` 向量；拆出的各 cell **继承**该 Block 的 shadow 缺省 |
+| 宽 field | Block 下自动拆 cell；模块口 **旁路按分片导出**（`rg_<field>_0` 起，`i=0` 为 LSB），**不**拼成一条 `width` 向量；拆出的各 cell **继承**该 Block 的 shadow 缺省 |
 | `read_write_block` | Regfile opts：`.readWriteBlock(true\|false)`；**缺省 `false`**（非阻塞）；`true` 时命中 **RWE** 的 WB 事务可被外部窗（如 FIFO）挡住 ACK |
 | Shadow | `Shadow(name, copies, tagBits).remaps({ from: bitmask }).innerShadowMux(bool)`；**`tagBits` 强制**；**`innerShadowMux` 缺省 `true`**；**无** `ShadowBroadcast` |
 | `remaps` | `to` = 物理 copy **bitmask**（bit k → copy k）；单 copy：`1<<k`；广播全 N 份：`(1<<N)-1`（例 4 copy → `0b1111` / from=3 → `3: 0b1111`） |
@@ -165,10 +165,10 @@ Block("wide", "Wide fields", BlockDefault.byteAlign(4), [
 
 1. **仅 Block** 提供该能力；独立 cell / cell 内 field **不**自动跨 cell 拆分。  
 2. Block 直接子级的 Field，若放不进当前自动 cell 剩余空间或 **`width > 32`**：按定义序切开，生成连续 cell（**`offset` 可全省略**，按 block `bytes_align` 自动拼），每片 ≤32、按 `bits_align` 对齐。  
-3. 分片**内部**命名（已定）：cell ≈ `<field>_<i>`；field 片 ≈ `<name>_<i>`（`i` 自 0 = **LSB**）；**旁路/功能口对外自动拼齐**为原 `width` 向量（作者不看分片口）。每片 cell/field 的 **desc 与注释**必须写明该片在完整字段空间的位置：`name[hi:lo] of [W-1:0]`（例 96-bit `key` → `key[31:0] of [95:0]` / `key[63:32] of [95:0]` / `key[95:64] of [95:0]`）。  
+3. 分片**内部**命名（已定）：cell ≈ `<field>_<i>`；field 片 ≈ `<name>_<i>`（`i` 自 0 = **LSB**）。**模块口保持分片**（`rg_<field>_0` / `rg_<field>_1` / …），**不**拼成一条 `width` 向量；作者接线时按分片口连接或显式 open。每片 cell/field 的 **desc 与注释**必须写明该片在完整字段空间的位置：`name[hi:lo] of [W-1:0]`（例 96-bit `key` → `key[31:0] of [95:0]` / `key[63:32] of [95:0]` / `key[95:64] of [95:0]`）。  
 4. 拆出的连续 cell **共享**同一 shadow（来自 **Block** `.shadow(...)` 缺省；无则皆无）——宽 field **禁止**按分片挂不同 shadow。  
 5. 与显式 `offset` 钉死的 cell **混排**：按定义序；**禁止**占用冲突。  
-6. 作者 **应当**对超长逻辑场用 block 直挂 field，**不必**手写多 cell，也 **不必**手算地址或手拼旁路向量。
+6. 作者 **应当**对超长逻辑场用 block 直挂 field，**不必**手写多 cell，也 **不必**手算地址。旁路仍是分片口，**不要**等一条拼好的向量。
 
 其它规则：
 
@@ -418,7 +418,7 @@ RegfileDefault.addrWidth(8).shadows(
 7. **缺省继承**：Block → Cell（仅此两级）；表级 `shadows(...)` 仍只做**库声明**。  
 8. **Per-copy reset**：dict key = **物理 copy**；**未列默认 0**；标量 = 各 copy 同值。  
 9. **`inner_shadow_mux`（同级 bool；缺省 `true`）**：见下「旁路导出 vs 内部 shadow mux」。  
-10. **宽 field**：拆片 cell 同 shadow；模块边界旁路/输出 **自动拼齐**为完整宽度。
+10. **宽 field**：拆片 cell 同 shadow；模块边界旁路/输出 **保持分片口**（`rg_<field>_<i>`，`i=0` 为 LSB），不拼成完整宽度。
 
 #### `inner_shadow_mux`：内选 vs 全导出（已倾向）
 
@@ -610,7 +610,7 @@ field sheet 的黄/灰配色 **不变**（对照主干 `gen_excel_doc.py`）。�
 - ~~数据/地址位宽~~ → **`DAT_*` 固定 32**（`SEL`=4）；**`addr_width` 必填**（TS opts，无缺省）。  
 - ~~地址标记 / 对齐~~ → Cell/Block **`offset` 可省略**；按 `bytes_align`（4 的倍数）**编译器式自动拼接**；写出 `offset` 才钉址。  
 - ~~Cell / Field~~ → cell **固定 32**；**可**在 block 内或 **独立**挂在 regfile body；`bits_align` 缺省 **8**；field **禁止** `bits`，用 **`width` + 可选 bit `offset`**；**`desc` 必填**。  
-- ~~Block 超长 field~~ → block 下可直挂宽 field，**自动拆**成多 cell；口上旁路/输出 **自动拼齐**；拆片 cell **同** Block shadow 缺省。  
+- ~~Block 超长 field~~ → block 下可直挂宽 field，**自动拆**成多 cell；口上旁路/输出 **保持分片**；拆片 cell **同** Block shadow 缺省。  
 - ~~Shadow~~ → 表级库 + **仅 Cell 配置**（Block 为 Cell 缺省）；**禁止** Field 级 / 同 cell 混 shadow；**拼车必须同 shadow**；`remaps` bitmask；`inner_shadow_mux`（RO 不吃）；RWE 译码 sel 原样旁路。  
 - ~~Access **RC**~~ → **ReadConst**：读回 `.reset(n)` 标量常数；无功能旁路 in；与 RO 区分。  
 - ~~Field `.reset`~~ → `number | Record<copyIndex, number>`；dict **缺口默认 0**；RC 仅标量。  
@@ -621,7 +621,7 @@ field sheet 的黄/灰配色 **不变**（对照主干 `gen_excel_doc.py`）。�
 - ~~`remaps` 未命中~~ → **空操作**（不打 copy）+ Wishbone **正常 ACK**（防卡死）；整组省略 `remaps` 仍为 identity。  
 - ~~广播读~~ → bitmask 多 bit 时读数据 **按位或**。  
 - ~~RO + shadow 口形~~ → 功能 in **恒 per-copy 数组**；读用 bitmask（或）。  
-- ~~宽 field 内部分片名~~ → cell/field 片 `<name>_<i>`（`i`=0 = LSB）；desc/注释带完整空间 `name[hi:lo] of [W-1:0]`；对外拼齐。  
+- ~~宽 field 内部分片名~~ → cell/field 片 `<name>_<i>`（`i`=0 = LSB）；desc/注释带完整空间 `name[hi:lo] of [W-1:0]`；模块口同为分片，不对外拼齐。  
 - ~~plugin id~~ → **一套**：`wishbone`（`RegfileDef` / `BusDef` 类型分立；toml `[wishbone.*]` + `[plugins.wishbone]`；一次 generate 打包 Excel / C / uvm_reg）。旧 id `wishbone-regfile` / `wishbone-bus` 为别名。  
 - ~~固件窗~~ → v1 **只预留**描述/不做整窗 RAM 生成（§7）。  
 - ~~导出名 vs `name`~~ → **必须相同**。  

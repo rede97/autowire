@@ -57,7 +57,7 @@
 3. **禁止** v1 端点使用 Pipelined `STALL`。  
 4. **禁止**再引入第二套 cfg 内核信号名。  
 5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
-6. **TGA 建模（已裁定）**：有 `tags` 时位宽由各域拼出来，见 §2.1。没有 `tags` 时，`Bus(..., { tagWidth? })` 仍是 fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）。`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
+6. **TGA 建模（已裁定）**：有 `tags` 时位宽由各域拼出来，见 §2.1。每个 master（含自身不产生该 tag 的，例如本层 DMA）都导出 `{master}_o_wb_tga_<domain>`；没有 tag 来源的输入必须在 connect 里 tie-off，否则会变成上层端口。没有 `tags` 时，`Bus(..., { tagWidth? })` 仍是 fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）。`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
 7. **Decode 槽位名**：生成 `localparam SLOT_<SLAVE>`（slave 名大写，从 0 起）；`slot_sel` 下标与 one-hot 赋值 **必须**用该名（`slot_sel[SLOT_SD1]`、`slot_sel = NS'd1 << SLOT_SD1`），**禁止**裸十进制下标。
 
 ### 2.1 Tag 域：分配 / 来源 / 透传
@@ -140,7 +140,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 | **SlaveRegion** | `SlaveRegion(name, desc, base, Size(bytes), { pipe: N, tag?, broadcast?, broadcastBy? })` 字符串窗口按 **字节跨度**；底层 mask = span 向上取 2 的幂；`(base & mask) === base`；**参与**区间重叠检查。`broadcast` / `broadcastBy` 见 §4.1 |
 | **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（原始 match mask）；**不**做对齐/重叠检查；**禁止** `broadcast` / `broadcastBy`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
 | **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（叶子 + `Size(layout span)`，可 `size=` 覆盖且必须盖住 span） |
-| **SlaveBus** | `SlaveBus(BusDef, base, { id?, pipe?, tag?, size?, desc?, uplink? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模 **必须** 有 `Master("uplink")`（或 `uplink=`）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`，子地址是窗相对的 |
+| **SlaveBus** | `SlaveBus(BusDef, base, { id?, pipe?, tag?, size?, desc?, uplink? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模 **必须** 有 `Master("uplink")`（或 `uplink=`）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`（丢掉窗口基址所在的高位，**不是**基址相减，也 **不能**把地址位取反；窗口必须覆盖基址本身），子地址是窗相对的 |
 | **Master** | `Master(name, desc, { pipe: N })`；`N=0`（缺省）= 组合直通；`N>0`（1..16）= 在 **仲裁之前**（decoder 则在译码之前）插入 `wb_cfg_pipe`。仲裁请求与 grant 保持看 pipe 的 `s_cyc`，posted 写撤掉端口 `CYC` 后总线仍归该 master，直到队列排空。与父级 `SlaveBus` 的 slave pipe 是两级，互不替代 |
 
 第五参仍可写数字：`Slave(..., 2)` = `tag=2`（兼容）；pipe 必须走 options 对象。

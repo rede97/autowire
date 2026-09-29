@@ -8,7 +8,7 @@
   Top fabric is a CPU + JTAG interconnect cascaded into two channel
   interconnects (one sd_sha BusDef, two SlaveBus hangs). Channel DMA cannot
   reach SRAM/flash.
-  TGA: ADR[28:27] selects the accessed bank. BANKSEL drives i_bank_mux_sel,
+  TGA: ADR[27:26] selects the accessed bank (TagFromAddr "27:26"). BANKSEL drives i_bank_mux_sel,
   which picks the working copy of rg_cfg. The muxed rg_cfg loops back to ro_value.
   Arbiters (top + channels): rb_grant_en = smoke rg_rb_grant_en (FABRIC @ 0x030, reset 0).
   JTAG: jtag_* pins → u_tap (demo_tap, DFT placeholder TAP) → USER IR selects

@@ -51,6 +51,28 @@ Pipeline
       →  elaboration → aw-render
       →  connect run writes .sv → DV
 
+Cold start
+  Standalone autowire.js does not contain hdxml. Lookup is --hdxml, then
+  [analysis] hdxml_bin, then $HDXML_BIN, then PATH.
+  A filelist often names files under [workspace.dump] before they exist.
+  analysis run stops and names the writer: plugin wishbone run for plugins_dir,
+  connect run for connect_dir and sim_dir. connect run also writes
+  .autowire/connect/<id>.xml and follows the dep DAG. connect check of a unit
+  whose deps have never been connect run fails with "snapshot missing".
+  If docs cite a demo path that docs unpack did not write, that demo was
+  trimmed from this bundle. Do not search outside the unpack. Read the
+  contracts and the demos that are present (demo/hbm is the small example).
+  Slave windows forward adr & ~mask. That is not base subtraction and it
+  cannot invert an address bit. The window must contain its own base.
+  Wide fields stay per-slice sideband ports (rg_<field>_0 is the LSB slice),
+  not one concatenated vector.
+  A bus tag adds {master}_o_wb_tga_<domain> on every master, including a
+  master that does not produce the tag. Tie that input off or it becomes a
+  port of the parent.
+  TagFromAddr "hi:lo" is the address-bit authority (alias i sits at i<<lo).
+  A comment or a host header that shifts a different bit is drift; follow the
+  Bus tags= declaration and the generated map header.
+
 You can do now
   1. Follow help dont; use help status for landed vs not landed.
   2. autowire init / analysis run for workspace + RtlIndex.
@@ -185,7 +207,8 @@ Parallel (does not block connect)
       decode (one window covers all aliases) and must not overlap any window;
       SlaveBus tag derives from the child bus, never hand-written;
     Access RC = ReadConst (reset= baked readback);
-    wide-field split: comments/desc name[hi:lo] of [W-1:0] (index 0 = LSB);
+    wide-field split: ports stay per-slice (rg_<field>_0 = LSB), not one
+    concatenated vector; comments/desc name[hi:lo] of [W-1:0] (index 0 = LSB);
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
     NM>1 → interconnect (arbiter: rb_grant_en 0=fixed lowest-index /
     1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
@@ -327,6 +350,9 @@ hdxml never reads toml; autowire maps everything.
 Paths in toml are relative to the workspace root (toml location).
 No [analysis.rtl] sources configured → error.
 Error files keep the index usable; hdxml exit code is passed through.
+A filelist entry under plugins_dir, connect_dir, or sim_dir that is not on
+disk yet is not an hdxml failure: analysis run stops and names the writer
+(plugin wishbone run, or connect run). Generate those, then re-run analysis.
 --force: analysis is incremental by default — unchanged files are reused from the
   RtlIndex dir. --force maps to hdxml --refresh (full re-parse, rewrites the cache).
 
@@ -365,7 +391,9 @@ aw-connect@to: net (default) | const | open — const/open must declare type=; d
   aw-param@expr / aw-template@inst_name: variable expressions only (no $1).
 aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlIndex form),
   unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; default wire);
-  to is net name only — no [] suffix. See docs/connect/html.md §3.5.1–3.5.2;
+  to is net name only — no [] suffix. See docs/connect/html.md §3.5.1–3.5.2.
+  A localparam default is the expression only; a following // comment is not part of it.
+  If a width still contains a comment, set packed= explicitly.
   multidim example: docs/examples/connect/04-author-multidim.html.
 Lifecycle scripts: docs/connect/lifecycle.md —
   classic <script>; aw-content@on-init(content, mods); aw-inst@on-template(inst, mod).
@@ -503,6 +531,7 @@ Do not
   link obscura into the autowire binary
   ship the repo source as the production entry (use out/autowire.js or out/autowire)
   docs unpack over a tree you did not mean to replace (it writes AGENTS.md, docs/ and demo/)
+  search outside docs unpack for a demo this bundle did not contain
 `,
 
 	docs: `\
@@ -523,8 +552,10 @@ the examples. Dev builds read the repo instead of the bundle.
 Existing files at those paths are replaced. The bundle skips local build output
 (.autowire, firmware build/, Verilator obj_dir*, vcs/work), git metadata, and
 Excel exports; demo ip/ carries only the sources its filelists reference, with
-demo patches already applied and sot imports pointed at .autowire/dsl/. See
-docs/dev/release.md section 1.1.
+demo patches already applied and sot imports pointed at .autowire/dsl/.
+Shell scripts (*.sh) are unpacked executable. A bundle may omit a demo: a doc
+citation of a path this unpack did not write is not a second copy of that demo.
+See docs/dev/release.md section 1.1.
 `,
 
 	cdp: `\

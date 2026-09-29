@@ -556,6 +556,9 @@ name = "${name}"
 [analysis.rtl]
 # All three sources may coexist; union-deduplicated
 filelists = ["rtl/${name}.f"]
+# Entries under [workspace.dump] are generated. If they are not on disk yet,
+# analysis run names the writer: plugin wishbone run (plugins_dir),
+# connect run (connect_dir, sim_dir, and connect snapshots).
 walk_dirs = []
 sources = []
 # include search paths (+incdir)

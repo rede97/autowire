@@ -1,16 +1,93 @@
 // `autowire init` and `autowire analysis` (docs/cli.md §3).
 // analysis run writes the RtlIndex. deps, search, and info only read it.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import type { Command } from "commander";
 import { LeafDb } from "../rtl/leaf.ts";
 import { loadRtlIndex, type RtlIndex } from "../rtl/rtlindex.ts";
 import { renderSummary, renderTrees } from "../rtl/tree.ts";
-import { defaultToml, hdxmlArgs } from "../workspace.js";
+import { defaultToml, hdxmlArgs, type WorkspaceConfig } from "../workspace.js";
 import { ensureWishboneDsl, loadPack } from "./pack.ts";
 import { findHdxml, requireWorkspace } from "./shared.ts";
+
+export type DumpKind = "plugins" | "connect" | "sim";
+
+/** Filelist paths under [workspace.dump] that are not on disk yet. */
+export function generatedFilelistGaps(
+	cfg: Pick<
+		WorkspaceConfig,
+		"root" | "filelists" | "pluginsDir" | "connectDir" | "simDir"
+	>,
+): { path: string; kind: DumpKind }[] {
+	const gaps: { path: string; kind: DumpKind }[] = [];
+	const seen = new Set<string>();
+	const posix = (abs: string) => relative(cfg.root, abs).split(sep).join("/");
+	const kindOf = (abs: string): DumpKind | null => {
+		const rel = posix(abs);
+		const under = (dirAbs: string) => {
+			const dir = posix(dirAbs);
+			return rel === dir || rel.startsWith(`${dir}/`);
+		};
+		if (under(cfg.pluginsDir)) return "plugins";
+		if (under(cfg.connectDir)) return "connect";
+		if (under(cfg.simDir)) return "sim";
+		return null;
+	};
+	for (const list of cfg.filelists) {
+		const listAbs = isAbsolute(list) ? list : join(cfg.root, list);
+		if (seen.has(listAbs)) continue;
+		seen.add(listAbs);
+		let text: string;
+		try {
+			text = readFileSync(listAbs, "utf8");
+		} catch {
+			continue;
+		}
+		for (const raw of text.split("\n")) {
+			const line = raw
+				.replace(/\/\/.*/, "")
+				.replace(/#.*/, "")
+				.trim();
+			if (!line || line.startsWith("-") || line.startsWith("+")) continue;
+			const abs = isAbsolute(line) ? line : join(cfg.root, line);
+			if (existsSync(abs)) continue;
+			const kind = kindOf(abs);
+			if (kind) gaps.push({ path: posix(abs), kind });
+		}
+	}
+	return gaps;
+}
+
+/** What to run before analysis when the filelist names generated files. */
+export function formatGeneratedGaps(
+	gaps: readonly { path: string; kind: DumpKind }[],
+): string {
+	const plugins = gaps.some((gap) => gap.kind === "plugins");
+	const connect = gaps.some(
+		(gap) => gap.kind === "connect" || gap.kind === "sim",
+	);
+	const shown = gaps
+		.slice(0, 8)
+		.map((gap) => `  ${gap.path}`)
+		.join("\n");
+	const more = gaps.length > 8 ? `\n  ... and ${gaps.length - 8} more` : "";
+	const writers = [
+		plugins ? "`plugin wishbone run` writes plugins_dir" : "",
+		connect
+			? "`connect run` writes connect_dir and sim_dir, and the .autowire/connect snapshots that `connect check` needs"
+			: "",
+	]
+		.filter((line) => line.length > 0)
+		.join(". ");
+	const noun = gaps.length === 1 ? "entry is" : "entries are";
+	return [
+		`analysis: ${gaps.length} filelist ${noun} under [workspace.dump] but not on disk yet:`,
+		shown + more,
+		`${writers}. Generate those, then re-run analysis.`,
+	].join("\n");
+}
 
 export function registerAnalysis(program: Command): void {
 	program
@@ -91,6 +168,11 @@ export function registerAnalysis(program: Command): void {
 					console.error(
 						"autowire.toml: configure at least one of [analysis.rtl] filelists/walk_dirs/sources",
 					);
+					process.exit(1);
+				}
+				const gaps = generatedFilelistGaps(cfg);
+				if (gaps.length > 0) {
+					console.error(formatGeneratedGaps(gaps));
 					process.exit(1);
 				}
 				const args = hdxmlArgs(cfg);

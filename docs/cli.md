@@ -81,7 +81,7 @@ autowire analysis info <module>
 
 | 命令 | 行为 |
 |---|---|
-| `analysis run` | 按 `autowire.toml` 跑 hdxml，增量写出 `.autowire/hdxml`。`--force` 全量重解析 |
+| `analysis run` | 按 `autowire.toml` 跑 hdxml，增量写出 `.autowire/hdxml`。filelist 里落在 `plugins_dir` / `connect_dir` / `sim_dir` 但还不存在的路径会直接停住，并指出先跑 `plugin wishbone run` 或 `connect run`。`--force` 全量重解析 |
 | `analysis deps [module]` | 打印 RTL 模块依赖。不写 module 时输出索引里的全部依赖关系 |
 | `analysis search <pattern>` | 在索引里检索，不写盘 |
 | `analysis info <module>` | 按准确模块名格式化打印该模块在 index 里的 param 和 port |

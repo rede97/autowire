@@ -75,8 +75,9 @@ template <class Top> class JtagHost {
 		return true;
 	}
 
-	/* Address aliases select the accessed bank. ACTIVE reads rg_cfg, which
-	   follows BANKSEL rather than the alias used for this transaction. */
+	/* Address aliases select the accessed bank: TagFromAddr bank "27:26",
+	   so alias i is SMOKE_BASE + BANK_OFF + (i << 26). ACTIVE reads rg_cfg,
+	   which follows BANKSEL rather than the alias used for this transaction. */
 	bool banks()
 	{
 		uint32_t rd = 0;
@@ -87,7 +88,7 @@ template <class Top> class JtagHost {
 		for (uint32_t i = 0; i < 4; i++) {
 			char what[32];
 			snprintf(what, sizeof what, "bank %u write", i);
-			if (!wb(OP_WRITE, SMOKE_BASE + BANK_OFF + (i << 27), 0xa0u + i, rd, what))
+			if (!wb(OP_WRITE, SMOKE_BASE + BANK_OFF + (i << 26), 0xa0u + i, rd, what))
 				return false;
 		}
 		if (!wb(OP_READ, SMOKE_BASE + BANKSEL_OFF, 0, rd, "BANKSEL unchanged") ||
@@ -96,12 +97,12 @@ template <class Top> class JtagHost {
 		for (uint32_t i = 0; i < 4; i++) {
 			char what[32];
 			snprintf(what, sizeof what, "bank %u read", i);
-			if (!wb(OP_READ, SMOKE_BASE + BANK_OFF + (i << 27), 0, rd, what) ||
+			if (!wb(OP_READ, SMOKE_BASE + BANK_OFF + (i << 26), 0, rd, what) ||
 			    !expect(what, rd & 0xffu, 0xa0u + i))
 				return false;
 		}
 		/* Alias 1 must not change the copy selected by the saved BANKSEL. */
-		if (!wb(OP_READ, SMOKE_BASE + ACTIVE_OFF + (1u << 27), 0, rd, "ACTIVE") ||
+		if (!wb(OP_READ, SMOKE_BASE + ACTIVE_OFF + (1u << 26), 0, rd, "ACTIVE") ||
 		    !expect("ACTIVE via bank 1", rd & 0xffu, 0xa0u + sel))
 			return false;
 		if (!wb(OP_WRITE, SMOKE_BASE + BANKSEL_OFF, 3u, rd, "BANKSEL write"))

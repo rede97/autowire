@@ -25,6 +25,11 @@ test("agent topic holds the working contract", () => {
 	expect(text).toContain("docs/connect/html.md");
 	expect(text).toContain("top-priority reference");
 	expect(text).toContain("demo/");
+	expect(text).toContain("Cold start");
+	expect(text).toContain("HDXML_BIN");
+	expect(text).toContain("snapshot missing");
+	expect(text).toContain("adr & ~mask");
+	expect(text).toContain("per-slice");
 });
 
 test("each slice prints independently", () => {

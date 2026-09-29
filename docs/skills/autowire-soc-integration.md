@@ -18,11 +18,11 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
   → 手写集成叶子（rtl/*.v，英文注释）
   → rtl/soc.f（filelist，路径相对工作区根；.svh 禁止入内）
   → autowire.toml（[analysis.rtl] filelists + [connect.<id>] DAG）
-  → bun <repo>/index.ts analysis run      # hdxml → RtlIndex（先看 0 blackbox / 0 error）
   → sot/connect/*.html（aw-content 作者面；wishbone ts= 同树 wb_reg_*.ts / wb_bus_*.ts）
-  → bun <repo>/index.ts plugin wishbone run
-  → bun <repo>/index.ts connect check     # 作者面合法性 + deps
-  → bun <repo>/index.ts connect run       # happy-dom 写 rtl/gen/connect|sim
+  → bun <repo>/index.ts plugin wishbone run   # filelist 已点名 rtl/gen 时必须先于 analysis
+  → bun <repo>/index.ts analysis run          # hdxml → RtlIndex；缺生成物时直接指出该先跑哪条命令
+  → bun <repo>/index.ts connect run           # happy-dom 写 rtl/gen/connect|sim，并按 DAG 写 snapshot
+  → bun <repo>/index.ts connect check         # 不写盘；依赖 snapshot 还不存在时会报 snapshot missing
   → 要看页面时：bun <repo>/index.ts connect web <top_unit>
   → verilator 冒烟                         # sim/verilator/run.sh[+ --sd | --regfile | --tb-mod]；见 §6 / fw/README.md（仅 Verilator）
 ```

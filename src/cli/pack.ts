@@ -9,7 +9,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
@@ -308,6 +308,9 @@ export async function unpackPack(
 		}
 		await mkdir(dirname(abs), { recursive: true });
 		await writeFile(abs, file.bytes);
+		// The archive stores bytes only. Shell entry points (demo sim run.sh)
+		// are executable in git; restore that bit on unpack.
+		if (file.path.endsWith(".sh")) await chmod(abs, 0o755);
 		written.push(abs);
 	}
 	return written;
