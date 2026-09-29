@@ -122,19 +122,19 @@ module sd_sha_ch (
 		.i_wb_stb         (sd_i_wb_stb     ), // i
 		.i_wb_we          (sd_i_wb_we      ), // i
 		.i_wb_addr        (sd_i_wb_adr[3:2]), // i [1:0]
-		.i_wb_data        (sd_i_wb_dat     ), // i [(32   // }}})-1:0]
-		.i_wb_sel         (sd_i_wb_sel     ), // i [(32   // }}})/8-1:0]
+		.i_wb_data        (sd_i_wb_dat     ), // i [31:0]
+		.i_wb_sel         (sd_i_wb_sel     ), // i [3:0]
 		.i_miso           (i_miso          ), // i
 		.i_card_detect    (i_cd            ), // i
 		.i_bus_grant      (1'b1            ), // i
 		.o_wb_stall       (                ), // o
 		.o_wb_ack         (sd_o_wb_ack     ), // o
-		.o_wb_data        (sd_o_wb_dat     ), // o [(32   // }}})-1:0]
+		.o_wb_data        (sd_o_wb_dat     ), // o [31:0]
 		.o_cs_n           (o_cs_n          ), // o
 		.o_sck            (o_sck           ), // o
 		.o_mosi           (o_mosi          ), // o
 		.o_int            (o_sd_irq        ), // o
-		.o_debug          (                )  // o [(32   // }}})-1:0]
+		.o_debug          (                )  // o [31:0]
 	);
 	sd_rd_dma #(
 		.AW               (12              ),
