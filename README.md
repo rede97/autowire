@@ -1,52 +1,72 @@
-# Autowire v2.0
+# Autowire
 
-连接描述是一份 **HTML + script**。浏览器跑完 script，活 DOM 就是连接关系。把渲染结果交给 autowire，由它写成 RTL，后面走 DV。
+Connectivity description is **HTML + script**. A browser runs the script; the live DOM is the netlist. Autowire takes the rendered result and writes SystemVerilog, which flows on to DV.
 
-**Agent 接手：先跑 `bun index.ts help agent`（工作约定；不要另写项目提示词）。命令总览：`bun index.ts help`。改行为时同步改 `help/<topic>.txt`。格式约束见 [`docs/`](docs/README.md)。**
+**Agents: run `bun index.ts help agent` first (working contract — do not invent a project prompt). Command index: `bun index.ts help`. Behavior changes must update `help/<topic>.txt` in lockstep. Format constraints live in [`docs/`](docs/README.md).**
 
----
+## Design
 
-## 设计思想
-
-| 问题 | 做法 |
+| Question | Answer |
 |---|---|
-| 作者输入 | 一份可嵌多层的 HTML，静态标签 + `<script>` |
-| 渲染 | 真浏览器跑 `aw.js`（Custom Elements） |
-| 调试 / 隔离 | Playwright 无头打开本机页；Agent 用 Playwright MCP，和调普通前端一样 |
-| 安全 | 浏览器沙箱 + `127.0.0.1`；页面不直接写盘 |
-| 落盘 | `POST` 渲染结果 → autowire Web API → 写工作区 RTL → DV |
-| 谁写 script | 不管（人或 Agent） |
-| 无头 CLI | **后做**；必须通过已有 Web 测试 / golden |
+| Author input | One nestable HTML file: static tags + `<script>` |
+| Rendering | A real browser runs `aw.js` (Custom Elements) |
+| Debug / isolation | Playwright opens the local page headless; agents drive it through CDP like any frontend |
+| Safety | Browser sandbox + `127.0.0.1`; the page never writes to disk |
+| Persisting | The CLI reads `aw-render` from the rendered DOM and writes workspace RTL |
+| Who writes the script | Anyone (human or agent) |
 
-没有平行连接 IR，没有 emacs 进程，没有连接专用 MCP 工具表。
+No parallel connectivity IR, no emacs process, no connect-specific MCP tool table.
 
-## 方法论
+## Method
 
-- **先文档约束，后实现**：未在 help status 开放的步骤不实现、不假装能渲染或 dump。
-- **用例约束后端**：无头 `cli` 后做，且必须通过现有 Web / Playwright 测试（同一 HTML → 同一 RTL）；先做 cli、再补测试，不允许。
-- **单一事实源**：用法与思路只写 `help/<topic>.txt`；格式与实现约束只写 `docs/`；二者同步，不为项目复制提示词。
+- **Docs before implementation**: a step that is not landed in `help status` does not get built, and nobody fakes render/dump behavior.
+- **Use cases constrain the backend**: headless CLI paths must pass the same web/golden tests — same HTML in, same RTL out.
+- **Single source of truth**: usage and rationale live in `help/<topic>.txt`; format and implementation constraints live in `docs/`; the two stay in sync.
 
-## 流水线
+## Pipeline
 
 ```text
-autowire.toml（.f + svh/宏）
-    →  hdxml → RtlIndex（只读）
-    →  HTML（aw-content + aw-submods）
+autowire.toml (filelists + macros)
+    →  hdxml → RtlIndex (read-only, XML or JSON)
+    →  HTML (aw-content + aw-submods)
     →  elaboration → aw-render
-    →  connect run（读 aw-render，写 .sv）
-    →  autowire 写 .sv
+    →  connect run (reads aw-render, writes .sv)
     →  DV
 ```
 
-组件、写回、Playwright 隔离、入口阶段：[docs/architecture.md](docs/architecture.md)。
-工作区配置：[docs/workspace/toml.md](docs/workspace/toml.md)。连接方言：[docs/connect/html.md](docs/connect/html.md)。细则小结：[docs/connect/rules.md](docs/connect/rules.md)。
+Components, write-back rules, isolation, and entry stages: [docs/architecture.md](docs/architecture.md). Workspace config: [docs/workspace/toml.md](docs/workspace/toml.md). Connect dialect: [docs/connect/html.md](docs/connect/html.md). Rules summary: [docs/connect/rules.md](docs/connect/rules.md).
 
-## 不做
+## Tools
 
-- 连接关系用 XML / 一层一份文件当 SoT（RtlIndex XML 是只读索引，不是连接 SoT）
-- 连接专用 MCP（`outline`、`apply`、`rewrite`…）
-- 浏览器直接写工作区
-- 先做 cli 再补 Web 用例
-- 两套连线语义（Web 与 cli 必须同一 `aw.js` + 同一 golden）
-- 为每个芯片项目复制一份连接提示词（改 `help/agent.txt`）
-- 把连接细节写进 `autowire.toml`（toml 里连接只有 `[connect] html` 文件清单：仅路径，无 top、无连线语义）
+| Tool | Role |
+|---|---|
+| `autowire` | Workspace CLI: analysis, connect, `plugin wishbone run`. Ships as a single-file `autowire.js` (run with Bun) |
+| `hdxml` | Read-only RTL analysis → RtlIndex (Rust binary; Linux x86_64 glibc 2.17 / CentOS 7+, macOS arm64/x64, Windows x64) |
+| Browser | Page rendering and debug; `connect run` uses happy-dom, no browser needed |
+
+Release archives land on the GitHub Releases page, driven by the top entry of `CHANGELOG.md`.
+
+## Quick start
+
+```bash
+bun autowire.js init mychip          # autowire.toml + AGENTS-AUTOWIRE.md + .autowire/hdxml/
+# edit autowire.toml: point filelists at your RTL
+bun autowire.js analysis run         # hdxml → RtlIndex (.autowire/hdxml)
+bun autowire.js connect run          # render connect HTML, write .sv
+bun autowire.js connect web          # inspect the live page (read-only)
+```
+
+Runnable examples: [`demo/soc`](demo/soc) (picorv32 SoC, Wishbone fabric, VCS + Verilator smoke) and [`demo/hbm`](demo/hbm) (16-channel fabric, UVM regression).
+
+## Non-goals
+
+- Connectivity as XML or one file per level as SoT (the RtlIndex is a read-only index, not the connectivity SoT)
+- Connect-specific MCP tools (`outline`, `apply`, `rewrite`, …)
+- The browser writing the workspace directly
+- Two wiring semantics (web and CLI share one `aw.js` and one golden)
+- Copying a connectivity prompt into every chip project (edit `help/agent.txt` instead)
+- Wiring details inside `autowire.toml` (its `[connect]` section is only a list of HTML paths)
+
+## License
+
+[GPL-3.0](LICENSE)
