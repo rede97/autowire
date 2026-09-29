@@ -6,7 +6,12 @@ import { mkdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { Command } from "commander";
 import { LeafDb } from "../rtl/leaf.ts";
-import { loadRtlIndex, type RtlIndex } from "../rtl/rtlindex.ts";
+import {
+	type IndexFormat,
+	indexFileName,
+	loadRtlIndex,
+	type RtlIndex,
+} from "../rtl/rtlindex.ts";
 import { renderSummary, renderTrees } from "../rtl/tree.ts";
 import { defaultToml, hdxmlArgs, type WorkspaceConfig } from "../workspace.js";
 import { INIT_ATTACH_NOTE } from "./help.ts";
@@ -242,7 +247,7 @@ export function registerAnalysis(program: Command): void {
 				opts: { depth?: number; workspace?: string },
 			) => {
 				const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
-				const index = await readIndex(cfg.indexDir);
+				const index = await readIndex(cfg.indexDir, cfg.indexFormat);
 				for (const line of renderSummary(index)) console.log(line);
 				for (const line of renderTrees(index, {
 					top: module,
@@ -291,16 +296,24 @@ export function registerAnalysis(program: Command): void {
 				}
 				const kind = (kinds[0] ?? "module") as SearchKind;
 				const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
-				const index = await readIndex(cfg.indexDir);
+				const index = await readIndex(cfg.indexDir, cfg.indexFormat);
 				const match = matcher(pattern, opts.regex ?? false);
-				const hits = await searchIndex(cfg.indexDir, index, kind, match);
+				const hits = await searchIndex(
+					cfg.indexDir,
+					cfg.indexFormat,
+					index,
+					kind,
+					match,
+				);
 				if (hits.length === 0) {
 					console.error(`no ${kind} matches ${pattern}`);
 					process.exit(1);
 				}
 				for (const hit of hits) {
 					const at = hit.line ? `:${hit.line}` : "";
-					console.log(`${hit.name}\txml=${hit.xml}\trtl=${hit.rtl}${at}`);
+					console.log(
+						`${hit.name}\tindex=${hit.indexFile}\trtl=${hit.rtl}${at}`,
+					);
 				}
 			},
 		);
@@ -315,20 +328,20 @@ export function registerAnalysis(program: Command): void {
 		)
 		.action(async (module: string, opts: { workspace?: string }) => {
 			const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
-			const index = await readIndex(cfg.indexDir);
+			const index = await readIndex(cfg.indexDir, cfg.indexFormat);
 			if (!index.moduleSource.has(module)) {
 				console.error(
 					`module not in RtlIndex: ${module} (analysis search --module for a fuzzy name)`,
 				);
 				process.exit(1);
 			}
-			const leaf = await new LeafDb(cfg.indexDir).get(module);
+			const leaf = await new LeafDb(cfg.indexDir, cfg.indexFormat).get(module);
 			if (!leaf) {
 				console.error(`module ${module} has no file XML in ${cfg.indexDir}`);
 				process.exit(1);
 			}
 			console.log(`module ${module}`);
-			console.log(`xml ${index.moduleIndex.get(module) ?? ""}`);
+			console.log(`index ${index.moduleIndex.get(module) ?? ""}`);
 			console.log(`rtl ${index.moduleSource.get(module) ?? ""}`);
 			console.log("params");
 			if (leaf.params.length === 0) console.log("  (none)");
@@ -346,19 +359,22 @@ export function registerAnalysis(program: Command): void {
 		});
 }
 
-async function readIndex(dir: string): Promise<RtlIndex> {
-	if (!existsSync(join(dir, "index.xml"))) {
+async function readIndex(
+	dir: string,
+	format: IndexFormat = "xml",
+): Promise<RtlIndex> {
+	if (!existsSync(join(dir, indexFileName(format)))) {
 		console.error(`no RtlIndex at ${dir} (run: autowire analysis run)`);
 		process.exit(1);
 	}
-	return loadRtlIndex(dir);
+	return loadRtlIndex(dir, format);
 }
 
 type SearchKind = "module" | "port" | "package" | "enum";
 
 interface SearchHit {
 	name: string;
-	xml: string;
+	indexFile: string;
 	rtl: string;
 	line?: number;
 	/** RTL declaration to scan. Port and enum hits scan the owner, not the member. */
@@ -382,6 +398,7 @@ function matcher(pattern: string, regex: boolean): (name: string) => boolean {
 
 async function searchIndex(
 	dir: string,
+	format: IndexFormat,
 	index: RtlIndex,
 	kind: SearchKind,
 	match: (name: string) => boolean,
@@ -391,7 +408,7 @@ async function searchIndex(
 			.filter(([name]) => match(name))
 			.map(([name, rtl]) => ({
 				name,
-				xml: index.moduleIndex.get(name) ?? "",
+				indexFile: index.moduleIndex.get(name) ?? "",
 				rtl,
 			}));
 		const lines = await declarationLines(hits.map((h) => [h.name, h.rtl]));
@@ -402,7 +419,7 @@ async function searchIndex(
 			.filter(([name]) => match(name))
 			.map(([name, rtl]) => ({
 				name,
-				xml: index.packageIndex.get(name) ?? "",
+				indexFile: index.packageIndex.get(name) ?? "",
 				rtl,
 			}));
 		const lines = await declarationLines(
@@ -411,7 +428,7 @@ async function searchIndex(
 		);
 		return hits.map((h) => ({ ...h, line: lines.get(`${h.rtl}\0${h.name}`) }));
 	}
-	const db = new LeafDb(dir);
+	const db = new LeafDb(dir, format);
 	const hits: SearchHit[] = [];
 	const names =
 		kind === "enum"
@@ -420,7 +437,7 @@ async function searchIndex(
 	for (const owner of names) {
 		const leaf = await db.get(owner);
 		if (!leaf) continue;
-		const xml =
+		const indexFile =
 			(kind === "enum" ? index.packageIndex : index.moduleIndex).get(owner) ??
 			"";
 		const rtl =
@@ -431,7 +448,8 @@ async function searchIndex(
 				? leaf.params.filter((p) => p.kind === "localparam").map((p) => p.name)
 				: leaf.ports.map((p) => p.name);
 		for (const name of items) {
-			if (match(name)) hits.push({ name: `${owner}.${name}`, xml, rtl, owner });
+			if (match(name))
+				hits.push({ name: `${owner}.${name}`, indexFile, rtl, owner });
 		}
 	}
 	const lines = await declarationLines(
@@ -440,7 +458,7 @@ async function searchIndex(
 	);
 	return hits.map((h) => ({
 		name: h.name,
-		xml: h.xml,
+		indexFile: h.indexFile,
 		rtl: h.rtl,
 		line: lines.get(`${h.rtl}\0${h.owner}`),
 	}));

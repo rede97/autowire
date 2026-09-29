@@ -508,3 +508,125 @@ fn packages_and_imports_exported_and_cached() {
     let second = std::fs::read_to_string(c.find_out("m.sv.xml").unwrap()).unwrap();
     assert_eq!(first, second, "cached reload must round-trip imports");
 }
+
+// ---------------------------------------------------------------------------
+// JSON 镜像（--format json；XML 仍是缓存 SoT）
+
+/// 剥离 index.json 的 generated 时间戳（等价性比较基准）
+fn strip_json_generated(body: &str) -> String {
+    let Some((head, rest)) = body.split_once("\"generated\": ") else {
+        return body.to_string();
+    };
+    let end = rest.find(',').unwrap();
+    format!("{head}\"generated\": X{}", &rest[end..])
+}
+
+#[test]
+fn json_mirror_export_parity_determinism_and_gc() {
+    let c = Case::new("json");
+    let pkg = c.write("pkg.sv", "package p;\n  typedef int T;\nendpackage\n");
+    let top = c.write(
+        "top.sv",
+        "module top import p::T; #(parameter int W = 8, parameter type U = logic) \
+         (input logic [W-1:0] a, output logic o, inout wire b, ref logic r);\n\
+         sub #(.W(W)) u0(.a(a));\nendmodule\n",
+    );
+    let sub = c.write("sub.sv", "module sub #(parameter int W = 1) (input logic [W-1:0] a);\nendmodule\n");
+    let bad = c.write("bad.sv", "module bad(\n");
+
+    let args = |out: &Path| {
+        vec![
+            "-s".into(),
+            s(&pkg),
+            s(&top),
+            s(&sub),
+            s(&bad),
+            "--format".into(),
+            "json".into(),
+            "-o".into(),
+            s(out),
+        ]
+    };
+    let (code, text) = c.run(&args(&c.out()));
+    assert_ne!(code, 0, "parse-error file → exit 1: {text}");
+
+    // index.json + 每文件 .json 存在且 XML 同写（XML 是缓存载体）
+    let idx = c.out().join("index.json");
+    assert!(idx.exists(), "index.json written");
+    assert!(c.out().join("index.xml").exists(), "XML always written");
+    let top_json = c.find_out("top.sv.json").expect("top.sv.json written");
+    let bad_json = c.find_out("bad.sv.json").expect("bad.sv.json written");
+
+    let idx_body = std::fs::read_to_string(&idx).unwrap();
+    // 结构健全性（无 serde 依赖的最小校验）
+    assert!(idx_body.starts_with("{\n") && idx_body.ends_with("}\n"), "well-formed envelope");
+    for key in ["\"files\"", "\"defines\"", "\"definesFp\"", "\"incdirsFp\"", "\"modules\"", "\"packages\"", "\"hierarchy\""] {
+        assert!(idx_body.contains(key), "index.json has {key}");
+    }
+    // index 指向 .json twins；模块清单与 XML 一致
+    assert!(idx_body.contains("top.sv.json"), "file index points at .json twin");
+    let idx_xml = std::fs::read_to_string(c.out().join("index.xml")).unwrap();
+    for m in ["top", "sub"] {
+        assert!(idx_xml.contains(&format!("name=\"{m}\"")), "index.xml has {m}");
+        assert!(idx_body.contains(&format!("\"name\": \"{m}\"")), "index.json has {m}");
+    }
+    assert!(idx_body.contains("\"name\": \"p\""), "package listed");
+
+    // 内容 parity spot-check：模块/参数/端口/import 值与 XML 一致
+    let top_body = std::fs::read_to_string(&top_json).unwrap();
+    for frag in [
+        "\"name\": \"top\"",
+        "\"kind\": \"module\"",
+        "\"interfaceSig\"",
+        "\"name\": \"W\"",
+        "\"dataType\": \"int\"",
+        "\"default\": \"8\"",
+        "\"name\": \"a\"",
+        "\"dir\": \"input\"",
+        "\"packed\": \"[W-1:0]\"",
+        "\"dir\": \"inout\"",
+        "\"dir\": \"ref\"",
+        "\"package\": \"p\"",
+        "\"symbol\": \"T\"",
+        "\"via\": \"decl\"",
+        "\"target\": \"sub\"",
+        "\"value\": \"W\"",
+    ] {
+        assert!(top_body.contains(frag), "top.sv.json contains {frag}:\n{top_body}");
+    }
+    let top_xml = std::fs::read_to_string(c.find_out("top.sv.xml").unwrap()).unwrap();
+    for frag in ["dataType=\"int\"", "packed=\"[W-1:0]\"", "default=\"8\""] {
+        assert!(top_xml.contains(frag), "top.sv.xml contains {frag}");
+    }
+    // span 一致性：同模块在两种格式中的 span 相同
+    let jspan = top_body.split("\"span\": \"").nth(1).unwrap().split('"').next().unwrap().to_string();
+    assert!(top_xml.contains(&format!("span=\"{jspan}\"")), "span parity: {jspan}");
+
+    // 错误文件：errors 数组 + 无缓存元数据（srcHash 缺失）
+    let bad_body = std::fs::read_to_string(&bad_json).unwrap();
+    assert!(bad_body.contains("\"errors\""), "error file has errors array:\n{bad_body}");
+    assert!(!bad_body.contains("\"srcHash\""), "no cache meta for error file");
+    assert!(bad_body.contains("\"status\": \"error\"") || idx_body.contains("\"status\": \"error\""));
+
+    // 确定性：两次导出字节一致（剥离 generated）
+    let out2 = c.dir.join("out2");
+    c.run(&args(&out2));
+    let i1 = strip_json_generated(&std::fs::read_to_string(&idx).unwrap());
+    let i2 = strip_json_generated(&std::fs::read_to_string(out2.join("index.json")).unwrap());
+    assert_eq!(i1, i2, "index.json byte-deterministic modulo generated");
+    let x1 = std::fs::read_to_string(&top_json).unwrap();
+    let x2 = std::fs::read_to_string(
+        walk(&out2).into_iter().find(|p| p.to_string_lossy().ends_with("top.sv.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(x1, x2, "per-file JSON byte-identical");
+
+    // GC：bad 移出输入集 → 其 .json 被回收
+    let (code, text) = c.run(&[
+        "-s".into(), s(&pkg), s(&top), s(&sub),
+        "--format".into(), "json".into(), "-o".into(), s(&c.out()),
+    ]);
+    assert_eq!(code, 0, "{text}");
+    assert!(c.find_out("bad.sv.json").is_none(), "stale .json collected");
+    assert!(c.find_out("bad.sv.xml").is_none(), "stale .xml collected too");
+}

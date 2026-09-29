@@ -18,6 +18,10 @@ define_headers = ["rtl/soc_macros.svh"]
 [analysis.defines]
 
 # RtlIndex: fixed at .autowire/hdxml (created by init; deletable cache)
+# JSON consumption: hdxml also writes index.json + per-file .json; readers use those
+[analysis.index]
+format = "json"
+
 
 [workspace.dump]
 connect_dir = "rtl/gen/connect"

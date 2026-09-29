@@ -3,6 +3,7 @@
 
 pub mod cache;
 pub mod extract;
+pub mod json;
 pub mod strip;
 pub mod xml;
 

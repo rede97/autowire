@@ -37,7 +37,7 @@ export function registerConnect(program: Command): void {
 			) => {
 				const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
 				const selected = selectUnits(cfg, unit);
-				const leafDb = new LeafDb(cfg.indexDir);
+				const leafDb = new LeafDb(cfg.indexDir, cfg.indexFormat);
 				const session = new Map<string, RenderedUnit>();
 				const unitMods = await unitModNames(cfg, allUnits(cfg));
 				for (const u of selected) {
@@ -69,7 +69,7 @@ export function registerConnect(program: Command): void {
 		.action(async (unit: string | undefined, opts: { workspace?: string }) => {
 			const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
 			const units = selectUnits(cfg, unit, false);
-			const leafDb = new LeafDb(cfg.indexDir);
+			const leafDb = new LeafDb(cfg.indexDir, cfg.indexFormat);
 			const all = allUnits(cfg);
 			const unitMods = await unitModNames(cfg, all);
 			let failed = false;
@@ -110,7 +110,7 @@ export function registerConnect(program: Command): void {
 		.action(async (unit: string | undefined, opts: { workspace?: string }) => {
 			const cfg = await requireWorkspace(opts.workspace ?? process.cwd());
 			const selected = selectUnits(cfg, unit);
-			const leafDb = new LeafDb(cfg.indexDir);
+			const leafDb = new LeafDb(cfg.indexDir, cfg.indexFormat);
 			const session = new Map<string, RenderedUnit>();
 			const unitMods = await unitModNames(cfg, allUnits(cfg));
 			let failed = false;

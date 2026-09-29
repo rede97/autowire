@@ -31,6 +31,10 @@ export interface WorkspaceConfig {
 	defineHeaders: string[];
 	/** RtlIndex output dir ([analysis.index] dir, default .autowire/hdxml) */
 	indexDir: string;
+	/** RtlIndex read/write format ([analysis.index] format, default "xml").
+	 *  "json" makes hdxml also write index.json + per-file .json and consumers
+	 *  read those (JSON.parse is ~2x faster than Bun.XML on the same data). */
+	indexFormat: "xml" | "json";
 	/**
 	 * Legacy single dump sink ([dump] dir). Prefer connectDir/simDir/pluginsDir.
 	 * When set without connect_dir, connect dumps still land here (compat).
@@ -279,6 +283,14 @@ export async function loadWorkspace(
 		throw new Error(
 			`autowire.toml: [analysis.index] dir is fixed at .autowire/hdxml (got ${JSON.stringify(index.dir)}); remove the key`,
 		);
+	if (
+		index.format !== undefined &&
+		index.format !== "xml" &&
+		index.format !== "json"
+	)
+		throw new Error(
+			`autowire.toml: [analysis.index] format must be "xml" or "json" (got ${JSON.stringify(index.format)})`,
+		);
 	if (doc.dump !== undefined)
 		throw new Error("autowire.toml: [dump] is moved under [workspace.dump]");
 	if (doc.style !== undefined)
@@ -443,6 +455,7 @@ export async function loadWorkspace(
 			"analysis.define_headers",
 		).map(rel),
 		indexDir: rel(".autowire/hdxml"),
+		indexFormat: index.format === "json" ? "json" : "xml",
 		dumpDir: rel(legacyDir ?? connectDirRel),
 		connectDir: rel(connectDirRel),
 		simDir: rel(simDirRel),
@@ -551,6 +564,7 @@ export function hdxmlArgs(cfg: WorkspaceConfig): string[] {
 	);
 	group("--keep-raw", [...cfg.keepRaw].sort());
 	args.push("--output-dir", cfg.indexDir);
+	if (cfg.indexFormat === "json") args.push("--format", "json");
 	return args;
 }
 

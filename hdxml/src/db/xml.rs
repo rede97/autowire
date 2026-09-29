@@ -418,11 +418,11 @@ impl<'a> XmlExport<'a> {
     }
 }
 
-fn span_text(span: [usize; 2]) -> String {
+pub(crate) fn span_text(span: [usize; 2]) -> String {
     format!("{}:{}", span[0], span[1])
 }
 
-fn push_deps(attrs: &mut Vec<(&'static str, String)>, e: &ExprText) {
+pub(crate) fn push_deps(attrs: &mut Vec<(&'static str, String)>, e: &ExprText) {
     if !e.deps.is_empty() {
         attrs.push(("deps", restore_raw_macros(&e.deps.join(","))));
     }
@@ -432,7 +432,7 @@ fn push_deps(attrs: &mut Vec<(&'static str, String)>, e: &ExprText) {
 /// 哨兵只是预处理期的占位手段（标识符形，不扰 span/`ifdef`），不属于对外格式；
 /// XML 承诺类型/维度/缺省表达式是可直接落 SV 的原文（docs/hdxml/rtlindex-xml.md §4.2）。
 /// 已还原文本二次调用为 no-op——增量缓存回读自产 XML 时依赖这个幂等性。
-fn restore_raw_macros(text: &str) -> String {
+pub(crate) fn restore_raw_macros(text: &str) -> String {
     if !text.contains(super::MACRO_RAW_PREFIX) {
         return text.to_string();
     }
@@ -447,7 +447,7 @@ fn restore_raw_macros(text: &str) -> String {
     out
 }
 
-fn dims_text(dims: &[ExprText]) -> String {
+pub(crate) fn dims_text(dims: &[ExprText]) -> String {
     dims.iter()
         .map(|d| format!("[{}]", restore_raw_macros(&d.text)))
         .collect::<Vec<_>>()
@@ -484,7 +484,7 @@ fn port_attrs(p: &PortInfo) -> Vec<(&'static str, String)> {
 /// CWD 之外的路径剥掉根/父级分量，保留可辨识层级；按构造唯一，无需哈希。
 /// 分隔符**恒为 `/`**（契约 §4.3 `index`）：产物与 GC 比对在 Linux/macOS/Windows 上
 /// 一致，消费方 join 时两种分隔符都能用，无需按平台归一化。
-fn file_xml_rel(path: &Path, cwd: &Path) -> String {
+pub(crate) fn file_xml_rel(path: &Path, cwd: &Path) -> String {
     let rel: PathBuf = match path.strip_prefix(cwd) {
         Ok(r) => r.to_path_buf(),
         Err(_) => path
@@ -526,7 +526,7 @@ fn read_old_manifest(out_dir: &Path) -> Vec<String> {
     out
 }
 
-fn file_mtime(path: &Path) -> u64 {
+pub(crate) fn file_mtime(path: &Path) -> u64 {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()

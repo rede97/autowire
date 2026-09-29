@@ -12,7 +12,7 @@ import awBundle from "../../web/aw.js" with { type: "text" };
 import pageJs from "../../web/page.js" with { type: "text" };
 import { connectDir, topoUnits } from "../core/connect.ts";
 import { LeafDb } from "../rtl/leaf.ts";
-import { loadRtlIndex } from "../rtl/rtlindex.ts";
+import { indexFileName, loadRtlIndex } from "../rtl/rtlindex.ts";
 import { allUnits, findUnit, type WorkspaceConfig } from "../workspace.ts";
 
 const UNIT_ID = /^[A-Za-z0-9_-]+$/;
@@ -83,7 +83,7 @@ async function handleApi(
 		});
 	}
 	if (req.method === "GET" && path === "/api/rtlindex") {
-		if (!existsSync(join(ws.indexDir, "index.xml"))) {
+		if (!existsSync(join(ws.indexDir, indexFileName(ws.indexFormat)))) {
 			return json(
 				{
 					error: `no RtlIndex at ${ws.indexDir} (run autowire analysis first)`,
@@ -91,7 +91,7 @@ async function handleApi(
 				404,
 			);
 		}
-		const index = await loadRtlIndex(ws.indexDir);
+		const index = await loadRtlIndex(ws.indexDir, ws.indexFormat);
 		return json({
 			tool: index.tool,
 			generated: index.generated,
@@ -103,7 +103,7 @@ async function handleApi(
 		});
 	}
 	if (req.method === "GET" && path === "/api/modules") {
-		const index = await loadRtlIndex(ws.indexDir);
+		const index = await loadRtlIndex(ws.indexDir, ws.indexFormat);
 		return json({
 			modules: [...index.moduleSource.entries()].map(([name, source]) => ({
 				name,
@@ -414,7 +414,7 @@ export async function startWeb(
 	port: number,
 	defaultUnit: string | null,
 ): Promise<string> {
-	const leafDb = new LeafDb(ws.indexDir);
+	const leafDb = new LeafDb(ws.indexDir, ws.indexFormat);
 	const state: WebState = {
 		ws,
 		leafDb,

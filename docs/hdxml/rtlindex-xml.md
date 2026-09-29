@@ -279,3 +279,57 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 1. `rtlIndex/@format` 版本号。
 2. 把 `source` 约束成相对项目根。当前是生产者收集时的路径，消费侧展示长路径。
 3. 给 `<error>` 加 `stage`（`preprocess` / `parse` / `duplicate`）属性。
+
+## 8. JSON 镜像（`--format json`）
+
+面向消费方的 JSON 变体。XML 仍是缓存与契约的 SoT；JSON 由同一份数据、同一套排序规则
+（§1 固定排序）生成，因此同样字节确定（`generated` 除外）。文件名：`index.xml` →
+`index.json`，每文件 `ip/x.v.xml` → `ip/x.v.json`（同相对路径换后缀）；GC 语义同 §2
+（旧 `index.json` 产物集 − 本次产物集 = 删除，空目录修剪，`index.json` 最后写入）。
+
+编码：2 空格缩进、文件尾换行；数字/布尔不加引号；字符串仅转义 `"`、`\` 与 < 0x20
+控制字符（`\uXXXX`），`/` 不转义。XML 属性值里的字符引用（`&amp;` 等）在 JSON 中为原字符。
+
+`index.json`（键序镜像 `index.xml` 根属性与各节的次序；`index` 指向 `.json` 孪生文件）：
+
+```json
+{
+  "tool": "hdxml 0.4.0",
+  "generated": 1790705962,
+  "files": [{"source", "index", "status", "modules", "mtime"}],
+  "defines": [{"name", "value"} 或 {"name", "raw": true}],
+  "definesFp": "...", "incdirsFp": "...",
+  "modules": [{"name", "index"}],
+  "packages": [{"name", "index"}],
+  "hierarchy": [{"module", "blackbox": false, "cycle": false, "children": [...]}]
+}
+```
+
+- `files`/`modules`/`packages` 数组次序与 XML 相同；空组仍发射空数组 `[]`。
+- `hierarchy` 节点镜像 §4.6：黑盒/环节点为叶（对应标记为 `true`，无 `children`）；
+  普通节点显式带 `"blackbox": false, "cycle": false` 与 `children`（可为空数组）。
+
+每文件 `*.json`（镜像 §5 `<fileIndex>`）：
+
+```json
+{
+  "source": "...", "mtime": 0,
+  "srcSize": 1231, "srcHash": "...",            // 无缓存元数据时省略（同 §5.1 规则）
+  "includes": [{"path", "hash", "size", "mtime"}],  // 为空时省略
+  "modules": [{
+    "name", "kind", "span": "291:1231", "contentHash", "normHash",
+    "interfaceSig": "...",                         // package 省略（同 §5.2）
+    "imports": [{"package", "symbol", "via", "span"}],
+    "params": [{"name", "kind", "dataType"?, "default"?, "deps"?, "span"}],
+    "ports": [{"name", "dir", "dataType"?, "interface"?, "modport"?, "packed"?, "unpacked"?, "default"?, "span"}],
+    "instances": [{"name", "target", "span", "params": [{"name"?, "value"}]}]
+  }],
+  "errors": [{"message", "offset"?, "line"?, "column"?}]
+}
+```
+
+- 端口方向：XML 以标签名承载，JSON 收进 `"dir"`（`input`/`output`/`inout`/`ref`/`interface`，
+  方向未知退回 `"port"`）；`ports` 保持声明序。
+- 可选键（`dataType`/`default`/`deps`/`packed`/…）仅在存在/非空时出现，规则与 §5.4/§5.5 一致；
+  全空的模块组键（`imports`/`params`/`ports`/`instances`）省略。
+- 保原文宏还原（§4.2 `` `NAME ``）在与 XML 相同的位置应用。

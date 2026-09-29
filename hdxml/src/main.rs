@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use hdxml::args::{AnalysisArgs, Cli};
-use hdxml::db::{self, xml::XmlExport};
+use hdxml::db::{self, json::JsonExport, xml::XmlExport};
 use hdxml::filelist::FilesSet;
 use hdxml::progress::ProgressCenter;
 
@@ -111,6 +111,16 @@ fn cmd_analysis(a: &AnalysisArgs, pool: &rayon::ThreadPool, pc: &ProgressCenter)
             stats.files,
             stats.modules
         ));
+        // JSON 镜像（--format json）：XML 之上再写 index.json + 每文件 *.json
+        if a.format == hdxml::args::OutFormat::Json {
+            let stats = JsonExport::new(&db, &files, &define_pairs, &stamps, &incdirs).write(dir)?;
+            pc.println(&format!(
+                "JSON written: {} (files {}, modules {})",
+                dir.display(),
+                stats.files,
+                stats.modules
+            ));
+        }
     }
 
     // 机器可读摘要（--summary；key: value 行，供脚本/CI 采集）

@@ -69,7 +69,18 @@ function toHier(v: unknown): HierNode | null {
 	};
 }
 
-export async function loadRtlIndex(dir: string): Promise<RtlIndex> {
+export type IndexFormat = "xml" | "json";
+
+/** Index file name for the format (json mode reads the hdxml JSON mirror). */
+export function indexFileName(format: IndexFormat): string {
+	return format === "json" ? "index.json" : "index.xml";
+}
+
+export async function loadRtlIndex(
+	dir: string,
+	format: IndexFormat = "xml",
+): Promise<RtlIndex> {
+	if (format === "json") return loadRtlIndexJson(dir);
 	const text = await readFile(join(dir, "index.xml"), "utf8");
 	const doc: unknown = Bun.XML.parse(text);
 	const root = isObj(doc) ? doc.rtlIndex : undefined;
@@ -131,6 +142,83 @@ export async function loadRtlIndex(dir: string): Promise<RtlIndex> {
 		tool: str(root["@tool"]) || "unknown",
 		generated: Number(root["@generated"] ?? 0),
 		definesFp: str(root["@definesFp"]),
+		defines,
+		files,
+		moduleSource,
+		moduleIndex,
+		packageSource,
+		packageIndex,
+		tops,
+		errorFiles: files.filter((f) => f.status === "error"),
+	};
+}
+
+/** JSON mirror reader (hdxml --format json). Same RtlIndex, no XML parse.
+ *  Arrays are real arrays in JSON — no arr() unwrapping needed. */
+async function loadRtlIndexJson(dir: string): Promise<RtlIndex> {
+	const text = await readFile(join(dir, "index.json"), "utf8");
+	const doc: unknown = JSON.parse(text);
+	if (!isObj(doc)) {
+		throw new Error(
+			`${dir}/index.json is not a valid RtlIndex (not an object)`,
+		);
+	}
+	const defines: Record<string, string | null> = {};
+	for (const d of arr(doc.defines)) {
+		if (!isObj(d)) continue;
+		defines[str(d.name)] = d.raw === true ? null : str(d.value);
+	}
+	const files: FileEntry[] = [];
+	for (const f of arr(doc.files)) {
+		if (!isObj(f)) continue;
+		files.push({
+			source: str(f.source),
+			index: str(f.index),
+			status: f.status === "error" ? "error" : "ok",
+			modules: Number(f.modules ?? 0),
+			mtime: Number(f.mtime ?? 0),
+		});
+	}
+	const sourceByIndex = new Map(files.map((f) => [f.index, f.source]));
+	const moduleSource = new Map<string, string>();
+	const moduleIndex = new Map<string, string>();
+	for (const m of arr(doc.modules)) {
+		if (!isObj(m)) continue;
+		const index = str(m.index);
+		const src = sourceByIndex.get(index);
+		if (src) moduleSource.set(str(m.name), src);
+		if (index) moduleIndex.set(str(m.name), index);
+	}
+	const packageSource = new Map<string, string>();
+	const packageIndex = new Map<string, string>();
+	for (const pkg of arr(doc.packages)) {
+		if (!isObj(pkg)) continue;
+		const index = str(pkg.index);
+		const src = sourceByIndex.get(index);
+		if (src) packageSource.set(str(pkg.name), src);
+		if (index) packageIndex.set(str(pkg.name), index);
+	}
+	const hierNode = (v: unknown): HierNode | null => {
+		if (!isObj(v)) return null;
+		const module = str(v.module);
+		if (module.length === 0) return null;
+		return {
+			module,
+			blackbox: v.blackbox === true,
+			cycle: v.cycle === true,
+			children: arr(v.children)
+				.map(hierNode)
+				.filter((n): n is HierNode => n !== null),
+		};
+	};
+	const tops = arr(doc.hierarchy)
+		.map(hierNode)
+		.filter((n): n is HierNode => n !== null);
+
+	return {
+		tool: str(doc.tool) || "unknown",
+		generated: Number(doc.generated ?? 0),
+		definesFp: str(doc.definesFp),
 		defines,
 		files,
 		moduleSource,

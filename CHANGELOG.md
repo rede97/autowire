@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.2.9] - 2026-09-30
+
+- RtlIndex JSON 消费模式：`[analysis.index] format = "json"` 时 hdxml（0.4.0，`--format json`）在 XML 之外再写 `index.json` + 每文件 `.json` 镜像；connect/web/`analysis deps|search|info` 直接 JSON.parse（真实索引上约为 Bun.XML 的 2.1 倍吞吐）。XML 始终写出，仍是增量缓存本体与文档化契约；增量逻辑不变。
+- JSON 端口带显式 `dir` 字段（声明序）；消费侧按 PORT_DIRS 重排，与 XML 路径生成结果逐字节一致。
+
 ## [2.2.8] - 2026-09-30
 
 - src/core 性能优化（docs/dev/core-perf.md）：`unitModNames` 全量 HTML 解析从每 unit 一次降为每次命令一次（O(U²)→O(U)）；session dep facts 去掉 connectXml 序列化往返；elaborate 按 target 模块缓存 facts/params/ports/端口序；端口维度 rewriteDims 不再重复扫描；writeRender 端口排序改 Map 查表。生成物与优化前逐字节一致。

@@ -32,11 +32,12 @@
 hdxml 无子命令——唯一功能即层级分析，参数平铺顶层：
 
 ```
-hdxml [输入组] [--tree] [-o DIR] [--refresh] [--summary FILE] [--fail-on-undef] [--sub-bars]
+hdxml [输入组] [--tree] [-o DIR] [--format xml|json] [--refresh] [--summary FILE] [--fail-on-undef] [--sub-bars]
 ```
 
 | 选项 | 说明 |
 | `-o, --output-dir DIR` | 导出 RtlIndex XML 目录：每源文件一个 XML（镜像源码相对路径命名；模块参数/端口/实例 + 文件级错误，含行列定位）+ `index.xml`（文件清单、模块→XML 映射、顶层 DAG 层级树）。失效产物按旧 manifest 自动 GC（`module-info.md` §5）。**有 `-o` 即增量**：未变更文件直接由上次产物重建声明、不再解析（mtime+size 快路径、blake3 内容哈希仲裁；`` `include `` 闭包逐成员校验；`tool`/`definesFp`/`incdirsFp` 全局闸门任一变化整库重解析；含错误或宏计算 include 的文件不可缓存每次重解析，详见 `module-info.md` §5）。不给 `-o` 则纯终端分析，零写盘 |
+| `--format xml\|json` | 导出格式（默认 `xml`）。`json` = XML 之外再写 JSON 镜像（`index.json` + 每文件 `*.json`，字段同名、顺序与 XML 一致，见 `rtlindex-xml.md` §8）；**XML 始终写出**——它是增量缓存的载体 |
 | `--refresh` | 无视缓存强制全量重解析并重写缓存（hdxml 行为变更而版本号未升的开发场景用） |
 | `--summary FILE` | 写机器可读运行摘要（`key: value` 行：`files`/`modules`/`tops`/`blackbox`/`error_files`，有 `-o` 时追加 `reused`/`parsed`）；供脚本/CI 采集，即使存在错误文件（退出码 1）也会落盘 |
 | `--tree` | 终端打印依赖树（termtree；黑盒标 `[blackbox]`） |

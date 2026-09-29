@@ -5,7 +5,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { loadRtlIndex } from "./rtlindex.ts";
+import { type IndexFormat, loadRtlIndex } from "./rtlindex.ts";
 
 export interface LeafParam {
 	name: string;
@@ -52,11 +52,14 @@ export class LeafDb {
 	private cache = new Map<string, LeafModule | null>();
 	private ready = false;
 
-	constructor(private dir: string) {}
+	constructor(
+		private dir: string,
+		private format: IndexFormat = "xml",
+	) {}
 
 	private async ensure(): Promise<void> {
 		if (this.ready) return;
-		const index = await loadRtlIndex(this.dir);
+		const index = await loadRtlIndex(this.dir, this.format);
 		// moduleSource maps module → source path; the file XML mirrors it (§2).
 		for (const f of index.files) {
 			for (const [name, src] of index.moduleSource) {
@@ -100,13 +103,22 @@ export class LeafDb {
 			return null;
 		}
 		const text = await readFile(path, "utf8");
-		const doc: unknown = Bun.XML.parse(text);
-		const root = isObj(doc) ? doc.fileIndex : undefined;
 		let found: LeafModule | null = null;
-		for (const m of arr(isObj(root) ? root.module : undefined)) {
-			if (!isObj(m) || str(m["@name"]) !== name) continue;
-			found = parseLeafModule(name, m);
-			break;
+		if (this.format === "json") {
+			const doc: unknown = JSON.parse(text);
+			for (const m of arr(isObj(doc) ? doc.modules : undefined)) {
+				if (!isObj(m) || str(m.name) !== name) continue;
+				found = parseLeafModuleJson(name, m);
+				break;
+			}
+		} else {
+			const doc: unknown = Bun.XML.parse(text);
+			const root = isObj(doc) ? doc.fileIndex : undefined;
+			for (const m of arr(isObj(root) ? root.module : undefined)) {
+				if (!isObj(m) || str(m["@name"]) !== name) continue;
+				found = parseLeafModule(name, m);
+				break;
+			}
 		}
 		this.cache.set(name, found);
 		return found;
@@ -148,6 +160,56 @@ function parseLeafModule(name: string, m: Record<string, unknown>): LeafModule {
 		imports.push({
 			package: str(i["@package"]),
 			symbol: str(i["@symbol"]) || "*",
+		});
+	}
+	return { name, params, ports, imports };
+}
+
+/** JSON per-file reader (hdxml --format json). Ports carry an explicit dir
+ *  field in declaration order; regroup into the same PORT_DIRS order the XML
+ *  reader produces so generated output is byte-identical across formats. */
+function parseLeafModuleJson(
+	name: string,
+	m: Record<string, unknown>,
+): LeafModule {
+	const params: LeafParam[] = [];
+	for (const p of arr(m.params)) {
+		if (!isObj(p)) continue;
+		params.push({
+			name: str(p.name),
+			kind: str(p.kind) || "parameter",
+			dataType: str(p.dataType),
+			defaultText: str(p.default) || null,
+		});
+	}
+	const byDir = new Map<string, Record<string, unknown>[]>();
+	for (const p of arr(m.ports)) {
+		if (!isObj(p)) continue;
+		const dir = str(p.dir) || "port";
+		const list = byDir.get(dir) ?? [];
+		list.push(p);
+		byDir.set(dir, list);
+	}
+	const ports: LeafPort[] = [];
+	for (const dir of PORT_DIRS) {
+		for (const p of byDir.get(dir) ?? []) {
+			ports.push({
+				name: str(p.name),
+				dir,
+				dataType: str(p.dataType),
+				packed: str(p.packed) || null,
+				unpacked: str(p.unpacked) || null,
+				interface: str(p.interface) || null,
+				modport: str(p.modport) || null,
+			});
+		}
+	}
+	const imports: { package: string; symbol: string }[] = [];
+	for (const i of arr(m.imports)) {
+		if (!isObj(i)) continue;
+		imports.push({
+			package: str(i.package),
+			symbol: str(i.symbol) || "*",
 		});
 	}
 	return { name, params, ports, imports };
