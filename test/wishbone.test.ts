@@ -15,10 +15,17 @@ describe("wishbone pack", () => {
 		const names = wb.worksheets.map((s) => s.name);
 		expect(names).toContain("regfile_smoke");
 		expect(names).toContain("bus_map_soc_wb");
-		expect(names).not.toContain("MAP_soc_wb");
-		expect(names).not.toContain("sd_sha");
+		expect(names.indexOf("bus_map_soc_wb")).toBeLessThan(
+			names.indexOf("regfile_smoke"),
+		);
+		expect(wb.getWorksheet("regfile_smoke")?.properties.tabColor).toEqual({
+			argb: "FFC6E0B4",
+			theme: 0,
+		});
 		const map = wb.getWorksheet("bus_map_soc_wb");
 		if (!map) throw new Error("Address Map sheet missing");
+		expect(map.properties.tabColor).toEqual({ argb: "FFBDD7EE", theme: 0 });
+		expect(names).not.toContain("sd_sha");
 		// Two header rows: address column plus one 3-column group per level.
 		expect(map.getCell(1, 1).value).toBe("Abs Addr");
 		expect(map.getCell(1, 4).value).toBe("Tag / Broadcast");

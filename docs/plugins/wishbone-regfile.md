@@ -562,7 +562,9 @@ export=<file>                                         # 默认名 bus_regfiles.x
 
 ### 6.3 Address Map 表布局（每棵总线树一张 sheet）
 
-工作簿名默认 `bus_regfiles.xlsx`。总线树 sheet **重排**为「缩进块」形状，替换原先的 8 列平表（`Address/Window/Size/Leaf/Bits/Broadcast/Shadow/Description`）：
+工作簿名默认 `bus_regfiles.xlsx`。**页签顺序**：每棵总线树的 `bus_map_` sheet 在前，各 regfile 的 `regfile_` sheet 在后。**页签底色**（sheet tab color，不是单元格填充）：regfile sheet 浅绿 `FFC6E0B4`，bus map sheet 浅蓝 `FFBDD7EE`。
+
+总线树 sheet **重排**为「缩进块」形状，替换原先的 8 列平表（`Address/Window/Size/Leaf/Bits/Broadcast/Shadow/Description`）：
 
 - **A 列**：绝对地址（`0x` + `addr_width` 对齐宽度），跨该项目的 2 行合并。
 - 每个项目占 **2 行 × 3 列**，四周画一圈 **外边框**（细线 `FF9AA0A6`；块内格线仍是浅灰 hair）；深度 `d` 的项目从 `B + 3d` 列开始（子级 decoder 元素再右移 3 列，逐级递推）。

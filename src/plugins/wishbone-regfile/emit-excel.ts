@@ -179,7 +179,9 @@ function appendCellBlock(
 	}
 }
 
-/** Excel field-sheet tab: "regfile_" + sheet, clamped to Excel's 31-char limit. */
+/** Sheet-tab colors, distinct from the cell fills inside a sheet. */
+const TAB_REGFILE = { argb: "FFC6E0B4", theme: 0 };
+const TAB_BUS_MAP = { argb: "FFBDD7EE", theme: 0 };
 function regfileSheetName(def: LaidRegfile["def"]): string {
 	return `regfile_${effectiveSheet(def)}`.slice(0, 31);
 }
@@ -187,6 +189,7 @@ function regfileSheetName(def: LaidRegfile["def"]): string {
 function addSheet(wb: ExcelJS.Workbook, laid: LaidRegfile): void {
 	const name = regfileSheetName(laid.def);
 	const ws = wb.addWorksheet(name);
+	ws.properties.tabColor = TAB_REGFILE;
 	ws.addRow([...HEADER]);
 	// Header cells are 2-line labels; leave the row height unset so Excel
 	// auto-fits the wrapped text (a fixed height clips wider-wrapping columns).
@@ -428,6 +431,7 @@ function addMapHeader(ws: ExcelJS.Worksheet, groups: number): void {
 
 function addBusMapSheet(wb: ExcelJS.Workbook, def: BusDef): void {
 	const ws = wb.addWorksheet(busMapSheetName(def));
+	ws.properties.tabColor = TAB_BUS_MAP;
 	addMapHeader(ws, 1 + busDepth(def, new Set([def.name])));
 	const width = def.addr_width;
 	const rootTop = addMapBlock(
@@ -507,8 +511,8 @@ export function buildRegfileWorkbook(
 			);
 		}
 	}
-	for (const laid of tables) addSheet(wb, laid);
 	for (const bus of busRoots(buses)) addBusMapSheet(wb, bus);
+	for (const laid of tables) addSheet(wb, laid);
 	applyMonoFont(wb);
 	return wb;
 }
