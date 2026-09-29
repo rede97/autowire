@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.2.5] - 2026-09-29
+
+- Wishbone 总线封装模块改名 `<bus>_system` → `<bus>_bus_cfg`（生成物；引用封装名的 `aw-inst`、filelist、脚本都要同步改）。demo/soc、demo/hbm 已跟随。
+- 生成的 Wishbone Excel（`bus_regfiles.xlsx`）不再进 git：`*.xlsx` 加入 gitignore，工作簿留在磁盘上，改 SoT 后由 `plugin wishbone run` 重写。
+
 ## [2.2.4] - 2026-09-30
 
 - hdxml 提取端口 packed / unpacked 维度时去掉紧随其后的 `//` 行注释。2.2.2 只清了 localparam 默认值，sdspi 的 `// }}}` 折叠标记仍从 `[DW-1:0]` 进生成的端口宽度注释。
