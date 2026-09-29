@@ -101,6 +101,9 @@ plugins_dir = "gen/plugins"
 #                      多维：packed 原样（`[3:0][7:0]`）；unpacked 用 `;` 分隔接在 packed 之后
 #                      （`wire [7:0] a [0:15]` → `[7:0];[0:15]`；1bit 元素数组 `wire f [0:3]` → `;[0:3]`）。
 #   signal_align     ——内部信号声明：nettype / 宽度分列对齐，信号名左对齐。
+#   net_type         ——未写 nettype 的端口 / 内部信号的类型关键字：logic（默认）/ wire /
+#                      auto（继承子模块声明——叶子口取 RtlIndex dataType 关键字，跨单元取
+#                      connect 快照的 nettype；reg 归一为 logic；继承不到回落 logic）。
 # 折叠名大小写（render 层）：
 #   localparam_upper = true ——生成的 Mod__Inst__Param 名整体大写（传统习惯；默认 false）。
 

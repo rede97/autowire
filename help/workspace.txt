@@ -39,6 +39,11 @@ Shared by deps / web / cli for the RTL universe:
                             ([7:0];[0:15], ;[0:3]); 1-bit ports show none (default false)
   [workspace.style] signal_align      internal signal columns: nettype / packed, names left-aligned (default false)
   [workspace.style] localparam_upper  uppercase generated Mod__Inst__Param names (default false)
+  [workspace.style] net_type          keyword for ports/signals left untyped: logic (default)
+                            | wire | auto (inherit the submodule declaration: leaf dataType
+                            logic/reg → logic, no keyword (implicit net) → wire; cross-unit the
+                            dep snapshot nettype; nothing to inherit → logic; mixed inherited
+                            keywords on one net are an error)
 
 Dirs
   .autowire/          generated temp (deletable; never hand-authored)

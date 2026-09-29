@@ -12,16 +12,16 @@ module sd_sha_ch (
 	input  logic        i_wb_we,
 	output logic [31:0] o_wb_dat,
 	output logic        o_wb_ack,
-	input  wire         rst,
-	output wire         o_cs_n,
-	output wire         o_sck,
-	output wire         o_mosi,
-	input  wire         i_miso,
-	input  wire         i_cd,
-	output wire         o_sd_irq,
-	input  wire         rst_ni,
-	output wire         o_dma_irq,
-	output wire         o_sha_irq
+	input  logic        rst,
+	output logic        o_cs_n,
+	output logic        o_sck,
+	output logic        o_mosi,
+	input  logic        i_miso,
+	input  logic        i_cd,
+	output logic        o_sd_irq,
+	input  logic        rst_ni,
+	output logic        o_dma_irq,
+	output logic        o_sha_irq
 );
 	logic [11:0] eng_o_wb_adr;
 	logic [31:0] eng_o_wb_dat;
@@ -59,10 +59,10 @@ module sd_sha_ch (
 	logic        dma_i_wb_we;
 	logic        rg_soft_reset;
 	logic        p_rg_done_clear;
-	wire  [31:0] axis_tdata;
-	wire         axis_tvalid;
-	wire         axis_tready;
-	wire         axis_tlast;
+	logic [31:0] axis_tdata;
+	logic        axis_tvalid;
+	logic        axis_tready;
+	logic        axis_tlast;
 
 	sd_sha_bus_cfg u_interconnect (
 		.clk              (clk             ), // i

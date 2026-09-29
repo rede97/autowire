@@ -12,6 +12,7 @@ export interface PortFacts {
 	name: string;
 	dir: string;
 	dataType?: string | null;
+	nettype?: string | null;
 	packed?: string | null;
 	unpacked?: string | null;
 	interface?: string | null;
@@ -34,8 +35,15 @@ export interface ModFacts {
 
 /** Engine inputs: leaf tables (RtlIndex), elaborated wrapper facts, unit deps. */
 export interface EngineCtx {
-	/** [style] from autowire.toml; paramInline defaults to true. */
-	style?: { paramInline?: boolean; localparamUpper?: boolean };
+	/** [style] from autowire.toml; paramInline defaults to true. netType
+	 *  ([workspace.style] net_type) fills ports/signals the author left
+	 *  untyped: "logic" (default) / "wire" / "auto" (inherit from the
+	 *  submodule declaration; legacy reg maps to logic). */
+	style?: {
+		paramInline?: boolean;
+		localparamUpper?: boolean;
+		netType?: "logic" | "wire" | "auto";
+	};
 	unitId?: string;
 	/** connect = DE aw-mod page; sim = DV aw-tb-mod page. */
 	unitKind?: "connect" | "sim";
@@ -1539,6 +1547,10 @@ function elaborateMod(
 	// Full-net (no part-select) output drivers per net; >1 is a short circuit.
 	// Part-select drivers may share a net (disjointness not verified).
 	const fullDrivers = new Map<string, number>();
+
+	// [workspace.style] net_type: "auto" inherits the submodule keyword in
+	// resolveDims; "logic" / "wire" fill untyped nets at materialization below.
+	const netMode = ctx.style?.netType ?? "logic";
 	for (const ri of renderInsts) {
 		const targetFacts =
 			ctx.leaf?.(ri.mod) ??
@@ -1601,7 +1613,15 @@ function elaborateMod(
 			const dirs = netDirs.get(net0) ?? new Set();
 			dirs.add(pf?.dir ?? "input");
 			netDirs.set(net0, dirs);
-			const dims = resolveDims(c, pf, ri, name, res, `${where} port "${port}"`);
+			const dims = resolveDims(
+				c,
+				pf,
+				ri,
+				name,
+				res,
+				`${where} port "${port}"`,
+				netMode === "auto",
+			);
 			mergeSignal(signals, net0, dims, dimVals, res, `${where} port "${port}"`);
 		}
 	}
@@ -1658,11 +1678,20 @@ function elaborateMod(
 				auto: true,
 			});
 		}
-	} else {
-		// TB default nettype is logic when unset.
-		for (const sig of signals.values()) {
-			if (sig.nettype == null) sig.nettype = "logic";
-		}
+	}
+
+	// net_type materialization: fill the keyword the author left unset. logic
+	// (default) / wire write that keyword; auto keeps what resolveDims
+	// inherited from the submodule and falls back to logic. Explicit nettype=
+	// is never overwritten; reg already mapped to logic at inheritance.
+	const netFill = netMode === "auto" ? "logic" : netMode;
+	for (const sig of signals.values()) {
+		if (sig.nettype == null) sig.nettype = netFill;
+	}
+	for (const p of portsOut) {
+		if (p.nettype != null) continue;
+		p.nettype =
+			netMode === "auto" ? (signals.get(p.name)?.nettype ?? "logic") : netFill;
 	}
 
 	// Collision guard: uniquified localparams vs params/signals (connect-rules §7.5).
@@ -1869,6 +1898,7 @@ function resolveDims(
 	modName: string,
 	res: CheckResult,
 	where: string,
+	inheritNetType: boolean,
 ): { packed: string | null; unpacked: string | null; nettype: string | null } {
 	const explicitPacked = c.packed && c.packed !== "auto" ? c.packed : null;
 	const explicitWidth = c.width && c.width !== "auto" ? c.width : null;
@@ -1879,8 +1909,15 @@ function resolveDims(
 	if (auto && portFact) {
 		packed = portFact.packed ?? null;
 		unpacked = portFact.unpacked ?? null;
-		const dt = /^(logic|wire)\b/.exec(portFact.dataType ?? "");
-		if (!nettype && dt) nettype = dt[1] ?? null;
+		if (inheritNetType && !nettype) {
+			// net_type = "auto": inherit the submodule port's declaration. A dep
+			// snapshot carries the materialized nettype. For a leaf, hdxml
+			// dataType: logic/reg → logic (the generated SV never emits reg);
+			// no keyword (bare dims or empty) is a Verilog net → wire.
+			const dt = portFact.dataType ?? "";
+			nettype =
+				portFact.nettype ?? (/^(logic|reg)\b/.test(dt) ? "logic" : "wire");
+		}
 	}
 	// §7.4: overridden leaf params become Mod__Inst__Param in copied dims.
 	const uniqName = (p: {
@@ -1910,8 +1947,7 @@ function resolveDims(
 	return {
 		packed: canonicalDims(packed),
 		unpacked: canonicalDims(unpacked),
-		// Keep explicit "wire" (TB defaults unset→logic; connect printer treats
-		// null and "wire" the same).
+		// Explicit or inherited keyword; null is filled by net_type above.
 		nettype,
 	};
 }

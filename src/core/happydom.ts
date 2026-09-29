@@ -97,6 +97,7 @@ function sessionFacts(dep: string, snapshot: string): WrapperFacts[] {
 			dir: p.dir,
 			packed: p.packed,
 			unpacked: p.unpacked,
+			nettype: p.nettype,
 		})),
 		imports: m.imports,
 	}));

@@ -1042,7 +1042,8 @@ function xmlFactsOf(doc) {
         name: p.getAttribute("name"),
         dir,
         packed: p.getAttribute("packed"),
-        unpacked: p.getAttribute("unpacked")
+        unpacked: p.getAttribute("unpacked"),
+        nettype: p.getAttribute("nettype")
       });
     }
     const params = [];
@@ -1072,7 +1073,8 @@ function renderFactsOf(rootEl) {
         name: p.getAttribute("name"),
         dir: p.getAttribute("dir") ?? "input",
         packed: p.getAttribute("packed"),
-        unpacked: p.getAttribute("unpacked")
+        unpacked: p.getAttribute("unpacked"),
+        nettype: p.getAttribute("nettype")
       });
     }
     const params = [];

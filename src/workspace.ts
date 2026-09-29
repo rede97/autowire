@@ -74,6 +74,11 @@ export interface WorkspaceConfig {
 	/** [style] localparam_upper: uppercase the generated Mod__Inst__Param
 	 *  folding names (traditional RTL style); default false. */
 	styleLocalparamUpper: boolean;
+
+	/** [style] net_type: keyword for ports/signals the author left untyped.
+	 *  "logic" (default) / "wire" / "auto" (inherit the submodule declaration;
+	 *  legacy reg maps to logic). */
+	styleNetType: "logic" | "wire" | "auto";
 	/** Named connect units ([connect.<id>] html + deps); DAG validated at load */
 	connectUnits: ConnectUnit[];
 	/** DV sim units ([sim.<id>] html + deps); may depend on connect ids */
@@ -322,6 +327,16 @@ export async function loadWorkspace(
 		throw new Error(
 			`autowire.toml: [workspace.style] inst_port_dir_format must be "full" or "short"`,
 		);
+	const netType = style.net_type;
+	if (
+		netType !== undefined &&
+		netType !== "logic" &&
+		netType !== "wire" &&
+		netType !== "auto"
+	)
+		throw new Error(
+			`autowire.toml: [workspace.style] net_type must be "logic", "wire", or "auto" (default "logic")`,
+		);
 	const hdxmlBinRaw = analysis.hdxml_bin;
 	if (
 		hdxmlBinRaw !== undefined &&
@@ -442,6 +457,7 @@ export async function loadWorkspace(
 		styleInstPortWidth: style.inst_port_width === true,
 		styleSignalAlign: style.signal_align === true,
 		styleLocalparamUpper: style.localparam_upper === true,
+		styleNetType: netType === "wire" || netType === "auto" ? netType : "logic",
 		connectUnits,
 		simUnits,
 		wishboneSources,
@@ -591,6 +607,9 @@ plugins_dir = "rtl/gen/plugins"
 
 [workspace.style]
 # Code style like demo/soc: aligned declarations/inst ports/params/signals
+# Ports/signals left untyped: logic (default) | wire | auto (inherit from the
+# submodule declaration; legacy reg maps to logic)
+net_type = "logic"
 port_align = true
 param_align = true
 inst_port_align = true

@@ -1029,6 +1029,7 @@ function elaborateMod(mod, ctx, res, path, sibRenders) {
   const signals = new Map;
   const netDirs = new Map;
   const fullDrivers = new Map;
+  const netMode = ctx.style?.netType ?? "logic";
   for (const ri of renderInsts) {
     const targetFacts = ctx.leaf?.(ri.mod) ?? childRenders.get(ri.mod) ?? ctx.wrapper?.(ri.mod) ?? null;
     const portFacts = new Map((targetFacts?.ports ?? []).map((p) => [p.name, p]));
@@ -1062,7 +1063,7 @@ function elaborateMod(mod, ctx, res, path, sibRenders) {
       const dirs = netDirs.get(net0) ?? new Set;
       dirs.add(pf?.dir ?? "input");
       netDirs.set(net0, dirs);
-      const dims = resolveDims(c, pf, ri, name, res, `${where} port "${port}"`);
+      const dims = resolveDims(c, pf, ri, name, res, `${where} port "${port}"`, netMode === "auto");
       mergeSignal(signals, net0, dims, dimVals, res, `${where} port "${port}"`);
     }
   }
@@ -1118,11 +1119,16 @@ function elaborateMod(mod, ctx, res, path, sibRenders) {
         auto: true
       });
     }
-  } else {
-    for (const sig of signals.values()) {
-      if (sig.nettype == null)
-        sig.nettype = "logic";
-    }
+  }
+  const netFill = netMode === "auto" ? "logic" : netMode;
+  for (const sig of signals.values()) {
+    if (sig.nettype == null)
+      sig.nettype = netFill;
+  }
+  for (const p of portsOut) {
+    if (p.nettype != null)
+      continue;
+    p.nettype = netMode === "auto" ? signals.get(p.name)?.nettype ?? "logic" : netFill;
   }
   const taken = new Set([
     ...scope.params.keys(),
@@ -1273,7 +1279,7 @@ function ruleToConnect(r, port, vars, res, where, rewrittenNet, scope) {
     isConst: kind === "const"
   };
 }
-function resolveDims(c, portFact, ri, modName, res, where) {
+function resolveDims(c, portFact, ri, modName, res, where, inheritNetType) {
   const explicitPacked = c.packed && c.packed !== "auto" ? c.packed : null;
   const explicitWidth = c.width && c.width !== "auto" ? c.width : null;
   let packed = explicitPacked ?? explicitWidth ?? null;
@@ -1283,9 +1289,10 @@ function resolveDims(c, portFact, ri, modName, res, where) {
   if (auto && portFact) {
     packed = portFact.packed ?? null;
     unpacked = portFact.unpacked ?? null;
-    const dt = /^(logic|wire)\b/.exec(portFact.dataType ?? "");
-    if (!nettype && dt)
-      nettype = dt[1] ?? null;
+    if (inheritNetType && !nettype) {
+      const dt = portFact.dataType ?? "";
+      nettype = portFact.nettype ?? (/^(logic|reg)\b/.test(dt) ? "logic" : "wire");
+    }
   }
   const uniqName = (p) => p.uniq;
   if (packed)

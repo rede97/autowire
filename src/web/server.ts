@@ -62,6 +62,7 @@ async function handleApi(
 				// engine param folding
 				paramInline: ws.styleParamInline,
 				localparamUpper: ws.styleLocalparamUpper,
+				netType: ws.styleNetType,
 				// printSv style (same text as connect run)
 				portAlign: ws.stylePortAlign,
 				paramAlign: ws.styleParamAlign,

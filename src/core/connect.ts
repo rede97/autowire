@@ -19,13 +19,18 @@ export interface WrapperFacts {
 		dir: string;
 		packed: string | null;
 		unpacked: string | null;
+		nettype: string | null;
 	}[];
 	imports: { package: string; symbol: string }[];
 }
 
 export interface EngineCtx {
 	/** [style] from autowire.toml (param_inline, localparam_upper). */
-	style: { paramInline: boolean; localparamUpper: boolean };
+	style: {
+		paramInline: boolean;
+		localparamUpper: boolean;
+		netType: "logic" | "wire" | "auto";
+	};
 	unitId: string;
 	unitKind: "connect" | "sim";
 	unitDeps: string[];
@@ -96,6 +101,7 @@ export async function loadDepWrappers(
 			dir: p.dir,
 			packed: p.packed,
 			unpacked: p.unpacked,
+			nettype: p.nettype,
 		})),
 		imports: m.imports,
 	}));
@@ -138,6 +144,7 @@ export async function buildEngineCtx(
 		style: {
 			paramInline: ws.styleParamInline,
 			localparamUpper: ws.styleLocalparamUpper,
+			netType: ws.styleNetType,
 		},
 		unitId: unit.id,
 		unitKind: unit.kind,

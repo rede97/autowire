@@ -4,7 +4,8 @@
 
 ## [2.2.6] - 2026-09-29
 
-- 发布产物增加 `hdxml-windows-x64.zip`：`windows-2022` 上显式 `--target x86_64-pc-windows-msvc` 的 `hdxml.exe`。
+- 发布产物增加 `hdxml-windows-x64.zip`：`windows-2022` 上 MSVC 目标的 `hdxml.exe`。
+- `[workspace.style] net_type`：`logic`（默认）/ `wire` / `auto`。作者面没写 `nettype` 的端口和内部信号按它填关键字；`auto` 从子模块声明继承（叶子口按 RtlIndex `dataType`：`logic`/`reg` → `logic`，无关键字即隐式线网 → `wire`；connect 例化 connect 取子单元快照的 `nettype`；两端继承不一致报 nettype conflict），继承不到回落 `logic`。生成的 `.sv` 不再出现 `reg`。显式 `nettype=` 永远优先。原默认（端口回落 wire、信号回落 logic、默认带继承）改为默认 logic、不做继承，demo 生成物随之重生成。
 
 ## [2.2.5] - 2026-09-29
 

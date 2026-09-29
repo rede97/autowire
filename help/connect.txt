@@ -22,7 +22,7 @@ aw-connect@to: net (default) | const | open — const/open must declare type=; d
   do not list identity ports one-by-one; open/rename to avoid short circuits;
   aw-param@expr / aw-template@inst_name: variable expressions only (no $1).
 aw-connect / aw-rewrite: optional packed (default auto from port; multi-dim RtlIndex form),
-  unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; default wire);
+  unpacked, width (1-D packed shorthand), part (bit select), nettype (wire|logic; unset follows [workspace.style] net_type, default logic);
   to is net name only — no [] suffix. See docs/connect/html.md §3.5.1–3.5.2.
   A localparam default is the expression only; a following // comment is not part of it.
   If a width still contains a comment, set packed= explicitly.

@@ -2,42 +2,42 @@
 module soc_top (
 	input  logic        rst_ni,
 	input  logic        clk,
-	output wire         trap,
-	input  wire         jtag_tck,
-	input  wire         jtag_tms,
-	input  wire         jtag_tdi,
-	input  wire         jtag_trst_n,
-	output wire         jtag_tdo,
-	input  wire         flash_io0_di,
-	input  wire         flash_io1_di,
-	input  wire         flash_io2_di,
-	input  wire         flash_io3_di,
-	output wire         flash_csb,
-	output wire         flash_clk,
-	output wire         flash_io0_oe,
-	output wire         flash_io1_oe,
-	output wire         flash_io2_oe,
-	output wire         flash_io3_oe,
-	output wire         flash_io0_do,
-	output wire         flash_io1_do,
-	output wire         flash_io2_do,
-	output wire         flash_io3_do,
-	input  wire         ser_rx,
-	output wire         ser_tx,
-	output wire         test_valid,
-	output wire  [31:0] test_data,
-	output wire         sd0_cs_n,
-	output wire         sd0_sck,
-	output wire         sd0_mosi,
-	input  wire         sd0_miso,
-	input  wire         sd0_cd,
-	output wire         sd1_cs_n,
-	output wire         sd1_sck,
-	output wire         sd1_mosi,
-	input  wire         sd1_miso,
-	input  wire         sd1_cd
+	output logic        trap,
+	input  logic        jtag_tck,
+	input  logic        jtag_tms,
+	input  logic        jtag_tdi,
+	input  logic        jtag_trst_n,
+	output logic        jtag_tdo,
+	input  logic        flash_io0_di,
+	input  logic        flash_io1_di,
+	input  logic        flash_io2_di,
+	input  logic        flash_io3_di,
+	output logic        flash_csb,
+	output logic        flash_clk,
+	output logic        flash_io0_oe,
+	output logic        flash_io1_oe,
+	output logic        flash_io2_oe,
+	output logic        flash_io3_oe,
+	output logic        flash_io0_do,
+	output logic        flash_io1_do,
+	output logic        flash_io2_do,
+	output logic        flash_io3_do,
+	input  logic        ser_rx,
+	output logic        ser_tx,
+	output logic        test_valid,
+	output logic [31:0] test_data,
+	output logic        sd0_cs_n,
+	output logic        sd0_sck,
+	output logic        sd0_mosi,
+	input  logic        sd0_miso,
+	input  logic        sd0_cd,
+	output logic        sd1_cs_n,
+	output logic        sd1_sck,
+	output logic        sd1_mosi,
+	input  logic        sd1_miso,
+	input  logic        sd1_cd
 );
-	wire         rst;
+	logic        rst;
 	logic [31:0] cpu_o_wb_adr;
 	logic [31:0] cpu_o_wb_dat;
 	logic        cpu_o_wb_we;
@@ -46,7 +46,7 @@ module soc_top (
 	logic        cpu_o_wb_cyc;
 	logic [31:0] cpu_i_wb_dat;
 	logic        cpu_i_wb_ack;
-	wire  [31:0] irq_bus;
+	logic [31:0] irq_bus;
 	logic        rg_rb_grant_en;
 	logic [1:0]  rg_bank_sel;
 	logic [7:0]  rg_cfg;
@@ -128,7 +128,7 @@ module soc_top (
 	logic [3:0]  ext_data_wstrb;
 	logic        ext_data_rden;
 	logic        ext_data_rst;
-	wire  [5:0]  irq_srcs;
+	logic [5:0]  irq_srcs;
 
 	soc_reset u_rst (
 		.clk               (clk               ), // i

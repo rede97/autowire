@@ -48,6 +48,7 @@ interface WrapperFacts {
 		dir: string;
 		packed: string | null;
 		unpacked: string | null;
+		nettype: string | null;
 	}[];
 	imports: { package: string | null; symbol: string }[];
 }
@@ -704,7 +705,11 @@ const unitOf = (id: string): UnitMeta | undefined =>
 
 interface UnitsMeta {
 	workspace: string;
-	style?: { paramInline?: boolean; localparamUpper?: boolean } & PrintStyle;
+	style?: {
+		paramInline?: boolean;
+		localparamUpper?: boolean;
+		netType?: "logic" | "wire" | "auto";
+	} & PrintStyle;
 	units: UnitMeta[];
 	defaultUnit: string | null;
 }
@@ -868,6 +873,7 @@ function xmlFactsOf(doc: Document): WrapperFacts[] {
 				dir,
 				packed: p.getAttribute("packed"),
 				unpacked: p.getAttribute("unpacked"),
+				nettype: p.getAttribute("nettype"),
 			});
 		}
 		const params: WrapperFacts["params"] = [];
@@ -901,6 +907,7 @@ function renderFactsOf(rootEl: ParentNode): WrapperFacts[] {
 				dir: p.getAttribute("dir") ?? "input",
 				packed: p.getAttribute("packed"),
 				unpacked: p.getAttribute("unpacked"),
+				nettype: p.getAttribute("nettype"),
 			});
 		}
 		const params: WrapperFacts["params"] = [];

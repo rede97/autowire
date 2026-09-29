@@ -1025,3 +1025,200 @@ describe("aw-tb-mod / raw / includes", () => {
 		expect(tb.querySelector("aw-render aw-port")).toBeNull();
 	});
 });
+
+describe("style net_type", () => {
+	const wireLeaf = leafOf([
+		{ name: "d_i", dir: "input", packed: "[3:0]", dataType: "wire" },
+		{ name: "q_o", dir: "output", packed: "[3:0]", dataType: "wire" },
+	]);
+	const regLeaf = leafOf([
+		{ name: "d_i", dir: "input", packed: "[3:0]", dataType: "reg" },
+		{ name: "q_o", dir: "output", packed: "[3:0]", dataType: "reg" },
+	]);
+	const untypedLeaf = leafOf([
+		{ name: "d_i", dir: "input", packed: "[3:0]", dataType: "" },
+		{ name: "q_o", dir: "output", packed: "[3:0]", dataType: "" },
+	]);
+
+	// u1 drives the internal net mid; u2 drives the exported net q_out.
+	const MOD = `<aw-mod name="top"><aw-content>
+		<aw-ports><aw-port name="p_in" dir="input"></aw-port></aw-ports>
+		<aw-insts>
+			<aw-inst id="u1" mod="w"><aw-template>
+				<aw-connect port="d_i" to="p_in"></aw-connect>
+				<aw-connect port="q_o" to="mid"></aw-connect>
+			</aw-template></aw-inst>
+			<aw-inst id="u2" mod="r"><aw-template>
+				<aw-connect port="d_i" to="mid"></aw-connect>
+				<aw-connect port="q_o" to="q_out"></aw-connect>
+			</aw-template></aw-inst>
+		</aw-insts>
+	</aw-content></aw-mod>`;
+
+	const sig = (doc: Document, name: string) =>
+		mustQuery(doc, `aw-render aw-signal[name="${name}"]`).getAttribute(
+			"nettype",
+		);
+	const port = (doc: Document, name: string) =>
+		mustQuery(doc, `aw-render aw-port[name="${name}"]`).getAttribute("nettype");
+
+	test("default logic: no inheritance, untyped nets and ports become logic", () => {
+		const doc = docOf(MOD);
+		const res = elaborate(doc, ctxWith({ w: wireLeaf, r: wireLeaf }));
+		expect(res.errors).toEqual([]);
+		expect(sig(doc, "mid")).toBe("logic");
+		expect(port(doc, "q_out")).toBe("logic");
+		expect(port(doc, "p_in")).toBe("logic");
+	});
+
+	test('net_type "wire": untyped nets and ports become wire', () => {
+		const doc = docOf(MOD);
+		const res = elaborate(
+			doc,
+			ctxWith({ w: wireLeaf, r: wireLeaf }, { style: { netType: "wire" } }),
+		);
+		expect(res.errors).toEqual([]);
+		expect(sig(doc, "mid")).toBe("wire");
+		expect(port(doc, "q_out")).toBe("wire");
+		expect(port(doc, "p_in")).toBe("wire");
+	});
+
+	test('net_type "auto": inherit the leaf dataType keyword', () => {
+		const doc = docOf(MOD);
+		const res = elaborate(
+			doc,
+			ctxWith({ w: wireLeaf, r: wireLeaf }, { style: { netType: "auto" } }),
+		);
+		expect(res.errors).toEqual([]);
+		expect(sig(doc, "mid")).toBe("wire"); // u1.q_o declared wire
+		expect(port(doc, "p_in")).toBe("wire"); // u1.d_i declared wire
+		expect(port(doc, "q_out")).toBe("wire");
+	});
+
+	test('net_type "auto": reg inherits as logic; mixed inheritance conflicts', () => {
+		const regMod = docOf(`<aw-mod name="top"><aw-content><aw-insts>
+			<aw-inst id="u" mod="r"><aw-template>
+				<aw-connect port="d_i" to="p_in"></aw-connect>
+				<aw-connect port="q_o" to="q_out"></aw-connect>
+			</aw-template></aw-inst>
+		</aw-insts></aw-content></aw-mod>`);
+		const res = elaborate(
+			regMod,
+			ctxWith({ r: regLeaf }, { style: { netType: "auto" } }),
+		);
+		expect(res.errors).toEqual([]);
+		expect(port(regMod, "q_out")).toBe("logic"); // declared reg → logic
+
+		// mid connects a wire leaf output and a reg (→logic) leaf input:
+		// two inherited keywords disagree, the author must pick explicitly.
+		const mixed = elaborate(
+			docOf(MOD),
+			ctxWith({ w: wireLeaf, r: regLeaf }, { style: { netType: "auto" } }),
+		);
+		expect(mixed.errors.some((e) => e.includes("nettype conflict"))).toBe(true);
+	});
+
+	test('net_type "auto": untyped leaf ports are Verilog nets (wire)', () => {
+		const doc = docOf(MOD);
+		const res = elaborate(
+			doc,
+			ctxWith(
+				{ w: untypedLeaf, r: untypedLeaf },
+				{ style: { netType: "auto" } },
+			),
+		);
+		expect(res.errors).toEqual([]);
+		expect(sig(doc, "mid")).toBe("wire");
+		expect(port(doc, "q_out")).toBe("wire");
+	});
+
+	test('net_type "auto": a port with no net behind it falls back to logic', () => {
+		const doc = docOf(
+			`<aw-mod name="top"><aw-content>
+				<aw-ports><aw-port name="p_solo" dir="input"></aw-port></aw-ports>
+				<aw-insts>
+					<aw-inst id="u" mod="w"><aw-template>
+						<aw-connect port="d_i" to="p_in"></aw-connect>
+						<aw-connect port="q_o" to="q_out"></aw-connect>
+					</aw-template></aw-inst>
+				</aw-insts>
+			</aw-content></aw-mod>`,
+		);
+		const res = elaborate(
+			doc,
+			ctxWith({ w: wireLeaf }, { style: { netType: "auto" } }),
+		);
+		expect(res.errors).toEqual([]);
+		expect(port(doc, "p_solo")).toBe("logic");
+		expect(port(doc, "q_out")).toBe("wire");
+	});
+
+	test("explicit nettype wins over the style; conflicts still error", () => {
+		const doc = docOf(
+			`<aw-mod name="top"><aw-content><aw-insts>
+				<aw-inst id="u1" mod="w"><aw-template>
+					<aw-connect port="q_o" to="mid" nettype="wire"></aw-connect>
+				</aw-template></aw-inst>
+				<aw-inst id="u2" mod="w"><aw-template>
+					<aw-connect port="d_i" to="mid"></aw-connect>
+					<aw-connect port="q_o" to="q_out"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ w: wireLeaf })); // default logic
+		expect(res.errors).toEqual([]);
+		expect(sig(doc, "mid")).toBe("wire"); // explicit; the style must not override
+		expect(port(doc, "q_out")).toBe("logic");
+
+		const conflict = docOf(
+			`<aw-mod name="top"><aw-content><aw-insts>
+				<aw-inst id="u1" mod="w"><aw-template>
+					<aw-connect port="q_o" to="mid" nettype="wire"></aw-connect>
+				</aw-template></aw-inst>
+				<aw-inst id="u2" mod="w"><aw-template>
+					<aw-connect port="d_i" to="mid" nettype="logic"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const bad = elaborate(conflict, ctxWith({ w: wireLeaf }));
+		expect(bad.errors.some((e) => e.includes("nettype conflict"))).toBe(true);
+	});
+
+	test('net_type "auto": cross-unit inheritance from the dep snapshot nettype', () => {
+		const MOD_CHILD = `<aw-mod name="top"><aw-content><aw-insts>
+			<aw-inst id="u" mod="child"><aw-template>
+				<aw-connect port="q_o" to="q_out"></aw-connect>
+			</aw-template></aw-inst>
+		</aw-insts></aw-content></aw-mod>`;
+		const wrapper = (m: string) =>
+			m === "child"
+				? {
+						name: "child",
+						params: [],
+						ports: [
+							{
+								name: "q_o",
+								dir: "output",
+								packed: "[3:0]",
+								unpacked: null,
+								nettype: "wire",
+							},
+						],
+						imports: [],
+					}
+				: null;
+		const autoDoc = docOf(MOD_CHILD);
+		const auto = elaborate(
+			autoDoc,
+			ctxWith({}, { style: { netType: "auto" }, wrapper }),
+		);
+		expect(auto.errors).toEqual([]);
+		expect(port(autoDoc, "q_out")).toBe("wire");
+
+		// logic mode does not inherit, not even from a snapshot.
+		const logicDoc = docOf(MOD_CHILD);
+		const fixed = elaborate(logicDoc, ctxWith({}, { wrapper }));
+		expect(fixed.errors).toEqual([]);
+		expect(port(logicDoc, "q_out")).toBe("logic");
+	});
+});

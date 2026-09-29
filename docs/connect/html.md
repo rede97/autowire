@@ -252,9 +252,9 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 
 ### 3.5.2 `nettype`（`wire` / `logic`）
 
-- dump 默认 **`wire`**（互联网）。  
-- `packed="auto"` 时 **可以**继承叶子端口 `dataType` 若为 `wire`/`logic`；否则用默认。  
-- 可选 `nettype="wire|logic"` 覆盖；**不是**必填。  
+- 可选 `nettype="wire|logic"` 覆盖；**不是**必填。显式值永远优先。  
+- 不写（none）时按 `[workspace.style] net_type`：`logic`（默认）/ `wire` 直接填该关键字；`auto` 继承子模块声明——叶子口按 RtlIndex `dataType`（`logic`/`reg` → `logic`；无关键字即 Verilog 隐式线网 → `wire`），connect 例化 connect（跨单元）取子单元快照里的 `nettype`；一条网两端继承到不同关键字报 nettype conflict，需显式标注；继承不到回落 `logic`。  
+- 生成的 `.sv` 只出现 `wire` / `logic`，不出现 `reg`。  
 - 自定义类型 / interface 不靠本属性（见 `aw-port` / RtlIndex `dataType`）。
 
 ### 3.5.3 常量连线（`to` = 常量表达式）
