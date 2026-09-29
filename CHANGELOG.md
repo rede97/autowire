@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.2.4] - 2026-09-30
+
+- hdxml 提取端口 packed / unpacked 维度时去掉紧随其后的 `//` 行注释。2.2.2 只清了 localparam 默认值，sdspi 的 `// }}}` 折叠标记仍从 `[DW-1:0]` 进生成的端口宽度注释。
+- `docs/skills/autowire-soc-integration.md` 与 `docs/workspace/toml.md` 把分析 filelist 的三条规则拆开写：只放手写 RTL 和 `plugins_dir` 叶子；wrapper 与 TB 放仿真 filelist；叶子缺失时 `analysis run` 点名 `plugin wishbone run`。
+
 ## [2.2.3] - 2026-09-29
 
 - `help agent`、`help dont`、仓库 `AGENTS.md`（`init` 抄成 `AGENTS-AUTOWIRE.md`）和 init 的 toml 注释写明：`rtl/gen/`、`fw/gen/`、`dv/ral/`、`.autowire/` 是生成物，不是源。生成结果不对就改 SoT 再跑写出命令，不要改这些文件。
