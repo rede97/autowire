@@ -226,7 +226,7 @@ function fieldSidebandComment(
 }
 
 export function collectPorts(laid: LaidRegfile): PortDecl[] {
-	const { def, cells, shadows, tga_width } = laid;
+	const { def, cells, shadows } = laid;
 	const t = def.name;
 	const wb = (stem: string) => wbPortName(t, stem);
 	const ports: PortDecl[] = [

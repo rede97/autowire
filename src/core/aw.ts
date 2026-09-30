@@ -651,7 +651,8 @@ function rewriteDims(
 	const once = (t: string): string =>
 		t.replace(DIM_SYMBOL, (sym: string) => {
 			if (sym.startsWith("`")) return sym; // raw macro: never evaluated
-			if (instParams.has(sym)) return uniqName(instParams.get(sym)!);
+			const inst = instParams.get(sym);
+			if (inst) return uniqName(inst);
 			const leaf = leafParams.get(sym);
 			if (leaf) {
 				const def = leaf.defaultText ?? leaf.value ?? null;
@@ -1300,7 +1301,8 @@ function elaborateMod(
 		);
 		const sibByName = new Map(sibs.map((x) => [attr(x, "name") ?? "", x]));
 		for (const s of topoOrder(depsOf)) {
-			const el = sibByName.get(s)!;
+			const el = sibByName.get(s);
+			if (!el) continue;
 			const facts = elaborateMod(el, ctx, res, here, childRenders);
 			if (facts) childRenders.set(s, facts);
 		}
@@ -1778,7 +1780,8 @@ function elaborateMod(
 		bodyPreInclude: tb ? splitIncludes(attr(mod, "body-pre-include")) : [],
 		bodyPostInclude: tb ? splitIncludes(attr(mod, "body-post-include")) : [],
 	});
-	frozen.add(child(mod, "aw-render")!);
+	const render = child(mod, "aw-render");
+	if (render) frozen.add(render);
 	return {
 		name,
 		params: [...scope.params.entries()].map(([n, v]) => ({
