@@ -5,7 +5,7 @@ Landed
   autowire init / analysis run   workspace autowire.toml → hdxml
   autowire analysis deps|search|info   read the RtlIndex; no write
   hdxml sidecar             analysis → RtlIndex XML
-  aw.js                     engine: src/core/aw.ts → build:web → web/aw.js (generated; guarded)
+  aw.js                     engine: src/core/aw.ts → build:web → out/web/aw.js (generated; not tracked)
   autowire connect web [unit]  static session; buttons; no workspace write
   autowire connect check [unit] static author-face legality + deps; no scripts, no write
   autowire connect elaborate [unit] classic scripts + on-init / on-template + aw-render (no write)

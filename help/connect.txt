@@ -1,4 +1,4 @@
-Connect HTML dialect (landed: web/aw.js)
+Connect HTML dialect (landed: out/web/aw.js)
 
 Constraints:
   docs/connect/html.md

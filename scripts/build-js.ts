@@ -49,6 +49,8 @@ bunBuild([
 	"out/autowire.js",
 	"--target",
 	"bun",
+	"--minify",
+	"--keep-names",
 	...defineArgs,
 ]);
 console.log(`autowire.js ${release} commit ${commit} built ${built}`);

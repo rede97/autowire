@@ -109,7 +109,7 @@ html = "leaf.html"
 				const p = new URL(req.url).pathname;
 				if (p === "/aw.js")
 					return new Response(
-						readFileSync(join(import.meta.dir, "..", "web", "aw.js"), "utf8"),
+						readFileSync(join(import.meta.dir, "..", "out", "web", "aw.js"), "utf8"),
 						{ headers: { "content-type": "text/javascript" } },
 					);
 				return new Response("<!doctype html><html><body></body></html>", {

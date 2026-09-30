@@ -5,11 +5,11 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 // Browser assets embedded as text: same source in dev (`bun index.ts`) and in
-// the compiled binary (`bun build --compile`); web/aw.js is the built bundle.
+// the compiled binary (`bun build --compile`). out/web is build:web output.
 // @ts-expect-error Bun text import (typed via src/assets.d.ts for editors that resolve it)
-import awBundle from "../../web/aw.js" with { type: "text" };
+import awBundle from "../../out/web/aw.js" with { type: "text" };
 // @ts-expect-error Bun text import
-import pageJs from "../../web/page.js" with { type: "text" };
+import pageJs from "../../out/web/page.js" with { type: "text" };
 import { connectDir, topoUnits } from "../core/connect.ts";
 import { LeafDb } from "../rtl/leaf.ts";
 import { indexFileName, loadRtlIndex } from "../rtl/rtlindex.ts";

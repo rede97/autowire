@@ -49,7 +49,7 @@ Commands above are the dev and test entry (`index.ts`). Do not tell a production
 - Leaf ports: RtlIndex under `.autowire/hdxml/`. Do not reparse RTL in the page.
 - Printer input: `aw-render` only. Do not treat `aw-content` as the netlist.
 
-Generated and MUST NOT be hand-edited: `web/aw.js`, `web/page.js` (`bun run build:web`), `rtl/gen/`, `plugins_dir/`, `fw/gen/`, `dv/ral/`, and `.autowire/`. A wrong generated file is fixed by changing the SoT (Wishbone TypeScript or connect HTML) and re-running the writer. `demo/soc/ip/sdspi` stays at upstream `dfb16c8`; its FIFO patch is applied only for a smoke and then discarded.
+Generated and MUST NOT be hand-edited: `out/web/aw.js`, `out/web/page.js` (`bun run build:web`; not tracked), `rtl/gen/`, `plugins_dir/`, `fw/gen/`, `dv/ral/`, and `.autowire/`. A wrong generated file is fixed by changing the SoT (Wishbone TypeScript or connect HTML) and re-running the writer. `demo/soc/ip/sdspi` stays at upstream `dfb16c8`; its FIFO patch is applied only for a smoke and then discarded.
 
 ## Constraints
 

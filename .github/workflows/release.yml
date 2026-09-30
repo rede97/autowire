@@ -22,6 +22,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
       - run: bun install --frozen-lockfile
+      - run: bun run build:web
       - run: bun scripts/check-version.ts
       - run: bun run lint
       - run: cargo build

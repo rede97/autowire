@@ -1,6 +1,6 @@
 # 连接 HTML 方言（实现约束）
 
-> 状态：**已实现**（`web/aw.js`；`autowire connect web` / `connect check` / `connect run` 落地；Playwright 用例见 `test/e2e-web.test.ts`）。  
+> 状态：**已实现**（`out/web/aw.js`；`autowire connect web` / `connect check` / `connect run` 落地；Playwright 用例见 `test/e2e-web.test.ts`）。  
 > 摘要切片：`bun index.ts help connect`。改本文时同步改 help。  
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。  
 > 结构以 [`examples/connect/01-author-simple.html`](../examples/connect/01-author-simple.html) 为准。  

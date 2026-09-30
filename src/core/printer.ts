@@ -1,6 +1,6 @@
 // aw-render snapshot → SystemVerilog printer (dump output path).
 // Contract: docs/connect/html.md §4 (aw-render is the only dump SoT).
-// Input is the deterministic snapshot produced by web/aw.js serializeSnapshot():
+// Input is the deterministic snapshot produced by out/web/aw.js serializeSnapshot():
 // <autowire> → aw-mod (name) → aw-render (params/imports/localparams/ports/signals/insts),
 // with nested aw-mod after the render. All data lives on attributes.
 // Pure snapshot → SV text. No node imports: the page bundle uses this too.

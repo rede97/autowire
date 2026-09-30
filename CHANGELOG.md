@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.3.1] - 2026-09-30
+
+- `autowire.js` 打包打开 `--minify --keep-names`。页面脚本改由 `bun run build:web` 写到 `out/web/aw.js`、`out/web/page.js`（同样 minify，不入库）；`connect web` 和测试前先跑 `build:web`。
+
 ## [2.3.0] - 2026-09-30
 
 - 索引/快照单格式：`--format json` 时 hdxml 只写 JSON（不再双写 XML）；增量缓存回读按格式分发（serde_json），验证逻辑（指纹/mtime/blake3 仲裁）原样。格式切换会清掉另一种格式的残留文件。connect 快照同理：`format = "json"` 时 `.autowire/connect/` 只写 `<id>.json`。

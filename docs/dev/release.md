@@ -22,7 +22,7 @@
 
 | 产物 | 是什么 | 怎么跑 |
 |---|---|---|
-| `out/autowire.js` | 单个脚本。`bun build index.ts --target bun`，依赖和 `web/aw.js`、`web/page.js` 都打进去 | 本机已有 Bun 时：`bun out/autowire.js help` |
+| `out/autowire.js` | 单个脚本。`bun build index.ts --target bun`，依赖和 `out/web/aw.js`、`out/web/page.js` 都打进去 | 本机已有 Bun 时：`bun out/autowire.js help` |
 | `out/autowire` | 同上，再用 `bun build --compile` 把 Bun 运行时链进可执行文件 | 直接执行。Windows 上是 `autowire.exe` |
 
 两条命令都先跑 `build:web`，再把仓库的 `docs/` 和 `demo/` 的可运行源文件 zstd 压缩后嵌进同一个文件。页面脚本不会留在包外单独分发，文档和示例也不会。禁止让生产入口再去读仓库里的 `index.ts`、`src/` 或 `web/*.js`。hdxml 与 obscura 仍是旁边的独立进程，不链进这两个文件。

@@ -1,6 +1,6 @@
 // Shared connect-unit plumbing for `autowire check` and `autowire web`:
 // author HTML loading (linkedom), cross-unit dep snapshots, and the ctx object
-// the aw.js engine consumes. The checker/elaborator itself lives in web/aw.js
+// the aw.js engine consumes. The checker/elaborator itself lives in out/web/aw.js
 // (single source; the browser page and the server run the same code).
 
 import { existsSync } from "node:fs";

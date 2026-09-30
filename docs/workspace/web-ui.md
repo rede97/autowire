@@ -1,6 +1,6 @@
 # Web 界面与 GET 动作（`autowire connect web`）
 
-> 状态：**已实现**（`autowire connect web`；引擎 `src/core/aw.ts`（打包产物 `web/aw.js`），页面控制 `src/web/page.ts`（打包产物 `web/page.js`），服务 `src/web/server.ts`）。本文约束页面布局与「GET 参数 → 自动动作」契约。静态服务只读。写 `.sv` 是 `connect run`，不在页面。
+> 状态：**已实现**（`autowire connect web`；引擎 `src/core/aw.ts`（打包产物 `out/web/aw.js`），页面控制 `src/web/page.ts`（打包产物 `out/web/page.js`），服务 `src/web/server.ts`）。本文约束页面布局与「GET 参数 → 自动动作」契约。静态服务只读。写 `.sv` 是 `connect run`，不在页面。
 > 关键字「必须 / 应当 / 可以」按 RFC 2119。
 
 ## 1. 页面布局

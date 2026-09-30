@@ -131,7 +131,7 @@ export async function authorFaceText(page: Page): Promise<string> {
 	});
 }
 
-/** Load web/aw.js into the current page (engine without the page UI).
+/** Load out/web/aw.js into the current page (engine without the page UI).
  *  The specifier is a URL the server hosts — not a runtime registry, but
  *  blob:/data: module URLs are blocked on minimal browsers, so this is the
  *  one place a dynamic import is legitimate. */

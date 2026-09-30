@@ -1,5 +1,5 @@
 // aw.ts — autowire connect engine (browser + linkedom compatible, no Node APIs).
-// web/aw.js is GENERATED: `bun run build:web` (bun build src/core/aw.ts). Never edit it.
+// out/web/aw.js is GENERATED: `bun run build:web` (bun build src/core/aw.ts). Never edit it.
 
 // --- Shared shapes (browser page, server check, and tests all consume these) ---
 
