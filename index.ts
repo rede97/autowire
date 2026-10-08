@@ -52,14 +52,13 @@ registerDocs(program);
 registerUpdate(program);
 
 if (process.argv.slice(2).length === 0) {
-	// Bare invocation: who/what/where first; the command list is one step away.
+	// Command index first, then who/what/where (version + project link).
+	console.log(renderHelp());
+	console.log(
+		"\nhttps://github.com/rede97/autowire — RTL register and connectivity tool.",
+	);
 	console.log(formatRelease());
-	console.log(
-		"https://github.com/rede97/autowire — RTL register and connectivity tool.",
-	);
-	console.log(
-		"Run `autowire help` for commands; `autowire update` for the latest release.",
-	);
+	console.log("Upgrade: `autowire update` (release address + AI upgrade prompt).");
 } else {
 	program.parse();
 }

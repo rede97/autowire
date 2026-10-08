@@ -5,7 +5,7 @@
 ## [2.3.2] - 2026-09-30
 
 - 新增 `autowire update`：打印当前版本、最新 release 地址（github.com/rede97/autowire/releases/latest）、各平台资产下载链接，以及一段可直接粘贴给 AI 的升级提示词（下载→替换→验版本→读 changelog→按依赖序重新生成→刷新 AGENTS-AUTOWIRE.md→重跑测试）。命令本身不下载、不写盘。
-- 裸执行 `autowire`（无子命令）改为打印版本、项目链接和 help/update 指引，不再直接展开完整命令索引。
+- 裸执行 `autowire`（无子命令）在命令索引末尾追加版本、项目链接和 update 指引。
 
 ## [2.3.1] - 2026-09-30
 
