@@ -13,7 +13,7 @@ import { registerDocs } from "./src/cli/docs.ts";
 import { renderHelp } from "./src/cli/help.ts";
 import { registerPlugin } from "./src/cli/plugin.ts";
 import { registerUpdate } from "./src/cli/update.ts";
-import { formatRelease } from "./src/cli/version.ts";
+import { formatRelease, releaseStamp } from "./src/cli/version.ts";
 import { registerConnect } from "./src/cli/web.ts";
 
 const program = new Command();
@@ -55,10 +55,8 @@ if (process.argv.slice(2).length === 0) {
 	// Command index first, then who/what/where (version + project link).
 	console.log(renderHelp());
 	console.log(
-		"\nhttps://github.com/rede97/autowire — RTL register and connectivity tool.",
+		`\nhttps://github.com/rede97/autowire — autowire ${releaseStamp().version}`,
 	);
-	console.log(formatRelease());
-	console.log("Upgrade: `autowire update` (release address + AI upgrade prompt).");
 } else {
 	program.parse();
 }
