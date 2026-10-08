@@ -66,10 +66,10 @@ obscura 自带协议服务，生产包不再附带 Chromium、Playwright 或 chr
 
 ## 5. 发布（0.9.1 起）
 
-- 触发：推送 `main` 或手动 `workflow_dispatch`，见 `.github/workflows/release.yml`。
-- 版本与 Release 说明取 `CHANGELOG.md` 最上面一条 `## [x.y.z]`；`package.json` 的 `version` 必须一致（`scripts/check-version.ts` 把关）。hdxml 用自己的版本（`hdxml/Cargo.toml`），不受 autowire 版本约束。
-- 产物：`autowire.js`（单文件 Bun 脚本，内嵌版本/提交/构建时间）、`hdxml-linux-x64.tar.xz`（Ubuntu 22.04 跑 `hdxml/dist.sh`，glibc 2.17）、`hdxml-macos-arm64.tar.xz`、`hdxml-macos-x64.tar.xz`、`hdxml-windows-x64.zip`（`windows-2022` 上显式 `--target x86_64-pc-windows-msvc` 的 `hdxml.exe`）。
-- 同一版本再次发布会删除重建 tag `v<x.y.z>`。换版本只需改 `CHANGELOG.md` 与 `package.json`。
+- 触发：推送 `main` 只跑检查与构建（不发布）。**只有推送 `v*` tag 才发布**；tag 由人创建并推送，CI 永不创建/移动/重建 tag，已存在的 release 直接拒发。
+- 版本与 Release 说明取 `CHANGELOG.md` 最上面一条 `## [x.y.z]`；`package.json` 的 `version` 必须一致（`scripts/check-version.ts` 把关），且 tag 名必须等于 `v<版本>` 否则发布失败。hdxml 用自己的版本（`hdxml/Cargo.toml`），不受 autowire 版本约束。
+- 产物：`autowire.js`（单文件 Bun 脚本，内嵌版本/提交/构建时间）、`hdxml-linux-x64.tar.xz`（Ubuntu 22.04 跑 `hdxml/dist.sh`，glibc 2.17）、`hdxml-macos-arm64.tar.xz`、`hdxml-macos-x64.tar.xz`、`hdxml-windows-x64.zip`。
+- 发布流程：改 `CHANGELOG.md` + `package.json` → 推 `main`（CI 只验证）→ 人工 `git tag v<x.y.z> && git push origin v<x.y.z>` → CI 发布。
 - `doc-pack.generated.ts` 每次构建由 `scripts/pack-docs.ts` 重新生成，不入库；文档包含仓库根目录 `AGENTS.md`。
 
 ## 6. 暂时不做

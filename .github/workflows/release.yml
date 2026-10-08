@@ -3,6 +3,7 @@ name: release
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -125,6 +126,9 @@ jobs:
           if-no-files-found: error
 
   publish:
+    # Only a tag push publishes — tags are created and pushed by the user,
+    # never by CI (no moving or recreating tags, no republishing).
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [autowire-js, hdxml-linux, hdxml-macos, hdxml-windows]
     runs-on: ubuntu-22.04
     steps:
@@ -146,16 +150,21 @@ jobs:
           cp artifacts/hdxml-macos-arm64/hdxml-macos-arm64.tar.xz .
           cp artifacts/hdxml-macos-x64/hdxml-macos-x64.tar.xz .
           cp artifacts/hdxml-windows/hdxml-windows-x64.zip .
+      - name: verify pushed tag matches the changelog top
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          test "$GITHUB_REF_NAME" = "$TAG" || {
+            echo "pushed tag $GITHUB_REF_NAME != changelog top $TAG"; exit 1;
+          }
       - name: publish release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 && gh release delete "$TAG" --yes --cleanup-tag
-          git fetch --tags origin || true
-          git tag -d "$TAG" 2>/dev/null || true
-          git tag "$TAG"
-          git push origin "$TAG"
+          gh release view "$TAG" >/dev/null 2>&1 && {
+            echo "release $TAG already exists; refusing to republish"; exit 1;
+          }
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file /tmp/notes.md \

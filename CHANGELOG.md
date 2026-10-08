@@ -6,6 +6,7 @@
 
 - 新增 `autowire update`：打印当前版本、最新 release 地址（github.com/rede97/autowire/releases/latest）、各平台资产下载链接，以及一段可直接粘贴给 AI 的升级提示词（下载→替换→验版本→读 changelog→按依赖序重新生成→刷新 AGENTS-AUTOWIRE.md→重跑测试）。命令本身不下载、不写盘。
 - 裸执行 `autowire`（无子命令）在命令索引末尾追加一行：项目链接 + 版本号。
+- 发布纪律变更：CI 永不创建/推送 tag；推送 `main` 只做检查与构建，发布只在人工推送 `v*` tag 时触发，且拒绝覆盖已存在的 release。
 
 ## [2.3.1] - 2026-09-30
 
