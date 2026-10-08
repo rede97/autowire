@@ -1,0 +1,14 @@
+autowire update (no writes)
+
+  autowire update
+
+Prints the running version, the latest GitHub release address
+(https://github.com/rede97/autowire/releases/latest), its downloadable assets
+(autowire.js + hdxml per-platform archives), and a ready-to-paste AI upgrade
+prompt: download, replace, verify versions, read the changelog for breaking
+changes, regenerate in dependency order (plugin wishbone run → analysis run →
+connect run), refresh AGENTS-AUTOWIRE.md, re-run project tests.
+
+The command never downloads or writes anything itself — the agent or the user
+performs the upgrade. Offline: prints the release page and a lookup-failed
+note, exit code stays 0.

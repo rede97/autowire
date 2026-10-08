@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.3.2] - 2026-09-30
+
+- 新增 `autowire update`：打印当前版本、最新 release 地址（github.com/rede97/autowire/releases/latest）、各平台资产下载链接，以及一段可直接粘贴给 AI 的升级提示词（下载→替换→验版本→读 changelog→按依赖序重新生成→刷新 AGENTS-AUTOWIRE.md→重跑测试）。命令本身不下载、不写盘。
+- 裸执行 `autowire`（无子命令）改为打印版本、项目链接和 help/update 指引，不再直接展开完整命令索引。
+
 ## [2.3.1] - 2026-09-30
 
 - `autowire.js` 打包打开 `--minify --keep-names`。页面脚本改由 `bun run build:web` 写到 `out/web/aw.js`、`out/web/page.js`（同样 minify，不入库）；`connect web` 和测试前先跑 `build:web`。

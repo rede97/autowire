@@ -12,6 +12,7 @@ import { registerAnalysis } from "./src/cli/analysis.ts";
 import { registerDocs } from "./src/cli/docs.ts";
 import { renderHelp } from "./src/cli/help.ts";
 import { registerPlugin } from "./src/cli/plugin.ts";
+import { registerUpdate } from "./src/cli/update.ts";
 import { formatRelease } from "./src/cli/version.ts";
 import { registerConnect } from "./src/cli/web.ts";
 
@@ -48,9 +49,17 @@ registerAnalysis(program);
 registerConnect(program);
 registerPlugin(program);
 registerDocs(program);
+registerUpdate(program);
 
 if (process.argv.slice(2).length === 0) {
-	console.log(renderHelp());
+	// Bare invocation: who/what/where first; the command list is one step away.
+	console.log(formatRelease());
+	console.log(
+		"https://github.com/rede97/autowire — RTL register and connectivity tool.",
+	);
+	console.log(
+		"Run `autowire help` for commands; `autowire update` for the latest release.",
+	);
 } else {
 	program.parse();
 }

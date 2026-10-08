@@ -12,6 +12,7 @@ Autowire — commands
   connect web [unit]       static session page            → help web
   plugin wishbone run      generate regfiles and buses    → help status
   docs unpack <dir>        write bundled docs/, demo/, AGENTS.md → help docs
+  update                   latest release address + AI upgrade prompt
 
 Also: help status | connect | dont
 Reference: docs/ (contracts) + demo/ (examples) — read these first; keep help in sync
