@@ -2,8 +2,9 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
-## [2.3.2] - 2026-09-30
+## [2.3.2] - 2026-10-09
 
+- Wishbone 插件新增 `sv_reg` 导出：`[plugins.wishbone] sv_reg=` 生成非 UVM 的 `*_pkg.sv` package + localparam（字段 `_LSB/_WIDTH/_MASK/_RESET`；总线 `<SLAVE>_BASE`、`<SHEET>_<CELL>_OFFSET`、绝对地址 `<SLAVE>_<CELL>`），目录按 `regfile/` 与 `bus/` 分开、伞文件在根，与 C 导出同款组织。demo/soc 入库 `dv/sv_reg/` 与 Verilator 冒烟 `sim/verilator/sv_reg_smoke.sh`（无固件、无总线 RTL、不需要 `--timing`）。
 - 新增 `autowire update`：打印当前版本、最新 release 地址（github.com/rede97/autowire/releases/latest）、各平台资产下载链接，以及一段可直接粘贴给 AI 的升级提示词（下载→替换→验版本→读 changelog→按依赖序重新生成→刷新 AGENTS-AUTOWIRE.md→重跑测试）。命令本身不下载、不写盘。
 - 裸执行 `autowire`（无子命令）在命令索引末尾追加一行：项目链接 + 版本号。
 - 发布纪律变更：CI 永不创建/推送 tag；推送 `main` 只做检查与构建，发布只在人工推送 `v*` tag 时触发，且拒绝覆盖已存在的 release。
