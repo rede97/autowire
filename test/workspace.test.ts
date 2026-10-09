@@ -37,6 +37,7 @@ describe("workspace", () => {
 		expect(cfg.wishboneExcelExport).toBeNull();
 		expect(cfg.wishboneCExport).toBeNull();
 		expect(cfg.wishboneUvmExport).toBeNull();
+		expect(cfg.wishboneSvRegExport).toBeNull();
 		expect(hdxmlArgs(cfg)).toEqual([
 			"--output-dir",
 			join(dir, ".autowire/hdxml"),
@@ -205,17 +206,19 @@ DEPTH = 16
 		expect(findWorkspace(tmpdir())).toBe(findWorkspace(tmpdir())); // must not throw
 	});
 
-	test("[plugins.wishbone] export/c/uvm resolve as optional paths", async () => {
+	test("[plugins.wishbone] export/c/uvm/sv_reg resolve as optional paths", async () => {
 		const dir = tempWorkspace(`
 [plugins.wishbone]
 export = "docs/regs.xlsx"
 c = "fw/gen/wishbone"
 uvm = "dv/ral"
+sv_reg = "dv/sv_reg"
 `);
 		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
 		expect(cfg.wishboneExcelExport).toBe(join(dir, "docs/regs.xlsx"));
 		expect(cfg.wishboneCExport).toBe(join(dir, "fw/gen/wishbone"));
 		expect(cfg.wishboneUvmExport).toBe(join(dir, "dv/ral"));
+		expect(cfg.wishboneSvRegExport).toBe(join(dir, "dv/sv_reg"));
 	});
 
 	test("[plugins.wishbone] empty c= is rejected", async () => {

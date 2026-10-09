@@ -26,6 +26,7 @@ import type { WrapperStyle } from "../src/plugins/wishbone-bus/emit-attach.ts";
 import { emitBusSystemSv } from "../src/plugins/wishbone-bus/emit-attach.ts";
 import {
 	emitBusMapC,
+	emitBusMapPkg,
 	emitBusMapUvm,
 } from "../src/plugins/wishbone-bus/emit-map.ts";
 import { loadWorkspace } from "../src/workspace.ts";
@@ -527,6 +528,22 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(uvm).toContain("default_map.add_submap(this.ch0_bank0.default_map");
 		expect(uvm).toContain("32'h03000000");
 		expect(uvm).toContain("32'h03006000");
+		const pkg = emitBusMapPkg(soc_wb);
+		expect(pkg).toContain("package soc_wb_map_pkg;");
+		expect(pkg).toContain("endpackage : soc_wb_map_pkg");
+		expect(pkg).toContain(
+			"localparam logic [31:0] CH0_BANK0_SHA256_BASE = 32'h03000040;",
+		);
+		expect(pkg).toContain(
+			"localparam logic [31:0] SHA256_CTRL_OFFSET = 32'h00000000;",
+		);
+		// Absolute = BASE + OFFSET (symbolic, not pre-summed).
+		expect(pkg).toContain(
+			"localparam logic [31:0] CH0_BANK1_SHA256_CTRL = CH0_BANK1_SHA256_BASE + SHA256_CTRL_OFFSET;",
+		);
+		expect(pkg).toContain("shadow bank");
+		// Field bit/mask stays in the regfile package, not the bus map.
+		expect(pkg).not.toContain("_MASK");
 	});
 
 	test("SlaveBus is Region sugar; one child RTL, N hangs; needs uplink", () => {

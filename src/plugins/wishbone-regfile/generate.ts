@@ -12,7 +12,9 @@ import { effectiveSheet, isRegfileDef, type RegfileDef } from "./dsl.ts";
 import { emitRegfileSv } from "./emit.ts";
 import {
 	emitRegfileC,
+	emitRegfilePkg,
 	emitRegfileUvm,
+	regfilePkgName,
 	swLayoutFingerprint,
 } from "./emit-sw.ts";
 import { type LaidRegfile, layoutRegfile } from "./layout.ts";
@@ -87,6 +89,14 @@ export async function generateDef(
 		if (await writeIfChanged(uPath, emitRegfileUvm(laid), force))
 			paths.push(uPath);
 		console.log(chalk.green(`regfile ${def.name} ${uPath}`));
+	}
+	if (ws.wishboneSvRegExport) {
+		const pkgDir = join(ws.wishboneSvRegExport, REGFILE_DIR);
+		await mkdir(pkgDir, { recursive: true });
+		const pPath = join(pkgDir, `${regfilePkgName(table)}.sv`);
+		if (await writeIfChanged(pPath, emitRegfilePkg(laid), force))
+			paths.push(pPath);
+		console.log(chalk.green(`regfile ${def.name} ${pPath}`));
 	}
 	return paths;
 }

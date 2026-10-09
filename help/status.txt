@@ -61,7 +61,10 @@ Parallel (does not block connect)
     c= C dir (regfile/<sheet>.h + bus/<bus>_map.h + <name>.h umbrella at the root),
     uvm= uvm_reg dir (regfile/ral_<SHEET>.sv with cell classes + leaf ral_block_<SHEET>,
     bus/ral_block_* hang
-    leaves via add_submap; uvm_reg model only, no RALF)
+    leaves via add_submap; uvm_reg model only, no RALF),
+    sv_reg= SV package dir (regfile/<sheet>_pkg.sv field LSB/WIDTH/MASK/RESET localparams +
+    bus/<bus>_map_pkg.sv BASE/OFFSET/abs-addr localparams + <name>_pkg.sv umbrella;
+    package+localparam for quick non-UVM checks; shadow as comments)
     (one block per bus; TagFromAddr splits that level into one instance per copy;
     a pass-through child is not split again; broadcast windows are addresses);
     git-tracked showcase fw/gen/wishbone (do not delete);
@@ -84,9 +87,9 @@ Parallel (does not block connect)
     sheet empty = name (C/UVM/Excel stem); shared sheet = one header if two names
     share layout; same sheet + different layout → generate error;
     toml ts= not html=;
-    C/UVM/Excel field-layout emit: per-cell struct+bitfield / uvm_reg /
+    C/UVM/Excel/sv_reg field-layout emit: per-cell struct+bitfield / uvm_reg / package localparams /
     trunk sheet; shadow as comments; Excel documents leaf cell offset;
-    address map + TGA/shadow tag packed in the same Excel / C / uvm_reg set;
+    address map + TGA/shadow tag packed in the same Excel / C / uvm_reg / SV sv_reg set;
     DAT=32 ADR=byte; write posted at fabric slave PIPE / read blocks to leaf;
     RWE read_write_block default false (posted fabric: true risks bus lock);
     WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);

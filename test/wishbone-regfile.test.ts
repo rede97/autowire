@@ -22,6 +22,7 @@ import { emitRegfileSv } from "../src/plugins/wishbone-regfile/emit.ts";
 import { buildRegfileWorkbook } from "../src/plugins/wishbone-regfile/emit-excel.ts";
 import {
 	emitRegfileC,
+	emitRegfilePkg,
 	emitRegfileUvm,
 } from "../src/plugins/wishbone-regfile/emit-sw.ts";
 import { generateDef } from "../src/plugins/wishbone-regfile/generate.ts";
@@ -355,6 +356,37 @@ endmodule
 		expect(uvm).toContain("class ral_block_smoke_rw extends uvm_reg_block");
 		expect(uvm).toContain('default_map.add_reg(this.CFG, 32\'h00000000, "RW")');
 		expect(uvm.match(/^class ral_block_smoke_rw /gm)?.length).toBe(1);
+	});
+
+	test("SV package exports field LSB/WIDTH/MASK/RESET localparams", () => {
+		const pkg = emitRegfilePkg(layoutRegfile(smoke_rw));
+		expect(pkg).toContain("package smoke_rw_pkg;");
+		expect(pkg).toContain("endpackage : smoke_rw_pkg");
+		// enable: width 1 @ bit 0 → mask 0x1; mode: width 3 @ bit 8 → mask 0x700, reset 1.
+		expect(pkg).toContain("localparam int unsigned CFG_ENABLE_LSB   = 0;");
+		expect(pkg).toContain(
+			"localparam logic [31:0] CFG_ENABLE_MASK  = 32'h00000001;",
+		);
+		expect(pkg).toContain("localparam int unsigned CFG_MODE_LSB   = 8;");
+		expect(pkg).toContain("localparam int unsigned CFG_MODE_WIDTH = 3;");
+		expect(pkg).toContain(
+			"localparam logic [31:0] CFG_MODE_MASK  = 32'h00000700;",
+		);
+		expect(pkg).toContain(
+			"localparam logic [31:0] CFG_MODE_RESET = 32'h00000001;",
+		);
+		// Field layout only: no address, no shadow tag bits.
+		expect(pkg).not.toContain("_OFFSET");
+		expect(pkg).not.toContain("_BASE");
+		expect(pkg).not.toContain("tagBits");
+	});
+
+	test("SV package shadow is a comment; reset dict uses copy 0", () => {
+		const pkg = emitRegfilePkg(layoutRegfile(smoke_shadow));
+		expect(pkg).toContain("shadow: bank, 4 copies");
+		expect(pkg).not.toContain("remaps");
+		// Per-copy reset collapses to copy 0.
+		expect(pkg).toContain("_RESET = 32'h00000001;");
 	});
 
 	test("C/UVM shadow is a comment; reset dict uses copy 0", () => {

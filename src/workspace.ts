@@ -95,6 +95,8 @@ export interface WorkspaceConfig {
 	wishboneCExport: string | null;
 	/** Optional uvm_reg SV directory ([plugins.wishbone] uvm); packed RAL */
 	wishboneUvmExport: string | null;
+	/** Optional SV package directory ([plugins.wishbone] sv_reg); field/map localparams */
+	wishboneSvRegExport: string | null;
 }
 
 /** One [connect.<id>] or [sim.<id>] entry */
@@ -434,6 +436,7 @@ export async function loadWorkspace(
 	const wishboneExcelExport = optPluginPath(pluginsWishbone, "export", rel);
 	const wishboneCExport = optPluginPath(pluginsWishbone, "c", rel);
 	const wishboneUvmExport = optPluginPath(pluginsWishbone, "uvm", rel);
+	const wishboneSvRegExport = optPluginPath(pluginsWishbone, "sv_reg", rel);
 	return {
 		name: wsName,
 		hdxmlBin:
@@ -477,6 +480,7 @@ export async function loadWorkspace(
 		wishboneExcelExport,
 		wishboneCExport,
 		wishboneUvmExport,
+		wishboneSvRegExport,
 	};
 }
 

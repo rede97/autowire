@@ -496,6 +496,7 @@ effective_sel = wb_tga[tag-bits]
 export = "fw/gen/wishbone/bus_regfiles.xlsx"  # field sheets + one Address Map sheet per bus tree
 c      = "fw/gen/wishbone"                    # regfile/<sheet>.h + bus/<bus>_map.h + <name>.h
 uvm    = "dv/ral"                             # regfile/ral_<SHEET>.sv + bus/ral_block_<bus>.sv + ral_<name>.sv
+sv_reg = "dv/sv_reg"                          # regfile/<sheet>_pkg.sv + bus/<bus>_map_pkg.sv + <name>_pkg.sv (non-UVM)
 
 # source_id = SoT 文件槽（可含 RegfileDef 与/或 BusDef）；不是单个叶子名
 [wishbone.examples]
@@ -507,12 +508,12 @@ ts = "docs/examples/regfile/regfile.ts"
 
 - **禁止**在 toml 写 pin 级连线。  
 - **禁止** `html=` 作为寄存器 SoT；**禁止** `tables = "regpy/"` 一类非 TS SoT。  
-- **禁止**按叶子各写一份 `excel=` / `c=` / `uvm=`；路径只认 **`[plugins.wishbone]`**。  
+- **禁止**按叶子各写一份 `excel=` / `c=` / `uvm=` / `sv_reg=`；路径只认 **`[plugins.wishbone]`**。  
 - **禁止**配置 `data_width`（数据通路固定 32）。  
 - 省略某键 → 跳过该导出。键必须是非空字符串。  
 - Excel 工作表名来自 **有效 `sheet`**（缺省 = `name`），不是 HTML 属性。同 sheet 的多例化共用一份软件/文档产物。  
 - C / uvm_reg / Excel **禁止**进 `plugins_dir`（那是 SV 叶子）；也 **禁止**当 connect/sim dump。
-- demo/soc：一份 `sha256` SoT → `regfile/sha256_regfile.sv` + `regfile/sha256.h` + `regfile/ral_SHA256.sv`；channel bus `SlaveRegfile(sha256, 0x40)` 挂一次，两个 `SlaveBus` channel 例化同一 `sd_sha_bus_cfg`。父级 `TagFromAddr(bank)` 把每个 channel 和 smoke 拆成 bank0..3；`sd_sha` 只透传 `bank`，不再拆。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`bus/soc_wb_map.h` overlay `ch0_bank0_sha256` … + 顶层 `soc.h`）；`fw/common/soc_map.h` 只做别名（固件用 bank0）。C 头 **入库展示**（`fw/gen/wishbone/{regfile,bus}/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（无 `.ralf`；`bus/ral_block_soc_wb.sv` 与顶层 `ral_soc.sv` 同套打包）。
+- demo/soc：一份 `sha256` SoT → `regfile/sha256_regfile.sv` + `regfile/sha256.h` + `regfile/ral_SHA256.sv`；channel bus `SlaveRegfile(sha256, 0x40)` 挂一次，两个 `SlaveBus` channel 例化同一 `sd_sha_bus_cfg`。父级 `TagFromAddr(bank)` 把每个 channel 和 smoke 拆成 bank0..3；`sd_sha` 只透传 `bank`，不再拆。窗基址与 cell offset 打进同一套 `[plugins.wishbone] c=`（`bus/soc_wb_map.h` overlay `ch0_bank0_sha256` … + 顶层 `soc.h`）；`fw/common/soc_map.h` 只做别名（固件用 bank0）。C 头 **入库展示**（`fw/gen/wishbone/{regfile,bus}/*.h`，与 `demo/soc/rtl/gen/` 同类；**禁止**当临时产物删掉）。uvm_reg 落在 `dv/ral/`（无 `.ralf`；`bus/ral_block_soc_wb.sv` 与顶层 `ral_soc.sv` 同套打包）。非 UVM 简易验证的 SV sv_reg 包落在 `dv/sv_reg/`（`regfile/<sheet>_pkg.sv` field LSB/WIDTH/MASK/RESET + `bus/soc_wb_map_pkg.sv` BASE/OFFSET/绝对址 + 顶层 `soc_pkg.sv` umbrella）。
 
 ### 6.1 C 头、uvm_reg 与 Excel（已裁定；C / uvm_reg / Excel emit 已落地）
 
@@ -526,7 +527,7 @@ wishbone generate（同一插件；RegfileDef / BusDef 类型分立）
     shadow：只当注释（名 / copies）
         ↓
     SlaveRegfile(RegfileDef, base) 窗 + 叶子 cell 相对 offset → 绝对 MMIO
-    打包：一份 Excel / 一套 C / 一套 uvm_reg
+    打包：一份 Excel / 一套 C / 一套 uvm_reg / 一套 SV sv_reg 包
 ```
 
 | 产物 | toml | 落盘 | 本插件写出 | **不**在本插件 |
@@ -534,12 +535,13 @@ wishbone generate（同一插件；RegfileDef / BusDef 类型分立）
 | Excel | `export=` **文件** | 每表一 sheet | 对照主干 `gen_excel_doc.py`：**cell 黄行 + field 行（MSB 在上）+ reserved 灰行**；公式算位宽 / `'h` / `DEC2HEX` / 加权复位和。列：Sub-Addr（叶子 byte offset，无 `0x`）/ Start Bit / End Bit / Bit Width / Default Value / R/W Property / Name / Description / Reset Dec / Hex / Sum / SHADOW（仅 cell 行填 `shadow` 名）。**删**主干空列 A、`Selection ADDRWIDTH`（恒空；窗宽/TGA 归 bus）。复位只写 copy 0。字段 `note` 写在同一 Description 单元格：第一行仍是 `desc`，换行后是正文。表级 `note` 挂在表头 Description 批注（插数据行会错开位宽公式）。**禁止**墙钟/用户名；**禁止**把 `note` 写进 RTL / C / uvm_reg | 窗基址、TGA/`tagBits`、`remaps`、物理 copy 展开 |
 | C | `c=` **目录** | `<sheet>.h`（空 = `name`；同 sheet 只写一份） | 对照主干 `gen_chead.py` 的 **cell 形**：每 cell `struct …_BITS` 位域 + `union { volatile uint32_t all; … bit; }`。LSB=0 与 Field bit `offset` 一致。shadow 只写注释。头稳定（plugin id + 表名），**禁止**墙钟/用户名 | `OFFSET_*` / 带 padding 的整表 overlay / 窗基址 / TGA |
 | UVM | `uvm=` **目录** | `ral_<SHEET>.sv` | 对照主干 `gen_ralf.py` 的 **cell 级结果**：`class ral_reg_<table>_<cell> extends uvm_reg` + `uvm_reg_field`（width / lsb / access / reset）；外加每 sheet 一份叶子 `class ral_block_<sheet> extends uvm_reg_block`，cell 以布局 offset `add_reg` 进自己的 `default_map`。**禁止** `.ralf` 文本。shadow 只写注释 | 窗基址、TGA、跨叶子的地址图；bus 侧只用 `add_submap` 挂叶子 block |
+| SV `sv_reg` | `sv_reg=` **目录** | `<sheet>_pkg.sv` | **非 UVM 简易验证**的轻量版：SV `package <sheet>_pkg;` + `localparam`，每个命名 field 一组 `<CELL>_<FIELD>_{LSB,WIDTH,MASK,RESET}`（`MASK` = 32 位已移位掩码；`RESET` = field 本地复位值，dict 取 copy 0；reserved 位无名不出）。组织形式参考 C 头，但不出 `union`/`struct`，便于 `(reg & MASK) >> LSB` 直接比对。shadow 只写注释；头稳定（plugin id + 表名），**禁止**墙钟/用户名 | 窗基址、`OFFSET_*`、TGA/`tagBits`/remaps/copy 展开（与 C/UVM 同纪律；地址图在 bus sv_reg 包） |
 
 复位值：标量 `.reset`；dict 只取 **copy 0**（与「可见的一份」一致）。Access → `uvm_reg_field` 的 `access` 字符串沿主干 `field.access.ral_name`（实现时对照 Python Access）；C 位域不编码 Access。
 
 ### 6.2 导出目录分层（regfile / bus 分家）
 
-`[plugins.wishbone]` 的键 **不变**（`export` / `c` / `uvm` 仍各一条路径）；插件在每个 **目录型** 键下自动分出 `regfile/` 与 `bus/` 两个子目录，umbrella 留在顶层：
+`[plugins.wishbone]` 的键里 `export` / `c` / `uvm` / `sv_reg` 各一条路径；插件在每个 **目录型** 键（`c` / `uvm` / `sv_reg`）下自动分出 `regfile/` 与 `bus/` 两个子目录，umbrella 留在顶层：
 
 ```text
 plugins_dir/wishbone/
@@ -554,6 +556,10 @@ uvm=<dir>/
     regfile/ral_<SHEET>.sv
     bus/ral_block_<bus>.sv
     ral_<name>.sv                                     # umbrella：`include "regfile/…" / "bus/…"
+sv_reg=<dir>/
+    regfile/<sheet>_pkg.sv                            # package <sheet>_pkg; field LSB/WIDTH/MASK/RESET
+    bus/<bus>_map_pkg.sv                              # package <bus>_map_pkg; BASE/OFFSET/absolute addr
+    <name>_pkg.sv                                     # umbrella：`include "regfile/…" / "bus/…"
 export=<file>                                         # 默认名 bus_regfiles.xlsx（不再叫 wishbone.xlsx）
 ```
 
@@ -597,7 +603,7 @@ field sheet 的黄/灰配色 **不变**（对照主干 `gen_excel_doc.py`）。�
 - 叶子内 APB、FIFO bridge。  
 - Pipelined Wishbone `STALL`。  
 - 插件私有口表绕过 RtlIndex。  
-- 以 HTML 字段树 / Excel / C 头 / `uvm_reg` / Python / JSON / regpy 为寄存器 SoT，或从这些产物生成 TS。  
+- 以 HTML 字段树 / Excel / C 头 / `uvm_reg` / SV sv_reg 包 / Python / JSON / regpy 为寄存器 SoT，或从这些产物生成 TS。  
 - 嵌套 `awx-reg-*` 子标签（block/cell/field/shadow）；HTML 桩有子女 → 错误。  
 - 从 regfile 的 C/`uvm_reg` 导出里写地址图或 fabric shadow tag（`OFFSET_*`、整表 overlay、`add_reg(offset)`、`tagBits` / TGA / copy 展开）——软件地址与选 bank **由 bus 组装**。
 

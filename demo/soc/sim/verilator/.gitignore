@@ -1,5 +1,6 @@
 obj_dir/
 obj_dir_sd/
 obj_dir_tb/
+obj_dir_sv_reg/
 *.vcd
 images/*.img
