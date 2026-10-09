@@ -60,4 +60,16 @@ Generated and MUST NOT be hand-edited: `out/web/aw.js`, `out/web/page.js` (`bun 
 - The page and its GET APIs MUST NOT write the workspace. Saving is a browser download or the driver storing `#aw-generated`.
 - Do not implement parked work: the installer and the production-browser (obscura) .mcp.json switch, HTML node-edit MCP, plugin type B, extra Wishbone policies in `docs/plugins/wishbone-bus.md` section 8, or a second `autowire.toml`. Dev and CI stay on Playwright Chromium. The two autowire artifacts in section 1.1 are already specified.
 
-`hdxml/` has its own [`AGENTS.md`](hdxml/AGENTS.md). Demo smoke is `demo/soc/sim/verilator/run.sh` from `demo/soc` under UCRT64; see [`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md).
+`hdxml/` has its own [`AGENTS.md`](hdxml/AGENTS.md). Demo smoke details: [`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md). Run these from `demo/soc` after `plugin wishbone run` when the Wishbone SoT changed.
+
+Verilator (`sim/verilator/run.sh`; `verilator` on PATH; `--timing` needs a C++ compiler with `-fcoroutines`, GCC 10+):
+
+- `./sim/verilator/run.sh` — `fw/basic_smoke` (cascade MMIO, smoke CSR, external JTAG)
+- `./sim/verilator/run.sh --regfile` — wishbone-regfile MMIO (FIFO / counter / access)
+- `./sim/verilator/run.sh --sd` — `fw/sd_sha256` + card image (channel DMA)
+- `./sim/verilator/run.sh --tb-mod` — dumped `rtl/gen/sim/tb_soc.sv` (`--binary --timing`)
+- `./sim/verilator/sv_reg_smoke.sh` — `sv_reg` package + localparam only (no firmware, no bus RTL, no `--timing`)
+
+VCS (`sim/vcs/run.sh`, only when `vcs` is on PATH; pure SV `tb_soc`, no C++ harness): `./sim/vcs/run.sh basic_smoke` and `./sim/vcs/run.sh regfile_smoke`. Do not run `--sd` under VCS (`sdspisim` is C++).
+
+`bun test` Verilator cases (skipped when `verilator` or `make` is missing; both use `--timing`): `wishbone-regfile smoke features` → `W1C hardware set survives a zero-lane write`; `wishbone master bridges` → `verilator: APB / JTAG / async WB masters through wb_cdc`.
