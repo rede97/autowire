@@ -15,8 +15,8 @@
 //    0x02000000  size=0x00000004  mask=0xfffffffc  flash_cfg — SPI flash cfg
 //    0x02000004  mask=0xfffffff8  uart — simpleuart  pipe=3
 //    0x02000010  size=0x00000004  mask=0xfffffffc  testout — test output  pipe=1
-//    0x03000000  size=0x00001000  mask=0xfffff000  ch0 — SD + DMA + SHA256 channel interconnect (uplink + engine)  pipe=2
-//    0x03001000  size=0x00001000  mask=0xfffff000  ch1 — SD + DMA + SHA256 channel interconnect (uplink + engine)  pipe=4
+//    0x03000000  size=0x00001000  mask=0xfffff000  ch0 — SD + DMA + SHA256 channel interconnect (cfg + engine)  pipe=2
+//    0x03001000  size=0x00001000  mask=0xfffff000  ch1 — SD + DMA + SHA256 channel interconnect (cfg + engine)  pipe=4
 //    0x03006000  size=0x00000038  mask=0xffffffc0  smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)  pipe=3
 //------------------------------------------------------------------------------
 
@@ -92,7 +92,7 @@ module soc_wb_interconnect (
 	output logic        testout_i_wb_we,
 	input  logic [31:0] testout_o_wb_dat,
 	input  logic        testout_o_wb_ack,
-	// Slave ch0 — SD + DMA + SHA256 channel interconnect (uplink + engine),
+	// Slave ch0 — SD + DMA + SHA256 channel interconnect (cfg + engine),
 	//   base=0x03000000  size=0x00001000  mask=0xfffff000  pipe=2,
 	output logic [31:0] ch0_i_wb_adr,
 	output logic [31:0] ch0_i_wb_dat,
@@ -103,7 +103,7 @@ module soc_wb_interconnect (
 	output logic        ch0_i_wb_we,
 	input  logic [31:0] ch0_o_wb_dat,
 	input  logic        ch0_o_wb_ack,
-	// Slave ch1 — SD + DMA + SHA256 channel interconnect (uplink + engine),
+	// Slave ch1 — SD + DMA + SHA256 channel interconnect (cfg + engine),
 	//   base=0x03001000  size=0x00001000  mask=0xfffff000  pipe=4,
 	output logic [31:0] ch1_i_wb_adr,
 	output logic [31:0] ch1_i_wb_dat,

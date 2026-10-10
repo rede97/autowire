@@ -81,7 +81,7 @@ describe("wishbone tag domains", () => {
 		const child = Bus("child_dup", "re-derives pstate", {
 			addrWidth: 12,
 			tags: [TagFromAddr(pstate, "9:8")],
-			masters: [Master("uplink", "from parent")],
+			masters: [Master("cfg", "from parent")],
 			slaves: [SlaveRegfile(aword, 0x000, { size: Size(0x100) })],
 		});
 		expect(() =>

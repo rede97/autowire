@@ -137,7 +137,7 @@ Bus("soc_wb", "SoC cfg", {
 ```
 
 - `apb` / `jtag` 互斥；`jtag` + `cdc: false` 报错；`timeout > 0` 需要 cdc。
-- 级联口 `Master("uplink")`（及 `SlaveBus(..., { uplink })` 指定的口）**禁止**带 apb/jtag/cdc；`Bus` 拒绝重名 master。
+- 级联面（`child.uplink(name?)` 选出的 master 口）**禁止**带 apb/jtag/cdc；`Bus` 拒绝重名 master。
 - 有任一桥接 master 时 generate **必须**打 `<bus>_bus_cfg`；fabric 上该 master 的 WB 口在 wrapper 内接 `{m}_fab_*`，协议桥源侧接 `{m}_src_*`。connect HTML 只看到：
 
 | 形态 | wrapper 口 |

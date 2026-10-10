@@ -69,7 +69,7 @@ module soc_wb_bus_cfg (
 	output logic        testout_i_wb_we,
 	input  logic [31:0] testout_o_wb_dat,
 	input  logic        testout_o_wb_ack,
-	// Slave ch0 — SD + DMA + SHA256 channel interconnect (uplink + engine)
+	// Slave ch0 — SD + DMA + SHA256 channel interconnect (cfg + engine)
 	output logic [31:0] ch0_i_wb_adr,
 	output logic [31:0] ch0_i_wb_dat,
 	output logic [3:0]  ch0_i_wb_sel,
@@ -79,7 +79,7 @@ module soc_wb_bus_cfg (
 	output logic        ch0_i_wb_we,
 	input  logic [31:0] ch0_o_wb_dat,
 	input  logic        ch0_o_wb_ack,
-	// Slave ch1 — SD + DMA + SHA256 channel interconnect (uplink + engine)
+	// Slave ch1 — SD + DMA + SHA256 channel interconnect (cfg + engine)
 	output logic [31:0] ch1_i_wb_adr,
 	output logic [31:0] ch1_i_wb_dat,
 	output logic [3:0]  ch1_i_wb_sel,

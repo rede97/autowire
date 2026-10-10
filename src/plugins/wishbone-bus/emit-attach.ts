@@ -10,12 +10,7 @@ import {
 } from "../../core/printer.ts";
 import { collectPorts, type PortDecl } from "../wishbone-regfile/emit.ts";
 import { layoutRegfile } from "../wishbone-regfile/layout.ts";
-import {
-	type BusDef,
-	domainWidth,
-	UPLINK_MASTER,
-	type WbSlave,
-} from "./dsl.ts";
+import { type BusDef, domainWidth, type WbSlave } from "./dsl.ts";
 import {
 	busModuleKind,
 	busModuleName,
@@ -58,17 +53,18 @@ function isSlaveWbPort(name: string, slave: string): boolean {
 }
 
 function hasCascadeFace(def: BusDef): boolean {
-	return def.masters.some((m) => m.name === UPLINK_MASTER);
+	return def.cascadeFace !== undefined;
 }
 
 function packedRange(width: number): string {
 	return width > 1 ? `[${width - 1}:0]` : "";
 }
 
-function isUplinkMasterPort(name: string): boolean {
+function isCascadeMasterPort(name: string, def: BusDef): boolean {
+	const face = def.cascadeFace;
 	return (
-		name.startsWith(`${UPLINK_MASTER}_o_wb_`) ||
-		name.startsWith(`${UPLINK_MASTER}_i_wb_`)
+		face !== undefined &&
+		(name.startsWith(`${face}_o_wb_`) || name.startsWith(`${face}_i_wb_`))
 	);
 }
 
@@ -81,6 +77,11 @@ function isDecoderMasterPort(name: string): boolean {
 
 /** Fabric port → wrapper net when the cascade face is remapped to i_wb_* / o_wb_*. */
 function cascadeNet(fabricName: string, def: BusDef): string {
+	// Only a declared cascade face (`.uplink()`) remaps the fabric master to the
+	// wrapper's i_wb_* / o_wb_* ports. Without it the wrapper keeps the fabric's
+	// own m_* ports, so the fabric instance must stay on m_* too — otherwise the
+	// instance drives undeclared i_wb_* nets while the m_* ports dangle.
+	if (!hasCascadeFace(def)) return fabricName;
 	if (busModuleKind(def) === "decoder") {
 		const tag = /^m_tga_(\w+)$/.exec(fabricName);
 		if (tag?.[1]) return `i_wb_tga_${tag[1]}`;
@@ -90,8 +91,8 @@ function cascadeNet(fabricName: string, def: BusDef): string {
 		if (out?.[1]) return `o_wb_${out[1]}`;
 		return fabricName;
 	}
-	const oPre = `${UPLINK_MASTER}_o_wb_`;
-	const iPre = `${UPLINK_MASTER}_i_wb_`;
+	const oPre = `${def.cascadeFace}_o_wb_`;
+	const iPre = `${def.cascadeFace}_i_wb_`;
 	if (fabricName.startsWith(oPre))
 		return `i_wb_${fabricName.slice(oPre.length)}`;
 	if (fabricName.startsWith(iPre))
@@ -102,7 +103,7 @@ function cascadeNet(fabricName: string, def: BusDef): string {
 function hidesCascadeFabricPort(p: FabricPort, def: BusDef): boolean {
 	if (!hasCascadeFace(def)) return false;
 	if (busModuleKind(def) === "decoder") return isDecoderMasterPort(p.name);
-	return isUplinkMasterPort(p.name);
+	return isCascadeMasterPort(p.name, def);
 }
 
 function cascadeWrapperPorts(def: BusDef): Array<{
@@ -350,7 +351,7 @@ export function emitBusSystemSv(
 	];
 	if (cascade) {
 		header.push(
-			'// Cascade face Master("uplink") is remapped to i_wb_* / o_wb_* (parent SlaveBus).',
+			"// Cascade face (.uplink()) is remapped to i_wb_* / o_wb_* (parent SlaveBus).",
 		);
 	}
 	header.push(

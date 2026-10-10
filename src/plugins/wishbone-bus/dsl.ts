@@ -144,13 +144,6 @@ export type SlaveRegfileOpts = SlaveOpts & {
 	readonly desc?: string;
 };
 
-/**
- * Cascade master name on a child `BusDef` (`SlaveBus` sugar).
- * Interconnect: named `{uplink}_o_wb_*` / `{uplink}_i_wb_*`.
- * Decoder (NM<=1): still flat `m_*`; the wrapper remaps them to `i_wb_*` / `o_wb_*`.
- */
-export const UPLINK_MASTER = "uplink";
-
 /** Extra options when `SlaveBus` hangs a child fabric. */
 export type SlaveBusOpts = SlaveOpts & {
 	/** Parent slave id. Defaults to `BusDef.name`. Distinct ids reuse one child RTL. */
@@ -159,8 +152,6 @@ export type SlaveBusOpts = SlaveOpts & {
 	readonly size?: RegionSize;
 	/** Override `BusDef.desc` on this hang. */
 	readonly desc?: string;
-	/** Child master that faces the parent window. Defaults to `uplink`. */
-	readonly uplink?: string;
 };
 
 /** `raw` = `Slave(mask)` (unchecked). `region` = `SlaveRegion` / `SlaveRegfile`. */
@@ -282,6 +273,10 @@ export type BusDef = {
 	readonly tag_width: number;
 	/** Tag domains carried on this fabric, low slice first (wishbone-bus.md 2.1). */
 	readonly tags: readonly WbTagSource[];
+	/** Cascade (slave) face master, set by `.uplink()`; undefined = top fabric. */
+	readonly cascadeFace?: string;
+	/** Pick the cascade face for `SlaveBus`; omit the name when there is one master. */
+	uplink(name?: string): BusDef;
 };
 
 export function isBusDef(v: unknown): v is BusDef {
@@ -291,6 +286,56 @@ export function isBusDef(v: unknown): v is BusDef {
 		(v as BusDef).kind === "wishbone-bus" &&
 		typeof (v as BusDef).name === "string"
 	);
+}
+
+/** BusDef fields without the `.uplink()` method (the stored, spreadable shape). */
+type BusFields = Omit<BusDef, "uplink">;
+
+/**
+ * Resolve which master is the cascade (slave) face. No name → the sole master
+ * (error if there are zero or several). The face must be a plain WB master.
+ */
+function resolveCascadeFace(fields: BusFields, name?: string): string {
+	const pick =
+		name !== undefined
+			? fields.masters.find((m) => m.name === name)
+			: fields.masters.length === 1
+				? fields.masters[0]
+				: undefined;
+	if (!pick) {
+		if (name !== undefined) {
+			throw new Error(
+				`wishbone-bus: bus ${fields.name} .uplink("${name}") has no master "${name}"`,
+			);
+		}
+		if (fields.masters.length === 0) {
+			throw new Error(
+				`wishbone-bus: bus ${fields.name} .uplink() needs at least one master`,
+			);
+		}
+		throw new Error(
+			`wishbone-bus: bus ${fields.name} has ${fields.masters.length} masters; call .uplink("name") to pick the cascade face`,
+		);
+	}
+	if (isBridgedMaster(pick)) {
+		throw new Error(
+			`wishbone-bus: bus ${fields.name} cascade face "${pick.name}" cannot use apb/jtag/cdc`,
+		);
+	}
+	return pick.name;
+}
+
+/** Attach the `.uplink()` method; `fields` is captured so spreads never clone it. */
+function makeBus(fields: BusFields): BusDef {
+	return {
+		...fields,
+		uplink(name?: string): BusDef {
+			return makeBus({
+				...fields,
+				cascadeFace: resolveCascadeFace(fields, name),
+			});
+		},
+	};
 }
 
 function parseSlaveOpts(
@@ -518,8 +563,8 @@ export function busByteSpan(def: BusDef): number {
 /**
  * Hang a child `BusDef` as a Region window. Child RTL is generated once;
  * each hang is a separate instance. Child addresses are window-relative
- * (parent already forwards `adr & ~mask`). Child must declare `Master("uplink")`
- * (or `opts.uplink`) as the cascade face.
+ * (parent already forwards `adr & ~mask`). The child must pick its cascade
+ * (slave) face with `.uplink()`; a single-master child is marked implicitly.
  */
 export function SlaveBus(
 	child: BusDef,
@@ -534,34 +579,26 @@ export function SlaveBus(
 			"wishbone-bus: SlaveBus(bus, base, opts?) base must be >= 0",
 		);
 	}
-	const uplink = opts?.uplink ?? UPLINK_MASTER;
-	const face = child.masters.find((m) => m.name === uplink);
-	if (!face) {
-		throw new Error(
-			`wishbone-bus: SlaveBus(${child.name}) needs Master("${uplink}") as the cascade face`,
-		);
-	}
-	if (isBridgedMaster(face)) {
-		throw new Error(
-			`wishbone-bus: SlaveBus(${child.name}) cascade face "${uplink}" cannot use apb/jtag/cdc`,
-		);
-	}
-	const span = busByteSpan(child);
+	// Single-master children mark implicitly; multi-master throws unless the
+	// caller already picked a face with `child.uplink("name")`.
+	const faced = child.cascadeFace !== undefined ? child : child.uplink();
+	const face = faced.cascadeFace as string;
+	const span = busByteSpan(faced);
 	const size = opts?.size ?? Size(span);
 	if (!isRegionSize(size)) {
 		throw new Error(
-			`wishbone-bus: SlaveBus(${opts?.id ?? child.name}, ...) size must be Size(bytes)`,
+			`wishbone-bus: SlaveBus(${opts?.id ?? faced.name}, ...) size must be Size(bytes)`,
 		);
 	}
-	const name = opts?.id ?? child.name;
+	const name = opts?.id ?? faced.name;
 	// Tag width is a property of the child fabric, not a per-hang hand-off.
-	if (opts?.tag !== undefined && opts.tag !== child.tag_width) {
+	if (opts?.tag !== undefined && opts.tag !== faced.tag_width) {
 		throw new Error(
-			`wishbone-bus: SlaveBus(${name}) tag ${opts.tag} != child "${child.name}" tag_width ${child.tag_width}`,
+			`wishbone-bus: SlaveBus(${name}) tag ${opts.tag} != child "${faced.name}" tag_width ${faced.tag_width}`,
 		);
 	}
-	const region = SlaveRegion(name, opts?.desc ?? child.desc, base, size, {
-		tag: child.tag_width > 0 ? child.tag_width : opts?.tag,
+	const region = SlaveRegion(name, opts?.desc ?? faced.desc, base, size, {
+		tag: faced.tag_width > 0 ? faced.tag_width : opts?.tag,
 		pipe: opts?.pipe,
 		broadcast: opts?.broadcast,
 		broadcastBy: opts?.broadcastBy,
@@ -569,26 +606,43 @@ export function SlaveBus(
 	const win = windowBytes(region.mask, 32);
 	if (win < span) {
 		throw new Error(
-			`wishbone-bus: slave ${name} window 0x${win.toString(16)} is smaller than child "${child.name}" span 0x${span.toString(16)}`,
+			`wishbone-bus: slave ${name} window 0x${win.toString(16)} is smaller than child "${faced.name}" span 0x${span.toString(16)}`,
 		);
 	}
-	return { ...region, bus: child, uplink };
+	return { ...region, bus: faced, uplink: face };
 }
 
-/** Child fabrics hung via `SlaveBus`, depth-first, unique by `BusDef.name`. */
+/**
+ * Child fabrics hung via `SlaveBus`, depth-first, unique by `BusDef.name`.
+ * A cascade-marked copy (`.uplink()`) wins over an unmarked same-name export,
+ * so the standalone wrapper is generated with its `i_wb_*` face.
+ */
 export function flattenBuses(listed: readonly BusDef[]): BusDef[] {
-	const out: BusDef[] = [];
-	const seen = new Set<string>();
+	const byName = new Map<string, BusDef>();
+	const order: string[] = [];
 	const walk = (def: BusDef): void => {
 		for (const s of def.slaves) {
 			if (s.bus) walk(s.bus);
 		}
-		if (seen.has(def.name)) return;
-		seen.add(def.name);
-		out.push(def);
+		const prev = byName.get(def.name);
+		if (prev) {
+			if (
+				prev.cascadeFace &&
+				def.cascadeFace &&
+				prev.cascadeFace !== def.cascadeFace
+			) {
+				throw new Error(
+					`wishbone-bus: bus "${def.name}" cascaded with two faces "${prev.cascadeFace}" and "${def.cascadeFace}"`,
+				);
+			}
+			if (!prev.cascadeFace && def.cascadeFace) byName.set(def.name, def);
+			return;
+		}
+		byName.set(def.name, def);
+		order.push(def.name);
 	};
 	for (const def of listed) walk(def);
-	return out;
+	return order.map((n) => byName.get(n) as BusDef);
 }
 
 function assertAcyclicBus(def: BusDef, stack: string[]): void {
@@ -609,15 +663,19 @@ export function Master(
 	opts: MasterOpts = {},
 ): WbMaster {
 	requireIdent("master", name);
+	// apb and jtag are distinct completer faces; a master wears at most one.
 	if (opts.apb && opts.jtag) {
 		throw new Error(`wishbone-bus: master ${name} cannot be both apb and jtag`);
 	}
+	// Plain WB is the default face when neither bridge opt is set.
 	const bridge: WbMasterBridge = opts.apb ? "apb" : opts.jtag ? "jtag" : "wb";
+	// JTAG lives on TCK, so its WB side is always asynchronous to the fabric.
 	if (bridge === "jtag" && opts.cdc === false) {
 		throw new Error(
 			`wishbone-bus: master ${name} jtag always crosses from TCK (cdc cannot be false)`,
 		);
 	}
+	// cdc = own-clock master; forced on for jtag, opt-in otherwise.
 	const cdc = bridge === "jtag" || opts.cdc === true;
 	const pipe = opts.pipe ?? 0;
 	if (!Number.isInteger(pipe) || pipe < 0 || pipe > 16) {
@@ -627,15 +685,19 @@ export function Master(
 	if (!Number.isInteger(timeout) || timeout < 0 || timeout > 0xffff) {
 		throw new Error(`wishbone-bus: master ${name} timeout must be 0..65535`);
 	}
+	// The abort counter lives in wb_cdc, so a timeout is meaningless without it.
 	if (timeout > 0 && !cdc) {
 		throw new Error(`wishbone-bus: master ${name} timeout needs cdc`);
 	}
+	// Bare fabric-clock WB master: no wrapper logic, so emit the minimal shape
+	// (bridge/cdc/timeout stay omitted and read back as their defaults).
 	if (bridge === "wb" && !cdc) return { name, desc, pipe };
 	const m: WbMaster = { name, desc, bridge, cdc, timeout, pipe };
 	if (bridge === "apb") {
+		// `apb: true` means no PPROT filter; only the object form carries one.
 		const p = opts.apb === true ? undefined : opts.apb?.pprot;
 		if (p === undefined) return m;
-		const mask = p.mask ?? 0b111;
+		const mask = p.mask ?? 0b111; // default: match all three PPROT bits
 		for (const [k, v] of [
 			["value", p.value],
 			["mask", mask],
@@ -644,6 +706,7 @@ export function Master(
 				throw new Error(`wishbone-bus: master ${name} pprot ${k} must be 0..7`);
 			}
 		}
+		// value bits the mask ignores can never match — reject as a typo.
 		if ((p.value & ~mask) !== 0) {
 			throw new Error(
 				`wishbone-bus: master ${name} pprot value sets bits outside mask`,
@@ -652,6 +715,7 @@ export function Master(
 		return { ...m, pprot: { value: p.value, mask } };
 	}
 	if (bridge === "jtag") {
+		// Run-Test/Idle padding cycles in the emitted PDL; default 16.
 		const idle = (opts.jtag === true ? undefined : opts.jtag?.idle) ?? 16;
 		if (!Number.isInteger(idle) || idle < 1 || idle > 0xffff) {
 			throw new Error(
@@ -660,6 +724,7 @@ export function Master(
 		}
 		return { ...m, idle };
 	}
+	// Reached only for bridge === "wb" with cdc: WB port plus a wb_cdc wrapper.
 	return m;
 }
 
@@ -806,11 +871,6 @@ export function Bus(
 			throw new Error(`wishbone-bus: duplicate master "${m.name}"`);
 		}
 		masterNames.add(m.name);
-		if (m.name === UPLINK_MASTER && isBridgedMaster(m)) {
-			throw new Error(
-				`wishbone-bus: bus ${name} cascade face "${UPLINK_MASTER}" cannot use apb/jtag/cdc`,
-			);
-		}
 	}
 	if (opts.slaves.length === 0) {
 		throw new Error(`wishbone-bus: bus ${name} needs at least one slave`);
@@ -848,7 +908,7 @@ export function Bus(
 			);
 		}
 	}
-	const def: BusDef = {
+	const def = makeBus({
 		kind: "wishbone-bus",
 		name,
 		desc,
@@ -857,7 +917,7 @@ export function Bus(
 		addr_width,
 		tag_width,
 		tags,
-	};
+	});
 	assertAcyclicBus(def, []);
 	assertTagSingleSource(def, new Map());
 	return def;

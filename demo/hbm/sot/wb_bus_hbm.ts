@@ -27,11 +27,11 @@ import { pstate } from "./wb_tag_pstate.ts";
 const CH_SIZE = 0x1000;
 const CH_COUNT = 16;
 
-/** Level 2: one channel. Bare `pstate` = inherit the tag from the uplink. */
+/** Level 2: one channel. Bare `pstate` = inherit the tag from the parent. */
 export const hbm_ch = Bus("hbm_ch", "HBM channel: aword + 2x dword", {
 	addrWidth: 12,
 	tags: [pstate],
-	masters: [Master("uplink", "From the channel decoder")],
+	masters: [Master("cfg", "Channel config from the decoder")],
 	slaves: [
 		SlaveRegfile(aword, 0x000, { size: Size(0x100) }),
 		SlaveRegfile(dword, 0x100, {
@@ -65,7 +65,7 @@ export const hbm = Bus("hbm", "HBM channel interconnect (16 channels)", {
 	slaves: [
 		SlaveRegfile(center, 0x000, { size: Size(CH_SIZE) }),
 		...Array.from({ length: CH_COUNT }, (_, i) =>
-			SlaveBus(hbm_ch, (i + 1) * CH_SIZE, {
+			SlaveBus(hbm_ch.uplink(), (i + 1) * CH_SIZE, {
 				id: `ch${i}`,
 				size: Size(CH_SIZE),
 				desc: `HBM channel ${i}`,

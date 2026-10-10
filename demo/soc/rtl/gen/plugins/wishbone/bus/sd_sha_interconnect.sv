@@ -2,7 +2,7 @@
 //
 //------------------------------------------------------------------------------
 //  Module: sd_sha_interconnect
-//  Desc:   SD + DMA + SHA256 channel interconnect (uplink + engine)
+//  Desc:   SD + DMA + SHA256 channel interconnect (cfg + engine)
 //  Masters: 2 (arbiter: rb_grant_en=0 fixed / 1 round-robin)
 //  Slaves:  3 (named {slave}_i_wb_* / {slave}_o_wb_*)
 //  Tag:     TGA 2 bit (forwarded, not interpreted)
@@ -18,16 +18,16 @@ module sd_sha_interconnect (
 	input  logic        clk,
 	input  logic        rst_n,
 	input  logic        rb_grant_en,
-	// Master uplink — Parent decoder cascade,
-	input  logic [11:0] uplink_o_wb_adr,
-	input  logic [31:0] uplink_o_wb_dat,
-	input  logic [3:0]  uplink_o_wb_sel,
-	input  logic [1:0]  uplink_o_wb_tga_bank,
-	input  logic        uplink_o_wb_cyc,
-	input  logic        uplink_o_wb_stb,
-	input  logic        uplink_o_wb_we,
-	output logic [31:0] uplink_i_wb_dat,
-	output logic        uplink_i_wb_ack,
+	// Master cfg — Parent decoder cascade,
+	input  logic [11:0] cfg_o_wb_adr,
+	input  logic [31:0] cfg_o_wb_dat,
+	input  logic [3:0]  cfg_o_wb_sel,
+	input  logic [1:0]  cfg_o_wb_tga_bank,
+	input  logic        cfg_o_wb_cyc,
+	input  logic        cfg_o_wb_stb,
+	input  logic        cfg_o_wb_we,
+	output logic [31:0] cfg_i_wb_dat,
+	output logic        cfg_i_wb_ack,
 	// Master eng — sd_rd_dma engine,
 	input  logic [11:0] eng_o_wb_adr,
 	input  logic [31:0] eng_o_wb_dat,
@@ -87,14 +87,14 @@ module sd_sha_interconnect (
 	logic [1:0] m_stb;
 	logic [1:0] m_we;
 
-	assign m_cyc = {eng_o_wb_cyc, uplink_o_wb_cyc};
-	assign m_stb = {eng_o_wb_stb, uplink_o_wb_stb};
-	assign m_we  = {eng_o_wb_we, uplink_o_wb_we};
+	assign m_cyc = {eng_o_wb_cyc, cfg_o_wb_cyc};
+	assign m_stb = {eng_o_wb_stb, cfg_o_wb_stb};
+	assign m_we  = {eng_o_wb_we, cfg_o_wb_we};
 
 	always_comb begin
-		if      (uplink_o_wb_cyc) prio_gnt = 2'b01;
-		else if (eng_o_wb_cyc)    prio_gnt = 2'b10;
-		else                      prio_gnt = 2'b00;
+		if      (cfg_o_wb_cyc) prio_gnt = 2'b01;
+		else if (eng_o_wb_cyc) prio_gnt = 2'b10;
+		else                   prio_gnt = 2'b00;
 	end
 
 	always_comb begin
@@ -139,13 +139,13 @@ module sd_sha_interconnect (
 	logic        g_stb;
 	logic        g_we;
 
-	assign g_adr   = ({12{gsel[0]}} & uplink_o_wb_adr)
+	assign g_adr   = ({12{gsel[0]}} & cfg_o_wb_adr)
 	               | ({12{gsel[1]}} & eng_o_wb_adr);
-	assign g_wdata = ({32{gsel[0]}} & uplink_o_wb_dat)
+	assign g_wdata = ({32{gsel[0]}} & cfg_o_wb_dat)
 	               | ({32{gsel[1]}} & eng_o_wb_dat);
-	assign g_sel   = ({4{gsel[0]}} & uplink_o_wb_sel)
+	assign g_sel   = ({4{gsel[0]}} & cfg_o_wb_sel)
 	               | ({4{gsel[1]}} & eng_o_wb_sel);
-	assign g_up_bank = ({2{gsel[0]}} & uplink_o_wb_tga_bank)
+	assign g_up_bank = ({2{gsel[0]}} & cfg_o_wb_tga_bank)
 	                 | ({2{gsel[1]}} & eng_o_wb_tga_bank);
 	assign g_tga_bank = g_up_bank;
 	assign g_cyc   = |(gsel & m_cyc);
@@ -273,9 +273,9 @@ module sd_sha_interconnect (
 	//------------------------------------------------------------------------------
 	//  Master response: only the granted slot sees DAT/ACK
 	//------------------------------------------------------------------------------
-	assign uplink_i_wb_dat = {32{gsel[0]}} & rsp_dat;
-	assign uplink_i_wb_ack = gsel[0] & rsp_ack;
-	assign eng_i_wb_dat    = {32{gsel[1]}} & rsp_dat;
-	assign eng_i_wb_ack    = gsel[1] & rsp_ack;
+	assign cfg_i_wb_dat = {32{gsel[0]}} & rsp_dat;
+	assign cfg_i_wb_ack = gsel[0] & rsp_ack;
+	assign eng_i_wb_dat = {32{gsel[1]}} & rsp_dat;
+	assign eng_i_wb_ack = gsel[1] & rsp_ack;
 
 endmodule

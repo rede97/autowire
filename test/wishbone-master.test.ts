@@ -8,7 +8,6 @@ import {
 	Master,
 	Slave,
 	SlaveBus,
-	UPLINK_MASTER,
 } from "../src/plugins/wishbone-bus/dsl.ts";
 import { busModuleName, emitBusSv } from "../src/plugins/wishbone-bus/emit.ts";
 import {
@@ -85,19 +84,19 @@ describe("wishbone master bridges", () => {
 				slaves,
 			}),
 		).toThrow(/duplicate master/);
-		expect(() =>
-			Bus("b", "b", {
-				addrWidth: 16,
-				masters: [Master(UPLINK_MASTER, "u", { cdc: true })],
-				slaves,
-			}),
-		).toThrow(/cascade face/);
+		// A bridged master cannot serve as the cascade face.
+		const bridged = Bus("b", "b", {
+			addrWidth: 16,
+			masters: [Master("cfg", "u", { cdc: true })],
+			slaves,
+		});
+		expect(() => bridged.uplink("cfg")).toThrow(/cascade face/);
 		const child = Bus("child", "c", {
 			addrWidth: 16,
 			masters: [Master("up2", "u", { apb: true })],
 			slaves,
 		});
-		expect(() => SlaveBus(child, 0, { uplink: "up2" })).toThrow(/cascade face/);
+		expect(() => SlaveBus(child.uplink("up2"), 0)).toThrow(/cascade face/);
 	});
 
 	test("wrapper hides bridged fabric ports and exposes native faces", () => {

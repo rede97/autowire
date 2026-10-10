@@ -80,7 +80,7 @@
 
 | 写法 | 语义 |
 |---|---|
-| `pstate` | 透传：本层不产生；值来自 `Master("uplink")`（或普通 master 口）的 TGA |
+| `pstate` | 透传：本层不产生；值来自级联面（或普通 master 口）的 TGA |
 | `TagFromAddr(pstate, "18:17")` | 紧挨窗口之上取 tag；tag 以上的位丢弃，译码只用剩下的低位 |
 | `TagFromPin(pstate)` | 本层出一个输入口（如全局 pstate 控制器）产生 |
 | `TagFromReg(pstate, cell.field)` | 由本 fabric 内挂接 regfile 的某个 regbit 产生（省掉「出叶子→绕总线→回来」） |
@@ -91,13 +91,13 @@
 // level 1: channel decoder —— 从地址产生
 export const hbm = Bus("hbm", "HBM channel decoder", {
   tags: [TagFromAddr(pstate, "18:17")],
-  slaves: [SlaveBus(hbm_ch, 0x0000_0000, { id: "ch0", size: Size(0x1000) }) /* ...ch15 */],
+  slaves: [SlaveBus(hbm_ch.uplink(), 0x0000_0000, { id: "ch0", size: Size(0x1000) }) /* ...ch15 */],
 })
 
 // level 2: channel 内部 —— 透传
 export const hbm_ch = Bus("hbm_ch", "aword + 2x dword", {
   tags: [pstate],
-  masters: [Master("uplink", "from channel decoder")],
+  masters: [Master("cfg", "channel config")],
   slaves: [SlaveRegfile(aword, 0x000), SlaveRegfile(dword0, 0x100), SlaveRegfile(dword1, 0x200)],
 })
 ```
@@ -140,7 +140,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 | **SlaveRegion** | `SlaveRegion(name, desc, base, Size(bytes), { pipe: N, tag?, broadcast?, broadcastBy? })` 字符串窗口按 **字节跨度**；底层 mask = span 向上取 2 的幂；`(base & mask) === base`；**参与**区间重叠检查。`broadcast` / `broadcastBy` 见 §4.1 |
 | **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（原始 match mask）；**不**做对齐/重叠检查；**禁止** `broadcast` / `broadcastBy`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
 | **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（叶子 + `Size(layout span)`，可 `size=` 覆盖且必须盖住 span） |
-| **SlaveBus** | `SlaveBus(BusDef, base, { id?, pipe?, tag?, size?, desc?, uplink? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模 **必须** 有 `Master("uplink")`（或 `uplink=`）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`（丢掉窗口基址所在的高位，**不是**基址相减，也 **不能**把地址位取反；窗口必须覆盖基址本身），子地址是窗相对的 |
+| **SlaveBus** | `SlaveBus(child.uplink(name?), base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模用 `.uplink(name?)` 指定级联面（单 master 可省名，多 master 必须点名）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`（丢掉窗口基址所在的高位，**不是**基址相减，也 **不能**把地址位取反；窗口必须覆盖基址本身），子地址是窗相对的 |
 | **Master** | `Master(name, desc, { pipe: N })`；`N=0`（缺省）= 组合直通；`N>0`（1..16）= 在 **仲裁之前**（decoder 则在译码之前）插入 `wb_cfg_pipe`。仲裁请求与 grant 保持看 pipe 的 `s_cyc`，posted 写撤掉端口 `CYC` 后总线仍归该 master，直到队列排空。与父级 `SlaveBus` 的 slave pipe 是两级，互不替代 |
 
 第五参仍可写数字：`Slave(..., 2)` = `tag=2`（兼容）；pipe 必须走 options 对象。
@@ -258,8 +258,8 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 - 生成编排 **必须**同一 plugin id `wishbone` 一次打出 arb+decoder+regfile（类型仍分立）；每个生成模经 **analysis → RtlIndex 普通叶子**；connect 侧一律 `aw-inst` 例化（**禁止**插件树私有口表向上递推）。  
 - **字符串窗口**：优先 `SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? })`。`Size` 是作者面跨度（字节）；底层 mask = `deriveWindowMask`（向上取 2 的幂）；`(base & mask) === base`。`Bus()` **必须**拒绝 Region 窗口两两重叠（含 `SlaveRegfile`）。原始 `Slave(name, desc, base, mask, …)` 是 **Raw** 口：**禁止**对它做对齐/重叠检查（demo `uart`）。**禁止**给 `Slave` / `SlaveRegion` 重载 `RegfileDef`。  
 - **`SlaveRegfile` = `SlaveRegion` 语法糖**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, size?, desc? })`。默认 `Size(layout span)` 再 2^N 对齐；`size=` 可放大窗口，**禁止**小于 span。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。  
-- **`SlaveBus` = `SlaveRegion` 语法糖**：`SlaveBus(child, base, { id?, pipe?, tag?, size?, desc?, uplink? })`。用于 **级联多级 decoder**（也允许子级是 interconnect）。`id` 缺省 = `BusDef.name`；同一 child 多挂用不同 `id`（demo：`sd_sha` ×2 → `ch0`/`ch1`）。默认 `Size(busByteSpan(child))`；`size=` 可放大，**禁止**小于 child span。子总线 **必须**声明 `Master("uplink")`（或 `uplink=`）：interconnect 上该 master 口在 Type-A wrapper 里 **remap** 成 `i_wb_*` / `o_wb_*`（父级 Slave 窗 identity）；decoder 子级 remap `m_*`。父级译码已下发窗内 offset（`adr & ~mask`），子地址是相对的，子 `addrWidth` **不得超过**这条窗口转发的位数（demo：`soc_wb` 的 4 KiB channel 窗转发 12 位，`sd_sha` 的 `addrWidth` 就是 12，不能再写 32）。channel 内 DMA 的 SRC **必须**写相对地址。**禁止**假设子 DMA 能打到父级 SRAM/flash（没有自动 downlink）。generate **必须**对 child RTL 只打一份，HTML 例化 N 次。  
-- 若 bus 上有挂接的 regfile **或** `Master("uplink")`：generate **必须**再打一份 Type-A **wrapper** `<bus>_bus_cfg`。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
+- **`SlaveBus` = `SlaveRegion` 语法糖**：`SlaveBus(child.uplink(name?), base, { id?, pipe?, tag?, size?, desc? })`。用于 **级联多级 decoder**（也允许子级是 interconnect）。`id` 缺省 = `BusDef.name`；同一 child 多挂用不同 `id`（demo：`sd_sha` ×2 → `ch0`/`ch1`）。默认 `Size(busByteSpan(child))`；`size=` 可放大，**禁止**小于 child span。子总线用 `.uplink(name?)` 指定级联面（单 master 省名、多 master 必须点名；桥接口不能当面）：interconnect 上该 master 口在 Type-A wrapper 里 **remap** 成 `i_wb_*` / `o_wb_*`（父级 Slave 窗 identity）；decoder 子级 remap `m_*`。注册生成与被级联的 **必须是同一个 `.uplink()` 对象**，否则独立 wrapper 看不到级联面（见 §9）。父级译码已下发窗内 offset（`adr & ~mask`），子地址是相对的，子 `addrWidth` **不得超过**这条窗口转发的位数（demo：`soc_wb` 的 4 KiB channel 窗转发 12 位，`sd_sha` 的 `addrWidth` 就是 12，不能再写 32）。channel 内 DMA 的 SRC **必须**写相对地址。**禁止**假设子 DMA 能打到父级 SRAM/flash（没有自动 downlink）。generate **必须**对 child RTL 只打一份，HTML 例化 N 次。  
+- 若 bus 上有挂接的 regfile **或** `.uplink()` 级联面：generate **必须**再打一份 Type-A **wrapper** `<bus>_bus_cfg`。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
 - 软件地址图由同一插件打包：`[plugins.wishbone] c=` → `<bus>_map.h` + 字段 `.h` + `<name>.h`；`uvm=` → `ral_block_<bus>.sv` + `ral_<SHEET>.sv`（cell 类 + 叶子 `ral_block_<sheet>`）+ `ral_<name>.sv`；`sv_reg=` → `<bus>_map_pkg.sv`（`<SLAVE>_BASE` / `<SHEET>_<CELL>_OFFSET` / `<SLAVE>_<CELL>` 绝对址 localparam）+ 字段 `<sheet>_pkg.sv` + `<name>_pkg.sv`，用于非 UVM 简易验证。bus block 用 `add_submap` 挂叶子 block，不做前缀改名平铺。**只**出 uvm_reg 模型，不出 RALF（ralgen 流程不在本阶段范围）。
 
   RTL 仍是一个窗口：`TagFromAddr` 把这些地址位从译码里剥掉，所以硬件只看见一份相对地址。软件图在**产生这个 tag 的那一层**按副本拆开，每个副本一条绝对地址。只透传该 tag 的子总线和叶子**不再拆**：它们的地址相对父级已经命名的那一份。`pin` / `reg` 来源不产生地址别名。广播窗口是一条真实地址，一次写打中所有订阅者、一次读返回各订阅者 `DAT` 的按位或（§4.1 规则 5）；uvm_reg 里广播只作为注释，因为没有广播 frontdoor，验证时用原始总线事务（demo/hbm `wb_raw` / `apb_raw`）。
@@ -282,7 +282,7 @@ sv_reg = "dv/sv_reg"     # bus/<name>_map_pkg.sv（package+localparam；非 UVM 
 
 # out → plugins_dir/wishbone/bus/wb_cfg_pipe.sv
 #                      + bus/<name>_decoder.sv | bus/<name>_interconnect.sv
-#                      + bus/<name>_bus_cfg.sv   # SlaveRegfile 和/或 Master("uplink")
+#                      + bus/<name>_bus_cfg.sv   # SlaveRegfile 和/或 .uplink() 级联面
 # NM<=1 → decoder；NM>1 → interconnect（priority arb + named slaves）
 # demo/soc：顶层 soc_wb = interconnect（cpu + JTAG dbg，dbg 经 demo_tap USER）；两个 SlaveBus(sd_sha) channel
 #           wrapper 内 fabric 例化名为 u_interconnect / u_decoder；HTML u_interconnect = soc_wb_bus_cfg；u_ch0/u_ch1 = sd_sha_ch
@@ -306,3 +306,51 @@ demo/hbm 是本插件的 VCS + UVM-1.2 验证展示：顶层 `hbm` = interconnec
 **已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。  
 **已裁定软件图 / 挂接**：`SlaveRegfile(RegfileDef, …)` + Type-A wrapper + bus C overlay / `uvm_reg_block`（见 §6）。  
 **已裁定级联**：`SlaveBus(BusDef, …)` = Region 语法糖；多级 decoder 级联；子级可以是 interconnect；一份 BusDef × N 平行 channel。
+
+## 9. 级联面用 `.uplink()` 显式选取（已落地）
+
+> 状态：**已落地**。`dsl.ts` 的 `BusDef.uplink(name?)` + `cascadeFace`、`emit-attach.ts`、demo（hbm / sd_sha）、测试都已切到这套 API；旧的 `Master("uplink")` 魔法名与 `SlaveBusOpts.uplink` 已删除。
+
+### 9.1 现状与问题
+
+今天「哪个 master 是级联从机面」靠两处约定，都不好：
+
+1. 魔法保留名 `Master("uplink")`：子总线必须恰好起名 `uplink` 才能被 `SlaveBus` 级联。把「我是子总线」耦合进一个保留字。
+2. 父侧字符串逃生口 `SlaveBus(child, base, { uplink: "name" })`，默认仍是 `"uplink"`。两套机制、都是 stringly-typed。
+
+`hasCascadeFace(def)` 的判据是「`masters` 里有没有叫 `uplink` 的口」。生成子 wrapper（`<bus>_bus_cfg`）时据此决定 master 面印 `i_wb_*/o_wb_*`（有级联面）还是 `m_*`（无）。
+
+### 9.2 目标 API
+
+去掉魔法名。级联面用 BusDef 方法 **在级联点选取**：
+
+```ts
+// 单 master：缺省取唯一 master
+SlaveBus(hbm_ch.uplink(), base, { id: "ch0", size: Size(0x1000) })
+// 多 master：点名哪个口是从机面（其余是本层本地 master，如 DMA 引擎）
+SlaveBus(sd_sha.uplink("cfg"), base, { id: "ch0" })
+```
+
+- `.uplink(name?)` 返回带 `cascadeFace` 标记的 BusDef 浅拷贝。
+  - 无参：`NM == 1` 取唯一 master；`NM > 1` → **构造期报错**「ambiguous, 用 `.uplink("name")` 点名」。
+  - 有参：校验该 master 存在、且不是 apb/jtag/cdc 桥接口（沿用现规则）。
+- `SlaveBus(child, …)` 只接「过了 `.uplink()` 的 child」。传光的多 master bus → 报错提示先选面；单 master 可由 `SlaveBus` 内部隐式 `.uplink()`。
+- 删除 `SlaveBusOpts.uplink` 和导出的 `UPLINK_MASTER` 魔法名。
+
+### 9.3 关键约束：面必须随子总线对象带到生成器
+
+子 wrapper 是**独立生成一份**的，master 面印 `m_*` 还是 `i_wb_*` 在生成这一份时就定死。因此 `cascadeFace` **必须是子总线对象自身的属性**，并且 **注册给 `plugin wishbone run` 生成的、以及被 `SlaveBus` 级联的，是同一个带标记的对象**；否则生成器印子 wrapper 时看不到选择，又会回到「端口 `m_*`、例化接 `i_wb_*`」的悬空（§与刚修复的 `cascadeNet` 同源）。
+
+- `hasCascadeFace(def)` 改判据：从「有叫 `uplink` 的 master」→「`def.cascadeFace` 非空」。
+- `cascadeNet` 的护栏 `if (!hasCascadeFace(def)) return fabricName;` 保留；remap 时按 `cascadeFace` 指定的 master 口改名，而非固定前缀 `uplink_`。
+- tag 来源种类里的 `"uplink"`（`tags: [pstate]` 透传）是**另一个概念**，与 master 面无关，不改。
+
+### 9.4 影响面与迁移
+
+- `dsl.ts`：BusDef 加 `.uplink()`；`BusDef` 加 `cascadeFace`；`SlaveBus` 签名+校验改写；删 `SlaveBusOpts.uplink`、`UPLINK_MASTER`。
+- `emit-attach.ts`：`hasCascadeFace` / `cascadeNet` / `cascadeWrapperPorts` / `hidesCascadeFabricPort` 改为读 `cascadeFace`。
+- demo：`hbm_ch`（master 改普通名，父级 `hbm_ch.uplink()`）、`sd_sha`（`sd_sha.uplink("cfg")`）。
+- 文档本节、`help/`、`test/wishbone-bus.test.ts` / `wishbone-tag.test.ts` / `wishbone-master.test.ts`。
+- 新增回归用例：decoder + 挂 regfile + **无级联面**，断言 wrapper 的 `u_decoder` master 连回模块自己的 `m_*`，不出现未声明的 `i_wb_*`。
+
+破坏性 DSL 变更：所有现存 `Master("uplink")` + `SlaveBus(child, …)` 的写法都要迁移到 `child.uplink()`。

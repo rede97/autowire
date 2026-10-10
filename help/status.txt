@@ -77,7 +77,7 @@ Parallel (does not block connect)
     attached leaves are inside the bus Type-A wrapper (no HTML *_regfile inst);
     string slaves (SRAM/UART) stay aw-inst (prefer SlaveRegion+Size);
     SlaveBus is SlaveRegion sugar: hang a child BusDef as a window; child RTL
-    once, N instances; child Master("uplink") remaps to i_wb_* / o_wb_* on
+    once, N instances; child .uplink(name?) picks the cascade face master, remapped to i_wb_* / o_wb_* on
     <bus>_bus_cfg; parent forwards window-offset ADR (adr & ~mask; not base subtraction; cannot invert an address bit; the window must contain its own base);
     demo: top soc_wb = interconnect (cpu + JTAG dbg master behind demo_tap USER);
     two SlaveBus(sd_sha) channels (ch0/ch1);
@@ -144,12 +144,12 @@ Parallel (does not block connect)
     Slave(name, desc, base, mask, ...) is a raw port (no overlap check);
     SlaveRegfile is SlaveRegion sugar: Size(layout span) + leaf; optional size=;
     SlaveBus is SlaveRegion sugar: Size(child span) + child BusDef; optional size=;
-    child must declare Master("uplink") (cascade face);
+    child picks the cascade face with .uplink(name?) (sole master if omitted);
     Bus rejects overlapping Region/Regfile/SlaveBus windows; raw Slave is excluded;
     tag defaults to leaf tga_width; TGA must match; id defaults to RegfileDef.name;
     Type-A wrapper <bus>_bus_cfg instantiates interconnect + attached *_regfile
     (sidebands promoted; WB internalized; HTML aw-inst soc_wb_bus_cfg / sd_sha_bus_cfg);
-    uplink master ports become i_wb_* / o_wb_* on the child wrapper;
+    the .uplink() cascade-face master ports become i_wb_* / o_wb_* on the child wrapper;
     master faces (docs/plugins/wishbone-master.md): Master(name, desc, { apb | jtag | cdc,
     timeout? }); bridge in the source clock → wb_cdc (4-phase req/ack, non-posted) → fabric;
     fabric RTL unchanged, all bridge logic inside <bus>_bus_cfg ({m}_fab_* nets);
@@ -157,7 +157,7 @@ Parallel (does not block connect)
     JTAG = TDR client of the DFT-owned chip TAP / SIB (no private TAP): shift {op,adr,dat},
     capture {st,adr,rdat}; launch + poll (st 1 busy / 2 err sticky, nop clears); {m}_en gate;
     emits wb_sync_cell / wb_cdc / wb_apb2wb / wb_jtag_tdr.sv + <bus>_bus_cfg.icl/.pdl;
-    cascade face (uplink) cannot be bridged; duplicate master names rejected
+    cascade face (.uplink()) cannot be bridged; duplicate master names rejected
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)
   Do not treat connect aw-submods as a code-gen hook — generators emit SV then aw-inst

@@ -15,7 +15,6 @@ import {
 	SlaveBus,
 	SlaveRegfile,
 	SlaveRegion,
-	UPLINK_MASTER,
 } from "../src/plugins/wishbone-bus/dsl.ts";
 import {
 	busModuleKind,
@@ -60,7 +59,7 @@ describe("wishbone-bus", () => {
 		expect(busModuleKind(sd_sha)).toBe("interconnect");
 		const sv = emitBusSv(sd_sha);
 		expect(sv).toContain("module sd_sha_interconnect");
-		expect(sv).toContain("uplink_o_wb_cyc");
+		expect(sv).toContain("cfg_o_wb_cyc");
 		expect(sv).toContain("eng_i_wb_ack");
 		expect(sv).toContain("sha256_i_wb_cyc");
 		expect(sv).toContain("sha256_o_wb_ack");
@@ -220,7 +219,7 @@ describe("wishbone-bus", () => {
 
 	test("arbiter priority: lowest master index wins (multi-hot regression)", () => {
 		const sv = emitBusSv(sd_sha);
-		expect(sv).toContain("if      (uplink_o_wb_cyc)");
+		expect(sv).toContain("if      (cfg_o_wb_cyc)");
 		expect(sv).toContain("else if (eng_o_wb_cyc)");
 		expect(sv).toContain("prio_gnt = 2'b10;");
 		expect(sv).toContain(
@@ -506,14 +505,14 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(wrap).not.toContain("sha256_regfile");
 		expect(wrap).toMatch(/\.rg_rb_grant_en\s+\(\s*rg_rb_grant_en\s*\)/);
 		expect(wrap).not.toContain("sram_regfile");
-		const ch = emitBusSystemSv(sd_sha, ALIGNED);
+		const ch = emitBusSystemSv(sd_sha.uplink("cfg"), ALIGNED);
 		expect(ch).toContain("module sd_sha_bus_cfg");
 		expect(ch).toContain("sd_sha_interconnect u_interconnect");
 		expect(ch).toContain("sha256_regfile u_sha256");
 		expect(ch).toMatch(/\.sha256_i_wb_cyc\s+\(\s*sha256_i_wb_cyc\s*\)/);
 		expect(ch).toMatch(/\.rg_soft_reset\s+\(\s*rg_soft_reset\s*\)/);
 		expect(ch).toContain("i_wb_cyc");
-		expect(ch).not.toMatch(/^\s*(input|output).*uplink_o_wb_cyc/m);
+		expect(ch).not.toMatch(/^\s*(input|output).*cfg_o_wb_cyc/m);
 		expect(ch).not.toMatch(/^\s*(input|output).*sha256_i_wb_cyc/m);
 		const map = emitBusMapC(soc_wb);
 		expect(map).toContain("#define SOC_WB_CH0_BANK0_SHA256_BASE 0x03000040u");
@@ -546,33 +545,29 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(pkg).not.toContain("_MASK");
 	});
 
-	test("SlaveBus is Region sugar; one child RTL, N hangs; needs uplink", () => {
+	test("SlaveBus is Region sugar; one child RTL, N hangs; picks a cascade face", () => {
 		expect(soc_wb.slaves.find((s) => s.name === "ch0")?.bus?.name).toBe(
 			"sd_sha",
 		);
 		expect(soc_wb.slaves.find((s) => s.name === "ch1")?.bus?.name).toBe(
 			"sd_sha",
 		);
-		expect(soc_wb.slaves.find((s) => s.name === "ch0")?.uplink).toBe(
-			UPLINK_MASTER,
-		);
+		expect(soc_wb.slaves.find((s) => s.name === "ch0")?.uplink).toBe("cfg");
 		expect(soc_wb.slaves.find((s) => s.name === "ch0")?.window).toBe("region");
+		// A multi-master child with no explicit face is ambiguous.
 		expect(() =>
-			SlaveBus(
-				Bus("noup", "no uplink", {
-					addrWidth: 32,
-					masters: [Master("cpu", "CPU")],
-					slaves: [SlaveRegion("s0", "s", 0, Size(16))],
-				}),
-				0,
-			),
-		).toThrow(/uplink/);
+			SlaveBus(sd_sha, 0x0400_0000, { id: "amb", size: Size(0x1000) }),
+		).toThrow(/call \.uplink\("name"\)/);
 		expect(() =>
-			SlaveBus(sd_sha, 0x0300_0000, { id: "tiny", size: Size(16) }),
+			SlaveBus(sd_sha.uplink("cfg"), 0x0300_0000, {
+				id: "tiny",
+				size: Size(16),
+			}),
 		).toThrow(/smaller/);
+		// Single-master child marks implicitly.
 		const child = Bus("leafb", "decoder child", {
 			addrWidth: 8,
-			masters: [Master(UPLINK_MASTER, "cascade")],
+			masters: [Master("cfg", "cascade")],
 			slaves: [SlaveRegion("csr", "csr", 0, Size(16))],
 		});
 		const parent = Bus("par", "cascade", {
@@ -586,13 +581,13 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(parent.slaves.map((s) => s.name)).toEqual(["a", "b"]);
 		expect(busModuleKind(parent)).toBe("decoder");
 		expect(busModuleKind(child)).toBe("decoder");
-		const wrap = emitBusSystemSv(child, ALIGNED);
+		const wrap = emitBusSystemSv(child.uplink(), ALIGNED);
 		expect(wrap).toContain("i_wb_cyc");
 		expect(wrap).toMatch(/\.m_cyc_i\s+\(\s*i_wb_cyc\s*\)/);
 		expect(wrap).not.toMatch(/^\s*(input|output).*m_adr_i/m);
 		const wide = Bus("wide_child", "wider than the window it is hung in", {
 			addrWidth: 16,
-			masters: [Master(UPLINK_MASTER, "cascade")],
+			masters: [Master("cfg", "cascade")],
 			slaves: [SlaveRegion("csr", "csr", 0, Size(16))],
 		});
 		expect(() =>
@@ -602,5 +597,21 @@ ts = "${ts.replaceAll("\\", "/")}"
 				slaves: [SlaveBus(wide, 0, { size: Size(0x1000) })],
 			}),
 		).toThrow(/forwards 12 address bits/);
+	});
+
+	test("no cascade face: wrapper keeps the fabric m_* face (no dangling i_wb_*)", () => {
+		// A decoder with an attached regfile but no .uplink() is a top fabric:
+		// the wrapper must keep the decoder's own m_* ports and wire the
+		// instance to them, never to undeclared i_wb_* nets (regression).
+		const leaf = Bus("cfgbus", "decoder + attached regfile, no cascade", {
+			addrWidth: 16,
+			masters: [Master("cfg", "config")],
+			slaves: [SlaveRegfile(sha256, 0x0)],
+		});
+		const sv = emitBusSystemSv(leaf, ALIGNED) ?? "";
+		expect(sv).toMatch(/^\tinput\s+logic\s+\[15:0\]\s*m_adr_i,/m);
+		expect(sv).toMatch(/\.m_adr_i\s*\(\s*m_adr_i\s*\)/);
+		expect(sv).not.toMatch(/\.m_adr_i\s*\(\s*i_wb_adr\s*\)/);
+		expect(sv).not.toMatch(/^\s*(input|output).*\bi_wb_adr\b/m);
 	});
 });

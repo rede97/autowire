@@ -4,7 +4,7 @@
     sdspi + sd_rd_dma (CSR slave "dma" / engine master "eng") + sha256wb
     (AXIS glue + core). sha256_regfile lives inside sd_sha_bus_cfg.
   One BusDef (sd_sha) is instantiated twice from soc_top (ch0 / ch1).
-  Cascade face: sd_sha_bus_cfg remaps Master("uplink") to i_wb_* / o_wb_*.
+  Cascade face: sd_sha_bus_cfg remaps the .uplink("cfg") master to i_wb_* / o_wb_*.
   Channel-relative map (parent window 4 KiB at ch0=0x0300_0000 / ch1=0x0300_1000):
     0x00  sd     sdspi
     0x10  dma    sd_rd_dma CSR

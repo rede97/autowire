@@ -44,8 +44,16 @@ export const soc_wb = Bus(
 			// Unaligned 8-byte match mask (not a 2^N region at this base).
 			Slave("uart", "simpleuart", 0x0200_0004, 0xffff_fff8, { pipe: 3 }),
 			SlaveRegion("testout", "test output", 0x0200_0010, Size(4), { pipe: 1 }),
-			SlaveBus(sd_sha, 0x0300_0000, { id: "ch0", size: Size(0x1000), pipe: 2 }),
-			SlaveBus(sd_sha, 0x0300_1000, { id: "ch1", size: Size(0x1000), pipe: 4 }),
+			SlaveBus(sd_sha.uplink("cfg"), 0x0300_0000, {
+				id: "ch0",
+				size: Size(0x1000),
+				pipe: 2,
+			}),
+			SlaveBus(sd_sha.uplink("cfg"), 0x0300_1000, {
+				id: "ch1",
+				size: Size(0x1000),
+				pipe: 4,
+			}),
 			SlaveRegfile(smoke, 0x0300_6000, { pipe: 3 }),
 		],
 	},
