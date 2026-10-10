@@ -2,6 +2,13 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.4.0] - 2026-10-10
+
+- Wishbone 级联面改用 `BusDef.uplink(name?)` 显式选取，**不再**用保留名 `Master("uplink")`，并删除 `SlaveBusOpts.uplink`。单 master 的子总线隐式取唯一 master 作面，多 master 必须 `child.uplink("name")` 点名；桥接口（apb/jtag/cdc）不能当面。`SlaveBus` 要求传入已选面的 child，`flattenBuses` 保留带 `cascadeFace` 的副本，使独立生成的 `<bus>_bus_cfg` wrapper 拿到正确面（级联 = `i_wb_*`/`o_wb_*`，顶层 = `m_*`）。**破坏性**：`Master("uplink")` + `SlaveBus(child, …)` 需迁移到 `child.uplink()`（或 `child.uplink("name")`）。
+- 顺带修掉「decoder 挂 regfile 且无级联面」时 wrapper 把 fabric master 接到未声明 `i_wb_*` 的悬空 bug——现在无级联面就保持 fabric 自己的 `m_*` 面。
+- demo（hbm / soc）、文档（`docs/plugins/wishbone-bus.md` §9、`wishbone-master.md`）、`help status`、测试全部切到新 API，并新增「无级联面」回归用例。
+- `fix(demo/soc)`：默认 Verilator 目标（`Vtb_soc_vl`）不再把 aw-tb-mod 的 `rtl/gen/sim/tb_soc.sv` 拉进构建（那是 `--tb-mod` 的 top），避免找不到 `sim/*.svh` 而编译失败。
+
 ## [2.3.2] - 2026-10-09
 
 - Wishbone 插件新增 `sv_reg` 导出：`[plugins.wishbone] sv_reg=` 生成非 UVM 的 `*_pkg.sv` package + localparam（字段 `_LSB/_WIDTH/_MASK/_RESET`；总线 `<SLAVE>_BASE`、`<SHEET>_<CELL>_OFFSET`、绝对地址 `<SLAVE>_<CELL>`），目录按 `regfile/` 与 `bus/` 分开、伞文件在根，与 C 导出同款组织。demo/soc 入库 `dv/sv_reg/` 与 Verilator 冒烟 `sim/verilator/sv_reg_smoke.sh`（无固件、无总线 RTL、不需要 `--timing`）。
