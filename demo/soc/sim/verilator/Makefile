@@ -48,9 +48,13 @@ all: $(OBJ_DIR)/V$(TOP)
 RTL_LISTS := $(VL_DIR)/filelist.f $(SOC_ROOT)/rtl/soc.f $(SOC_ROOT)/rtl/gen.f
 RTL_SRCS := $(shell grep -hvE '^\s*(#|-f|$$)' $(RTL_LISTS) | sed 's|^|$(SOC_ROOT)/|')
 
+# The aw-tb-mod dump (rtl/gen/sim/tb_soc.sv) is the --tb-mod top; the C++ harness
+# uses tb_soc_vl.sv instead, so drop it (and its sim/*.svh includes) here.
+VL_RTL := $(filter-out %/gen/sim/tb_soc.sv,$(RTL_SRCS))
+
 $(OBJ_DIR)/V$(TOP): $(RTL_LISTS) $(VL_DIR)/tb_soc_vl.sv $(VL_DIR)/spiflash_vl.sv $(VL_DIR)/jtag_host.h $(SRCS) $(RTL_SRCS)
 	cd $(SOC_ROOT) && $(VERILATOR) $(VL_FLAGS) \
-		-f $(VL_DIR)/filelist.f \
+		$(VL_RTL) \
 		$(SRCS) \
 		-o V$(TOP)
 
