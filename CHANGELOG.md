@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.4.1] - 2026-10-10
+
+- `.autowire/dsl/` 自愈从「仅缺失时补回」改为「每次 `plugin wishbone run` / `init` 都从内嵌 pack 无条件重新物化」：autowire 升级后解包出的 DSL 随之刷新，被手改/改脏的文件也会覆盖回内嵌版本（`.autowire` 本就是可删、禁手改的缓存）。文件很小，无条件覆盖比字节比对更简单，且没有陈旧缓存的失败模式；不引入版本戳。`ensureWishboneDsl` 返回 `{ files, freshDir }`，`freshDir` 仅用于决定日志措辞（目录原本不存在才打 `restored .autowire/dsl/`）。
+
 ## [2.4.0] - 2026-10-10
 
 - Wishbone 级联面改用 `BusDef.uplink(name?)` 显式选取，**不再**用保留名 `Master("uplink")`，并删除 `SlaveBusOpts.uplink`。单 master 的子总线隐式取唯一 master 作面，多 master 必须 `child.uplink("name")` 点名；桥接口（apb/jtag/cdc）不能当面。`SlaveBus` 要求传入已选面的 child，`flattenBuses` 保留带 `cascadeFace` 的副本，使独立生成的 `<bus>_bus_cfg` wrapper 拿到正确面（级联 = `i_wb_*`/`o_wb_*`，顶层 = `m_*`）。**破坏性**：`Master("uplink")` + `SlaveBus(child, …)` 需迁移到 `child.uplink()`（或 `child.uplink("name")`）。
