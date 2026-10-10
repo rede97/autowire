@@ -23,7 +23,7 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
   → verilator 冒烟                         # sim/verilator/run.sh[+ --sd | --regfile | --tb-mod]；见 §6 / fw/README.md（仅 Verilator）
 ```
 
-`rtl/gen/`、`fw/gen/`、`dv/ral/`、`.autowire/` 都是生成物，不是源。生成结果不对就改 SoT（Wishbone TypeScript 或 connect HTML）再跑写出命令，不要改这些文件。`.autowire/` 可整目录删：`hdxml/`（RtlIndex）、`connect/<id>.xml`（抽象模块快照，唯一形式，无 html 快照）、`dsl/`（`plugin wishbone run` 缺失时补回）、`dump/<id>.html`（调试落盘）。
+`rtl/gen/`、`fw/gen/`、`dv/ral/`、`.autowire/` 都是生成物，不是源。生成结果不对就改 SoT（Wishbone TypeScript 或 connect HTML）再跑写出命令，不要改这些文件。`.autowire/` 可整目录删：`hdxml/`（RtlIndex）、`connect/<id>.xml`（抽象模块快照，唯一形式，无 html 快照）、`dsl/`（`plugin wishbone run` 每次运行都从内嵌版本重新物化）、`dump/<id>.html`（调试落盘）。
 
 `[analysis]` 的 filelist 只放两类输入：手写 RTL，和 `plugin wishbone run` 写出的叶子（`plugins_dir`，demo 里是 `rtl/gen/plugins/`）。
 

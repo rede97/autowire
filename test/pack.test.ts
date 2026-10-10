@@ -6,7 +6,10 @@ import {
 	collectPackFiles,
 	decodePack,
 	encodePack,
+	ensureWishboneDsl,
+	loadPack,
 	unpackPack,
+	wishboneDslDir,
 } from "../src/cli/pack.ts";
 
 describe("docs pack", () => {
@@ -54,5 +57,41 @@ describe("docs pack", () => {
 			rmSync(dest, { recursive: true, force: true });
 		}
 		// zstd-22 on the real ~11MB tree takes ~4s; default 5s timeout is too tight.
+	}, 30000);
+});
+
+describe("wishbone dsl cache", () => {
+	test("re-materializes every run and overwrites a stale file", async () => {
+		const root = mkdtempSync(join(tmpdir(), "aw-dsl-"));
+		try {
+			const pack = await loadPack();
+			const dslEntries = pack.filter((f) => f.path.startsWith("dsl/"));
+			expect(dslEntries.length).toBeGreaterThan(0);
+
+			// First run: the dir does not exist yet, so every entry is written.
+			const first = await ensureWishboneDsl(root);
+			expect(first.freshDir).toBe(true);
+			expect(first.files.length).toBe(dslEntries.length);
+
+			// Corrupt one on-disk copy to stand in for a stale/hand-edited cache.
+			const entry = dslEntries.find((f) =>
+				f.path.endsWith("wishbone-bus/dsl.ts"),
+			);
+			if (!entry) throw new Error("pack missing wishbone-bus/dsl.ts");
+			const target = join(
+				wishboneDslDir(root),
+				entry.path.slice("dsl/".length),
+			);
+			await Bun.write(target, "// hand-edited garbage\n");
+
+			// Second run: dir exists (freshDir false) but the stale file is still
+			// overwritten back to the embedded pack bytes.
+			const second = await ensureWishboneDsl(root);
+			expect(second.freshDir).toBe(false);
+			const restored = await Bun.file(target).text();
+			expect(restored).toBe(new TextDecoder().decode(entry.bytes));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	}, 30000);
 });

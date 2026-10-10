@@ -157,11 +157,11 @@ export function registerAnalysis(program: Command): void {
 			await mkdir(indexDir, { recursive: true });
 			// DSL sources so standalone SoT can import from .autowire/dsl/
 			// instead of a repo checkout (version travels with the bundle).
-			const dslFiles = await ensureWishboneDsl(process.cwd());
+			const dsl = await ensureWishboneDsl(process.cwd());
 			console.log(`created ${tomlTarget}`);
 			console.log(`created ${agentsTarget}`);
 			console.log(`created ${indexDir}/`);
-			console.log(`created .autowire/dsl/ (${dslFiles.length} files)`);
+			console.log(`created .autowire/dsl/ (${dsl.files.length} files)`);
 			console.log(INIT_ATTACH_NOTE);
 		});
 

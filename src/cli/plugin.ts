@@ -28,8 +28,8 @@ export function registerPlugin(program: Command): void {
 				const ws = await requireWorkspace(opts.workspace ?? process.cwd());
 				// .autowire is a deletable cache: re-materialize the DSL SoT imports
 				const healed = await ensureWishboneDsl(ws.root);
-				if (healed.length > 0)
-					console.log(`restored .autowire/dsl/ (${healed.length} files)`);
+				if (healed.freshDir)
+					console.log(`restored .autowire/dsl/ (${healed.files.length} files)`);
 				if (ws.wishboneSources.length === 0) {
 					console.error(
 						`autowire.toml: no [wishbone.<source_id>] ts= for ${PLUGIN_ID}`,

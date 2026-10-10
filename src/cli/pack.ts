@@ -88,7 +88,7 @@ export async function collectPackFiles(root: string): Promise<PackedFile[]> {
 
 /** Repo demos import the wishbone DSL from src/plugins/...; a standalone
  *  unpacked tree has no src/. Rewrite packed sot/*.ts to the self-healing
- *  .autowire/dsl/ copy (plugin wishbone run restores it when missing). */
+ *  .autowire/dsl/ copy (plugin wishbone run re-materializes it every run). */
 function rewriteDemoDslImports(files: PackedFile[]): void {
 	const REPO_DSL =
 		/(["'])\.\.\/\.\.\/\.\.\/src\/plugins\/(wishbone-(?:bus|regfile))\//g;
@@ -272,20 +272,28 @@ export function wishboneDslDir(root: string): string {
 	return join(root, ".autowire", "dsl");
 }
 
-/** Write dsl/ pack entries into .autowire/dsl/ when missing.
- *  Self-healing: .autowire is a deletable cache, so plugin runs re-create the
- *  DSL whenever it is gone. Existing files are left untouched. */
-export async function ensureWishboneDsl(root: string): Promise<string[]> {
+/** Outcome of materializing the DSL cache. `freshDir` is whether .autowire/dsl/
+ *  did not exist before this call; it only selects the caller's log wording and
+ *  never gates the write. */
+export type DslHeal = { files: string[]; freshDir: boolean };
+
+/** Materialize dsl/ pack entries into .autowire/dsl/, overwriting on every run.
+ *  Self-healing: .autowire is a deletable, do-not-hand-edit cache. The DSL is
+ *  re-materialized from the embedded pack unconditionally, so an autowire
+ *  upgrade that ships new DSL takes effect and any local edit is discarded. The
+ *  files are tiny; an unconditional rewrite is simpler than a byte compare and
+ *  has no stale-cache failure mode. */
+export async function ensureWishboneDsl(root: string): Promise<DslHeal> {
 	const pack = await loadPack();
-	const written: string[] = [];
+	const freshDir = !existsSync(wishboneDslDir(root));
+	const files: string[] = [];
 	for (const f of pack.filter((f) => f.path.startsWith("dsl/"))) {
 		const target = join(wishboneDslDir(root), f.path.slice("dsl/".length));
-		if (existsSync(target)) continue;
 		await mkdir(dirname(target), { recursive: true });
 		await Bun.write(target, f.bytes);
-		written.push(target);
+		files.push(target);
 	}
-	return written;
+	return { files, freshDir };
 }
 
 export async function unpackPack(
