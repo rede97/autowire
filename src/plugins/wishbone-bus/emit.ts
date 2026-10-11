@@ -1,4 +1,4 @@
-// Emit SystemVerilog for wishbone-bus decoder / interconnect.
+// Emit SystemVerilog for wishbone-bus decoder / interconnect / crossbar.
 // Slave ports use leaf-centric names: `{slave}_i_wb_*` / `{slave}_o_wb_*`
 // so they identity-match wishbone-regfile. Masters stay flat m_* vectors when NM>1.
 
@@ -20,19 +20,46 @@ function packedRange(width: number): string {
 
 /** Data slaves. A broadcast window produces a strobe and has no WB port. */
 function dataSlaves(def: BusDef): WbSlave[] {
-	return def.slaves.filter((s) => !s.broadcast);
+	return dataOf(def.slaves);
+}
+
+function dataOf(slaves: readonly WbSlave[]): WbSlave[] {
+	return slaves.filter((s) => !s.broadcast);
 }
 
 function slotLp(name: string): string {
 	return `SLOT_${name.toUpperCase()}`;
 }
 
-function slotSel(name: string): string {
-	return `slot_sel[${slotLp(name)}]`;
+/** Slave-group slot localparam (crossbar target decode). */
+function groupLp(name: string): string {
+	return `SG_${name.toUpperCase()}`;
 }
 
-/** Module basename: decoder if NM<=1, else interconnect. */
-export function busModuleKind(def: BusDef): "decoder" | "interconnect" {
+function slotSel(name: string, vec = "slot_sel"): string {
+	return `${vec}[${slotLp(name)}]`;
+}
+
+/**
+ * One decode scope: the slaves one `slot_sel` vector covers. The classic
+ * decoder / interconnect has a single scope over every slave; a crossbar
+ * has one scope per slave group with prefixed `slot_sel` / `unmapped` nets.
+ */
+type DecodeScope = {
+	readonly slaves: readonly WbSlave[];
+	readonly slotVec: string;
+	readonly unmapped: string;
+};
+
+function wholeScope(def: BusDef): DecodeScope {
+	return { slaves: def.slaves, slotVec: "slot_sel", unmapped: "unmapped" };
+}
+
+export type BusModuleKind = "decoder" | "interconnect" | "crossbar";
+
+/** Module basename: crossbar when grouped; else decoder if NM<=1, else interconnect. */
+export function busModuleKind(def: BusDef): BusModuleKind {
+	if (def.crossbar) return "crossbar";
 	return def.masters.length <= 1 ? "decoder" : "interconnect";
 }
 
@@ -143,7 +170,7 @@ export function listFabricPorts(def: BusDef): FabricPort[] {
 		{ dir: "input", packed: "", name: "clk" },
 		{ dir: "input", packed: "", name: "rst_n" },
 	];
-	if (kind === "interconnect") {
+	if (kind !== "decoder") {
 		ports.push({ dir: "input", packed: "", name: "rb_grant_en" });
 	}
 	const plan = tagPlan(def);
@@ -406,20 +433,221 @@ function emitDecoderBody(def: BusDef): string[] {
 	return out;
 }
 
+type IndexedMaster = WbMaster & { readonly i: number };
+
+/**
+ * Request-side source of one master: the pipe queue net `m<i>_*_q` when the
+ * master is piped, else its port.
+ */
+function masterSrc(m: IndexedMaster, q: string, port: string): string {
+	return (m.pipe ?? 0) > 0 ? `m${m.i}_${q}_q` : wb(m.name, port);
+}
+
+/**
+ * Inherited tag domain of one master. A piped master carries all inherited
+ * domains packed in `m<i>_tga_q` (declaration order, first domain = LSB).
+ */
+function masterUpSrc(
+	m: IndexedMaster,
+	t: WbTagSource,
+	inherited: readonly WbTagSource[],
+): string {
+	if ((m.pipe ?? 0) === 0) {
+		return wb(m.name, tagPort("o_wb", t.domain.name));
+	}
+	let lo = 0;
+	for (const d of inherited) {
+		if (d === t) break;
+		lo += domainWidth(d.domain);
+	}
+	const w = domainWidth(t.domain);
+	return w === 1
+		? `m${m.i}_tga_q[${lo}]`
+		: `m${m.i}_tga_q[${lo + w - 1}:${lo}]`;
+}
+
+type ArbiterSpec = {
+	/** Net prefix (`""` on the interconnect, `mg_<g>_` / `sg_<j>_` on a crossbar). */
+	readonly prefix: string;
+	/** Number of requesters. */
+	readonly n: number;
+	/** Request vector net (bit i = requester i), already declared by the caller. */
+	readonly reqVec: string;
+	/** Per-requester request expression used by the fixed-priority chain. */
+	readonly reqTerm: (i: number) => string;
+};
+
+/** Arbiter state declarations (`grant`, `busy`, ...). */
+function arbiterDecls(a: ArbiterSpec): string[] {
+	const pk = `[${a.n - 1}:0]`;
+	const p = a.prefix;
+	return [
+		`\tlogic ${pk} ${p}grant;`,
+		`\tlogic ${"".padEnd(pk.length)} ${p}busy;`,
+		`\tlogic ${pk} ${p}grant_nxt;`,
+		`\tlogic ${pk} ${p}prio_gnt;`,
+		`\tlogic ${pk} ${p}rr_hi_gnt;`,
+		`\tlogic ${pk} ${p}last_gnt;`,
+		`\tlogic ${pk} ${p}rr_mask;`,
+		`\tlogic ${pk} ${p}rr_req_hi;`,
+	];
+}
+
+/**
+ * Locked arbiter: grant is taken while idle and held until the granted
+ * request drops. `rb_grant_en` selects fixed priority (0) or round-robin (1).
+ */
+function arbiterLogic(a: ArbiterSpec): string[] {
+	const { n, prefix: p } = a;
+	const onehot = (i: number) =>
+		`${n}'b${"0".repeat(n - 1 - i)}1${"0".repeat(i)}`;
+	const zero = `${n}'b${"0".repeat(n)}`;
+	const shiftFills: string[] = [];
+	for (let s = 1; s < n; s <<= 1) {
+		shiftFills.push(`\t\t${p}rr_mask = ${p}rr_mask | (${p}rr_mask >> ${s});`);
+	}
+	const out: string[] = [];
+	const condPad = Math.max(
+		...Array.from({ length: n }, (_, i) => `(${a.reqTerm(i)})`.length),
+	);
+	out.push("\talways_comb begin");
+	for (let i = 0; i < n; i++) {
+		const kw = i === 0 ? "if      " : "else if ";
+		const cond = `(${a.reqTerm(i)})`.padEnd(condPad);
+		out.push(`\t\t${kw}${cond} ${p}prio_gnt = ${onehot(i)};`);
+	}
+	out.push(
+		`\t\t${"else".padEnd(`else if `.length + condPad + 1)}${p}prio_gnt = ${zero};`,
+		"\tend",
+		"",
+		"\talways_comb begin",
+		`\t\t${p}rr_mask = ${p}last_gnt;`,
+		...shiftFills,
+		"\tend",
+		`\tassign ${p}rr_req_hi = ${a.reqVec} & ~${p}rr_mask;`,
+		"",
+		"\talways_comb begin",
+	);
+	for (let i = 0; i < n; i++) {
+		const kw = i === 0 ? "if      " : "else if ";
+		out.push(`\t\t${kw}(${p}rr_req_hi[${i}]) ${p}rr_hi_gnt = ${onehot(i)};`);
+	}
+	out.push(
+		`\t\telse              ${p}rr_hi_gnt = ${zero};`,
+		"\tend",
+		"",
+		`\tassign ${p}grant_nxt = (rb_grant_en && |${p}rr_req_hi) ? ${p}rr_hi_gnt : ${p}prio_gnt;`,
+		"",
+		"\talways_ff @(posedge clk or negedge rst_n) begin",
+		"\t\tif (!rst_n) begin",
+		`\t\t\t${p}busy     <= 1'b0;`,
+		`\t\t\t${p}grant    <= ${n}'b0;`,
+		`\t\t\t${p}last_gnt <= ${n}'b0;`,
+		`\t\tend else if (!${p}busy) begin`,
+		`\t\t\tif (|${a.reqVec}) begin`,
+		`\t\t\t\t${p}busy     <= 1'b1;`,
+		`\t\t\t\t${p}grant    <= ${p}grant_nxt;`,
+		`\t\t\t\t${p}last_gnt <= ${p}grant_nxt;`,
+		"\t\t\tend",
+		`\t\tend else if (!(|(${a.reqVec} & ${p}grant))) begin`,
+		`\t\t\t${p}busy <= 1'b0;`,
+		"\t\tend",
+		"\tend",
+		"",
+		`\tlogic [${n - 1}:0] ${p}gsel;`,
+		`\tassign ${p}gsel = ${p}grant & {${n}{${p}busy}};`,
+		"",
+	);
+	return out;
+}
+
+/** `{m_cyc, m_stb, m_we}` request vectors of a master set (bit k = masters[k]). */
+function emitMasterVectors(
+	out: string[],
+	prefix: string,
+	masters: readonly IndexedMaster[],
+): void {
+	for (const [sig, q, port] of [
+		["m_cyc", "cyc", "o_wb_cyc"],
+		["m_stb", "stb", "o_wb_stb"],
+		["m_we ", "we", "o_wb_we"],
+	] as const) {
+		const msbFirst = [...masters].reverse().map((m) => masterSrc(m, q, port));
+		out.push(`\tassign ${prefix}${sig} = {${msbFirst.join(", ")}};`);
+	}
+}
+
+/** Declare the granted-request nets `<p>adr`, `<p>wdata`, ..., `<p>we`. */
+function emitRequestDecls(
+	out: string[],
+	def: BusDef,
+	p: string,
+	withUp: boolean,
+): void {
+	const aw = def.addr_width;
+	out.push(
+		`\tlogic ${packedRange(aw).padEnd(7)}${p}adr;`,
+		`\tlogic [31:0] ${p}wdata;`,
+		`\tlogic [3:0]  ${p}sel;`,
+	);
+	if (withUp) {
+		for (const t of tagPlan(def).inherited) {
+			out.push(
+				`\tlogic ${packedRange(domainWidth(t.domain)).padEnd(7)}${p}up_${t.domain.name};`,
+			);
+		}
+	}
+	for (const t of def.tags) {
+		out.push(
+			`\tlogic ${packedRange(domainWidth(t.domain)).padEnd(7)}${p}tga_${t.domain.name};`,
+		);
+	}
+	out.push(
+		`\tlogic        ${p}cyc;`,
+		`\tlogic        ${p}stb;`,
+		`\tlogic        ${p}we;`,
+		"",
+	);
+}
+
+/**
+ * Mux the granted master of one arbiter onto `<p>adr` / `<p>wdata` / `<p>sel`
+ * / `<p>up_<dom>`; `gsel` is the one-hot `<arb>gsel` vector, bit k = masters[k].
+ */
+function emitGrantedMux(
+	out: string[],
+	def: BusDef,
+	p: string,
+	gsel: string,
+	masters: readonly IndexedMaster[],
+): void {
+	const aw = def.addr_width;
+	const inherited = tagPlan(def).inherited;
+	const muxVec = (lhs: string, src: (m: IndexedMaster) => string, w: number) =>
+		pushOrAssign(
+			out,
+			lhs,
+			masters.map((m, k) => `({${w}{${gsel}[${k}]}} & ${src(m)})`),
+		);
+	muxVec(`${p}adr  `, (m) => masterSrc(m, "adr", "o_wb_adr"), aw);
+	muxVec(`${p}wdata`, (m) => masterSrc(m, "wdat", "o_wb_dat"), 32);
+	muxVec(`${p}sel  `, (m) => masterSrc(m, "sel", "o_wb_sel"), 4);
+	for (const t of inherited) {
+		muxVec(
+			`${p}up_${t.domain.name}`,
+			(m) => masterUpSrc(m, t, inherited),
+			domainWidth(t.domain),
+		);
+	}
+}
+
 function emitInterconnectBody(def: BusDef): string[] {
 	const nm = def.masters.length;
 	const aw = def.addr_width;
 	const slaves = dataSlaves(def);
 	const out: string[] = [];
-	const masters = def.masters.map((m, i) => ({ ...m, i }));
-	const onehot = (i: number) =>
-		`${nm}'b${"0".repeat(nm - 1 - i)}1${"0".repeat(i)}`;
-
+	const masters: IndexedMaster[] = def.masters.map((m, i) => ({ ...m, i }));
 	const pk = `[${nm - 1}:0]`;
-	const shiftFills: string[] = [];
-	for (let s = 1; s < nm; s <<= 1) {
-		shiftFills.push(`\t\trr_mask = rr_mask | (rr_mask >> ${s});`);
-	}
 	const piped = masters.some((m) => (m.pipe ?? 0) > 0);
 	if (piped) {
 		const inherited = tagPlan(def).inherited;
@@ -434,137 +662,35 @@ function emitInterconnectBody(def: BusDef): string[] {
 		}
 		out.push("");
 	}
+	const arb: ArbiterSpec = {
+		prefix: "",
+		n: nm,
+		reqVec: "m_cyc",
+		reqTerm: (i) => {
+			const m = masters[i];
+			return m ? masterSrc(m, "cyc", "o_wb_cyc") : "1'b0";
+		},
+	};
 	out.push(
 		"\t//------------------------------------------------------------------------------",
 		"\t//  Arbitration: locked while grant holds CYC",
 		"\t//  rb_grant_en=0: lowest master index wins (fixed)",
 		"\t//  rb_grant_en=1: round-robin — next requester after last_gnt, wrap to lowest",
 		"\t//------------------------------------------------------------------------------",
-		`\tlogic ${pk} grant;`,
-		`\tlogic ${"".padEnd(pk.length)} busy;`,
-		`\tlogic ${pk} grant_nxt;`,
-		`\tlogic ${pk} prio_gnt;`,
-		`\tlogic ${pk} rr_hi_gnt;`,
-		`\tlogic ${pk} last_gnt;`,
-		`\tlogic ${pk} rr_mask;`,
-		`\tlogic ${pk} rr_req_hi;`,
+		...arbiterDecls(arb),
 		`\tlogic ${pk} m_cyc;`,
 		`\tlogic ${pk} m_stb;`,
 		`\tlogic ${pk} m_we;`,
 		"",
 	);
 	// Slot vectors (bit i = masters[i]); a piped master contributes its pipe s_*.
-	const reqBit = (
-		m: (typeof masters)[number],
-		q: string,
-		port: string,
-	): string => ((m.pipe ?? 0) > 0 ? `m${m.i}_${q}_q` : wb(m.name, port));
-	for (const [sig, q, port] of [
-		["m_cyc", "cyc", "o_wb_cyc"],
-		["m_stb", "stb", "o_wb_stb"],
-		["m_we ", "we", "o_wb_we"],
-	] as const) {
-		const msbFirst = [...masters].reverse().map((m) => reqBit(m, q, port));
-		out.push(`\tassign ${sig} = {${msbFirst.join(", ")}};`);
-	}
-	const condPad = Math.max(
-		...masters.map((m) => `(${reqBit(m, "cyc", "o_wb_cyc")})`.length),
-	);
-	out.push("", "\talways_comb begin");
-	for (const m of masters) {
-		const kw = m.i === 0 ? "if      " : "else if ";
-		const cond = `(${reqBit(m, "cyc", "o_wb_cyc")})`.padEnd(condPad);
-		out.push(`\t\t${kw}${cond} prio_gnt = ${onehot(m.i)};`);
-	}
-	out.push(
-		`\t\t${"else".padEnd(`else if `.length + condPad + 1)}prio_gnt = ${nm}'b${"0".repeat(nm)};`,
-		"\tend",
-		"",
-		"\talways_comb begin",
-		"\t\trr_mask = last_gnt;",
-		...shiftFills,
-		"\tend",
-		`\tassign rr_req_hi = m_cyc & ~rr_mask;`,
-		"",
-		"\talways_comb begin",
-	);
-	for (const m of masters) {
-		const kw = m.i === 0 ? "if      " : "else if ";
-		out.push(`\t\t${kw}(rr_req_hi[${m.i}]) rr_hi_gnt = ${onehot(m.i)};`);
-	}
-	out.push(
-		`\t\telse              rr_hi_gnt = ${nm}'b${"0".repeat(nm)};`,
-		"\tend",
-		"",
-		"\tassign grant_nxt = (rb_grant_en && |rr_req_hi) ? rr_hi_gnt : prio_gnt;",
-		"",
-		"\talways_ff @(posedge clk or negedge rst_n) begin",
-		"\t\tif (!rst_n) begin",
-		"\t\t\tbusy     <= 1'b0;",
-		`\t\t\tgrant    <= ${nm}'b0;`,
-		`\t\t\tlast_gnt <= ${nm}'b0;`,
-		"\t\tend else if (!busy) begin",
-		"\t\t\tif (|m_cyc) begin",
-		"\t\t\t\tbusy     <= 1'b1;",
-		"\t\t\t\tgrant    <= grant_nxt;",
-		"\t\t\t\tlast_gnt <= grant_nxt;",
-		"\t\t\tend",
-		"\t\tend else if (!(|(m_cyc & grant))) begin",
-		"\t\t\tbusy <= 1'b0;",
-		"\t\tend",
-		"\tend",
-		"",
-	);
+	emitMasterVectors(out, "", masters);
+	out.push("");
+	out.push(...arbiterLogic(arb));
 
 	// Granted-request mux (master port arb): grant & replicate, OR-reduce.
-	out.push(
-		`\tlogic [${nm - 1}:0] gsel;`,
-		`\tassign gsel = grant & {${nm}{busy}};`,
-		"",
-		`\tlogic ${packedRange(aw).padEnd(7)}g_adr;`,
-		"\tlogic [31:0] g_wdata;",
-		"\tlogic [3:0]  g_sel;",
-	);
-	const plan = tagPlan(def);
-	for (const t of plan.inherited) {
-		out.push(
-			`\tlogic ${packedRange(domainWidth(t.domain)).padEnd(7)}g_up_${t.domain.name};`,
-		);
-	}
-	for (const t of def.tags) {
-		out.push(
-			`\tlogic ${packedRange(domainWidth(t.domain)).padEnd(7)}g_tga_${t.domain.name};`,
-		);
-	}
-	out.push(
-		"\tlogic        g_cyc;",
-		"\tlogic        g_stb;",
-		"\tlogic        g_we;",
-		"",
-	);
-
-	const muxSrc = (
-		m: (typeof masters)[number],
-		q: string,
-		port: string,
-	): string => ((m.pipe ?? 0) > 0 ? `m${m.i}_${q}_q` : wb(m.name, port));
-	const muxVec = (lhs: string, q: string, port: string, width: number) =>
-		pushOrAssign(
-			out,
-			lhs,
-			masters.map((m) => `({${width}{gsel[${m.i}]}} & ${muxSrc(m, q, port)})`),
-		);
-	muxVec("g_adr  ", "adr", "o_wb_adr", aw);
-	muxVec("g_wdata", "wdat", "o_wb_dat", 32);
-	muxVec("g_sel  ", "sel", "o_wb_sel", 4);
-	for (const t of plan.inherited) {
-		muxVec(
-			`g_up_${t.domain.name}`,
-			`tga_${t.domain.name}`,
-			tagPort("o_wb", t.domain.name),
-			domainWidth(t.domain),
-		);
-	}
+	emitRequestDecls(out, def, "g_", true);
+	emitGrantedMux(out, def, "g_", "gsel", masters);
 	out.push(...emitTagDrive(def, "g_", "g_adr"));
 	out.push(
 		`\tassign g_cyc   = |(gsel & m_cyc);`,
@@ -607,8 +733,352 @@ function emitInterconnectBody(def: BusDef): string[] {
 	return out;
 }
 
-function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
-	const slaves = dataSlaves(def);
+type MasterGroupView = {
+	readonly name: string;
+	readonly g: number;
+	readonly prefix: string;
+	readonly members: readonly IndexedMaster[];
+};
+
+type SlaveGroupView = {
+	readonly name: string;
+	readonly j: number;
+	readonly prefix: string;
+	readonly slaves: readonly WbSlave[];
+};
+
+function crossbarViews(def: BusDef): {
+	mgs: MasterGroupView[];
+	sgs: SlaveGroupView[];
+} {
+	const xb = def.crossbar;
+	if (!xb) throw new Error(`wishbone-bus: ${def.name} is not a crossbar`);
+	const masters: IndexedMaster[] = def.masters.map((m, i) => ({ ...m, i }));
+	const mgs = xb.masters.map((grp, g) => ({
+		name: grp.name,
+		g,
+		prefix: `mg_${grp.name}_`,
+		members: grp.members.flatMap((n) => {
+			const m = masters.find((x) => x.name === n);
+			return m ? [m] : [];
+		}),
+	}));
+	const sgs = xb.slaves.map((grp, j) => ({
+		name: grp.name,
+		j,
+		prefix: `sg_${grp.name}_`,
+		slaves: grp.members.flatMap((n) => {
+			const s = def.slaves.find((x) => x.name === n);
+			return s ? [s] : [];
+		}),
+	}));
+	return { mgs, sgs };
+}
+
+/**
+ * Crossbar (wishbone-bus.md 4.2). Two arbitration layers:
+ *
+ *   master group  mg_<g>_*  arbiter among its masters → one request,
+ *                           decoded to a target slave group `mg_<g>_tgt`
+ *   slave group   sg_<j>_*  arbiter among master groups → classic decode
+ *                           over the group's own slaves
+ *
+ * A master group holds at most one slave group at a time and releases it
+ * when CYC drops, so distinct (master group, slave group) pairs proceed in
+ * parallel and no hold-and-wait cycle can form.
+ */
+function emitCrossbarBody(def: BusDef): string[] {
+	const aw = def.addr_width;
+	const plan = tagPlan(def);
+	const inherited = plan.inherited;
+	const { mgs, sgs } = crossbarViews(def);
+	const ng = mgs.length;
+	const nsg = sgs.length;
+	const out: string[] = [];
+	const masters: IndexedMaster[] = def.masters.map((m, i) => ({ ...m, i }));
+	const bar =
+		"\t//------------------------------------------------------------------------------";
+
+	if (masters.some((m) => (m.pipe ?? 0) > 0)) {
+		out.push(
+			bar,
+			"\t//  Master pipes (posted write / blocking read), in front of the arbiters",
+			"\t//  Each arbiter requests and holds its grant from the pipe's s_cyc",
+			bar,
+		);
+		for (const m of masters) {
+			if ((m.pipe ?? 0) === 0) continue;
+			out.push(...emitMasterPipe(m, m.i, aw, inherited));
+		}
+		out.push("");
+	}
+
+	// Slave-group slots: the master-side target decode indexes `mg_<g>_tgt` by SG_<NAME>.
+	const sgPad = Math.max(...sgs.map((s) => groupLp(s.name).length));
+	out.push(
+		bar,
+		"\t//  Slave groups: one decoder each; SG_<NAME> indexes the master-side target vector",
+		bar,
+	);
+	for (const sg of sgs) {
+		out.push(
+			`\tlocalparam int unsigned ${groupLp(sg.name).padEnd(sgPad)} = ${sg.j};  // ${sg.slaves.map((s) => s.name).join(", ")}`,
+		);
+	}
+	out.push("");
+
+	//--------------------------------------------------------------------------
+	//  Master groups
+	//--------------------------------------------------------------------------
+	for (const mg of mgs) {
+		const p = mg.prefix;
+		const nk = mg.members.length;
+		out.push(
+			bar,
+			`\t//  Master group ${mg.name}: ${mg.members.map((m) => m.name).join(", ")}`,
+			nk > 1
+				? "\t//  Arbiter among members, locked while grant holds CYC (rb_grant_en: 0 fixed / 1 round-robin)"
+				: "\t//  Single master: no arbiter",
+			bar,
+		);
+		if (nk > 1) {
+			const pk = `[${nk - 1}:0]`;
+			const arb: ArbiterSpec = {
+				prefix: p,
+				n: nk,
+				reqVec: `${p}m_cyc`,
+				reqTerm: (k) => {
+					const m = mg.members[k];
+					return m ? masterSrc(m, "cyc", "o_wb_cyc") : "1'b0";
+				},
+			};
+			out.push(
+				...arbiterDecls(arb),
+				`\tlogic ${pk} ${p}m_cyc;`,
+				`\tlogic ${pk} ${p}m_stb;`,
+				`\tlogic ${pk} ${p}m_we;`,
+				"",
+			);
+			emitMasterVectors(out, p, mg.members);
+			out.push("");
+			out.push(...arbiterLogic(arb));
+			emitRequestDecls(out, def, p, true);
+			emitGrantedMux(out, def, p, `${p}gsel`, mg.members);
+			out.push(...emitTagDrive(def, p, `${p}adr`));
+			out.push(
+				`\tassign ${p}cyc   = |(${p}gsel & ${p}m_cyc);`,
+				`\tassign ${p}stb   = |(${p}gsel & ${p}m_stb);`,
+				`\tassign ${p}we    = |(${p}gsel & ${p}m_we);`,
+				"",
+			);
+		} else {
+			const m = mg.members[0];
+			if (!m) continue;
+			emitRequestDecls(out, def, p, true);
+			out.push(
+				`\tassign ${p}adr   = ${masterSrc(m, "adr", "o_wb_adr")};`,
+				`\tassign ${p}wdata = ${masterSrc(m, "wdat", "o_wb_dat")};`,
+				`\tassign ${p}sel   = ${masterSrc(m, "sel", "o_wb_sel")};`,
+			);
+			for (const t of inherited) {
+				out.push(
+					`\tassign ${p}up_${t.domain.name} = ${masterUpSrc(m, t, inherited)};`,
+				);
+			}
+			out.push(...emitTagDrive(def, p, `${p}adr`));
+			out.push(
+				`\tassign ${p}cyc   = ${masterSrc(m, "cyc", "o_wb_cyc")};`,
+				`\tassign ${p}stb   = ${masterSrc(m, "stb", "o_wb_stb")};`,
+				`\tassign ${p}we    = ${masterSrc(m, "we", "o_wb_we")};`,
+				"",
+			);
+		}
+		out.push(...emitTagStrip(def, p));
+		// Target decode: which slave group owns the address (windows never overlap).
+		const adr = decAdr(def, p);
+		out.push(
+			`\t// Target slave group of ${mg.name}; unmapped ACKs here without touching any group`,
+			`\tlogic ${`[${nsg - 1}:0]`.padEnd(7)}${p}tgt;`,
+			`\tlogic        ${p}unmapped;`,
+			`\tlogic [31:0] ${p}rsp_dat;`,
+			`\tlogic        ${p}rsp_ack;`,
+			"",
+			"\talways_comb begin",
+			`\t\t${p}tgt      = ${nsg}'b0;`,
+			`\t\t${p}unmapped = 1'b1;`,
+		);
+		for (let j = nsg - 1; j >= 0; j--) {
+			const sg = sgs[j];
+			if (!sg) continue;
+			for (let k = sg.slaves.length - 1; k >= 0; k--) {
+				const s = sg.slaves[k];
+				if (!s) continue;
+				out.push(
+					`\t\tif ((${adr} & ${aw}'h${hex(s.mask, aw)}) == ${aw}'h${hex(s.base, aw)}) begin  // ${s.name}`,
+					`\t\t\t${p}tgt      = ${nsg}'d1 << ${groupLp(sg.name)};`,
+					`\t\t\t${p}unmapped = 1'b0;`,
+					"\t\tend",
+				);
+			}
+		}
+		out.push("\tend", "");
+	}
+
+	//--------------------------------------------------------------------------
+	//  Slave groups
+	//--------------------------------------------------------------------------
+	for (const sg of sgs) {
+		const q = sg.prefix;
+		const lp = groupLp(sg.name);
+		const pk = `[${ng - 1}:0]`;
+		out.push(
+			bar,
+			`\t//  Slave group ${sg.name}: ${sg.slaves.map((s) => s.name).join(", ")}`,
+			ng > 1
+				? "\t//  Arbiter among master groups, locked while the granted group targets this group"
+				: "\t//  Single master group: no arbiter",
+			bar,
+			`\tlogic ${pk} ${q}req;`,
+			`\tlogic ${pk} ${q}stb_v;`,
+			`\tlogic ${pk} ${q}we_v;`,
+		);
+		const msbFirst = [...mgs].reverse();
+		out.push(
+			`\tassign ${q}req   = {${msbFirst.map((mg) => `${mg.prefix}cyc & ${mg.prefix}tgt[${lp}]`).join(", ")}};`,
+			`\tassign ${q}stb_v = {${msbFirst.map((mg) => `${mg.prefix}stb & ${mg.prefix}tgt[${lp}]`).join(", ")}};`,
+			`\tassign ${q}we_v  = {${msbFirst.map((mg) => `${mg.prefix}we`).join(", ")}};`,
+			"",
+		);
+		if (ng > 1) {
+			const arb: ArbiterSpec = {
+				prefix: q,
+				n: ng,
+				reqVec: `${q}req`,
+				reqTerm: (g) => `${q}req[${g}]`,
+			};
+			out.push(...arbiterDecls(arb), "");
+			out.push(...arbiterLogic(arb));
+		} else {
+			out.push(`\tlogic [0:0] ${q}gsel;`, `\tassign ${q}gsel = ${q}req;`, "");
+		}
+		emitRequestDecls(out, def, q, false);
+		const muxVec = (
+			lhs: string,
+			src: (mg: MasterGroupView) => string,
+			w: number,
+		) =>
+			pushOrAssign(
+				out,
+				lhs,
+				mgs.map((mg) => `({${w}{${q}gsel[${mg.g}]}} & ${src(mg)})`),
+			);
+		muxVec(`${q}adr  `, (mg) => `${mg.prefix}adr`, aw);
+		muxVec(`${q}wdata`, (mg) => `${mg.prefix}wdata`, 32);
+		muxVec(`${q}sel  `, (mg) => `${mg.prefix}sel`, 4);
+		for (const t of def.tags) {
+			muxVec(
+				`${q}tga_${t.domain.name}`,
+				(mg) => `${mg.prefix}tga_${t.domain.name}`,
+				domainWidth(t.domain),
+			);
+		}
+		out.push(
+			`\tassign ${q}cyc   = |(${q}gsel & ${q}req);`,
+			`\tassign ${q}stb   = |(${q}gsel & ${q}stb_v);`,
+			`\tassign ${q}we    = |(${q}gsel & ${q}we_v);`,
+			"",
+		);
+		out.push(...emitTagStrip(def, q));
+		out.push(
+			...emitDecodeAndSlaves(def, q, {
+				slaves: sg.slaves,
+				slotVec: `${q}slot_sel`,
+				unmapped: `${q}unmapped`,
+			}),
+		);
+		out.push(
+			"",
+			`\tlogic [31:0] ${q}rsp_dat;`,
+			`\tlogic        ${q}rsp_ack;`,
+			"",
+		);
+		out.push(
+			...emitResponseMux(
+				dataOf(sg.slaves),
+				`${q}rsp_dat`,
+				`${q}rsp_ack`,
+				`${q}stb`,
+				`${q}slot_sel`,
+				`${q}unmapped`,
+			),
+		);
+		out.push("");
+	}
+
+	//--------------------------------------------------------------------------
+	//  Responses
+	//--------------------------------------------------------------------------
+	out.push(
+		bar,
+		"\t//  Master group response: the slave group that granted this group, or the",
+		"\t//  immediate unmapped ACK",
+		bar,
+	);
+	for (const mg of mgs) {
+		const p = mg.prefix;
+		pushOrAssign(
+			out,
+			`${p}rsp_dat`,
+			sgs.map(
+				(sg) => `({32{${sg.prefix}gsel[${mg.g}]}} & ${sg.prefix}rsp_dat)`,
+			),
+		);
+		pushOrAssign(out, `${p}rsp_ack`, [
+			`(${p}unmapped & ${p}stb)`,
+			...sgs.map((sg) => `(${sg.prefix}gsel[${mg.g}] & ${sg.prefix}rsp_ack)`),
+		]);
+	}
+	out.push(
+		"",
+		bar,
+		"\t//  Master response: only the granted member of a group sees DAT/ACK",
+		bar,
+	);
+	const datPad = Math.max(...masters.map((m) => wb(m.name, "i_wb_dat").length));
+	for (const mg of mgs) {
+		const p = mg.prefix;
+		const nk = mg.members.length;
+		for (const [k, m] of mg.members.entries()) {
+			const dat = wb(m.name, "i_wb_dat").padEnd(datPad);
+			const ack = wb(m.name, "i_wb_ack").padEnd(datPad);
+			const datSrc =
+				nk > 1 ? `{32{${p}gsel[${k}]}} & ${p}rsp_dat` : `${p}rsp_dat`;
+			const ackSrc = nk > 1 ? `${p}gsel[${k}] & ${p}rsp_ack` : `${p}rsp_ack`;
+			if ((m.pipe ?? 0) > 0) {
+				out.push(
+					`\tassign m${m.i}_rdat_q = ${datSrc};`,
+					`\tassign m${m.i}_ack_q  = ${ackSrc};`,
+					`\tassign ${dat} = m${m.i}_prdat;`,
+					`\tassign ${ack} = m${m.i}_pack;`,
+				);
+			} else {
+				out.push(
+					`\tassign ${dat} = ${datSrc};`,
+					`\tassign ${ack} = ${ackSrc};`,
+				);
+			}
+		}
+	}
+	out.push("");
+	return out;
+}
+
+function emitDecodeAndSlaves(
+	def: BusDef,
+	gPrefix: string,
+	scope: DecodeScope = wholeScope(def),
+): string[] {
+	const slaves = dataOf(scope.slaves);
 	const ns = slaves.length;
 	const aw = def.addr_width;
 	const adr = decAdr(def, gPrefix);
@@ -627,12 +1097,12 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 		);
 	}
 	out.push(
-		`\tlogic [${ns - 1}:0] slot_sel;`,
-		"\tlogic        unmapped;",
+		`\tlogic [${ns - 1}:0] ${scope.slotVec};`,
+		`\tlogic        ${scope.unmapped};`,
 		"",
 		"\talways_comb begin",
-		`\t\tslot_sel = ${ns}'b0;`,
-		"\t\tunmapped = 1'b1;",
+		`\t\t${scope.slotVec} = ${ns}'b0;`,
+		`\t\t${scope.unmapped} = 1'b1;`,
 	);
 	// High→low so the last write is the lowest index (priority).
 	for (let i = ns - 1; i >= 0; i--) {
@@ -640,13 +1110,13 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 		if (s === undefined) continue;
 		out.push(
 			`\t\tif ((${adr} & ${aw}'h${hex(s.mask, aw)}) == ${aw}'h${hex(s.base, aw)}) begin`,
-			`\t\t\tslot_sel = ${ns}'d1 << ${slotLp(s.name)};`,
-			"\t\t\tunmapped = 1'b0;",
+			`\t\t\t${scope.slotVec} = ${ns}'d1 << ${slotLp(s.name)};`,
+			`\t\t\t${scope.unmapped} = 1'b0;`,
 			"\t\tend",
 		);
 	}
 	out.push("\tend", "");
-	for (const s of def.slaves) {
+	for (const s of scope.slaves) {
 		if (!s.broadcast) continue;
 		out.push(
 			`\t// Broadcast ${s.broadcast}: no WB data port; writes fan out, reads OR subscriber DAT`,
@@ -669,14 +1139,27 @@ function emitDecodeAndSlaves(def: BusDef, gPrefix: string): string[] {
 		combo.length > 0
 			? Math.max(...combo.map((s) => wb(s.name, "i_wb_adr").length))
 			: 0;
-	const slotPad = Math.max(...slaves.map((s) => slotSel(s.name).length));
+	const slotPad = Math.max(
+		...slaves.map((s) => slotSel(s.name, scope.slotVec).length),
+	);
 	for (let i = 0; i < ns; i++) {
 		const s = slaves[i];
 		if (s === undefined) continue;
 		if ((s.pipe ?? 0) > 0) {
-			out.push(...emitSlavePipe(s, aw, gPrefix, adr, def));
+			out.push(...emitSlavePipe(s, aw, gPrefix, adr, def, scope.slotVec));
 		} else {
-			out.push(...emitSlaveCombo(s, aw, gPrefix, namePad, slotPad, adr, def));
+			out.push(
+				...emitSlaveCombo(
+					s,
+					aw,
+					gPrefix,
+					namePad,
+					slotPad,
+					adr,
+					def,
+					scope.slotVec,
+				),
+			);
 		}
 		if (i < ns - 1) out.push("");
 	}
@@ -691,10 +1174,11 @@ function emitSlaveCombo(
 	slotPad: number,
 	adr: string,
 	def: BusDef,
+	slotVec: string,
 ): string[] {
 	const n = s.name;
 	const port = (stem: string) => wb(n, stem).padEnd(namePad);
-	const slot = slotSel(n).padEnd(slotPad);
+	const slot = slotSel(n, slotVec).padEnd(slotPad);
 	const bcast = (s.broadcastBy ?? []).filter((name) =>
 		def.slaves.some((src) => src.broadcast === name),
 	);
@@ -830,6 +1314,7 @@ function emitSlavePipe(
 	gPrefix: string,
 	adr: string,
 	def: BusDef,
+	slotVec: string,
 ): string[] {
 	const n = s.name;
 	const pipe = s.pipe;
@@ -839,7 +1324,7 @@ function emitSlavePipe(
 			tags.some((p) => p.name.endsWith(`_tga_${t.domain.name}`)),
 		),
 	);
-	const slot = slotSel(n);
+	const slot = slotSel(n, slotVec);
 	const bcast = (s.broadcastBy ?? []).filter((name) =>
 		def.slaves.some((src) => src.broadcast === name),
 	);
@@ -923,6 +1408,8 @@ function emitResponseMux(
 	dat: string,
 	ack: string,
 	stb: string,
+	slotVec = "slot_sel",
+	unmapped = "unmapped",
 ): string[] {
 	const out: string[] = [];
 	const groups = new Map<string, WbSlave[]>();
@@ -935,8 +1422,8 @@ function emitResponseMux(
 	}
 	const datTerms = slaves.map((s) =>
 		(s.pipe ?? 0) > 0
-			? `({32{${slotSel(s.name)}}} & ${s.name}_pipe_rdat)`
-			: `({32{${slotSel(s.name)}}} & ${wb(s.name, "o_wb_dat")})`,
+			? `({32{${slotSel(s.name, slotVec)}}} & ${s.name}_pipe_rdat)`
+			: `({32{${slotSel(s.name, slotVec)}}} & ${wb(s.name, "o_wb_dat")})`,
 	);
 	// Broadcast read: OR every subscriber's read data (any-1 status readback).
 	for (const [name, members] of groups) {
@@ -956,13 +1443,13 @@ function emitResponseMux(
 	const bcastAny = [...groups.keys()].map((name) => `broadcast_${name}`);
 	pushOrAssign(out, ack, [
 		bcastAny.length > 0
-			? `(unmapped & ${stb} & !(${bcastAny.join(" | ")}))`
-			: `(unmapped & ${stb})`,
+			? `(${unmapped} & ${stb} & !(${bcastAny.join(" | ")}))`
+			: `(${unmapped} & ${stb})`,
 		...broadcastAcks,
 		...slaves.map((s) =>
 			(s.pipe ?? 0) > 0
-				? `(${slotSel(s.name)} & ${s.name}_pipe_ack)`
-				: `(${slotSel(s.name)} & ${wb(s.name, "o_wb_ack")})`,
+				? `(${slotSel(s.name, slotVec)} & ${s.name}_pipe_ack)`
+				: `(${slotSel(s.name, slotVec)} & ${wb(s.name, "o_wb_ack")})`,
 		),
 	]);
 	return out;
@@ -984,6 +1471,18 @@ export function emitBusSv(def: BusDef): string {
 		`//  Masters: ${nm} (${kind === "decoder" ? "decoder-only; no arbiter" : "arbiter: rb_grant_en=0 fixed / 1 round-robin"})`,
 		`//  Slaves:  ${dataSlaves(def).length} (named {slave}_i_wb_* / {slave}_o_wb_*)`,
 	);
+	if (def.crossbar) {
+		const xb = def.crossbar;
+		lines.push(
+			`//  Crossbar: ${xb.masters.length} master group(s) x ${xb.slaves.length} slave group(s); groups run in parallel`,
+		);
+		for (const g of xb.masters) {
+			lines.push(`//    master group ${g.name}: ${g.members.join(", ")}`);
+		}
+		for (const g of xb.slaves) {
+			lines.push(`//    slave group  ${g.name}: ${g.members.join(", ")}`);
+		}
+	}
 	if (tw > 0) {
 		const src = def.tags
 			.filter((t) => t.source !== "uplink")
@@ -1019,7 +1518,7 @@ export function emitBusSv(def: BusDef): string {
 	lines.push(`module ${mod} (`);
 	lines.push("\tinput  logic        clk,");
 	lines.push("\tinput  logic        rst_n,");
-	if (kind === "interconnect") {
+	if (kind !== "decoder") {
 		lines.push("\tinput  logic        rb_grant_en,");
 	}
 
@@ -1065,6 +1564,8 @@ export function emitBusSv(def: BusDef): string {
 
 	if (kind === "decoder") {
 		lines.push(...emitDecoderBody(def));
+	} else if (kind === "crossbar") {
+		lines.push(...emitCrossbarBody(def));
 	} else {
 		lines.push(...emitInterconnectBody(def));
 	}

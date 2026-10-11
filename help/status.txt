@@ -34,10 +34,11 @@ Not landed (parked; do not implement until a later ask)
                             not required (docs/architecture.md).
   Plugin type B             expand custom tags into core aw-*. Parked. No aw-*
                             plugin tags in use. Type A wishbone run is landed.
-  Wishbone open items       extra arbiter policies, crossbar, SlaveBus downlink,
+  Wishbone open items       extra arbiter policies, SlaveBus downlink,
                             posted async FIFO, CDC constraints, real DFT TAP.
                             Parked (docs/plugins/wishbone-bus.md §8). Tag domains
-                            (ShadowDomain / TagFrom*) are landed.
+                            (ShadowDomain / TagFrom*) and the grouped Crossbar()
+                            (§4.2) are landed.
   Multiple autowire.toml    one file per workspace. Nested copies and dep closure
                             are not needed (docs/workspace/toml.md §6).
 
@@ -119,6 +120,12 @@ Parallel (does not block connect)
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
     NM>1 → interconnect (arbiter: rb_grant_en 0=fixed lowest-index /
     1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
+    Crossbar(name, desc, { masters: [Master | MasterGroup(name, [...])],
+    slaves: [slave | SlaveGroup(name, [...])], addrWidth, tagWidth?, tags? })
+    → <bus>_crossbar: one arbiter per master group, one decoder per slave
+    group, groups run in parallel (bare member = group of one); returns a flat
+    BusDef (+ .crossbar) so ports, maps, wrapper and cascade are unchanged;
+    Bus() output is untouched; a broadcast cannot cross slave groups;
     demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives each channel rb_grant_en;
     basic_smoke checks cascade SHA MMIO + grant CSR; --sd is channel DMA+SHA;
     demo/soc sot/wb_bus_soc.ts → soc_wb_interconnect + soc_wb_bus_cfg (+ JTAG TDR / wb_cdc);

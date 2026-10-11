@@ -17,8 +17,8 @@
       →  Regfile 叶子（见 wishbone-regfile.md）
 ```
 
-- **默认拓扑必须是树**（bridge + arbiter + decoder），**禁止**把全互连 matrix 当默认生成物。  
-- **单 outstanding**（与 §2 一致）；配置流量稀，不靠 crossbar 换吞吐。  
+- **默认拓扑必须是树**（bridge + arbiter + decoder），**禁止**把全互连 matrix 当默认生成物。需要并行时显式写 `Crossbar()`（§4.2）：按组交叉，组内仍是树。  
+- **单 outstanding**（与 §2 一致）；配置流量稀，不靠 crossbar 换吞吐——分组 crossbar 解决的是 **互不相干的 master 不互相阻塞**，不是带宽。  
 - **SoC 级系统互联**（AXI/NoC/商业 fabric）**禁止**纳入本插件范围——交给专业 interconnect EDA；本插件只在 IP 边界提供 WB（或可选 APB）口以便挂接。  
 - IP 内部 **没有必要**上商业 NoC/matrix；一层 arb + 地址树即可。
 
@@ -179,16 +179,16 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 
 ## 4. 拓扑：默认 tree，不是 matrix
 
-| | **树（默认，必须支持）** | **Matrix / crossbar（可选，非默认）** |
+| | **树（默认，`Bus()`）** | **分组 crossbar（可选，`Crossbar()`，§4.2）** |
 |---|---|---|
-| 形态 | arbiter → decoder 树 → 叶子 | M×N 交叉 |
-| 适用 | IP 内 cfg、稀流量 | 少数 master **并发**打不相交窗口且 N 很小 |
-| 与旧 Python | 同构 | 新路径，慎用 |
+| 形态 | arbiter → decoder 树 → 叶子 | master 组 × slave 组交叉；组内仍是 arbiter → decoder |
+| 适用 | IP 内 cfg、稀流量 | 少数 master **并发**打不相交窗口且组数很小 |
+| 与旧 Python | 同构 | 新路径；`Bus()` 语义与产物不变 |
 
 - Decoder：地址窗 + 可选 §4.1 广播（写扇出 / 读 OR）；下行仍是 WB（`STB` 扇出，`ACK`/`DAT` 回并）。  
 - Arbiter：多 WB master；口 `rb_grant_en`：**0** = 固定优先级（最低 master 下标胜）；**1** = round-robin（上次 grant 之后的下一个请求者，绕回最低下标）。事务中 `CYC` 锁定 grant。demo/soc：`smoke` `FABRIC.rb_grant_en`（复位 0）驱动 **每个 channel** `rb_grant_en`；`basic_smoke` 写该 CSR，SD→SHA DMA 在 `--sd`。  
 - Bridge：仅边界协议转换（如 `apb2wb`）；**禁止**让 APB 成为 decoder/regfile 原生口。CDC / APB / JTAG master 见 [`wishbone-master.md`](./wishbone-master.md)：先转 WB，再在 arbiter 前做 `wb_cdc`，全部在 `<bus>_bus_cfg` 内。  
-- 即便将来提供 `topology = crossbar`，slave 侧 **仍必须**有地址窗/选通；matrix **不能**取消译码职责。
+- Crossbar 下 slave 侧 **仍然**有地址窗/选通；交叉只决定哪些 master 组和哪些 slave 组之间可以并行，**不**取消译码职责。
 
 ### 4.1 Region 广播：写扇出 / 读 OR（LP6 `BroadcastAddr`）
 
@@ -216,6 +216,45 @@ SlaveBus(hbm_ch, i * 0x1000, {
 7. **与 tag 的顺序。** `TagFromAddr` 先剥离，再做广播译码。因此一次广播只进入当前 tag 别名，不跨 pstate。
 
 HBM：父层 16 个 channel 订阅 `ch_all`（`pipe` 都是 0），`center common` 不订阅。每个 channel 内 `dword0/dword1` 以相同 `pipe` 订阅 `dword_all`，`aword` 不订阅。
+
+### 4.2 分组 crossbar：`Crossbar()` / `MasterGroup()` / `SlaveGroup()`（已落地）
+
+> 状态：**已落地**（`src/plugins/wishbone-bus/dsl.ts`、`emit.ts` `emitCrossbarBody`，`test/wishbone-crossbar.test.ts` + `test/fixtures/wb_crossbar_tb.sv`）。
+
+`Bus()` 的 interconnect 只有一个 arbiter：任意时刻只有一个 master 在访问，哪怕另一个 master 要去的是毫不相干的 regfile。`Crossbar()` 把 master 和 slave 各自分组：**组内互斥，组间并行**。
+
+```ts
+import { Crossbar, Master, MasterGroup, SlaveGroup, SlaveRegion, Size } from ".../wishbone-bus/dsl.ts";
+
+export const xb = Crossbar("xb", "grouped crossbar", {
+  addrWidth: 16,
+  masters: [
+    MasterGroup("cpu", [Master("cpu_i", "ifetch"), Master("cpu_d", "data")]),
+    Master("dma", "dma engine"),                      // 裸 master = 单成员组 "dma"
+  ],
+  slaves: [
+    SlaveGroup("ctrl", [
+      SlaveRegion("gpio", "gpio", 0x0000, Size(0x100)),
+      SlaveRegion("uart", "uart", 0x0100, Size(0x100)),
+    ]),
+    SlaveRegion("mem", "scratch", 0x8000, Size(0x8000), { pipe: 1 }),  // 裸 slave = 单成员组 "mem"
+  ],
+});
+```
+
+语义：
+
+1. **返回值仍是 `BusDef`。** `masters` / `slaves` 被拍平，口名、地址窗、tag、pipe、广播、`.uplink()` 级联、`<bus>_bus_cfg` wrapper、C/UVM/SV/Excel 软件图全部沿用 `Bus()` 的规则；多出 `crossbar: { masters, slaves }` 组元数据。`Bus()` 的语义与产物 **一字不改**。
+2. **master 组 = 一个 arbiter。** 组内多成员时生成与 interconnect 相同的 arbiter（`rb_grant_en` 0 固定 / 1 轮转，`CYC` 锁定）；单成员组没有 arbiter。组的请求先做 **目标译码**：地址落在哪个 slave 组（`mg_<g>_tgt[SG_<NAME>]`）；哪个组都不命中 → 组内立即 `unmapped` ACK，不打扰任何 slave 组。
+3. **slave 组 = 一个 decoder。** 每个 slave 组在 **master 组之间**再仲裁一次（同样的 arbiter，同一个 `rb_grant_en`），然后做经典的组内 `slot_sel` 译码、pipe、广播、响应 OR。不同 (master 组, slave 组) 对互不相干，同时推进。
+4. **无死锁。** 单 outstanding；一个 master 组同一时刻只请求一个 slave 组，`CYC` 落下即释放。没有 hold-and-wait，故不会成环。事务中途换目标组（同一 `CYC` 内多拍打不同窗）会释放旧组、重新申请新组，与经典 interconnect 一样按拍译码。
+5. **延迟。** 每条路径最多两级登记 arbiter（master 组 + slave 组），各加一拍 grant 延迟；单成员 master 组 / 单 master 组时相应一级消失。数据/ACK 路径仍是组合逻辑。
+6. **广播不跨组。** `broadcast` 窗口与它的所有 `broadcastBy` 订阅者必须在同一个 slave 组（扇出发生在一个 decoder 内）；跨组 → 构造期报错。
+7. **组名唯一**（master 侧、slave 侧各自一套），裸成员以自己的名字作组名。组名进入网名前缀 `mg_<g>_*` / `sg_<j>_*` 与 `localparam SG_<NAME>`。
+
+产物：`<bus>_crossbar.sv`（`busModuleKind` = `crossbar`），端口与 interconnect 同形：`rb_grant_en` + `{m}_o_wb_*` / `{m}_i_wb_{dat,ack}` + `{slave}_i_wb_*` / `{slave}_o_wb_*`。wrapper 例化名 `u_crossbar`。`plugin wishbone run` 打印的地址树上每个 slave 标 `group: <name>`，首行列出 master 组。
+
+什么时候用：少数几个 master（CPU 取指/数据、DMA、调试口）要同时打 **不相交** 的窗口，而配置总线本身流量稀。不要为了吞吐把每个 slave 单独成组——组数就是交叉规模，slave 组之间的并行是以每组一套 arbiter + mux 换来的。
 
 ## 5. IP 内 vs SoC interconnect
 
@@ -297,13 +336,13 @@ demo/hbm 是本插件的 VCS + UVM-1.2 验证展示：顶层 `hbm` = interconnec
 下面这些等后续需求再追加，这个阶段不改生成器：
 
 1. Arbiter 更多默认策略（v1：`rb_grant_en` 固定 / 轮转已落地）。  
-2. `topology = crossbar` 以及 M/N 上限。  
+2. ~~`topology = crossbar`~~ 分组 crossbar 已落地（§4.2 `Crossbar()`）。仍不做：M/N 上限、每组独立的 `rb_grant_en`、slave 组之间的 QoS。  
 3. Bridge 目录以外的 master 形态，见 [`wishbone-master.md`](./wishbone-master.md) §8。  
 4. 固件窗 + DMA：块周期连续写。  
 5. 默认 slave `pipe`（现缺省 0；作者按口配置）。  
 6. SlaveBus downlink（子 DMA 打回父级窗口）。v1 **不**自动生成。
 
-**已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。  
+**已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect / crossbar master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。  
 **已裁定软件图 / 挂接**：`SlaveRegfile(RegfileDef, …)` + Type-A wrapper + bus C overlay / `uvm_reg_block`（见 §6）。  
 **已裁定级联**：`SlaveBus(BusDef, …)` = Region 语法糖；多级 decoder 级联；子级可以是 interconnect；一份 BusDef × N 平行 channel。
 

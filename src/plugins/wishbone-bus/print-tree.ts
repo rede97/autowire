@@ -5,6 +5,7 @@
 import chalk from "chalk";
 import {
 	type BusDef,
+	slaveGroupOf,
 	type WbSlave,
 	type WbTagSource,
 	windowBytes,
@@ -55,8 +56,12 @@ function tagLabel(tag: WbTagSource): string {
 	return `${color("grey", "*")}@${name}`;
 }
 
-function slaveMarks(slave: WbSlave): string {
+function slaveMarks(slave: WbSlave, bus?: BusDef): string {
 	const marks: string[] = [];
+	const group = bus ? slaveGroupOf(bus, slave.name) : undefined;
+	if (group !== undefined) {
+		marks.push(`${color("grey", "group:")} ${color("cyan", group)}`);
+	}
 	if (slave.regfile) marks.push(`*${color("blue", slave.regfile.name)}`);
 	if (slave.broadcast)
 		marks.push(color("magenta", `broadcast ${slave.broadcast}`));
@@ -88,21 +93,36 @@ function slaveRow(
 		const nested = !seen.has(slave.bus.name);
 		if (nested) seen.add(slave.bus.name);
 		return {
-			text: `${at} ${color("grey", slave.bus.name)} ${color("grey", "size:")} ${sizeText(span)}${slaveMarks(slave)}`,
+			text: `${at} ${color("grey", slave.bus.name)} ${color("grey", "size:")} ${sizeText(span)}${slaveMarks(slave, bus)}`,
 			children: nested ? busRows(slave.bus, abs, seen) : [],
 		};
 	}
 	const kind = slave.broadcast ? "broadcast-size" : "size";
 	return {
-		text: `${at}${slaveMarks(slave)} ${color("grey", `${kind}:`)} ${sizeText(span)}`,
+		text: `${at}${slaveMarks(slave, bus)} ${color("grey", `${kind}:`)} ${sizeText(span)}`,
 		children: [],
 	};
 }
 
 function busRows(bus: BusDef, offset: number, seen: Set<string>): Row[] {
-	const rows = [...bus.slaves]
-		.sort((a, b) => a.base - b.base)
-		.map((slave) => slaveRow(bus, slave, (offset + slave.base) >>> 0, seen));
+	const rows: Row[] = [];
+	if (bus.crossbar) {
+		const groups = bus.crossbar.masters
+			.map(
+				(g) =>
+					`${color("cyan", g.name)}${color("grey", `[${g.members.join("|")}]`)}`,
+			)
+			.join(", ");
+		rows.push({
+			text: `${color("grey", "crossbar master groups:")} ${groups}`,
+			children: [],
+		});
+	}
+	rows.push(
+		...[...bus.slaves]
+			.sort((a, b) => a.base - b.base)
+			.map((slave) => slaveRow(bus, slave, (offset + slave.base) >>> 0, seen)),
+	);
 	if (bus.tags.length > 0) {
 		rows.push({
 			text: `${color("grey", "tags:")} ${bus.tags.map(tagLabel).join(", ")}`,
