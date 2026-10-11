@@ -59,7 +59,6 @@ module aword_regfile (
 	//  1. Internal declarations
 	//------------------------------------------------------------------------------
 
-	logic        hit;
 	logic        wr_fire;
 	logic        rd_fire;
 	logic        addr_hit_0;
@@ -100,13 +99,6 @@ module aword_regfile (
 	//   shadow=pstate
 	//   [3:0]    RW  ca_drive — CA driver strength
 	assign addr_hit_c = (aword_i_wb_adr[31:2] == 30'd3);
-
-	assign hit = |{
-		addr_hit_0,
-		addr_hit_4,
-		addr_hit_8,
-		addr_hit_c
-	};
 	assign wr_fire = aword_i_wb_cyc && aword_i_wb_stb &&  aword_i_wb_we;
 	assign rd_fire = aword_i_wb_cyc && aword_i_wb_stb && ~aword_i_wb_we;
 
@@ -261,7 +253,7 @@ module aword_regfile (
 		endcase
 	end
 
-	assign aword_o_wb_ack = aword_i_wb_cyc && aword_i_wb_stb && hit;
+	assign aword_o_wb_ack = aword_i_wb_cyc && aword_i_wb_stb;
 	assign aword_o_wb_dat = rd_data;
 
 	// Protocol inputs this leaf does not consume.

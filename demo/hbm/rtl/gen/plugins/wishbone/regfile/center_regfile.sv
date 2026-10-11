@@ -48,7 +48,6 @@ module center_regfile (
 	//  1. Internal declarations
 	//------------------------------------------------------------------------------
 
-	logic        hit;
 	logic        wr_fire;
 	logic        rd_fire;
 	logic        addr_hit_0;
@@ -76,12 +75,6 @@ module center_regfile (
 	//   [0]      RO  all_cal_done — Every enabled channel calibrated
 	//   [11:8]   RO  err_ch       — First channel reporting an error
 	assign addr_hit_8 = (center_i_wb_adr[18:2] == 17'd2);
-
-	assign hit = |{
-		addr_hit_0,
-		addr_hit_4,
-		addr_hit_8
-	};
 	assign wr_fire = center_i_wb_cyc && center_i_wb_stb &&  center_i_wb_we;
 	assign rd_fire = center_i_wb_cyc && center_i_wb_stb && ~center_i_wb_we;
 
@@ -149,7 +142,7 @@ module center_regfile (
 		endcase
 	end
 
-	assign center_o_wb_ack = center_i_wb_cyc && center_i_wb_stb && hit;
+	assign center_o_wb_ack = center_i_wb_cyc && center_i_wb_stb;
 	assign center_o_wb_dat = rd_data;
 
 	// Protocol inputs this leaf does not consume.

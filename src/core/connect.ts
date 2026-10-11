@@ -5,7 +5,7 @@
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { parseHTML } from "linkedom";
 import type { LeafDb, LeafModule } from "../rtl/leaf.ts";
 import type { ConnectUnit, WorkspaceConfig } from "../workspace.ts";
@@ -50,7 +50,7 @@ export async function loadUnitDoc(
 	unit: ConnectUnit,
 ): Promise<UnitDoc> {
 	const path = resolve(ws.root, unit.html);
-	if (!path.startsWith(ws.root))
+	if (!pathInside(ws.root, unit.html))
 		throw new Error(`unit "${unit.id}": html path escapes the workspace`);
 	if (!existsSync(path))
 		throw new Error(`unit "${unit.id}": author HTML not found: ${unit.html}`);
@@ -59,24 +59,47 @@ export async function loadUnitDoc(
 	return { unit, doc: document };
 }
 
+/** True when `target` is `root` or a file inside it.
+ *  A sibling prefix (`/a/proj` vs `/a/proj2`) does not count. */
+export function pathInside(root: string, target: string): boolean {
+	const base = resolve(root);
+	const abs = resolve(base, target);
+	const prefix = base.endsWith(sep) ? base : base + sep;
+	return abs === base || abs.startsWith(prefix);
+}
+
+export interface UnitModIndex {
+	/** Top-level aw-mod name → owning unit id. The first owner wins. */
+	mods: Map<string, string>;
+	/** Cross-unit duplicate aw-mod names. Same-unit duplicates stay in check. */
+	errors: string[];
+}
+
 /** Top-level aw-mod names per unit (for cross-unit reference checks). */
 export async function unitModNames(
 	ws: WorkspaceConfig,
 	units: ConnectUnit[],
-): Promise<Map<string, string>> {
-	const map = new Map<string, string>();
+): Promise<UnitModIndex> {
+	const mods = new Map<string, string>();
+	const errors: string[] = [];
 	for (const u of units) {
 		try {
 			const { doc } = await loadUnitDoc(ws, u);
 			for (const el of doc.querySelectorAll("autowire > aw-mod")) {
 				const name = el.getAttribute("name");
-				if (name) map.set(name, u.id);
+				if (!name) continue;
+				const prev = mods.get(name);
+				if (prev === undefined) mods.set(name, u.id);
+				else if (prev !== u.id)
+					errors.push(
+						`aw-mod "${name}" is declared by unit "${prev}" and unit "${u.id}"`,
+					);
 			}
 		} catch {
 			// Unreadable unit: its own check reports the file error.
 		}
 	}
-	return map;
+	return { mods, errors };
 }
 
 /** Snapshot dir: fixed generated temp (docs/workspace/toml.md §4.1). */
@@ -130,10 +153,12 @@ export async function buildEngineCtx(
 	/** Pre-computed unitModNames result; computed here when omitted (per-call
 	 *  fallback). Callers looping over units should compute it once — parsing
 	 *  every unit's HTML per unit is O(units²). */
-	unitMods?: Map<string, string>,
+	unitMods?: UnitModIndex,
 ): Promise<BuiltCtx> {
 	const errors: string[] = [];
-	unitMods ??= await unitModNames(ws, units);
+	const index = unitMods ?? (await unitModNames(ws, units));
+	errors.push(...index.errors);
+	const mods = index.mods;
 	const wrappers = new Map<string, WrapperFacts>();
 	for (const dep of unit.deps) {
 		const facts = await loadDepWrappers(ws, dep);
@@ -158,7 +183,7 @@ export async function buildEngineCtx(
 		unitId: unit.id,
 		unitKind: unit.kind,
 		unitDeps: unit.deps,
-		unitMods,
+		unitMods: mods,
 		leaf,
 		wrapper: (mod) => wrappers.get(mod) ?? null,
 	};

@@ -11,6 +11,9 @@
 //   - fabric in reset (alive=0)            -> s_err at once
 //   - no ack within TIMEOUT s_clk cycles   -> s_err (TIMEOUT=0 disables)
 //   - after an abort, new requests get s_err until ack returns low
+// A timeout drops the source request and returns s_err. It does not withdraw
+// a beat the target domain has already accepted: m_cyc stays high until m_ack,
+// so the write can still land after the source has seen s_err.
 // Writes are non-posted: s_ack means the leaf acknowledged.
 // TGA ports are always present. TW is at least 1 (the default).
 

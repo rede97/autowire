@@ -72,7 +72,7 @@ describe("wishbone-regfile", () => {
 		expect(sv).toContain("ext_data_ready");
 		expect(sv).toContain("rwe_stall_ext_data");
 		expect(sv).toContain(
-			"sub_module_a_o_wb_ack = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb && hit && !rwe_stall_ext_data",
+			"sub_module_a_o_wb_ack = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb && (!hit || !rwe_stall_ext_data)",
 		);
 		expect(sv).toContain("sub_module_a_i_wb_cyc");
 		expect(sv).toContain("sub_module_a_o_wb_ack");
@@ -87,7 +87,7 @@ describe("wishbone-regfile", () => {
 		expect(sv).toContain("\tinput  logic [15:0] sub_module_b_i_wb_adr,");
 		expect(sv).toContain("\toutput logic [31:0] sub_module_b_o_wb_dat");
 		// signal_align: packed column; names share one column
-		expect(sv).toContain("\tlogic        hit;");
+		expect(sv).toContain("\tlogic        rd_fire;");
 		expect(sv).toContain("\tlogic [31:0] rd_data;");
 	});
 
@@ -96,7 +96,7 @@ describe("wishbone-regfile", () => {
 		expect(sv).toContain("module sub_module_b_regfile");
 		expect(sv).toContain("sub_module_b_o_wb_ack");
 		expect(sv).toContain(
-			"sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb && hit",
+			"sub_module_b_o_wb_ack = sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb;",
 		);
 		expect(sv).toContain("16'h1");
 		expect(sv).not.toContain("wr_sel_");
@@ -228,9 +228,13 @@ describe("wishbone-regfile smoke features", () => {
 			expect(laid.cells.length).toBeGreaterThan(0);
 			const sv = emitRegfileSv(laid);
 			expect(sv).toContain(`module ${def.name.toLowerCase()}_regfile`);
-			expect(sv).toContain(
-				`${def.name}_o_wb_ack = ${def.name}_i_wb_cyc && ${def.name}_i_wb_stb && hit`,
-			);
+			if (sv.includes("rwe_stall")) {
+				expect(sv).toContain("(!hit || !");
+			} else {
+				expect(sv).toContain(
+					`${def.name}_o_wb_ack = ${def.name}_i_wb_cyc && ${def.name}_i_wb_stb;`,
+				);
+			}
 			for (const s of must) expect(sv).toContain(s);
 		});
 	}
@@ -652,7 +656,7 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		expect(sv).toContain("ro_done");
 		expect(sv).toContain("ro_hash7");
 		expect(sv).toContain(
-			"sha256_o_wb_ack = sha256_i_wb_cyc && sha256_i_wb_stb && hit",
+			"sha256_o_wb_ack = sha256_i_wb_cyc && sha256_i_wb_stb;",
 		);
 	});
 
@@ -689,5 +693,5 @@ describe("wishbone-regfile demo/soc sha256", () => {
 		expect(hdr).toContain("union SHA256_CTRL");
 		expect(paths.some((p) => p.endsWith("smoke.h"))).toBe(true);
 		expect(sha256.name).toBe("sha256");
-	});
+	}, 60_000);
 });

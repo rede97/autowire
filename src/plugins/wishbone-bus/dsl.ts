@@ -154,7 +154,7 @@ export type SlaveBusOpts = SlaveOpts & {
 	readonly desc?: string;
 };
 
-/** `raw` = `Slave(mask)` (unchecked). `region` = `SlaveRegion` / `SlaveRegfile`. */
+/** `raw` = author mask. `region` = `SlaveRegion` / `SlaveRegfile`. Both must be satisfiable and disjoint. */
 export type SlaveWindow = "raw" | "region";
 
 export type WbSlave = {
@@ -885,14 +885,82 @@ function hexWin(n: number): string {
 }
 
 /**
- * Pow2-aligned regions overlap iff one decode window contains the other's base.
- * Raw `Slave(mask)` ports are excluded.
+ * Two match windows overlap when some address satisfies both
+ * `(adr & mask) == base` compares. Each base must already lie inside its
+ * own mask; otherwise the compare is unsatisfiable and is rejected first.
  */
 export function regionWindowsOverlap(a: WbSlave, b: WbSlave): boolean {
-	return (
-		(a.base & b.mask) >>> 0 === b.base >>> 0 ||
-		(b.base & a.mask) >>> 0 === a.base >>> 0
-	);
+	return (a.base & b.mask) >>> 0 === (b.base & a.mask) >>> 0;
+}
+
+/**
+ * Every slave window, raw or region, must be a real decode:
+ * base and mask fit in `addrWidth`, `(adr & mask) == base` can match,
+ * ignored bits are a contiguous low field, and no two windows overlap.
+ */
+function assertSlaveWindows(
+	bus: string,
+	slaves: readonly WbSlave[],
+	addrWidth: number,
+): void {
+	const ones = addrOnes(addrWidth);
+	for (const s of slaves) {
+		const baseText = `0x${s.base.toString(16)}`;
+		const maskText = `0x${s.mask.toString(16)}`;
+		if (s.base >>> 0 !== s.base || s.mask >>> 0 !== s.mask) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} slave "${s.name}" base ${baseText} mask ${maskText} does not fit in 32 bits`,
+			);
+		}
+		if ((s.base & ~ones) >>> 0 !== 0 || (s.mask & ~ones) >>> 0 !== 0) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} slave "${s.name}" base ${baseText} mask ${maskText} exceeds addrWidth ${addrWidth}`,
+			);
+		}
+		if ((s.base & s.mask) >>> 0 !== s.base >>> 0) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} slave "${s.name}" base ${baseText} mask ${maskText} can never match; (adr & mask) == base requires the base to lie inside the window`,
+			);
+		}
+		const ignored = (~s.mask & ones) >>> 0;
+		if ((ignored & ((ignored + 1) >>> 0)) >>> 0 !== 0) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} slave "${s.name}" mask ${maskText} has holes; ignored address bits must be a contiguous low field`,
+			);
+		}
+	}
+	for (let i = 0; i < slaves.length; i++) {
+		for (let j = i + 1; j < slaves.length; j++) {
+			const a = slaves[i];
+			const b = slaves[j];
+			if (!a || !b || !regionWindowsOverlap(a, b)) continue;
+			throw new Error(
+				`wishbone-bus: bus ${bus} window "${a.name}" (${hexWin(a.base)} mask ${hexWin(a.mask)}) overlaps "${b.name}" (${hexWin(b.base)} mask ${hexWin(b.mask)})`,
+			);
+		}
+	}
+}
+
+/** A broadcast window has no WB data port, so a decode scope still needs one. */
+function assertDataSlave(
+	bus: string,
+	slaves: readonly WbSlave[],
+	crossbar: CrossbarGroups | undefined,
+): void {
+	const scopes = crossbar
+		? crossbar.slaves.map((g) => ({
+				where: `bus ${bus} slave group "${g.name}"`,
+				members: slaves.filter((s) => g.members.includes(s.name)),
+			}))
+		: [{ where: `bus ${bus}`, members: slaves }];
+	for (const scope of scopes) {
+		if (scope.members.length === 0) continue;
+		if (scope.members.every((s) => s.broadcast)) {
+			throw new Error(
+				`wishbone-bus: ${scope.where} has no data slave; a broadcast window has no WB port`,
+			);
+		}
+	}
 }
 
 function assertBroadcasts(bus: string, slaves: readonly WbSlave[]): void {
@@ -941,26 +1009,6 @@ function assertBroadcasts(bus: string, slaves: readonly WbSlave[]): void {
 					`wishbone-bus: bus ${bus} broadcast "${name}" subscribers must share pipe depth (${s.name} pipe ${s.pipe ?? 0} != ${depth})`,
 				);
 			}
-		}
-	}
-}
-
-function assertNoRegionOverlap(
-	bus: string,
-	slaves: readonly WbSlave[],
-	addrWidth: number,
-): void {
-	const regions = slaves.filter((s) => s.window === "region");
-	for (let i = 0; i < regions.length; i++) {
-		for (let j = i + 1; j < regions.length; j++) {
-			const a = regions[i];
-			const b = regions[j];
-			if (!a || !b || !regionWindowsOverlap(a, b)) continue;
-			const aSize = a.size ?? windowBytes(a.mask, addrWidth);
-			const bSize = b.size ?? windowBytes(b.mask, addrWidth);
-			throw new Error(
-				`wishbone-bus: bus ${bus} region "${a.name}" (${hexWin(a.base)} Size(${hexWin(aSize)})) overlaps "${b.name}" (${hexWin(b.base)} Size(${hexWin(bSize)}))`,
-			);
 		}
 	}
 }
@@ -1115,9 +1163,9 @@ function buildBus(
 		throw new Error(`wishbone-bus: bus ${name} needs at least one slave`);
 	}
 	const addr_width = opts.addrWidth;
-	if (!Number.isInteger(addr_width) || addr_width < 2 || addr_width > 64) {
+	if (!Number.isInteger(addr_width) || addr_width < 2 || addr_width > 32) {
 		throw new Error(
-			`wishbone-bus: bus ${name} addrWidth must be an integer 2..64`,
+			`wishbone-bus: bus ${name} addrWidth must be an integer 2..32`,
 		);
 	}
 	const slaves = opts.slaves.map((s) => resolveAttached(s, addr_width));
@@ -1128,7 +1176,8 @@ function buildBus(
 		}
 		seen.add(s.name);
 	}
-	assertNoRegionOverlap(name, slaves, addr_width);
+	assertSlaveWindows(name, slaves, addr_width);
+	assertDataSlave(name, slaves, crossbar);
 	assertBroadcasts(name, slaves);
 	const declared = orderAddrTags(name, normalizeTags(name, opts.tags ?? []));
 	assertAddrTagsCut(name, addr_width, declared, slaves);

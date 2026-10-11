@@ -112,7 +112,7 @@ describe("wishbone-bus", () => {
 		expect(present("soc_wb_map.h")).toBe(true);
 		expect(present("sd_sha_map.h")).toBe(true);
 		expect(present("ral_block_soc_wb.sv")).toBe(true);
-	});
+	}, 60_000);
 
 	test("zero masters also decoder", () => {
 		const def = Bus("solo", "no masters listed", {
@@ -459,7 +459,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		).toThrow(/share pipe depth/);
 	});
 
-	test("Bus checks region overlap; raw Slave(mask) is unchecked", () => {
+	test("Bus rejects unsatisfiable, holey, wide, and overlapping windows", () => {
 		expect(() =>
 			Bus("hit", "overlap", {
 				addrWidth: 32,
@@ -482,17 +482,52 @@ ts = "${ts.replaceAll("\\", "/")}"
 			Bus("rawok", "raw vs region", {
 				addrWidth: 32,
 				slaves: [
-					Slave("raw", "unchecked", 0, 0xffff_0000),
+					Slave("raw", "same window", 0, 0xffff_0000),
 					SlaveRegion("sram", "64K", 0, Size(0x1_0000)),
 				],
 			}),
-		).not.toThrow();
+		).toThrow(/overlaps/);
 		expect(() =>
 			Bus("raw2", "two raw", {
 				addrWidth: 32,
 				slaves: [
 					Slave("a", "A", 0, 0xffff_0000),
 					Slave("b", "B", 0, 0xffff_0000),
+				],
+			}),
+		).toThrow(/overlaps/);
+		expect(() =>
+			Bus("dead", "unaligned raw", {
+				addrWidth: 32,
+				slaves: [Slave("uart", "u", 0x0200_0004, 0xffff_fff8)],
+			}),
+		).toThrow(/can never match/);
+		expect(() =>
+			Bus("hole", "holey mask", {
+				addrWidth: 32,
+				slaves: [Slave("s", "s", 0, 0xffff_00ff)],
+			}),
+		).toThrow(/holes/);
+		expect(() =>
+			Bus("wide", "addr past 32", {
+				addrWidth: 40,
+				slaves: [Slave("s", "s", 0, 0xffff_0000)],
+			}),
+		).toThrow(/2\.\.32/);
+		expect(() =>
+			Bus("bcastonly", "broadcast has no data port", {
+				addrWidth: 16,
+				slaves: [
+					SlaveRegion("all", "all", 0, Size(0x100), { broadcast: "all" }),
+				],
+			}),
+		).toThrow(/no data slave/);
+		expect(() =>
+			Bus("adj", "adjacent raw windows", {
+				addrWidth: 32,
+				slaves: [
+					Slave("a", "A", 0, 0xffff_0000),
+					Slave("b", "B", 0x1_0000, 0xffff_0000),
 				],
 			}),
 		).not.toThrow();

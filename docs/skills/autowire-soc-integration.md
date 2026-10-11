@@ -93,7 +93,7 @@ Playwright MCP（浏览器 A 面）
 10. `sdspi` 流水 ACK：主设备若一直拉高 STB 直到 ACK，FIFO 指针会每拍自增；已在 `sdspi.v` 用 `!dly_stb` 限制为每事务一次（与 `sd_rd_dma` 兼容）。
 11. filelist 路径相对**工作区根**而非 `.f` 所在目录。
 12. 子模块缺失模块（如 sdspi 的 llsdspi）→ analysis 报 blackbox，补齐进 soc.f 即可。
-13. 窗口转发是 `adr & ~mask`，不是基址相减，也不能翻某一位。窗口必须包含自己的基址。`wb_uart` 注释里想用 `~adr[2]` 把 `0x02000004` 收成 offset 0，生成器做不到；不要用重叠窗口去凑。
+13. 窗口转发是 `adr & ~mask`，不是基址相减，也不能翻某一位。窗口必须包含自己的基址：`(base & mask) == base`，否则 `(adr & mask) == base` 永远不成立。`Bus()` 会拒绝这种窗口，也会拒绝带孔的 mask。demo UART 在 `0x0200_0008`，mask `0xffff_fff8`。
 14. 宽 field 旁路口保持分片：`rg_<field>_0` 是低 32 位，不会拼成 `rg_<field>[W-1:0]`。
 15. 总线一旦声明 tag，每个 master 都有 `{master}_o_wb_tga_<domain>`。不产生该 tag 的 master（如 DMA `eng`）也要在上层接掉，否则变成父模块输入。
 16. `TagFromAddr "hi:lo"` 才是地址位，别名 `i` 在 `i<<lo`。注释或 host 头写成别的移位时以 SoT 为准（`jtag_host.h` 曾是 `<< 27`，固件和 `bank "27:26"` 是 `<< 26`）。`basic_smoke` 只打 bank0，看不出这个错，也看不出 Flash 窗口上沿和 UART 译码。

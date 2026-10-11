@@ -12,7 +12,9 @@ Must check (author-face + RtlIndex/deps context)
   type=/to legality (docs/connect/to-rules.md) without needing expand results
   toml deps: missing cross-unit ref = error; unknown id / cycle / self-dep = error
   unused dep = warning (does not fail check)
-  a dep never connect run fails with "snapshot missing" (.autowire/connect/<id>.xml); run deps first
+  aw-mod, port, signal, instance id, and net names must be SystemVerilog identifiers
+  duplicate aw-mod names (same unit, or two units' top-level modules) are errors
+  a dep never connect run fails with "snapshot missing" (.autowire/connect/<id>.xml or .json); run deps first
 
 Not check's job
   printing .sv (connect run)

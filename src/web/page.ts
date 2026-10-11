@@ -847,7 +847,7 @@ async function loadUnit(id: string): Promise<UnitEntry> {
 }
 
 /** Wrapper facts of a dep unit: prefer this session's elaborated doc, else the
- *  abstract XML snapshot (.autowire/connect/<id>.xml via /api/connect). */
+ *  connect snapshot (.autowire/connect/<id>.xml or .json via /api/connect). */
 async function depWrappers(
 	depId: string,
 ): Promise<{ facts: WrapperFacts[]; missing?: string }> {
@@ -856,9 +856,63 @@ async function depWrappers(
 	const res = await fetch(`/api/connect?id=${encodeURIComponent(depId)}`);
 	if (res.status === 404) return { missing: depId, facts: [] };
 	if (!res.ok) throw new Error(((await res.json()) as { error: string }).error);
-	const xml = await res.text();
-	const parsed = new DOMParser().parseFromString(xml, "text/xml");
+	const text = await res.text();
+	const type = res.headers.get("content-type") ?? "";
+	if (type.includes("json")) return { facts: jsonFactsOf(text) };
+	const parsed = new DOMParser().parseFromString(text, "text/xml");
 	return { facts: xmlFactsOf(parsed) };
+}
+
+/** Abstract module facts from a JSON connect snapshot. */
+function jsonFactsOf(text: string): WrapperFacts[] {
+	const doc: unknown = JSON.parse(text);
+	if (typeof doc !== "object" || doc === null || !("modules" in doc))
+		throw new Error("connect snapshot: missing modules array");
+	const modules = (doc as { modules: unknown }).modules;
+	if (!Array.isArray(modules))
+		throw new Error("connect snapshot: missing modules array");
+	const str = (v: unknown): string => (typeof v === "string" ? v : "");
+	const opt = (v: unknown): string | null => {
+		const s = str(v);
+		return s === "" ? null : s;
+	};
+	const facts: WrapperFacts[] = [];
+	for (const m of modules) {
+		if (typeof m !== "object" || m === null) continue;
+		const mod = m as Record<string, unknown>;
+		const ports: WrapperFacts["ports"] = [];
+		const rawPorts = Array.isArray(mod.ports) ? mod.ports : [];
+		for (const p of rawPorts) {
+			if (typeof p !== "object" || p === null) continue;
+			const port = p as Record<string, unknown>;
+			ports.push({
+				name: str(port.name),
+				dir: str(port.dir) || "input",
+				packed: opt(port.packed),
+				unpacked: opt(port.unpacked),
+				nettype: opt(port.nettype),
+			});
+		}
+		const params: WrapperFacts["params"] = [];
+		const rawParams = Array.isArray(mod.params) ? mod.params : [];
+		for (const p of rawParams) {
+			if (typeof p !== "object" || p === null) continue;
+			const param = p as Record<string, unknown>;
+			params.push({ name: str(param.name), value: str(param.value) });
+		}
+		const imports: WrapperFacts["imports"] = [];
+		const rawImports = Array.isArray(mod.imports) ? mod.imports : [];
+		for (const i of rawImports) {
+			if (typeof i !== "object" || i === null) continue;
+			const im = i as Record<string, unknown>;
+			imports.push({
+				package: str(im.package),
+				symbol: str(im.symbol) || "*",
+			});
+		}
+		facts.push({ name: str(mod.name), params, ports, imports });
+	}
+	return facts;
 }
 
 /** Abstract module facts from a <connectUnit> XML snapshot. */

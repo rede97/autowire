@@ -3,14 +3,14 @@
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 // Browser assets embedded as text: same source in dev (`bun index.ts`) and in
 // the compiled binary (`bun build --compile`). out/web is build:web output.
 // @ts-expect-error Bun text import (typed via src/assets.d.ts for editors that resolve it)
 import awBundle from "../../out/web/aw.js" with { type: "text" };
 // @ts-expect-error Bun text import
 import pageJs from "../../out/web/page.js" with { type: "text" };
-import { connectDir, topoUnits } from "../core/connect.ts";
+import { connectDir, pathInside, topoUnits } from "../core/connect.ts";
 import { LeafDb } from "../rtl/leaf.ts";
 import { indexFileName, loadRtlIndex } from "../rtl/rtlindex.ts";
 import { allUnits, findUnit, type WorkspaceConfig } from "../workspace.ts";
@@ -140,16 +140,20 @@ async function handleApi(
 		const id = url.searchParams.get("id") ?? "";
 		const unit = findUnit(ws, id);
 		if (!unit) return json({ error: `unknown unit "${id}"` }, 404);
-		if (!existsSync(unit.html))
+		if (!pathInside(ws.root, unit.html))
+			return json({ error: "path escapes the workspace" }, 403);
+		const author = resolve(ws.root, unit.html);
+		if (!existsSync(author))
 			return json({ error: `author HTML not found: ${unit.html}` }, 404);
-		return new Response(await readFile(unit.html, "utf8"), {
+		return new Response(await readFile(author, "utf8"), {
 			headers: { "content-type": "text/html; charset=utf-8" },
 		});
 	}
 	if (req.method === "GET" && path === "/api/connect") {
 		const id = url.searchParams.get("id") ?? "";
 		if (!UNIT_ID.test(id)) return json({ error: "bad unit id" }, 400);
-		const file = join(connectDir(ws), `${id}.xml`);
+		const ext = ws.indexFormat === "json" ? "json" : "xml";
+		const file = join(connectDir(ws), `${id}.${ext}`);
 		if (!existsSync(file)) {
 			return json(
 				{ error: `no snapshot for unit "${id}" (connect run writes it)` },
@@ -157,7 +161,12 @@ async function handleApi(
 			);
 		}
 		return new Response(await readFile(file, "utf8"), {
-			headers: { "content-type": "application/xml; charset=utf-8" },
+			headers: {
+				"content-type":
+					ext === "json"
+						? "application/json; charset=utf-8"
+						: "application/xml; charset=utf-8",
+			},
 		});
 	}
 	return json({ error: `no route ${req.method} ${path}` }, 404);
@@ -444,10 +453,9 @@ export async function startWeb(
 				}
 				if (url.pathname.startsWith("/raw/")) {
 					const rel = decodeURIComponent(url.pathname.slice("/raw/".length));
-					const root = resolve(ws.root);
-					const abs = resolve(root, rel);
-					if (abs !== root && !abs.startsWith(root + sep))
+					if (!pathInside(ws.root, rel))
 						return json({ error: "path escapes the workspace" }, 403);
+					const abs = resolve(ws.root, rel);
 					if (!existsSync(abs)) return json({ error: "not found" }, 404);
 					return new Response(Bun.file(abs));
 				}

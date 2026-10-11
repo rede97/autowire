@@ -123,7 +123,7 @@ Run              ←── 依赖 Elaborate（传递依赖 Check）；只显示�
 | `/api/rtlindex` | GET | **`.autowire/hdxml/`** `index.xml` | files / modules / packages / errorFiles、definesFp、hierarchy |
 | `/api/modules` | GET | **`.autowire/hdxml/`** `index.xml` | 模块与 package 名字列表（侧栏搜索） |
 | `/api/module?name=` | GET | **`.autowire/hdxml/`** 对应模块文件 XML | params / imports / ports / instances（叶子事实） |
-| `/api/connect?id=` | GET | **`.autowire/connect/`** 该单元快照 | 已由 `connect run` 写出的 `aw-render`（跨单元 deps / 预览）；**不是**作者 HTML |
+| `/api/connect?id=` | GET | **`.autowire/connect/`** 该单元快照 | 已由 `connect run` 写出的 `aw-render`（跨单元 deps / 预览）。扩展名跟 `[analysis.index] format`：`xml` 或 `json`。**不是**作者 HTML |
 | `/api/units` | GET | `autowire.toml` | 单元列表、deps、默认单元 |
 | `/api/author?id=` | GET | 作者 `html=` | 作者 HTML 原文 |
 | `/api/hook-script` | POST | 进程内存 | 把钩子脚本文本换成一次性 URL（obscura 拒绝 `data:` 模块）。**不**写工作区 |

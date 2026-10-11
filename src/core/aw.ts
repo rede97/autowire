@@ -727,6 +727,219 @@ function moduleScope(content: Element): ModScope {
 	return { params, localparams };
 }
 
+/** IEEE 1800 keywords that cannot be a module, port, net, or instance name. */
+const SV_KEYWORDS = new Set([
+	"alias",
+	"always",
+	"always_comb",
+	"always_ff",
+	"always_latch",
+	"and",
+	"assign",
+	"assume",
+	"automatic",
+	"begin",
+	"bind",
+	"bit",
+	"break",
+	"buf",
+	"bufif0",
+	"bufif1",
+	"byte",
+	"case",
+	"casex",
+	"casez",
+	"cell",
+	"chandle",
+	"class",
+	"clocking",
+	"cmos",
+	"config",
+	"const",
+	"constraint",
+	"context",
+	"continue",
+	"cover",
+	"deassign",
+	"default",
+	"defparam",
+	"design",
+	"disable",
+	"do",
+	"edge",
+	"else",
+	"end",
+	"endcase",
+	"endclass",
+	"endclocking",
+	"endconfig",
+	"endfunction",
+	"endgenerate",
+	"endgroup",
+	"endinterface",
+	"endmodule",
+	"endpackage",
+	"endprimitive",
+	"endprogram",
+	"endproperty",
+	"endsequence",
+	"endspecify",
+	"endtable",
+	"endtask",
+	"enum",
+	"event",
+	"expect",
+	"export",
+	"extends",
+	"extern",
+	"final",
+	"for",
+	"force",
+	"foreach",
+	"forever",
+	"fork",
+	"function",
+	"generate",
+	"genvar",
+	"highz0",
+	"highz1",
+	"if",
+	"iff",
+	"ifnone",
+	"implements",
+	"implies",
+	"import",
+	"initial",
+	"inout",
+	"input",
+	"inside",
+	"instance",
+	"int",
+	"integer",
+	"interconnect",
+	"interface",
+	"join",
+	"join_any",
+	"join_none",
+	"large",
+	"let",
+	"liblist",
+	"library",
+	"local",
+	"localparam",
+	"logic",
+	"longint",
+	"macromodule",
+	"medium",
+	"modport",
+	"module",
+	"nand",
+	"negedge",
+	"nettype",
+	"new",
+	"nmos",
+	"nor",
+	"not",
+	"notif0",
+	"notif1",
+	"null",
+	"or",
+	"output",
+	"package",
+	"packed",
+	"parameter",
+	"pmos",
+	"posedge",
+	"primitive",
+	"priority",
+	"program",
+	"property",
+	"protected",
+	"pull0",
+	"pull1",
+	"pulldown",
+	"pullup",
+	"pure",
+	"rand",
+	"randc",
+	"randcase",
+	"randsequence",
+	"rcmos",
+	"real",
+	"realtime",
+	"ref",
+	"reg",
+	"release",
+	"repeat",
+	"restrict",
+	"return",
+	"rnmos",
+	"rpmos",
+	"rtran",
+	"rtranif0",
+	"rtranif1",
+	"scalared",
+	"sequence",
+	"shortint",
+	"shortreal",
+	"signed",
+	"small",
+	"solve",
+	"specify",
+	"specparam",
+	"static",
+	"string",
+	"strong0",
+	"strong1",
+	"struct",
+	"supply0",
+	"supply1",
+	"table",
+	"task",
+	"this",
+	"time",
+	"timeprecision",
+	"timeunit",
+	"tran",
+	"tranif0",
+	"tranif1",
+	"tri",
+	"tri0",
+	"tri1",
+	"triand",
+	"trior",
+	"trireg",
+	"type",
+	"typedef",
+	"union",
+	"unique",
+	"unique0",
+	"unsigned",
+	"var",
+	"vectored",
+	"virtual",
+	"void",
+	"wait",
+	"wand",
+	"weak0",
+	"weak1",
+	"while",
+	"wire",
+	"with",
+	"within",
+	"wor",
+	"xnor",
+	"xor",
+]);
+
+/** Null when `name` can be a SystemVerilog identifier. */
+function svIdentProblem(name: string): string | null {
+	if (!/^[A-Za-z_][A-Za-z0-9_$]*$/.test(name))
+		return `"${name}" is not a SystemVerilog identifier`;
+	if (SV_KEYWORDS.has(name)) return `"${name}" is a SystemVerilog keyword`;
+	return null;
+}
+
 /** Library templates of one aw-mod (aw-content/aw-templates). */
 function templateLib(content: Element): Map<string, Element> {
 	const lib = new Map();
@@ -755,6 +968,13 @@ export function check(doc: UnitRoot, ctx: EngineCtx = {}): CheckResult {
 	const root = roots[0];
 	if (!root) return res;
 	const tops = topMods(root);
+	const topNames = new Set<string>();
+	for (const mod of tops) {
+		const n = attr(mod, "name");
+		if (!n) continue;
+		if (topNames.has(n)) res.errors.push(`document: duplicate aw-mod "${n}"`);
+		topNames.add(n);
+	}
 	if (ctx.unitKind === "sim") {
 		if (tops.length === 0)
 			res.errors.push("document: [sim] unit requires a top-level <aw-tb-mod>");
@@ -814,6 +1034,10 @@ function checkMod(
 	const here = [...path, name ?? "?"];
 	const where = `${tb ? "aw-tb-mod" : "aw-mod"} ${here.join(".")}`;
 	if (!name) res.errors.push(`${where}: missing name`);
+	else {
+		const problem = svIdentProblem(name);
+		if (problem) res.errors.push(`${where}: ${problem}`);
+	}
 	if (tb) {
 		if (path.length > 0)
 			res.errors.push(`${where}: aw-tb-mod must be the unit top (no nesting)`);
@@ -846,6 +1070,13 @@ function checkMod(
 	if (content) checkContent(content, ctx, res, here, mod, visibleFromAbove, tb);
 	if (submods) {
 		const sibs = children(submods, "aw-mod");
+		const sibSeen = new Set<string>();
+		for (const s of sibs) {
+			const n = attr(s, "name");
+			if (!n) continue;
+			if (sibSeen.has(n)) res.errors.push(`${where}: duplicate aw-mod "${n}"`);
+			sibSeen.add(n);
+		}
 		const sibNames = new Set(sibs.map((s) => attr(s, "name")));
 		// deps graph: known same-parent siblings, no self-dep, acyclic.
 		const depsOf = new Map<string, string[]>();
@@ -922,6 +1153,16 @@ function checkContent(
 				res.errors.push(`${where}: <${tag}> not allowed under ${g}`);
 		}
 	}
+	for (const g of ["aw-ports", "aw-signals"]) {
+		const group = child(content, g);
+		if (!group) continue;
+		for (const c of group.children ?? []) {
+			const n = attr(c, "name");
+			if (!n) continue;
+			const problem = svIdentProblem(n);
+			if (problem) res.errors.push(`${where}: ${problem}`);
+		}
+	}
 	const lib = templateLib(content);
 	const modVars: Record<string, string> = {};
 	for (const [k, v] of scope.params) modVars[k] = v.value;
@@ -943,6 +1184,10 @@ function checkContent(
 		const target = attr(inst, "mod") ?? "";
 		const iwhere = `${where} aw-inst "${id ?? "?"}"`;
 		if (!id) res.errors.push(`${iwhere}: missing id`);
+		else if (!id.includes("$")) {
+			const problem = svIdentProblem(id);
+			if (problem) res.errors.push(`${iwhere}: ${problem}`);
+		}
 		if (!target) res.errors.push(`${iwhere}: missing mod`);
 		// Only aw-template may live under aw-inst (connect-rules §1).
 		for (const c of inst.children ?? []) {
@@ -1236,10 +1481,15 @@ function checkNetName(
 	where: string,
 ): void {
 	if (!to) return;
-	if (/[[\]]/.test(to))
+	if (/[[\]]/.test(to)) {
 		res.errors.push(
 			`${where}: "${to}" must be a bare net name (no [] / part-select)`,
 		);
+		return;
+	}
+	if (to.includes("$")) return;
+	const problem = svIdentProblem(to);
+	if (problem) res.errors.push(`${where}: ${problem}`);
 }
 
 // ---------------------------------------------------------------------------

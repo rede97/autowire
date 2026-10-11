@@ -39,7 +39,6 @@ module sub_module_b_regfile (
 	//  1. Internal declarations
 	//------------------------------------------------------------------------------
 
-	logic        hit;
 	logic        rd_fire;
 	logic        addr_hit_0;
 	logic        rd_sel_0;
@@ -53,10 +52,6 @@ module sub_module_b_regfile (
 	//   [15:0]   RC  version — Chip / IP version (ReadConst)
 	//   [31:16]  RC  magic   — Magic ID (ReadConst)
 	assign addr_hit_0 = (sub_module_b_i_wb_adr[15:2] == 14'd0);
-
-	assign hit = |{
-		addr_hit_0
-	};
 	assign rd_fire = sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb && ~sub_module_b_i_wb_we;
 
 	assign rd_sel_0 = rd_fire && addr_hit_0;
@@ -88,7 +83,7 @@ module sub_module_b_regfile (
 		endcase
 	end
 
-	assign sub_module_b_o_wb_ack = sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb && hit;
+	assign sub_module_b_o_wb_ack = sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb;
 	assign sub_module_b_o_wb_dat = rd_data;
 
 	// Protocol inputs this leaf does not consume.

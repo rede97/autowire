@@ -13,7 +13,13 @@ import {
 	type WorkspaceConfig,
 } from "../workspace.ts";
 import { check, elaborate, installGlobal, serializeSnapshot } from "./aw.ts";
-import { buildEngineCtx, connectDir, type WrapperFacts } from "./connect.ts";
+import {
+	buildEngineCtx,
+	connectDir,
+	pathInside,
+	type UnitModIndex,
+	type WrapperFacts,
+} from "./connect.ts";
 import { connectJson, connectXml } from "./connectxml.ts";
 import {
 	assertModuleNames,
@@ -123,7 +129,7 @@ export async function loadLiveUnitDoc(
 ): Promise<{ win: ScriptHost; doc: Document }> {
 	const root = resolve(ws.root);
 	const path = resolve(root, unit.html);
-	if (!path.startsWith(root))
+	if (!pathInside(root, unit.html))
 		throw new Error(`unit "${unit.id}": html path escapes the workspace`);
 	const html = await readFile(path, "utf8");
 	const win = new Window({
@@ -156,8 +162,8 @@ export async function renderUnit(
 	force = false,
 	write = true,
 	/** Pre-computed unitModNames for the whole workspace (loop callers pass
-	 *  one shared map instead of re-parsing every unit's HTML per unit). */
-	unitMods?: Map<string, string>,
+	 *  one shared index instead of re-parsing every unit's HTML per unit). */
+	unitMods?: UnitModIndex,
 ): Promise<RenderedUnit> {
 	const { win, doc } = await loadLiveUnitDoc(ws, unit);
 	try {

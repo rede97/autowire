@@ -580,7 +580,7 @@ module smoke_regfile (
 		endcase
 	end
 
-	assign smoke_o_wb_ack = smoke_i_wb_cyc && smoke_i_wb_stb && hit && !rwe_stall_ext_data;
+	assign smoke_o_wb_ack = smoke_i_wb_cyc && smoke_i_wb_stb && (!hit || !rwe_stall_ext_data);
 	assign smoke_o_wb_dat = rd_data;
 
 	// Protocol inputs this leaf does not consume.

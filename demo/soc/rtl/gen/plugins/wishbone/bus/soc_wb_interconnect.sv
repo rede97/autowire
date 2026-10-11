@@ -13,7 +13,7 @@
 //    0x00000000  size=0x00010000  mask=0xffff0000  sram — 64 KiB SRAM  pipe=2
 //    0x01000000  size=0x01000000  mask=0xff000000  flash_xip — SPI flash XIP  pipe=1
 //    0x02000000  size=0x00000004  mask=0xfffffffc  flash_cfg — SPI flash cfg
-//    0x02000004  mask=0xfffffff8  uart — simpleuart  pipe=3
+//    0x02000008  mask=0xfffffff8  uart — simpleuart  pipe=3
 //    0x02000010  size=0x00000004  mask=0xfffffffc  testout — test output  pipe=1
 //    0x03000000  size=0x00001000  mask=0xfffff000  ch0 — SD + DMA + SHA256 channel interconnect (cfg + engine)  pipe=2
 //    0x03001000  size=0x00001000  mask=0xfffff000  ch1 — SD + DMA + SHA256 channel interconnect (cfg + engine)  pipe=4
@@ -73,7 +73,7 @@ module soc_wb_interconnect (
 	input  logic [31:0] flash_cfg_o_wb_dat,
 	input  logic        flash_cfg_o_wb_ack,
 	// Slave uart — simpleuart,
-	//   base=0x02000004  mask=0xfffffff8  pipe=3,
+	//   base=0x02000008  mask=0xfffffff8  pipe=3,
 	output logic [31:0] uart_i_wb_adr,
 	output logic [31:0] uart_i_wb_dat,
 	output logic [3:0]  uart_i_wb_sel,
@@ -285,7 +285,7 @@ module soc_wb_interconnect (
 			slot_sel = 8'd1 << SLOT_TESTOUT;
 			unmapped = 1'b0;
 		end
-		if ((g_adr_dec & 32'hfffffff8) == 32'h02000004) begin
+		if ((g_adr_dec & 32'hfffffff8) == 32'h02000008) begin
 			slot_sel = 8'd1 << SLOT_UART;
 			unmapped = 1'b0;
 		end

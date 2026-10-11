@@ -72,7 +72,6 @@ module sha256_regfile (
 	//  1. Internal declarations
 	//------------------------------------------------------------------------------
 
-	logic        hit;
 	logic        wr_fire;
 	logic        rd_fire;
 	logic        addr_hit_0;
@@ -131,18 +130,6 @@ module sha256_regfile (
 	// Addr: 0x00000020  RegCell: HASH7 — Digest word 7
 	//   [31:0]  RO   hash7      — hash7
 	assign addr_hit_20 = (sha256_i_wb_adr[31:2] == 30'd8);
-
-	assign hit = |{
-		addr_hit_0,
-		addr_hit_4,
-		addr_hit_8,
-		addr_hit_c,
-		addr_hit_10,
-		addr_hit_14,
-		addr_hit_18,
-		addr_hit_1c,
-		addr_hit_20
-	};
 	assign wr_fire = sha256_i_wb_cyc && sha256_i_wb_stb &&  sha256_i_wb_we;
 	assign rd_fire = sha256_i_wb_cyc && sha256_i_wb_stb && ~sha256_i_wb_we;
 
@@ -269,7 +256,7 @@ module sha256_regfile (
 		endcase
 	end
 
-	assign sha256_o_wb_ack = sha256_i_wb_cyc && sha256_i_wb_stb && hit;
+	assign sha256_o_wb_ack = sha256_i_wb_cyc && sha256_i_wb_stb;
 	assign sha256_o_wb_dat = rd_data;
 
 	// Protocol inputs this leaf does not consume.

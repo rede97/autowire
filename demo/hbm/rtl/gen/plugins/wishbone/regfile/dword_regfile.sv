@@ -62,7 +62,6 @@ module dword_regfile (
 	//  1. Internal declarations
 	//------------------------------------------------------------------------------
 
-	logic        hit;
 	logic        wr_fire;
 	logic        rd_fire;
 	logic        addr_hit_0;
@@ -108,14 +107,6 @@ module dword_regfile (
 	//   [4:0]    RW  tap0         — DFE tap 0
 	//   [12:8]   RW  tap1         — DFE tap 1
 	assign addr_hit_c = (dword_i_wb_adr[31:2] == 30'd3);
-
-	assign hit = |{
-		addr_hit_0,
-		addr_hit_4,
-		addr_hit_10,
-		addr_hit_8,
-		addr_hit_c
-	};
 	assign wr_fire = dword_i_wb_cyc && dword_i_wb_stb &&  dword_i_wb_we;
 	assign rd_fire = dword_i_wb_cyc && dword_i_wb_stb && ~dword_i_wb_we;
 
@@ -279,7 +270,7 @@ module dword_regfile (
 		endcase
 	end
 
-	assign dword_o_wb_ack = dword_i_wb_cyc && dword_i_wb_stb && hit;
+	assign dword_o_wb_ack = dword_i_wb_cyc && dword_i_wb_stb;
 	assign dword_o_wb_dat = rd_data;
 
 	// Protocol inputs this leaf does not consume.

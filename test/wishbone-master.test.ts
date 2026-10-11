@@ -21,6 +21,7 @@ import {
 	MASTER_MODULES,
 } from "../src/plugins/wishbone-bus/emit-master.ts";
 import { generateMasterModules } from "../src/plugins/wishbone-bus/generate.ts";
+import { ShadowDomain } from "../src/plugins/wishbone-regfile/dsl.ts";
 import { verilatorSim, verilatorTest } from "./fixtures/verilator.ts";
 
 const ALIGNED: WrapperStyle = {
@@ -76,7 +77,7 @@ describe("wishbone master bridges", () => {
 	});
 
 	test("Bus rejects duplicate masters and a bridged cascade face", () => {
-		const slaves = [Slave("s", "s", 0, 0xffff0000)];
+		const slaves = [Slave("s", "s", 0, 0xf000)];
 		expect(() =>
 			Bus("b", "b", {
 				addrWidth: 16,
@@ -125,6 +126,42 @@ describe("wishbone master bridges", () => {
 		expect(sv).toMatch(/\.cpu_o_wb_adr\s*\(\s*cpu_o_wb_adr\s*\)/);
 	});
 
+	test("named uplink tags are packed through wb_cdc", () => {
+		const bank = ShadowDomain("bank", 4, 2);
+		const way = ShadowDomain("way", 2, 1);
+		const slaves = [Slave("s", "s", 0, 0xf000, { tag: 3 })];
+		const dec = emitBusSystemSv(
+			Bus("td", "decoder tags", {
+				addrWidth: 16,
+				tags: [bank, way],
+				masters: [Master("cfg", "async wb", { cdc: true })],
+				slaves,
+			}),
+			ALIGNED,
+		);
+		expect(dec).toMatch(
+			/\.s_tga\s*\(\s*\{cfg_o_wb_tga_way,\s*cfg_o_wb_tga_bank\}\s*\)/,
+		);
+		expect(dec).toMatch(/\.m_tga_bank\s*\(\s*cfg_fab_tga\[1:0\]\s*\)/);
+		expect(dec).toMatch(/\.m_tga_way\s*\(\s*cfg_fab_tga\[2\]\s*\)/);
+		expect(dec ?? "").not.toContain("cfg_o_wb_tga_tag");
+		const ic = emitBusSystemSv(
+			Bus("ti", "interconnect tags", {
+				addrWidth: 16,
+				tags: [bank, way],
+				masters: [
+					Master("cpu", "local"),
+					Master("cfg", "async wb", { cdc: true }),
+				],
+				slaves,
+			}),
+			ALIGNED,
+		);
+		expect(ic).toMatch(/\.cfg_o_wb_tga_bank\s*\(\s*cfg_fab_tga\[1:0\]\s*\)/);
+		expect(ic).toMatch(/\.cfg_o_wb_tga_way\s*\(\s*cfg_fab_tga\[2\]\s*\)/);
+		expect(ic ?? "").not.toContain("cfg_o_wb_tga_tag");
+	});
+
 	test("TGA: async WB forwards tag; bridges tie it to zero", () => {
 		const sv = emitBusSystemSv(mb(4), ALIGNED) ?? "";
 		expect(sv).toMatch(/^\tinput\s+logic\s+\[3:0\]\s*wbx_o_wb_tga_tag/m);
@@ -138,7 +175,7 @@ describe("wishbone master bridges", () => {
 		const def = Bus("one", "single apb master", {
 			addrWidth: 16,
 			masters: [Master("host", "APB", { apb: true })],
-			slaves: [Slave("s", "s", 0, 0xffff0000)],
+			slaves: [Slave("s", "s", 0, 0xf000)],
 		});
 		const sv = emitBusSystemSv(def, ALIGNED) ?? "";
 		expect(sv).not.toContain("host_pclk");
@@ -162,7 +199,7 @@ describe("wishbone master bridges", () => {
 		const plain = Bus("p", "p", {
 			addrWidth: 16,
 			masters: [Master("host", "APB", { apb: true, cdc: true })],
-			slaves: [Slave("s", "s", 0, 0xffff0000)],
+			slaves: [Slave("s", "s", 0, 0xf000)],
 		});
 		expect(emitBusIcl(plain)).toBeNull();
 		expect(emitBusPdl(plain)).toBeNull();

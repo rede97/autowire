@@ -41,8 +41,8 @@ export const soc_wb = Bus(
 				pipe: 1,
 			}),
 			SlaveRegion("flash_cfg", "SPI flash cfg", 0x0200_0000, Size(4)),
-			// Unaligned 8-byte match mask (not a 2^N region at this base).
-			Slave("uart", "simpleuart", 0x0200_0004, 0xffff_fff8, { pipe: 3 }),
+			// 8-byte raw window. (adr & mask) == base, so the base sits inside it.
+			Slave("uart", "simpleuart", 0x0200_0008, 0xffff_fff8, { pipe: 3 }),
 			SlaveRegion("testout", "test output", 0x0200_0010, Size(4), { pipe: 1 }),
 			SlaveBus(sd_sha.uplink("cfg"), 0x0300_0000, {
 				id: "ch0",

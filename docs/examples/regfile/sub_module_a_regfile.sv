@@ -531,7 +531,7 @@ module sub_module_a_regfile (
 		endcase
 	end
 
-	assign sub_module_a_o_wb_ack = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb && hit && !rwe_stall_ext_data;
+	assign sub_module_a_o_wb_ack = sub_module_a_i_wb_cyc && sub_module_a_i_wb_stb && (!hit || !rwe_stall_ext_data);
 	assign sub_module_a_o_wb_dat = rd_data;
 
 	// Protocol inputs this leaf does not consume.

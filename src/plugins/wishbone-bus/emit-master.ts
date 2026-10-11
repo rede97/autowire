@@ -15,9 +15,10 @@ import {
 	masterBridge,
 	tagDomainsWidth,
 	type WbMaster,
+	type WbTagSource,
 } from "./dsl.ts";
 import { busModuleKind, busSystemModuleName, type FabricPort } from "./emit.ts";
-import { tagPlan, tagPort } from "./tag.ts";
+import { packedTagExpr, tagPlan, tagPort } from "./tag.ts";
 
 export const MASTER_MODULES = [
 	"wb_sync_cell",
@@ -41,7 +42,6 @@ const DECODER_ROLES: Record<string, Role> = {
 	m_adr_i: "adr",
 	m_dat_i: "wdat",
 	m_sel_i: "sel",
-	m_tga_i: "tga",
 	m_cyc_i: "cyc",
 	m_stb_i: "stb",
 	m_we_i: "we",
@@ -53,7 +53,6 @@ const IC_ROLES: Record<string, Role> = {
 	o_wb_adr: "adr",
 	o_wb_dat: "wdat",
 	o_wb_sel: "sel",
-	o_wb_tga_tag: "tga",
 	o_wb_cyc: "cyc",
 	o_wb_stb: "stb",
 	o_wb_we: "we",
@@ -77,23 +76,50 @@ export function jtagMasters(def: BusDef): WbMaster[] {
 	return def.masters.filter((m) => masterBridge(m) === "jtag");
 }
 
-/** Bridged master owning fabric port `name`, with the port's WB role. */
+/** Bridged master owning fabric port `name`, with the port's WB role.
+ *  TGA is one packed fabric net sliced back out to each `{stem}_tga_<domain>`. */
 function fabricRole(
 	def: BusDef,
 	name: string,
-): { m: WbMaster; role: Role } | undefined {
+): { m: WbMaster; role: Role; domain?: string } | undefined {
 	if (busModuleKind(def) === "decoder") {
 		const m = def.masters[0];
+		if (!m || !isBridgedMaster(m)) return undefined;
+		if (name.startsWith("m_tga_"))
+			return { m, role: "tga", domain: name.slice("m_tga_".length) };
 		const role = DECODER_ROLES[name];
-		if (!m || !role || !isBridgedMaster(m)) return undefined;
+		if (!role) return undefined;
 		return { m, role };
 	}
 	for (const m of bridgedMasters(def)) {
 		if (!name.startsWith(`${m.name}_`)) continue;
-		const role = IC_ROLES[name.slice(m.name.length + 1)];
+		const rest = name.slice(m.name.length + 1);
+		if (rest.startsWith("o_wb_tga_"))
+			return { m, role: "tga", domain: rest.slice("o_wb_tga_".length) };
+		const role = IC_ROLES[rest];
 		if (role) return { m, role };
 	}
 	return undefined;
+}
+
+/** Slice of the packed `{m}_fab_tga` that belongs to one inherited domain.
+ *  A single domain that fills the bus connects the whole net. */
+function tgaSlice(
+	net: string,
+	tags: readonly WbTagSource[],
+	domain: string,
+): string {
+	let lo = 0;
+	const total = tagDomainsWidth(tags);
+	for (const t of tags) {
+		const w = domainWidth(t.domain);
+		if (t.domain.name === domain) {
+			if (lo === 0 && w === total) return net;
+			return w <= 1 ? `${net}[${lo}]` : `${net}[${lo + w - 1}:${lo}]`;
+		}
+		lo += w;
+	}
+	return net;
 }
 
 function fab(m: WbMaster, role: Role): string {
@@ -115,7 +141,10 @@ export function bridgedFabricNet(
 	name: string,
 ): string | undefined {
 	const hit = fabricRole(def, name);
-	return hit ? fab(hit.m, hit.role) : undefined;
+	if (!hit) return undefined;
+	if (hit.role !== "tga" || hit.domain === undefined)
+		return fab(hit.m, hit.role);
+	return tgaSlice(fab(hit.m, "tga"), tagPlan(def).inherited, hit.domain);
 }
 
 function wbFacePorts(def: BusDef, m: WbMaster, aw: number): FabricPort[] {
@@ -444,8 +473,17 @@ function srcMap(m: WbMaster) {
 	};
 }
 
-function wbMasterInsts(m: WbMaster, aw: number, tw: number): RenderInst[] {
+function wbMasterInsts(
+	m: WbMaster,
+	aw: number,
+	tw: number,
+	tags: readonly WbTagSource[],
+): RenderInst[] {
 	const n = m.name;
+	const sTga =
+		tw > 0
+			? packedTagExpr(tags, (t) => tagPort(`${n}_o_wb`, t.domain.name))
+			: undefined;
 	return [
 		cdcInst(
 			m,
@@ -464,7 +502,7 @@ function wbMasterInsts(m: WbMaster, aw: number, tw: number): RenderInst[] {
 				err: `${n}_i_wb_err`,
 				rdat: `${n}_i_wb_dat`,
 			},
-			tw > 0 ? tagPort(`${n}_o_wb`, "tag") : undefined,
+			sTga,
 		),
 	];
 }
@@ -575,7 +613,8 @@ function instantiatesCdc(m: WbMaster): boolean {
 /** Internal nets + bridge / CDC instances for every bridged master. */
 export function masterModel(def: BusDef, nt: string): MasterModel {
 	const aw = def.addr_width;
-	const tw = tagDomainsWidth(tagPlan(def).inherited);
+	const inherited = tagPlan(def).inherited;
+	const tw = tagDomainsWidth(inherited);
 	const out: MasterModel = {
 		signals: [],
 		insts: [],
@@ -599,7 +638,7 @@ export function masterModel(def: BusDef, nt: string): MasterModel {
 			out.insts.push(...r.insts);
 			out.assigns.push(...r.assigns);
 		} else if (b === "jtag") out.insts.push(...jtagMasterInsts(m, aw, tw));
-		else out.insts.push(...wbMasterInsts(m, aw, tw));
+		else out.insts.push(...wbMasterInsts(m, aw, tw, inherited));
 	}
 	return out;
 }

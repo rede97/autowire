@@ -1141,6 +1141,9 @@ function emitDecodeAndSlaves(
 ): string[] {
 	const slaves = dataOf(scope.slaves);
 	const ns = slaves.length;
+	if (ns === 0) {
+		throw new Error(`wishbone-bus: bus ${def.name} decode has no data slave`);
+	}
 	const aw = def.addr_width;
 	const adr = decAdr(def, gPrefix);
 	const out: string[] = [];

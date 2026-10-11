@@ -105,7 +105,7 @@ export const hbm_ch = Bus("hbm_ch", "aword + 2x dword", {
 规则：
 
 1. **单一来源**：同一域在一条 uplink 路径上 **必须**只被产生一次；子总线对已由父级产生的域再写 `TagFrom*` → **报错**。
-2. **`addrWidth` 必须写明**：`Bus(..., { addrWidth })` 是这块 IP 实际分到的地址位宽，**没有缺省 32**。窗口和 `TagFromAddr` 的最高位都不得超过 `addrWidth - 1`，超出 → 构造期报错。子总线的 `addrWidth` 也不得超过父级：既不能大于父级 `addrWidth`，也不能大于父级窗口实际转发下来的位数（`ceil(log2(窗口字节))`）。逐级 decoder 之后地址只会变窄。
+2. **`addrWidth` 必须写明**：`Bus(..., { addrWidth })` 是这块 IP 实际分到的地址位宽，**没有缺省 32**，取值是整数 **2..32**。更宽的地址会在构造期拒绝，不会把掩码截成 32 位再译码。窗口和 `TagFromAddr` 的最高位都不得超过 `addrWidth - 1`，超出 → 构造期报错。子总线的 `addrWidth` 也不得超过父级：既不能大于父级 `addrWidth`，也不能大于父级窗口实际转发下来的位数（`ceil(log2(窗口字节))`）。逐级 decoder 之后地址只会变窄。
 3. **`TagFromAddr` 必须紧挨窗口**：一个 decoder **只产生一个** tag。tag 的最低位 = 本层 slave 窗口跨度向上取的 2 的幂。tag **以上、`addrWidth` 以内的位全部丢弃**，译码和转发只用剩下的低位，**禁止**把地址重新拼接，也 **禁止**把 tag 抬到 `addrWidth` 的最高位而在中间留出一段不用的地址。比较与转发都先丢掉这些位，于是**一条**窗口声明覆盖全部 `2^w` 个别名地址，**禁止**为每个 tag 值各写一个 slave。
 3. **一个 decoder 一个 tag**：第二个正交维度放到下一级 decoder，再从那一级窗口之上取。一条总线上写了多个 `TagFromAddr` 时，按地址位从高到低排序后仍生成，但 **不保证稳定**（构造期会警告）。位必须连续；中间留洞 → 报错。
 4. **`TagFromAddr` 撑开地址空间**：HBM 分配 `addrWidth: 19`，窗口到 `0x11000`，所以 `pstate` 取 `[18:17]`，别名步长 `0x2_0000`、共 4 份。bit 18 是这段地址的最高位，再高就超出分配。译码只用 `ADR[16:0]`。软件视角 = 「切 pstate 后按原地址访问」。
@@ -138,7 +138,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 | 侧 | 配置 |
 |---|---|
 | **SlaveRegion** | `SlaveRegion(name, desc, base, Size(bytes), { pipe: N, tag?, broadcast?, broadcastBy? })` 字符串窗口按 **字节跨度**；底层 mask = span 向上取 2 的幂；`(base & mask) === base`；**参与**区间重叠检查。`broadcast` / `broadcastBy` 见 §4.1 |
-| **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（原始 match mask）；**不**做对齐/重叠检查；**禁止** `broadcast` / `broadcastBy`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
+| **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（手写 match mask，不经 `Size`）。比较式是 `(adr & mask) == base`：基址必须落在窗口内，忽略位必须是连续低位，base/mask 不得超出 `addrWidth`，并与其它窗口一起查重叠。**禁止** `broadcast` / `broadcastBy`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
 | **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（叶子 + `Size(layout span)`，可 `size=` 覆盖且必须盖住 span） |
 | **SlaveBus** | `SlaveBus(child.uplink(name?), base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模用 `.uplink(name?)` 指定级联面（单 master 可省名，多 master 必须点名）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`（丢掉窗口基址所在的高位，**不是**基址相减，也 **不能**把地址位取反；窗口必须覆盖基址本身），子地址是窗相对的 |
 | **Master** | `Master(name, desc, { pipe: N })`；`N=0`（缺省）= 组合直通；`N>0`（1..16）= 在 **仲裁之前**（decoder 则在译码之前）插入 `wb_cfg_pipe`。仲裁请求与 grant 保持看 pipe 的 `s_cyc`，posted 写撤掉端口 `CYC` 后总线仍归该 master，直到队列排空。与父级 `SlaveBus` 的 slave pipe 是两级，互不替代 |
@@ -295,7 +295,7 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 
 - 协议子集与 pipe **以本文为准**；叶子口 **必须**遵守。  
 - 生成编排 **必须**同一 plugin id `wishbone` 一次打出 arb+decoder+regfile（类型仍分立）；每个生成模经 **analysis → RtlIndex 普通叶子**；connect 侧一律 `aw-inst` 例化（**禁止**插件树私有口表向上递推）。  
-- **字符串窗口**：优先 `SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? })`。`Size` 是作者面跨度（字节）；底层 mask = `deriveWindowMask`（向上取 2 的幂）；`(base & mask) === base`。`Bus()` **必须**拒绝 Region 窗口两两重叠（含 `SlaveRegfile`）。原始 `Slave(name, desc, base, mask, …)` 是 **Raw** 口：**禁止**对它做对齐/重叠检查（demo `uart`）。**禁止**给 `Slave` / `SlaveRegion` 重载 `RegfileDef`。  
+- **字符串窗口**：优先 `SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? })`。`Size` 是作者面跨度（字节）；底层 mask = `deriveWindowMask`（向上取 2 的幂）；`(base & mask) === base`。`Bus()` **必须**拒绝 Region 窗口两两重叠（含 `SlaveRegfile`）。原始 `Slave(name, desc, base, mask, …)` 是 **Raw** 口：作者手写 mask，不经 `Size`。`(adr & mask) == base` 必须能命中（基址落在窗口内），忽略位必须是连续低位，并与 Region 窗口一起查重叠。demo `uart` 是 `0x0200_0008` / `0xffff_fff8`。**禁止**给 `Slave` / `SlaveRegion` 重载 `RegfileDef`。  
 - **`SlaveRegfile` = `SlaveRegion` 语法糖**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, size?, desc? })`。默认 `Size(layout span)` 再 2^N 对齐；`size=` 可放大窗口，**禁止**小于 span。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。  
 - **`SlaveBus` = `SlaveRegion` 语法糖**：`SlaveBus(child.uplink(name?), base, { id?, pipe?, tag?, size?, desc? })`。用于 **级联多级 decoder**（也允许子级是 interconnect）。`id` 缺省 = `BusDef.name`；同一 child 多挂用不同 `id`（demo：`sd_sha` ×2 → `ch0`/`ch1`）。默认 `Size(busByteSpan(child))`；`size=` 可放大，**禁止**小于 child span。子总线用 `.uplink(name?)` 指定级联面（单 master 省名、多 master 必须点名；桥接口不能当面）：interconnect 上该 master 口在 Type-A wrapper 里 **remap** 成 `i_wb_*` / `o_wb_*`（父级 Slave 窗 identity）；decoder 子级 remap `m_*`。注册生成与被级联的 **必须是同一个 `.uplink()` 对象**，否则独立 wrapper 看不到级联面（见 §9）。父级译码已下发窗内 offset（`adr & ~mask`），子地址是相对的，子 `addrWidth` **不得超过**这条窗口转发的位数（demo：`soc_wb` 的 4 KiB channel 窗转发 12 位，`sd_sha` 的 `addrWidth` 就是 12，不能再写 32）。channel 内 DMA 的 SRC **必须**写相对地址。**禁止**假设子 DMA 能打到父级 SRAM/flash（没有自动 downlink）。generate **必须**对 child RTL 只打一份，HTML 例化 N 次。  
 - 若 bus 上有挂接的 regfile **或** `.uplink()` 级联面：generate **必须**再打一份 Type-A **wrapper** `<bus>_bus_cfg`。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  

@@ -70,6 +70,34 @@ function ctxWith(
 }
 
 describe("check (author face)", () => {
+	test("module, instance, and net names must be SystemVerilog identifiers", () => {
+		const badId = docOf(
+			`<aw-mod name="m"><aw-content><aw-insts>
+				<aw-inst id="0bad-id" mod="leaf"><aw-template>
+					<aw-connect port="clk_i" to="or"></aw-connect>
+				</aw-template></aw-inst>
+			</aw-insts></aw-content></aw-mod>`,
+		);
+		const res = check(badId, ctxWith({ leaf: counterLeaf }));
+		expect(
+			res.errors.some((e) => e.includes("not a SystemVerilog identifier")),
+		).toBe(true);
+		expect(res.errors.some((e) => e.includes("SystemVerilog keyword"))).toBe(
+			true,
+		);
+		const dup = docOf(
+			`<aw-mod name="top"><aw-content></aw-content><aw-submods>
+				<aw-mod name="a"><aw-content></aw-content></aw-mod>
+				<aw-mod name="a"><aw-content></aw-content></aw-mod>
+			</aw-submods></aw-mod>`,
+		);
+		expect(
+			check(dup, ctxWith({})).errors.some((e) =>
+				e.includes("duplicate aw-mod"),
+			),
+		).toBe(true);
+	});
+
 	test("rules directly under aw-inst are rejected (connect-rules §1)", () => {
 		const doc = docOf(
 			`<aw-mod name="m"><aw-content><aw-insts>

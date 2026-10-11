@@ -548,8 +548,23 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	const o_wb_dat = wb("o_wb_dat");
 
 	const writable = cells.filter(cellSwWrite);
+	type RweStall = { stem: string; byte_offset: number };
+	const rweStalls: RweStall[] = [];
+	if (def.read_write_block) {
+		for (const c of cells) {
+			for (const lf of c.fields) {
+				if (lf.field.access === Access.RWE) {
+					rweStalls.push({
+						stem: sidebandStem(lf.field),
+						byte_offset: c.byte_offset,
+					});
+				}
+			}
+		}
+	}
 	const sigs: SigDecl[] = [
-		{ packed: "", name: "hit" },
+		// `hit` is only read when an RWE stall must ACK a miss anyway.
+		...(rweStalls.length > 0 ? [{ packed: "", name: "hit" }] : []),
 		...(writable.length > 0 ? [{ packed: "", name: "wr_fire" }] : []),
 		{ packed: "", name: "rd_fire" },
 	];
@@ -576,20 +591,6 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 
 	sigs.push({ packed: "[31:0]", name: "rd_data" });
 
-	type RweStall = { stem: string; byte_offset: number };
-	const rweStalls: RweStall[] = [];
-	if (def.read_write_block) {
-		for (const c of cells) {
-			for (const lf of c.fields) {
-				if (lf.field.access === Access.RWE) {
-					rweStalls.push({
-						stem: sidebandStem(lf.field),
-						byte_offset: c.byte_offset,
-					});
-				}
-			}
-		}
-	}
 	for (const s of rweStalls) {
 		sigs.push({ packed: "", name: `rwe_stall_${s.stem}` });
 	}
@@ -648,11 +649,15 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 		);
 	}
 
+	if (rweStalls.length > 0) {
+		out.push(
+			"",
+			"\tassign hit = |{",
+			cells.map((c) => `\t\taddr_hit_${hex(c.byte_offset)}`).join(",\n"),
+			"\t};",
+		);
+	}
 	out.push(
-		"",
-		"\tassign hit = |{",
-		cells.map((c) => `\t\taddr_hit_${hex(c.byte_offset)}`).join(",\n"),
-		"\t};",
 		...(writable.length > 0
 			? [`\tassign wr_fire = ${i_wb_cyc} && ${i_wb_stb} &&  ${i_wb_we};`]
 			: []),
@@ -745,20 +750,21 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	out.push("\tend");
 	out.push("");
 
+	// A miss still ACKs (rd_data stays 0, wr_sel stays off) so a classic master
+	// waiting on ACK cannot hold the arbiter grant forever. An RWE hit may stall.
+	const ack = `\tassign ${o_wb_ack} = ${i_wb_cyc} && ${i_wb_stb}`;
 	if (rweStalls.length === 0) {
-		out.push(`\tassign ${o_wb_ack} = ${i_wb_cyc} && ${i_wb_stb} && hit;`);
+		out.push(`${ack};`);
 	} else if (rweStalls.length === 1) {
 		const only = rweStalls[0];
 		if (only) {
-			out.push(
-				`\tassign ${o_wb_ack} = ${i_wb_cyc} && ${i_wb_stb} && hit && !rwe_stall_${only.stem};`,
-			);
+			out.push(`${ack} && (!hit || !rwe_stall_${only.stem});`);
 		}
 	} else {
 		out.push(
 			"\t// Merge per-RWE stalls (each folded next to its field sideband)",
 			`\tassign rwe_stall = ${rweStalls.map((s) => `rwe_stall_${s.stem}`).join(" | ")};`,
-			`\tassign ${o_wb_ack} = ${i_wb_cyc} && ${i_wb_stb} && hit && !rwe_stall;`,
+			`${ack} && (!hit || !rwe_stall);`,
 		);
 	}
 	out.push(`\tassign ${o_wb_dat} = rd_data;`);
