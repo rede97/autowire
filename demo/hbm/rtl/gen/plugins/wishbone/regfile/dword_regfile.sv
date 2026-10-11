@@ -66,13 +66,10 @@ module dword_regfile (
 	logic        wr_fire;
 	logic        rd_fire;
 	logic        addr_hit_0;
-	logic        wr_sel_0;
 	logic        rd_sel_0;
 	logic        addr_hit_4;
-	logic        wr_sel_4;
 	logic        rd_sel_4;
 	logic        addr_hit_10;
-	logic        wr_sel_10;
 	logic        rd_sel_10;
 	logic        addr_hit_8;
 	logic        wr_sel_8;
@@ -122,11 +119,8 @@ module dword_regfile (
 	assign wr_fire = dword_i_wb_cyc && dword_i_wb_stb &&  dword_i_wb_we;
 	assign rd_fire = dword_i_wb_cyc && dword_i_wb_stb && ~dword_i_wb_we;
 
-	assign wr_sel_0 = wr_fire && addr_hit_0;
 	assign rd_sel_0 = rd_fire && addr_hit_0;
-	assign wr_sel_4 = wr_fire && addr_hit_4;
 	assign rd_sel_4 = rd_fire && addr_hit_4;
-	assign wr_sel_10 = wr_fire && addr_hit_10;
 	assign rd_sel_10 = rd_fire && addr_hit_10;
 	assign wr_sel_8 = wr_fire && addr_hit_8;
 	assign rd_sel_8 = rd_fire && addr_hit_8;
@@ -287,5 +281,10 @@ module dword_regfile (
 
 	assign dword_o_wb_ack = dword_i_wb_cyc && dword_i_wb_stb && hit;
 	assign dword_o_wb_dat = rd_data;
+
+	// Protocol inputs this leaf does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_bus = &{1'b0, dword_i_wb_adr[1:0], dword_i_wb_dat[7], dword_i_wb_dat[31:13], dword_i_wb_sel[3:2]};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 endmodule

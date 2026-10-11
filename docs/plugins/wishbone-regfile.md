@@ -303,6 +303,8 @@ rd_fire = CYC & STB & ~WE & hit
 → wr_sel_* / rd_sel_* = (addr decode) & wr_fire / rd_fire
 ```
 
+只有含软件可写字段（RW / RWW / W1C / RWE / W1P）的 cell 才生成 `wr_sel_*`。纯 RC / RO 的 cell 不生成，也不生成没人读的 `wr_fire`。字地址低 2 位和没被写字段覆盖的 `DAT` / `SEL` 位收进 `_unused_bus`，让叶子过 Verilator `-Wall`。
+
 ### 5.4 命名与样式（已裁定）
 
 | 项 | 裁定 |

@@ -37,6 +37,57 @@ function packedRange(width: number): string {
 	return width > 1 ? `[${width - 1}:0]` : "";
 }
 
+/** Software can write this access, so the cell's wr_sel is consumed. */
+function accessSwWrite(access: Access): boolean {
+	return (
+		access === Access.RW ||
+		access === Access.RWW ||
+		access === Access.W1C ||
+		access === Access.RWE ||
+		access === Access.W1P
+	);
+}
+
+function cellSwWrite(c: LaidCell): boolean {
+	return c.fields.some((lf) => accessSwWrite(lf.field.access));
+}
+
+/** Storage flops (and W1P) use i_clk. RWE only uses i_rst_n. */
+function cellUsesClk(c: LaidCell): boolean {
+	return c.fields.some((lf) => {
+		const a = lf.field.access;
+		return (
+			a === Access.RW ||
+			a === Access.RWW ||
+			a === Access.W1C ||
+			a === Access.W1P
+		);
+	});
+}
+
+function cellUsesRst(c: LaidCell): boolean {
+	return (
+		cellUsesClk(c) || c.fields.some((lf) => lf.field.access === Access.RWE)
+	);
+}
+
+/** Bit ranges of `name` that `used` leaves idle, MSB-first. */
+function unusedBitTerms(name: string, used: readonly boolean[]): string[] {
+	const terms: string[] = [];
+	let i = 0;
+	while (i < used.length) {
+		if (used[i]) {
+			i++;
+			continue;
+		}
+		let j = i;
+		while (j + 1 < used.length && !used[j + 1]) j++;
+		terms.push(j === i ? `${name}[${i}]` : `${name}[${j}:${i}]`);
+		i = j + 1;
+	}
+	return terms;
+}
+
 /**
  * SEL byte-enable mask expanded over field bits [hi:lo] (cell-relative).
  * Field bit i (cell bit lo+i) is writable iff i_wb_sel[(lo+i)/8].
@@ -496,15 +547,18 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	const o_wb_ack = wb("o_wb_ack");
 	const o_wb_dat = wb("o_wb_dat");
 
+	const writable = cells.filter(cellSwWrite);
 	const sigs: SigDecl[] = [
 		{ packed: "", name: "hit" },
-		{ packed: "", name: "wr_fire" },
+		...(writable.length > 0 ? [{ packed: "", name: "wr_fire" }] : []),
 		{ packed: "", name: "rd_fire" },
 	];
 
 	for (const c of cells) {
 		sigs.push({ packed: "", name: `addr_hit_${hex(c.byte_offset)}` });
-		sigs.push({ packed: "", name: `wr_sel_${hex(c.byte_offset)}` });
+		if (cellSwWrite(c)) {
+			sigs.push({ packed: "", name: `wr_sel_${hex(c.byte_offset)}` });
+		}
 		sigs.push({ packed: "", name: `rd_sel_${hex(c.byte_offset)}` });
 	}
 
@@ -599,14 +653,20 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 		"\tassign hit = |{",
 		cells.map((c) => `\t\taddr_hit_${hex(c.byte_offset)}`).join(",\n"),
 		"\t};",
-		`\tassign wr_fire = ${i_wb_cyc} && ${i_wb_stb} &&  ${i_wb_we};`,
+		...(writable.length > 0
+			? [`\tassign wr_fire = ${i_wb_cyc} && ${i_wb_stb} &&  ${i_wb_we};`]
+			: []),
 		`\tassign rd_fire = ${i_wb_cyc} && ${i_wb_stb} && ~${i_wb_we};`,
 		"",
 	);
 
 	for (const c of cells) {
+		if (cellSwWrite(c)) {
+			out.push(
+				`\tassign wr_sel_${hex(c.byte_offset)} = wr_fire && addr_hit_${hex(c.byte_offset)};`,
+			);
+		}
 		out.push(
-			`\tassign wr_sel_${hex(c.byte_offset)} = wr_fire && addr_hit_${hex(c.byte_offset)};`,
 			`\tassign rd_sel_${hex(c.byte_offset)} = rd_fire && addr_hit_${hex(c.byte_offset)};`,
 		);
 	}
@@ -703,6 +763,37 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	}
 	out.push(`\tassign ${o_wb_dat} = rd_data;`);
 	out.push("");
+	const datUsed = Array<boolean>(32).fill(false);
+	const selUsed = Array<boolean>(4).fill(false);
+	for (const c of cells) {
+		for (const lf of c.fields) {
+			if (!accessSwWrite(lf.field.access)) continue;
+			const lo = lf.bit_offset;
+			const hi = lo + lf.field.width - 1;
+			for (let b = lo; b <= hi && b < 32; b++) datUsed[b] = true;
+			const laneLo = Math.floor(lo / 8);
+			const laneHi = Math.floor(hi / 8);
+			for (let lane = laneLo; lane <= laneHi && lane < 4; lane++) {
+				selUsed[lane] = true;
+			}
+		}
+	}
+	const busSink = [
+		...(cells.some(cellUsesClk) ? [] : ["i_clk"]),
+		...(cells.some(cellUsesRst) ? [] : ["i_rst_n"]),
+		...(aw > 2 ? [`${i_wb_adr}[1:0]`] : []),
+		...unusedBitTerms(i_wb_dat, datUsed),
+		...unusedBitTerms(i_wb_sel, selUsed),
+	];
+	if (busSink.length > 0) {
+		out.push(
+			"\t// Protocol inputs this leaf does not consume.",
+			"\t/* verilator lint_off UNUSEDSIGNAL */",
+			`\twire _unused_bus = &{1'b0, ${busSink.join(", ")}};`,
+			"\t/* verilator lint_on UNUSEDSIGNAL */",
+			"",
+		);
+	}
 	out.push("endmodule");
 	out.push("");
 	return out.join("\n");

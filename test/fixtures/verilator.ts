@@ -19,6 +19,16 @@ function verilatorEnv(): Record<string, string | undefined> {
 		if (existsSync(join(root, "include", "verilated.mk")))
 			env.VERILATOR_ROOT = root.replaceAll("\\", "/");
 	}
+	// verilated.mk runs `python3 verilator_includer`. On Windows the Store
+	// alias `%LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe` usually sits
+	// before the UCRT64 bin dir and exits non-zero, so put verilator's own
+	// bin dir (which carries the UCRT64 python3 / g++ / make) first.
+	if (process.platform === "win32" && bin) {
+		const binDir = dirname(bin);
+		const key = Object.keys(env).find((k) => k.toLowerCase() === "path");
+		const cur = key ? (env[key] ?? "") : "";
+		env[key ?? "PATH"] = `${binDir};${cur}`;
+	}
 	return env;
 }
 
@@ -28,6 +38,37 @@ export interface VerilatorRun {
 	exitCode: number | null;
 	stdout: string;
 	stderr: string;
+}
+
+/** `verilator --lint-only -Wall`. DECLFILENAME / UNUSEDPARAM are template noise. */
+export function verilatorLint(o: {
+	top: string;
+	sources: string[];
+	args?: string[];
+}): {
+	exitCode: number | null;
+	log: string;
+} {
+	const run = Bun.spawnSync({
+		cmd: [
+			bin ?? "verilator",
+			"--lint-only",
+			"-Wall",
+			"-Wno-DECLFILENAME",
+			"-Wno-UNUSEDPARAM",
+			...(o.args ?? []),
+			"--top-module",
+			o.top,
+			...o.sources,
+		],
+		env: verilatorEnv(),
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	return {
+		exitCode: run.exitCode,
+		log: run.stdout.toString() + run.stderr.toString(),
+	};
 }
 
 /** Build `sources` with top `top` into `dir`, then run the binary. */

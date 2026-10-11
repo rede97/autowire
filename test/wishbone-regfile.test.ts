@@ -99,6 +99,9 @@ describe("wishbone-regfile", () => {
 			"sub_module_b_i_wb_cyc && sub_module_b_i_wb_stb && hit",
 		);
 		expect(sv).toContain("16'h1");
+		expect(sv).not.toContain("wr_sel_");
+		expect(sv).not.toContain("wr_fire");
+		expect(sv).toContain("_unused_bus");
 	});
 
 	test("emit carries SoT desc into header / ports / cells", () => {
@@ -109,6 +112,8 @@ describe("wishbone-regfile", () => {
 		expect(sv).toContain("// Wishbone classic slave");
 		expect(sv).toContain("// Field / shadow sidebands");
 		expect(sv).toContain("//  2. Address decode / hit / wr_sel / rd_sel");
+		expect(sv).toContain("wr_fire");
+		expect(sv).toContain("wr_sel_");
 		expect(sv).toMatch(/\/\/ Addr: 0x0+\s+RegCell: CFG0\s+—/);
 		expect(sv).toMatch(/\/\/\s+(\[\d+\]|\[\d+:\d+\])\s+RW\s+enable\s+—/);
 	});

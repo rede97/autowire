@@ -186,7 +186,8 @@ module sd_sha_interconnect (
 	//------------------------------------------------------------------------------
 	logic        sd_pipe_ack;
 	logic [31:0] sd_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(2), .AW(12), .TW(0)) u_sd_pipe (
+	logic        u_sd_pipe_tga_nc;
+	wb_cfg_pipe #(.PIPE(2), .AW(12), .TW(1)) u_sd_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_SD] & g_cyc),
@@ -195,6 +196,7 @@ module sd_sha_interconnect (
 		.m_adr(slot_sel[SLOT_SD] ? g_adr & ~12'hff0 : 12'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
+		.m_tga(1'b0),
 		.m_ack(sd_pipe_ack),
 		.m_rdat(sd_pipe_rdat),
 		.s_cyc(sd_i_wb_cyc),
@@ -203,16 +205,22 @@ module sd_sha_interconnect (
 		.s_adr(sd_i_wb_adr),
 		.s_dat(sd_i_wb_dat),
 		.s_sel(sd_i_wb_sel),
+		.s_tga(u_sd_pipe_tga_nc),
 		.s_ack(sd_o_wb_ack),
 		.s_rdat(sd_o_wb_dat)
 	);
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_u_sd_pipe_tga_nc = &{1'b0, u_sd_pipe_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	//------------------------------------------------------------------------------
 	//  Slave dma — wb_cfg_pipe PIPE=3 (posted write / blocking read)
 	//------------------------------------------------------------------------------
 	logic        dma_pipe_ack;
 	logic [31:0] dma_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(3), .AW(12), .TW(0)) u_dma_pipe (
+	logic        u_dma_pipe_tga_nc;
+	wb_cfg_pipe #(.PIPE(3), .AW(12), .TW(1)) u_dma_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_DMA] & g_cyc),
@@ -221,6 +229,7 @@ module sd_sha_interconnect (
 		.m_adr(slot_sel[SLOT_DMA] ? g_adr & ~12'hff0 : 12'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
+		.m_tga(1'b0),
 		.m_ack(dma_pipe_ack),
 		.m_rdat(dma_pipe_rdat),
 		.s_cyc(dma_i_wb_cyc),
@@ -229,16 +238,22 @@ module sd_sha_interconnect (
 		.s_adr(dma_i_wb_adr),
 		.s_dat(dma_i_wb_dat),
 		.s_sel(dma_i_wb_sel),
+		.s_tga(u_dma_pipe_tga_nc),
 		.s_ack(dma_o_wb_ack),
 		.s_rdat(dma_o_wb_dat)
 	);
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_u_dma_pipe_tga_nc = &{1'b0, u_dma_pipe_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	//------------------------------------------------------------------------------
 	//  Slave sha256 — wb_cfg_pipe PIPE=2 (posted write / blocking read)
 	//------------------------------------------------------------------------------
 	logic        sha256_pipe_ack;
 	logic [31:0] sha256_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(2), .AW(12), .TW(0)) u_sha256_pipe (
+	logic        u_sha256_pipe_tga_nc;
+	wb_cfg_pipe #(.PIPE(2), .AW(12), .TW(1)) u_sha256_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_SHA256] & g_cyc),
@@ -247,6 +262,7 @@ module sd_sha_interconnect (
 		.m_adr(slot_sel[SLOT_SHA256] ? g_adr & ~12'hfc0 : 12'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
+		.m_tga(1'b0),
 		.m_ack(sha256_pipe_ack),
 		.m_rdat(sha256_pipe_rdat),
 		.s_cyc(sha256_i_wb_cyc),
@@ -255,9 +271,14 @@ module sd_sha_interconnect (
 		.s_adr(sha256_i_wb_adr),
 		.s_dat(sha256_i_wb_dat),
 		.s_sel(sha256_i_wb_sel),
+		.s_tga(u_sha256_pipe_tga_nc),
 		.s_ack(sha256_o_wb_ack),
 		.s_rdat(sha256_o_wb_dat)
 	);
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_u_sha256_pipe_tga_nc = &{1'b0, u_sha256_pipe_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	logic [31:0] rsp_dat;
 	logic        rsp_ack;
@@ -277,5 +298,9 @@ module sd_sha_interconnect (
 	assign cfg_i_wb_ack = gsel[0] & rsp_ack;
 	assign eng_i_wb_dat = {32{gsel[1]}} & rsp_dat;
 	assign eng_i_wb_ack = gsel[1] & rsp_ack;
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_fab = &{1'b0, g_tga_bank};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 endmodule

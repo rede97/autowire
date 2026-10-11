@@ -108,6 +108,47 @@ function slaveTagPorts(s: WbSlave, _def: BusDef): FabricPort[] {
 		: [];
 }
 
+/** Tag domains a slave port actually reads (`g_tga_<domain>` and friends). */
+function consumedTagDomains(
+	def: BusDef,
+	slaves: readonly WbSlave[],
+): Set<string> {
+	const names = new Set<string>();
+	for (const s of slaves) {
+		for (const p of slaveTagPorts(s, def)) {
+			const at = p.name.lastIndexOf("_tga_");
+			if (at >= 0) names.add(p.name.slice(at + 5));
+		}
+	}
+	return names;
+}
+
+/** `<prefix>tga_<domain>` nets no slave in `slaves` reads. */
+function unconsumedTagTerms(
+	def: BusDef,
+	slaves: readonly WbSlave[],
+	prefix: string,
+): string[] {
+	const consumed = consumedTagDomains(def, slaves);
+	return def.tags
+		.filter((t) => !consumed.has(t.domain.name))
+		.map((t) => `${prefix}tga_${t.domain.name}`);
+}
+
+/**
+ * Read `terms` so Verilator -Wall does not flag protocol nets this topology
+ * leaves idle. The sink wire itself is unused; lint_off covers only that.
+ */
+function emitUnusedSink(id: string, terms: readonly string[]): string[] {
+	if (terms.length === 0) return [];
+	return [
+		"\t// Protocol nets this topology declares but does not consume.",
+		"\t/* verilator lint_off UNUSEDSIGNAL */",
+		`\twire _unused_${id} = &{1'b0, ${terms.join(", ")}};`,
+		"\t/* verilator lint_on UNUSEDSIGNAL */",
+	];
+}
+
 function slaveWbPorts(s: WbSlave, aw: number, def: BusDef): FabricPort[] {
 	const n = s.name;
 	const ports: FabricPort[] = [
@@ -430,6 +471,13 @@ function emitDecoderBody(def: BusDef): string[] {
 	} else {
 		out.push("\tassign m_dat_o = rsp_dat;", "\tassign m_ack_o = rsp_ack;", "");
 	}
+	const clkUsed = piped || slaves.some((s) => (s.pipe ?? 0) > 0);
+	out.push(
+		...emitUnusedSink("dec", [
+			...(clkUsed ? [] : ["clk", "rst_n"]),
+			...unconsumedTagTerms(def, def.slaves, "g_"),
+		]),
+	);
 	return out;
 }
 
@@ -658,6 +706,7 @@ function emitInterconnectBody(def: BusDef): string[] {
 			"\t//------------------------------------------------------------------------------",
 		);
 		for (const m of masters) {
+			if ((m.pipe ?? 0) === 0) continue;
 			out.push(...emitMasterPipe(m, m.i, aw, inherited));
 		}
 		out.push("");
@@ -729,6 +778,7 @@ function emitInterconnectBody(def: BusDef): string[] {
 			);
 		}
 	}
+	out.push(...emitUnusedSink("fab", unconsumedTagTerms(def, def.slaves, "g_")));
 	out.push("");
 	return out;
 }
@@ -1012,6 +1062,9 @@ function emitCrossbarBody(def: BusDef): string[] {
 				`${q}unmapped`,
 			),
 		);
+		out.push(
+			...emitUnusedSink(`sg${sg.j}`, unconsumedTagTerms(def, sg.slaves, q)),
+		);
 		out.push("");
 	}
 
@@ -1069,6 +1122,14 @@ function emitCrossbarBody(def: BusDef): string[] {
 			}
 		}
 	}
+	const hasArbiter = mgs.some((mg) => mg.members.length > 1) || mgs.length > 1;
+	const hasPipe =
+		masters.some((m) => (m.pipe ?? 0) > 0) ||
+		def.slaves.some((s) => (s.pipe ?? 0) > 0);
+	const proto: string[] = [];
+	if (!hasPipe && !hasArbiter) proto.push("clk", "rst_n");
+	if (!hasArbiter) proto.push("rb_grant_en");
+	out.push(...emitUnusedSink("xb", proto));
 	out.push("");
 	return out;
 }
@@ -1239,6 +1300,10 @@ function emitMasterPipe(
 	// Decoder master tags are flat `m_tga_<domain>`; interconnect masters are
 	// `<m>_o_wb_tga_<domain>`.
 	const tw = tagDomainsWidth(tags);
+	// Callers pass pipe>0 only. A combo master keeps its port names; declaring
+	// m<i>_*_q for it leaves nets that nothing reads.
+	if ((m.pipe ?? 0) === 0) return [];
+	const nc = `u_${m.name}_mpipe_tga_nc`;
 	const out: string[] = [
 		`\tlogic ${packedRange(aw).padEnd(7)}${p}_adr_q;`,
 		`\tlogic [31:0] ${p}_wdat_q;`,
@@ -1254,30 +1319,11 @@ function emitMasterPipe(
 		`\tlogic [31:0] ${p}_rdat_q;`,
 		`\tlogic        ${p}_ack_q;`,
 	);
-	if ((m.pipe ?? 0) === 0) {
-		out.push(
-			`\tassign ${p}_adr_q  = ${adrPort ?? pin("o_wb_adr")};`,
-			`\tassign ${p}_wdat_q = ${pin(idxName ? "dat_i" : "o_wb_dat")};`,
-			`\tassign ${p}_sel_q  = ${pin(idxName ? "sel_i" : "o_wb_sel")};`,
-		);
-		if (tw > 0) {
-			out.push(
-				`\tassign ${p}_tga_q  = ${packedTagExpr(tags, (t) =>
-					tagPort(idxName ?? pin("o_wb"), t.domain.name),
-				)};`,
-			);
-		}
-		out.push(
-			`\tassign ${p}_cyc_q  = ${pin(idxName ? "cyc_i" : "o_wb_cyc")};`,
-			`\tassign ${p}_stb_q  = ${pin(idxName ? "stb_i" : "o_wb_stb")};`,
-			`\tassign ${p}_we_q   = ${pin(idxName ? "we_i" : "o_wb_we")};`,
-		);
-		return out;
-	}
+	if (tw === 0) out.push(`\tlogic        ${nc};`);
 	out.push(
 		`\tlogic [31:0] ${p}_prdat;`,
 		`\tlogic        ${p}_pack;`,
-		`\twb_cfg_pipe #(.PIPE(${m.pipe ?? 0}), .AW(${aw}), .TW(${tw})) u_${m.name}_mpipe (`,
+		`\twb_cfg_pipe #(.PIPE(${m.pipe ?? 0}), .AW(${aw}), .TW(${tw > 0 ? tw : 1})) u_${m.name}_mpipe (`,
 		"\t\t.clk(clk),",
 		"\t\t.rst_n(rst_n),",
 		`\t\t.m_cyc(${pin(idxName ? "cyc_i" : "o_wb_cyc")}),`,
@@ -1287,12 +1333,10 @@ function emitMasterPipe(
 		`\t\t.m_dat(${pin(idxName ? "dat_i" : "o_wb_dat")}),`,
 		`\t\t.m_sel(${pin(idxName ? "sel_i" : "o_wb_sel")}),`,
 	);
-	if (tw > 0) {
-		out.push(
-			`\t\t.m_tga(${packedTagExpr(tags, (t) => tagPort(idxName ?? pin("o_wb"), t.domain.name))}),`,
-		);
-	}
 	out.push(
+		tw > 0
+			? `\t\t.m_tga(${packedTagExpr(tags, (t) => tagPort(idxName ?? pin("o_wb"), t.domain.name))}),`
+			: "\t\t.m_tga(1'b0),",
 		`\t\t.m_ack(${p}_pack),`,
 		`\t\t.m_rdat(${p}_prdat),`,
 		`\t\t.s_cyc(${p}_cyc_q),`,
@@ -1302,12 +1346,17 @@ function emitMasterPipe(
 		`\t\t.s_dat(${p}_wdat_q),`,
 		`\t\t.s_sel(${p}_sel_q),`,
 	);
-	if (tw > 0) out.push(`\t\t.s_tga(${p}_tga_q),`);
-	out.push(`\t\t.s_ack(${p}_ack_q),`, `\t\t.s_rdat(${p}_rdat_q)`, "\t);");
+	out.push(
+		tw > 0 ? `\t\t.s_tga(${p}_tga_q),` : `\t\t.s_tga(${nc}),`,
+		`\t\t.s_ack(${p}_ack_q),`,
+		`\t\t.s_rdat(${p}_rdat_q)`,
+		"\t);",
+	);
+	if (tw === 0) out.push(...emitUnusedSink(nc, [nc]));
 	return out;
 }
 
-/** Instantiate wb_cfg_pipe. TGA ports stay on the module; omit them when tag=0. */
+/** Instantiate wb_cfg_pipe. TW=0 still ties the dummy TGA ports. */
 function emitSlavePipe(
 	s: WbSlave,
 	aw: number,
@@ -1348,13 +1397,15 @@ function emitSlavePipe(
 	const winAdr = `${hit} ? ${masked} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0`;
 	const ack = `${n}_pipe_ack`;
 	const rdat = `${n}_pipe_rdat`;
+	const nc = `u_${n}_pipe_tga_nc`;
 	const out: string[] = [
 		"\t//------------------------------------------------------------------------------",
 		`\t//  Slave ${n} — wb_cfg_pipe PIPE=${pipe} (posted write / blocking read)`,
 		"\t//------------------------------------------------------------------------------",
 		`\tlogic        ${ack};`,
 		`\tlogic [31:0] ${rdat};`,
-		`\twb_cfg_pipe #(.PIPE(${pipe}), .AW(${aw}), .TW(${st})) u_${n}_pipe (`,
+		...(st === 0 ? [`\tlogic        ${nc};`] : []),
+		`\twb_cfg_pipe #(.PIPE(${pipe}), .AW(${aw}), .TW(${st > 0 ? st : 1})) u_${n}_pipe (`,
 		"\t\t.clk(clk),",
 		"\t\t.rst_n(rst_n),",
 		`\t\t.m_cyc(${hit} & ${gPrefix}cyc),`,
@@ -1364,16 +1415,14 @@ function emitSlavePipe(
 		`\t\t.m_dat(${gPrefix}wdata),`,
 		`\t\t.m_sel(${gPrefix}sel),`,
 	];
-	if (st > 0) {
-		out.push(
-			`\t\t.m_tga(${packedTagExpr(
-				def.tags.filter((t) =>
-					tags.some((p) => p.name.endsWith(`_tga_${t.domain.name}`)),
-				),
-				(t) => tagValue(gPrefix, t),
-			)}),`,
-		);
-	}
+	const slaveTags = def.tags.filter((t) =>
+		tags.some((p) => p.name.endsWith(`_tga_${t.domain.name}`)),
+	);
+	out.push(
+		st > 0
+			? `\t\t.m_tga(${packedTagExpr(slaveTags, (t) => tagValue(gPrefix, t))}),`
+			: "\t\t.m_tga(1'b0),",
+	);
 	out.push(
 		`\t\t.m_ack(${ack}),`,
 		`\t\t.m_rdat(${rdat}),`,
@@ -1384,21 +1433,15 @@ function emitSlavePipe(
 		`\t\t.s_dat(${wb(n, "i_wb_dat")}),`,
 		`\t\t.s_sel(${wb(n, "i_wb_sel")}),`,
 	);
-	if (st > 0) {
-		out.push(
-			`\t\t.s_tga(${packedTagExpr(
-				def.tags.filter((t) =>
-					tags.some((p) => p.name.endsWith(`_tga_${t.domain.name}`)),
-				),
-				(t) => tagPort(wb(n, "i_wb"), t.domain.name),
-			)}),`,
-		);
-	}
 	out.push(
+		st > 0
+			? `\t\t.s_tga(${packedTagExpr(slaveTags, (t) => tagPort(wb(n, "i_wb"), t.domain.name))}),`
+			: `\t\t.s_tga(${nc}),`,
 		`\t\t.s_ack(${wb(n, "o_wb_ack")}),`,
 		`\t\t.s_rdat(${wb(n, "o_wb_dat")})`,
 		"\t);",
 	);
+	if (st === 0) out.push(...emitUnusedSink(nc, [nc]));
 	return out;
 }
 

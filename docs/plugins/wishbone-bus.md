@@ -57,7 +57,7 @@
 3. **禁止** v1 端点使用 Pipelined `STALL`。  
 4. **禁止**再引入第二套 cfg 内核信号名。  
 5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
-6. **TGA 建模（已裁定）**：有 `tags` 时位宽由各域拼出来，见 §2.1。每个 master（含自身不产生该 tag 的，例如本层 DMA）都导出 `{master}_o_wb_tga_<domain>`；没有 tag 来源的输入必须在 connect 里 tie-off，否则会变成上层端口。没有 `tags` 时，`Bus(..., { tagWidth? })` 仍是 fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）。`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
+6. **TGA 建模（已裁定）**：有 `tags` 时位宽由各域拼出来，见 §2.1。每个 master（含自身不产生该 tag 的，例如本层 DMA）都导出 `{master}_o_wb_tga_<domain>`；没有 tag 来源的输入必须在 connect 里 tie-off，否则会变成上层端口。没有 `tags` 时，`Bus(..., { tagWidth? })` 仍是 fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）。`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`，`TW` 最小为 1（默认 1）。没有 tag 时例化 `.TW(1)`，把 `.m_tga` 接到 `1'b0`，并把 `.s_tga` 接到一个被读掉的网（空接 `.s_tga()` 是 PINCONNECTEMPTY）。模块内总是 `{m_tga, m_adr}` 进 beat，叶口再拆。
 7. **Decode 槽位名**：生成 `localparam SLOT_<SLAVE>`（slave 名大写，从 0 起）；`slot_sel` 下标与 one-hot 赋值 **必须**用该名（`slot_sel[SLOT_SD1]`、`slot_sel = NS'd1 << SLOT_SD1`），**禁止**裸十进制下标。
 
 ### 2.1 Tag 域：分配 / 来源 / 透传
@@ -164,8 +164,8 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 - Classic 主机在 ACK 拍仍持 STB：空级不回灌完成中的读（`prev.stb && (we || !ack) && !self.ack`）。  
 - 因此注册级 `ack <= next.ack` 即可，不必再 `& !we`（叶口已拦截）。  
 - 叶口 `CYC` = **pipe 占用**，不是 master 当前 CYC（posted 后 master 可撤 CYC）。master 口同理：仲裁 **必须**看 pipe `s_cyc` 而不是端口 `CYC`。  
-- master pipe 的 `TW` = bus `tag_width`（fabric 入口尚未按 slave 截断）；`TW=0` 时例化省略 `m_tga` / `s_tga`。 
-- TGA：`wb_cfg_pipe` **始终**带 `m_tga`/`s_tga`；`TW>0` 时入口 `{tga, window_adr}`，出口再解。`TW=0` 时例化省略这两口（`TW=0` 打包路径不读 `m_tga`）。  
+- master pipe 的 `TW` = bus `tag_width`，至少为 1（fabric 入口尚未按 slave 截断）。没有 tag 时 `.TW(1)`、`.m_tga(1'b0)`，`.s_tga` 接到被读掉的网。 
+- TGA：`wb_cfg_pipe` **始终**带 `m_tga`/`s_tga`（`TW` 默认 1，端口 `[TW-1:0]`）。入口 `{tga, window_adr}`，出口再解。没有 tag 的例化仍显式 tie-off（空接会 PINCONNECTEMPTY）。  
 - `PIPE=0`：跳过 pipe，组合直通（与今日行为相同）。  
 - 生成 RTL：一份 `wb_cfg_pipe`（参数 `PIPE`/`AW`/`TW`）；级间 `for (genvar …)` 交给综合器展开。Icarus 不能对结构体数组做 `q[i].field`：级寄存整拍 `q[i] <= nxtq`；入口旁路 `pipe_q1 = q[1]`；叶口 `pipe_h = q[PIPE]` 再拆字段。comb 口 `pipe_m`/`pipe_s` 与 FF 数组拆开。  
 

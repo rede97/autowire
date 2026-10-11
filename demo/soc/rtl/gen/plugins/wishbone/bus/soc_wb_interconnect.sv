@@ -131,20 +131,6 @@ module soc_wb_interconnect (
 	//  Master pipes (posted write / blocking read), in front of the arbiter
 	//  The arbiter requests and holds its grant from each pipe's s_cyc
 	//------------------------------------------------------------------------------
-	logic [31:0] m0_adr_q;
-	logic [31:0] m0_wdat_q;
-	logic [3:0]  m0_sel_q;
-	logic        m0_cyc_q;
-	logic        m0_stb_q;
-	logic        m0_we_q;
-	logic [31:0] m0_rdat_q;
-	logic        m0_ack_q;
-	assign m0_adr_q  = cpu_o_wb_adr;
-	assign m0_wdat_q = cpu_o_wb_dat;
-	assign m0_sel_q  = cpu_o_wb_sel;
-	assign m0_cyc_q  = cpu_o_wb_cyc;
-	assign m0_stb_q  = cpu_o_wb_stb;
-	assign m0_we_q   = cpu_o_wb_we;
 	logic [31:0] m1_adr_q;
 	logic [31:0] m1_wdat_q;
 	logic [3:0]  m1_sel_q;
@@ -153,9 +139,10 @@ module soc_wb_interconnect (
 	logic        m1_we_q;
 	logic [31:0] m1_rdat_q;
 	logic        m1_ack_q;
+	logic        u_dbg_mpipe_tga_nc;
 	logic [31:0] m1_prdat;
 	logic        m1_pack;
-	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_dbg_mpipe (
+	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(1)) u_dbg_mpipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(dbg_o_wb_cyc),
@@ -164,6 +151,7 @@ module soc_wb_interconnect (
 		.m_adr(dbg_o_wb_adr),
 		.m_dat(dbg_o_wb_dat),
 		.m_sel(dbg_o_wb_sel),
+		.m_tga(1'b0),
 		.m_ack(m1_pack),
 		.m_rdat(m1_prdat),
 		.s_cyc(m1_cyc_q),
@@ -172,9 +160,14 @@ module soc_wb_interconnect (
 		.s_adr(m1_adr_q),
 		.s_dat(m1_wdat_q),
 		.s_sel(m1_sel_q),
+		.s_tga(u_dbg_mpipe_tga_nc),
 		.s_ack(m1_ack_q),
 		.s_rdat(m1_rdat_q)
 	);
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_u_dbg_mpipe_tga_nc = &{1'b0, u_dbg_mpipe_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	//------------------------------------------------------------------------------
 	//  Arbitration: locked while grant holds CYC
@@ -318,7 +311,8 @@ module soc_wb_interconnect (
 	//------------------------------------------------------------------------------
 	logic        sram_pipe_ack;
 	logic [31:0] sram_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sram_pipe (
+	logic        u_sram_pipe_tga_nc;
+	wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(1)) u_sram_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_SRAM] & g_cyc),
@@ -327,6 +321,7 @@ module soc_wb_interconnect (
 		.m_adr(slot_sel[SLOT_SRAM] ? g_adr_dec & ~32'hffff0000 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
+		.m_tga(1'b0),
 		.m_ack(sram_pipe_ack),
 		.m_rdat(sram_pipe_rdat),
 		.s_cyc(sram_i_wb_cyc),
@@ -335,16 +330,22 @@ module soc_wb_interconnect (
 		.s_adr(sram_i_wb_adr),
 		.s_dat(sram_i_wb_dat),
 		.s_sel(sram_i_wb_sel),
+		.s_tga(u_sram_pipe_tga_nc),
 		.s_ack(sram_o_wb_ack),
 		.s_rdat(sram_o_wb_dat)
 	);
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_u_sram_pipe_tga_nc = &{1'b0, u_sram_pipe_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	//------------------------------------------------------------------------------
 	//  Slave flash_xip — wb_cfg_pipe PIPE=1 (posted write / blocking read)
 	//------------------------------------------------------------------------------
 	logic        flash_xip_pipe_ack;
 	logic [31:0] flash_xip_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_flash_xip_pipe (
+	logic        u_flash_xip_pipe_tga_nc;
+	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(1)) u_flash_xip_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_FLASH_XIP] & g_cyc),
@@ -353,6 +354,7 @@ module soc_wb_interconnect (
 		.m_adr(slot_sel[SLOT_FLASH_XIP] ? g_adr_dec & ~32'hff000000 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
+		.m_tga(1'b0),
 		.m_ack(flash_xip_pipe_ack),
 		.m_rdat(flash_xip_pipe_rdat),
 		.s_cyc(flash_xip_i_wb_cyc),
@@ -361,9 +363,14 @@ module soc_wb_interconnect (
 		.s_adr(flash_xip_i_wb_adr),
 		.s_dat(flash_xip_i_wb_dat),
 		.s_sel(flash_xip_i_wb_sel),
+		.s_tga(u_flash_xip_pipe_tga_nc),
 		.s_ack(flash_xip_o_wb_ack),
 		.s_rdat(flash_xip_o_wb_dat)
 	);
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_u_flash_xip_pipe_tga_nc = &{1'b0, u_flash_xip_pipe_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	assign flash_cfg_i_wb_adr = slot_sel[SLOT_FLASH_CFG] ? g_adr_dec & ~32'hfffffffc : 32'd0;
 	assign flash_cfg_i_wb_dat = g_wdata;
@@ -377,7 +384,8 @@ module soc_wb_interconnect (
 	//------------------------------------------------------------------------------
 	logic        uart_pipe_ack;
 	logic [31:0] uart_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(0)) u_uart_pipe (
+	logic        u_uart_pipe_tga_nc;
+	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(1)) u_uart_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_UART] & g_cyc),
@@ -386,6 +394,7 @@ module soc_wb_interconnect (
 		.m_adr(slot_sel[SLOT_UART] ? g_adr_dec & ~32'hfffffff8 : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
+		.m_tga(1'b0),
 		.m_ack(uart_pipe_ack),
 		.m_rdat(uart_pipe_rdat),
 		.s_cyc(uart_i_wb_cyc),
@@ -394,16 +403,22 @@ module soc_wb_interconnect (
 		.s_adr(uart_i_wb_adr),
 		.s_dat(uart_i_wb_dat),
 		.s_sel(uart_i_wb_sel),
+		.s_tga(u_uart_pipe_tga_nc),
 		.s_ack(uart_o_wb_ack),
 		.s_rdat(uart_o_wb_dat)
 	);
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_u_uart_pipe_tga_nc = &{1'b0, u_uart_pipe_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	//------------------------------------------------------------------------------
 	//  Slave testout — wb_cfg_pipe PIPE=1 (posted write / blocking read)
 	//------------------------------------------------------------------------------
 	logic        testout_pipe_ack;
 	logic [31:0] testout_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_testout_pipe (
+	logic        u_testout_pipe_tga_nc;
+	wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(1)) u_testout_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_TESTOUT] & g_cyc),
@@ -412,6 +427,7 @@ module soc_wb_interconnect (
 		.m_adr(slot_sel[SLOT_TESTOUT] ? g_adr_dec & ~32'hfffffffc : 32'd0),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
+		.m_tga(1'b0),
 		.m_ack(testout_pipe_ack),
 		.m_rdat(testout_pipe_rdat),
 		.s_cyc(testout_i_wb_cyc),
@@ -420,9 +436,14 @@ module soc_wb_interconnect (
 		.s_adr(testout_i_wb_adr),
 		.s_dat(testout_i_wb_dat),
 		.s_sel(testout_i_wb_sel),
+		.s_tga(u_testout_pipe_tga_nc),
 		.s_ack(testout_o_wb_ack),
 		.s_rdat(testout_o_wb_dat)
 	);
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_u_testout_pipe_tga_nc = &{1'b0, u_testout_pipe_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	//------------------------------------------------------------------------------
 	//  Slave ch0 — wb_cfg_pipe PIPE=2 (posted write / blocking read)

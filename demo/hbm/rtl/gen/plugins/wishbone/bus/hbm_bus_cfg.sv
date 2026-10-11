@@ -226,6 +226,7 @@ module hbm_bus_cfg (
 	logic host_fab_we;
 	logic [31:0] host_fab_rdat;
 	logic host_fab_ack;
+	logic host_cdc_tga_nc;
 	logic host_src_cyc;
 	logic host_src_stb;
 	logic host_src_we;
@@ -265,7 +266,7 @@ module hbm_bus_cfg (
 	);
 	wb_cdc #(
 		.AW(19),
-		.TW(0),
+		.TW(1),
 		.TIMEOUT(64)
 	) u_host_cdc (
 		.s_clk(host_pclk),
@@ -276,6 +277,7 @@ module hbm_bus_cfg (
 		.s_adr(host_src_adr),
 		.s_dat(host_src_wdat),
 		.s_sel(host_src_sel),
+		.s_tga(1'b0),
 		.s_ack(host_src_ack),
 		.s_err(host_src_err),
 		.s_rdat(host_src_rdat),
@@ -287,6 +289,7 @@ module hbm_bus_cfg (
 		.m_adr(host_fab_adr),
 		.m_dat(host_fab_wdat),
 		.m_sel(host_fab_sel),
+		.m_tga(host_cdc_tga_nc),
 		.m_ack(host_fab_ack),
 		.m_rdat(host_fab_rdat)
 	);
@@ -479,4 +482,8 @@ module hbm_bus_cfg (
 		.ro_err_ch(ro_err_ch)
 	);
 
+
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_cdc_tga = &{1'b0, host_cdc_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 endmodule

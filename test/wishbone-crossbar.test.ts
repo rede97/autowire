@@ -200,7 +200,7 @@ describe("wishbone crossbar", () => {
 			"assign gpio_i_wb_cyc = sg_ctrl_slot_sel[SLOT_GPIO] & sg_ctrl_cyc;",
 		);
 		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(1), .AW(16), .TW(0)) u_mem_pipe (",
+			"wb_cfg_pipe #(.PIPE(1), .AW(16), .TW(1)) u_mem_pipe (",
 		);
 		expect(sv).toContain(".m_cyc(sg_mem_slot_sel[SLOT_MEM] & sg_mem_cyc)");
 		// Responses: slave group -> master group -> granted member; unmapped ACKs at the group.

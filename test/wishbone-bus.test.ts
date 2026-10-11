@@ -199,7 +199,7 @@ describe("wishbone-bus", () => {
 		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.pipe).toBe(3);
 		const sv = emitBusSv(soc_wb);
 		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sram_pipe",
+			"wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(1)) u_sram_pipe",
 		);
 		expect(sv).toContain(
 			"wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(2)) u_smoke_pipe",
@@ -210,8 +210,9 @@ describe("wishbone-bus", () => {
 			sv.indexOf("u_sram_pipe"),
 			sv.indexOf("u_flash_xip_pipe"),
 		);
-		expect(sramInst).not.toContain("m_tga");
-		expect(sramInst).not.toContain("s_tga");
+		expect(sramInst).toContain(".m_tga(1'b0)");
+		expect(sramInst).toContain(".s_tga(u_sram_pipe_tga_nc)");
+		expect(sramInst).not.toContain(".m_tga(g_tga");
 		const smokeInst = sv.slice(sv.indexOf("u_smoke_pipe"));
 		expect(smokeInst).toContain(".m_tga(g_tga_bank)");
 		expect(smokeInst).toContain(".s_tga(smoke_i_wb_tga_bank)");
@@ -275,6 +276,8 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("assign m0_rdat_q = {32{gsel[0]}} & rsp_dat;");
 		expect(sv).toContain("assign fast_i_wb_ack = m0_pack;");
 		expect(sv).toContain("assign slow_i_wb_ack = gsel[1] & rsp_ack;");
+		expect(sv).not.toContain("m1_adr_q");
+		expect(sv).not.toContain("m1_ack_q");
 		expect(sv).toContain("// Master fast — piped  pipe=2");
 	});
 
@@ -286,7 +289,7 @@ describe("wishbone-bus", () => {
 		});
 		const sv = emitBusSv(def);
 		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_cpu_mpipe",
+			"wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(1)) u_cpu_mpipe",
 		);
 		const inst = sv.slice(
 			sv.indexOf("u_cpu_mpipe"),
@@ -295,7 +298,8 @@ describe("wishbone-bus", () => {
 		expect(inst).toContain(".m_cyc(m_cyc_i)");
 		expect(inst).toContain(".m_adr(m_adr_i)");
 		expect(inst).toContain(".s_cyc(m_cyc_q)");
-		expect(inst).not.toContain("m_tga");
+		expect(inst).toContain(".m_tga(1'b0)");
+		expect(inst).toContain(".s_tga(u_cpu_mpipe_tga_nc)");
 		expect(sv).toContain("assign g_cyc   = m_cyc_q;");
 		expect(sv).toContain("assign m_ack_o  = m_pack;");
 		expect(sv).not.toContain("assign g_cyc   = m_cyc_i;");

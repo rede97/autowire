@@ -135,8 +135,8 @@ Parallel (does not block connect)
     ADR=byte; fabric addr_width parametrized;
     TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out; a declared tag adds {master}_o_wb_tga_<domain> on every master, including one that does not produce it (tie that input off, or it becomes a parent port);
     slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
-    blocking read; PIPE=0 combo; TGA ports always on the module, omitted at
-    instance when Slave has no tag);
+    blocking read; PIPE=0 combo; TGA ports always on the module; TW is at
+    least 1, and a tagless instance uses .TW(1), .m_tga(1'b0), sinks .s_tga);
     master PIPE: Master(..., { pipe: N }) default 0; N>0 inserts wb_cfg_pipe
     in front of the arbiter (decoder: in front of decode); the arbiter holds
     the grant from the pipe s_cyc so a posted write keeps the bus until it drains;

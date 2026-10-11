@@ -7,9 +7,9 @@
 // Write: ACK when the beat is accepted into the queue (not when it retires
 // at the leaf). Read: never early-ACK; a read drains prior writes (barrier).
 //
-// TGA ports are always present. TW=0 keeps a 1-bit dummy; the instance may
-// leave .m_tga / .s_tga disconnected (pack path ignores m_tga). TW>0 packs
-// {m_tga, m_adr} into the beat and unpacks at the leaf.
+// TGA ports are always present. TW is at least 1 (the default): a fabric
+// with no tag instantiates TW=1, ties .m_tga to 1'b0, and sinks .s_tga.
+// {m_tga, m_adr} is packed into the beat and unpacked at the leaf.
 //
 // Comb tap (pipe_m / pipe_s) is split from FF array pipe_q so Verilator does
 // not X-propagate. Icarus rejects q[i].field: hops use whole-element NBA.
@@ -17,7 +17,7 @@
 module wb_cfg_pipe #(
 	parameter int unsigned PIPE = 1,
 	parameter int unsigned AW   = 32,
-	parameter int unsigned TW   = 0
+	parameter int unsigned TW   = 1
 ) (
 	input  logic                  clk,
 	input  logic                  rst_n,
@@ -28,7 +28,7 @@ module wb_cfg_pipe #(
 	input  logic [AW-1:0]         m_adr,
 	input  logic [31:0]           m_dat,
 	input  logic [3:0]            m_sel,
-	input  logic [(TW?TW:1)-1:0]  m_tga,
+	input  logic [TW-1:0]         m_tga,
 	output logic                  m_ack,
 	output logic [31:0]           m_rdat,
 
@@ -38,7 +38,7 @@ module wb_cfg_pipe #(
 	output logic [AW-1:0]         s_adr,
 	output logic [31:0]           s_dat,
 	output logic [3:0]            s_sel,
-	output logic [(TW?TW:1)-1:0]  s_tga,
+	output logic [TW-1:0]         s_tga,
 	input  logic                  s_ack,
 	input  logic [31:0]           s_rdat
 );
@@ -56,25 +56,22 @@ module wb_cfg_pipe #(
 		logic [31:0]   rdat;
 	} beat_t;
 
+	// One struct is reused in both directions, so each tap reads only some fields.
+	/* verilator lint_off UNUSEDSIGNAL */
 	beat_t pipe_m;
 	beat_t pipe_q [1:PIPE];
 	beat_t pipe_q1;
 	beat_t pipe_s;
 	beat_t pipe_h;
+	/* verilator lint_on UNUSEDSIGNAL */
 	logic [PW-1:0] m_adr_pack;
 
 	assign pipe_q1 = pipe_q[1];
 	assign pipe_h  = pipe_q[PIPE];
 
-	if (TW > 0) begin : gtag
-		assign m_adr_pack = {m_tga, m_adr};
-		assign s_adr      = pipe_h.adr[AW-1:0];
-		assign s_tga      = pipe_h.adr[AW+TW-1:AW];
-	end else begin : gtag
-		assign m_adr_pack = m_adr;
-		assign s_adr      = pipe_h.adr;
-		assign s_tga      = '0;
-	end
+	assign m_adr_pack = {m_tga, m_adr};
+	assign s_adr      = pipe_h.adr[AW-1:0];
+	assign s_tga      = pipe_h.adr[AW+TW-1:AW];
 
 	always_comb begin
 		pipe_m.cyc  = m_cyc;
@@ -106,8 +103,11 @@ module wb_cfg_pipe #(
 	assign s_sel = pipe_h.sel;
 
 	for (genvar i = 1; i <= PIPE; i++) begin : hop
+		// Forward hop reads request fields; return hop reads ack / rdat.
+		/* verilator lint_off UNUSEDSIGNAL */
 		beat_t prv;
 		beat_t nxt;
+		/* verilator lint_on UNUSEDSIGNAL */
 		if (i == 1) begin : gprv
 			assign prv = pipe_m;
 		end else begin : gprv

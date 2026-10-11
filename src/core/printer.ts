@@ -79,6 +79,8 @@ export interface RenderModule {
 	header?: string[];
 	/** Continuous assigns printed after the instances (plugin tie-offs). */
 	assigns?: { lhs: string; rhs: string }[];
+	/** Raw lines printed after assigns and before endmodule (lint tie-offs). */
+	footer?: string[];
 	/** aw-tb-mod: portless module + body includes + logic defaults. */
 	isTb?: boolean;
 	bodyPreInclude?: string[];
@@ -467,6 +469,10 @@ export function printSv(
 	if (printedSignals > 0) lines.push("");
 	lines.push(...printInsts(m, style));
 	for (const a of m.assigns ?? []) lines.push(`\tassign ${a.lhs} = ${a.rhs};`);
+	if (m.footer && m.footer.length > 0) {
+		lines.push("");
+		lines.push(...m.footer);
+	}
 	lines.push("endmodule");
 	lines.push("");
 	return lines.join("\n");

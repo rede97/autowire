@@ -36,7 +36,8 @@
    已经 checkout 成 CRLF 的工作区（`git ls-files --eol` 里出现 `w/crlf`），在**没有本地改动**的前提下重新 checkout 这些文件即可恢复；CRLF 工作区会让 golden 比对与 `web/` 新鲜度守卫全红。仓库里本身以 CRLF 存储的第三方 IP（`i/crlf`）不动。
 6. **hdxml 在 UCRT64 终端构建**：`cd hdxml && cargo build --release`，产物 `hdxml/target/release/hdxml.exe` 只依赖系统 UCRT，可在 PowerShell 直接运行；autowire 自动查找 `hdxml/target/{release,debug}/hdxml(.exe)`，无需设 `HDXML_BIN`。
 7. **RISC-V 前缀**：固件脚本默认探测含 `riscv32-unknown-elf-`，装 UCRT64 包后无需 `CROSS=`。
-8. **写代码 / 测试时的路径纪律**：比较路径前先把 `\` 归一为 `/`（或用 `node:path` 的 `basename` / `join`）；toml 与文档里的路径写 `/`；需要外部工具的用例用 `Bun.which` 探测，缺失时 `test.skip`，不要报红。
+8. **Windows Store 的 `python3.exe` 别名会遮蔽 UCRT64 python**。`verilated.mk` 用 `python3 verilator_includer` 生成 `*__ALL.cpp`；`%LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe` 在用户 PATH 里通常排在 `C:\msys64\ucrt64\bin` 之前，返回非零（`mingw32-make: *** [verilated.mk: Vtb__ALL.cpp] Error 49`）。`test/fixtures/verilator.ts` 已把 verilator 所在目录放到子进程 PATH 最前；手动在 PowerShell 跑 verilator 时，要么同样前置 `C:\msys64\ucrt64\bin`，要么在"设置 → 应用执行别名"里关掉 python / python3 别名。
+9. **写代码 / 测试时的路径纪律**：比较路径前先把 `\` 归一为 `/`（或用 `node:path` 的 `basename` / `join`）；toml 与文档里的路径写 `/`；需要外部工具的用例用 `Bun.which` 探测，缺失时 `test.skip`，不要报红。
 
 ### 2.1 Git Bash 与 MSYS2 UCRT64 不是同一个环境
 

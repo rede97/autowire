@@ -216,6 +216,8 @@ export interface MasterModel {
 	signals: RenderSignal[];
 	insts: RenderInst[];
 	assigns: { lhs: string; rhs: string }[];
+	/** TW=0 wb_cdc `m_tga` nets. The wrapper reads them so -Wall stays quiet. */
+	cdcTgaNc: string[];
 }
 
 function sig(
@@ -399,7 +401,7 @@ function cdcInst(
 		conn("s_dat", s.wdat),
 		conn("s_sel", s.sel),
 	];
-	if (tw > 0) connects.push(conn("s_tga", sTga ?? `${tw}'d0`));
+	connects.push(conn("s_tga", tw > 0 ? (sTga ?? `${tw}'d0`) : "1'b0"));
 	connects.push(
 		conn("s_ack", s.ack),
 		conn("s_err", s.err),
@@ -413,7 +415,7 @@ function cdcInst(
 		conn("m_dat", fab(m, "wdat")),
 		conn("m_sel", fab(m, "sel")),
 	);
-	if (tw > 0) connects.push(conn("m_tga", fab(m, "tga")));
+	connects.push(conn("m_tga", tw > 0 ? fab(m, "tga") : `${m.name}_cdc_tga_nc`));
 	connects.push(conn("m_ack", fab(m, "ack")), conn("m_rdat", fab(m, "rdat")));
 	withMeta(connects, cdcMeta(aw, tw));
 	return {
@@ -421,7 +423,7 @@ function cdcInst(
 		mod: "wb_cdc",
 		params: [
 			{ name: "AW", value: String(aw) },
-			{ name: "TW", value: String(tw) },
+			{ name: "TW", value: String(tw > 0 ? tw : 1) },
 			{ name: "TIMEOUT", value: String(m.timeout ?? 0) },
 		],
 		connects,
@@ -563,17 +565,34 @@ function jtagMasterInsts(m: WbMaster, aw: number, tw: number): RenderInst[] {
 	return [jtag, cdcInst(m, aw, tw, `${n}_tck`, `${n}_trst_n`, s, undefined)];
 }
 
+/** True when this master instantiates wb_cdc (every bridge except a same-clock APB). */
+function instantiatesCdc(m: WbMaster): boolean {
+	const b = masterBridge(m);
+	if (b === "apb") return m.cdc === true;
+	return true;
+}
+
 /** Internal nets + bridge / CDC instances for every bridged master. */
 export function masterModel(def: BusDef, nt: string): MasterModel {
 	const aw = def.addr_width;
 	const tw = tagDomainsWidth(tagPlan(def).inherited);
-	const out: MasterModel = { signals: [], insts: [], assigns: [] };
+	const out: MasterModel = {
+		signals: [],
+		insts: [],
+		assigns: [],
+		cdcTgaNc: [],
+	};
 	for (const m of bridgedMasters(def)) {
 		const b = masterBridge(m);
 		const fs = fabSignals(m, aw, tw, nt);
 		if (fs[0])
 			fs[0].comment = `${"-".repeat(78)}\n ${faceComment(m)}\n${"-".repeat(78)}`;
 		out.signals.push(...fs);
+		if (tw === 0 && instantiatesCdc(m)) {
+			const nc = `${m.name}_cdc_tga_nc`;
+			out.signals.push(sig(nt, "", nc));
+			out.cdcTgaNc.push(nc);
+		}
 		if (b !== "wb" && m.cdc) out.signals.push(...srcSignals(m, aw, nt));
 		if (b === "apb") {
 			const r = apbMasterInsts(m, aw, tw);
