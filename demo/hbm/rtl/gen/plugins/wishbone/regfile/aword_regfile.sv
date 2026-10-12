@@ -59,14 +59,11 @@ module aword_regfile (
 	//  1. Internal declarations
 	//------------------------------------------------------------------------------
 
-	logic        hit;
 	logic        wr_fire;
 	logic        rd_fire;
 	logic        addr_hit_0;
-	logic        wr_sel_0;
 	logic        rd_sel_0;
 	logic        addr_hit_4;
-	logic        wr_sel_4;
 	logic        rd_sel_4;
 	logic        addr_hit_8;
 	logic        wr_sel_8;
@@ -102,19 +99,10 @@ module aword_regfile (
 	//   shadow=pstate
 	//   [3:0]    RW  ca_drive — CA driver strength
 	assign addr_hit_c = (aword_i_wb_adr[31:2] == 30'd3);
-
-	assign hit = |{
-		addr_hit_0,
-		addr_hit_4,
-		addr_hit_8,
-		addr_hit_c
-	};
 	assign wr_fire = aword_i_wb_cyc && aword_i_wb_stb &&  aword_i_wb_we;
 	assign rd_fire = aword_i_wb_cyc && aword_i_wb_stb && ~aword_i_wb_we;
 
-	assign wr_sel_0 = wr_fire && addr_hit_0;
 	assign rd_sel_0 = rd_fire && addr_hit_0;
-	assign wr_sel_4 = wr_fire && addr_hit_4;
 	assign rd_sel_4 = rd_fire && addr_hit_4;
 	assign wr_sel_8 = wr_fire && addr_hit_8;
 	assign rd_sel_8 = rd_fire && addr_hit_8;
@@ -265,7 +253,12 @@ module aword_regfile (
 		endcase
 	end
 
-	assign aword_o_wb_ack = aword_i_wb_cyc && aword_i_wb_stb && hit;
+	assign aword_o_wb_ack = aword_i_wb_cyc && aword_i_wb_stb;
 	assign aword_o_wb_dat = rd_data;
+
+	// Protocol inputs this leaf does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_bus = &{1'b0, aword_i_wb_adr[1:0], aword_i_wb_dat[31:16], aword_i_wb_sel[3:2]};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 endmodule

@@ -303,6 +303,8 @@ rd_fire = CYC & STB & ~WE & hit
 → wr_sel_* / rd_sel_* = (addr decode) & wr_fire / rd_fire
 ```
 
+只有含软件可写字段（RW / RWW / W1C / RWE / W1P）的 cell 才生成 `wr_sel_*`。纯 RC / RO 的 cell 不生成，也不生成没人读的 `wr_fire`。字地址低 2 位和没被写字段覆盖的 `DAT` / `SEL` 位收进 `_unused_bus`，让叶子过 Verilator `-Wall`。
+
 ### 5.4 命名与样式（已裁定）
 
 | 项 | 裁定 |
@@ -334,12 +336,12 @@ rd_fire = CYC & STB & ~WE & hit
 
 | 项 | 裁定 |
 |---|---|
-| **ACK** | **同拍**：`CYC & STB` 且命中的**当拍**拉 `ACK`；读则 **同拍**给出 `DAT_*` |
+| **ACK** | **同拍**：`CYC & STB` 的当拍拉 `ACK`。命中则读数据同拍给出；窗内没有 cell 的地址同样 ACK，`DAT` 为 0，不写任何 cell。不因空洞把 `CYC` 挂住 |
 | **完成语义** | **仅** `ACK`；**禁止**再导出 `rddata_vld` / 第二套完成口 |
 | **打拍** | **regfile 叶子不负责**为时序打拍；长线 / Fmax 交给 [`wishbone-bus.md`](./wishbone-bus.md) **pipe** |
 | ~~+1 拍 ACK~~ | **不做**（勿把主干 `rddata_vld` 节奏搬进叶子） |
 
-`read_write_block=true` 且对应 RWE 的 **`ext_<field>_ready` 为 0** 时：**可以**在本应同拍 ACK 的拍上**推迟** `ACK`（仍无 vld 口）。**非 RWE** **禁止**因此拖 ACK。
+`read_write_block=true` 且对应 RWE 的 **`ext_<field>_ready` 为 0** 时：**可以**在命中该 RWE 的拍上**推迟** `ACK`（仍无 vld 口）。未命中的地址仍然同拍 ACK。**非 RWE** **禁止**因此拖 ACK。
 
 ### 5.6 地址与 `SEL`（已裁定：**byte**）
 

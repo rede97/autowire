@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { sep } from "node:path";
+import { pathInside } from "../src/core/connect.ts";
 import {
 	connectJson,
 	connectXml,
@@ -82,5 +84,16 @@ describe("connect XML sidecar", () => {
 			modport: "slave",
 		});
 		expect(alpha?.imports).toEqual([{ package: "cc_pkg", symbol: "*" }]);
+	});
+});
+
+describe("pathInside", () => {
+	const root = process.platform === "win32" ? "C:\\proj" : "/proj";
+	test("a sibling prefix is outside the workspace", () => {
+		expect(pathInside(root, "rtl/a.sv")).toBe(true);
+		expect(pathInside(root, `..${sep}proj2${sep}x.html`)).toBe(false);
+		const outside =
+			process.platform === "win32" ? "C:\\proj2\\x.html" : "/proj2/x.html";
+		expect(pathInside(root, outside)).toBe(false);
 	});
 });

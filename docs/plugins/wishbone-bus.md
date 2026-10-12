@@ -17,8 +17,8 @@
       →  Regfile 叶子（见 wishbone-regfile.md）
 ```
 
-- **默认拓扑必须是树**（bridge + arbiter + decoder），**禁止**把全互连 matrix 当默认生成物。  
-- **单 outstanding**（与 §2 一致）；配置流量稀，不靠 crossbar 换吞吐。  
+- **默认拓扑必须是树**（bridge + arbiter + decoder），**禁止**把全互连 matrix 当默认生成物。需要并行时显式写 `Crossbar()`（§4.2）：按组交叉，组内仍是树。  
+- **单 outstanding**（与 §2 一致）；配置流量稀，不靠 crossbar 换吞吐——分组 crossbar 解决的是 **互不相干的 master 不互相阻塞**，不是带宽。  
 - **SoC 级系统互联**（AXI/NoC/商业 fabric）**禁止**纳入本插件范围——交给专业 interconnect EDA；本插件只在 IP 边界提供 WB（或可选 APB）口以便挂接。  
 - IP 内部 **没有必要**上商业 NoC/matrix；一层 arb + 地址树即可。
 
@@ -57,7 +57,7 @@
 3. **禁止** v1 端点使用 Pipelined `STALL`。  
 4. **禁止**再引入第二套 cfg 内核信号名。  
 5. Tag 位语义由 **叶子 / 系统约定**解释（如 shadow 切片）；互联 **只透传、不解释**。
-6. **TGA 建模（已裁定）**：有 `tags` 时位宽由各域拼出来，见 §2.1。每个 master（含自身不产生该 tag 的，例如本层 DMA）都导出 `{master}_o_wb_tga_<domain>`；没有 tag 来源的输入必须在 connect 里 tie-off，否则会变成上层端口。没有 `tags` 时，`Bus(..., { tagWidth? })` 仍是 fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）。`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`；`TW=0` 时例化 **不连** 这两口。`TW>0` 时模块内 `{m_tga, m_adr}` 进 beat，叶口再拆。
+6. **TGA 建模（已裁定）**：有 `tags` 时位宽由各域拼出来，见 §2.1。每个 master（含自身不产生该 tag 的，例如本层 DMA）都导出 `{master}_o_wb_tga_<domain>`；没有 tag 来源的输入必须在 connect 里 tie-off，否则会变成上层端口。没有 `tags` 时，`Bus(..., { tagWidth? })` 仍是 fabric tag 位宽（缺省 = 各 slave `tag` 最大值，皆无则 0 = 不出 TGA 口）。`Slave` / `SlaveRegion` 的 `tag? | { tag?, pipe? }` 声明该 slave 透传的 tag 位宽（必须 ≤ bus `tag_width`）。`SlaveRegfile` 的 `tag` 缺省 = 叶子 `tga_width` 且 **必须**相等。启用时：decoder 出 `m_tga_i`；interconnect 出 `{master}_o_wb_tga`；仲裁 **必须** 随 grant 透传到 `g_tga`。无 pipe 的 slave：`{slave}_i_wb_tga = g_tga[tag-1:0]`（不随 slot_sel 屏蔽，由 CYC/STB 限定事务）。有 pipe 的 slave：例化 `wb_cfg_pipe`；`TW = Slave.tag`。模块 **始终** 带 `m_tga` / `s_tga`，`TW` 最小为 1（默认 1）。没有 tag 时例化 `.TW(1)`，把 `.m_tga` 接到 `1'b0`，并把 `.s_tga` 接到一个被读掉的网（空接 `.s_tga()` 是 PINCONNECTEMPTY）。模块内总是 `{m_tga, m_adr}` 进 beat，叶口再拆。
 7. **Decode 槽位名**：生成 `localparam SLOT_<SLAVE>`（slave 名大写，从 0 起）；`slot_sel` 下标与 one-hot 赋值 **必须**用该名（`slot_sel[SLOT_SD1]`、`slot_sel = NS'd1 << SLOT_SD1`），**禁止**裸十进制下标。
 
 ### 2.1 Tag 域：分配 / 来源 / 透传
@@ -105,7 +105,7 @@ export const hbm_ch = Bus("hbm_ch", "aword + 2x dword", {
 规则：
 
 1. **单一来源**：同一域在一条 uplink 路径上 **必须**只被产生一次；子总线对已由父级产生的域再写 `TagFrom*` → **报错**。
-2. **`addrWidth` 必须写明**：`Bus(..., { addrWidth })` 是这块 IP 实际分到的地址位宽，**没有缺省 32**。窗口和 `TagFromAddr` 的最高位都不得超过 `addrWidth - 1`，超出 → 构造期报错。子总线的 `addrWidth` 也不得超过父级：既不能大于父级 `addrWidth`，也不能大于父级窗口实际转发下来的位数（`ceil(log2(窗口字节))`）。逐级 decoder 之后地址只会变窄。
+2. **`addrWidth` 必须写明**：`Bus(..., { addrWidth })` 是这块 IP 实际分到的地址位宽，**没有缺省 32**，取值是整数 **2..32**。更宽的地址会在构造期拒绝，不会把掩码截成 32 位再译码。窗口和 `TagFromAddr` 的最高位都不得超过 `addrWidth - 1`，超出 → 构造期报错。子总线的 `addrWidth` 也不得超过父级：既不能大于父级 `addrWidth`，也不能大于父级窗口实际转发下来的位数（`ceil(log2(窗口字节))`）。逐级 decoder 之后地址只会变窄。
 3. **`TagFromAddr` 必须紧挨窗口**：一个 decoder **只产生一个** tag。tag 的最低位 = 本层 slave 窗口跨度向上取的 2 的幂。tag **以上、`addrWidth` 以内的位全部丢弃**，译码和转发只用剩下的低位，**禁止**把地址重新拼接，也 **禁止**把 tag 抬到 `addrWidth` 的最高位而在中间留出一段不用的地址。比较与转发都先丢掉这些位，于是**一条**窗口声明覆盖全部 `2^w` 个别名地址，**禁止**为每个 tag 值各写一个 slave。
 3. **一个 decoder 一个 tag**：第二个正交维度放到下一级 decoder，再从那一级窗口之上取。一条总线上写了多个 `TagFromAddr` 时，按地址位从高到低排序后仍生成，但 **不保证稳定**（构造期会警告）。位必须连续；中间留洞 → 报错。
 4. **`TagFromAddr` 撑开地址空间**：HBM 分配 `addrWidth: 19`，窗口到 `0x11000`，所以 `pstate` 取 `[18:17]`，别名步长 `0x2_0000`、共 4 份。bit 18 是这段地址的最高位，再高就超出分配。译码只用 `ADR[16:0]`。软件视角 = 「切 pstate 后按原地址访问」。
@@ -138,7 +138,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 | 侧 | 配置 |
 |---|---|
 | **SlaveRegion** | `SlaveRegion(name, desc, base, Size(bytes), { pipe: N, tag?, broadcast?, broadcastBy? })` 字符串窗口按 **字节跨度**；底层 mask = span 向上取 2 的幂；`(base & mask) === base`；**参与**区间重叠检查。`broadcast` / `broadcastBy` 见 §4.1 |
-| **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（原始 match mask）；**不**做对齐/重叠检查；**禁止** `broadcast` / `broadcastBy`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
+| **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（手写 match mask，不经 `Size`）。比较式是 `(adr & mask) == base`：基址必须落在窗口内，忽略位必须是连续低位，base/mask 不得超出 `addrWidth`，并与其它窗口一起查重叠。**禁止** `broadcast` / `broadcastBy`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
 | **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（叶子 + `Size(layout span)`，可 `size=` 覆盖且必须盖住 span） |
 | **SlaveBus** | `SlaveBus(child.uplink(name?), base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模用 `.uplink(name?)` 指定级联面（单 master 可省名，多 master 必须点名）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`（丢掉窗口基址所在的高位，**不是**基址相减，也 **不能**把地址位取反；窗口必须覆盖基址本身），子地址是窗相对的 |
 | **Master** | `Master(name, desc, { pipe: N })`；`N=0`（缺省）= 组合直通；`N>0`（1..16）= 在 **仲裁之前**（decoder 则在译码之前）插入 `wb_cfg_pipe`。仲裁请求与 grant 保持看 pipe 的 `s_cyc`，posted 写撤掉端口 `CYC` 后总线仍归该 master，直到队列排空。与父级 `SlaveBus` 的 slave pipe 是两级，互不替代 |
@@ -164,8 +164,8 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 - Classic 主机在 ACK 拍仍持 STB：空级不回灌完成中的读（`prev.stb && (we || !ack) && !self.ack`）。  
 - 因此注册级 `ack <= next.ack` 即可，不必再 `& !we`（叶口已拦截）。  
 - 叶口 `CYC` = **pipe 占用**，不是 master 当前 CYC（posted 后 master 可撤 CYC）。master 口同理：仲裁 **必须**看 pipe `s_cyc` 而不是端口 `CYC`。  
-- master pipe 的 `TW` = bus `tag_width`（fabric 入口尚未按 slave 截断）；`TW=0` 时例化省略 `m_tga` / `s_tga`。 
-- TGA：`wb_cfg_pipe` **始终**带 `m_tga`/`s_tga`；`TW>0` 时入口 `{tga, window_adr}`，出口再解。`TW=0` 时例化省略这两口（`TW=0` 打包路径不读 `m_tga`）。  
+- master pipe 的 `TW` = bus `tag_width`，至少为 1（fabric 入口尚未按 slave 截断）。没有 tag 时 `.TW(1)`、`.m_tga(1'b0)`，`.s_tga` 接到被读掉的网。 
+- TGA：`wb_cfg_pipe` **始终**带 `m_tga`/`s_tga`（`TW` 默认 1，端口 `[TW-1:0]`）。入口 `{tga, window_adr}`，出口再解。没有 tag 的例化仍显式 tie-off（空接会 PINCONNECTEMPTY）。  
 - `PIPE=0`：跳过 pipe，组合直通（与今日行为相同）。  
 - 生成 RTL：一份 `wb_cfg_pipe`（参数 `PIPE`/`AW`/`TW`）；级间 `for (genvar …)` 交给综合器展开。Icarus 不能对结构体数组做 `q[i].field`：级寄存整拍 `q[i] <= nxtq`；入口旁路 `pipe_q1 = q[1]`；叶口 `pipe_h = q[PIPE]` 再拆字段。comb 口 `pipe_m`/`pipe_s` 与 FF 数组拆开。  
 
@@ -179,16 +179,16 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 
 ## 4. 拓扑：默认 tree，不是 matrix
 
-| | **树（默认，必须支持）** | **Matrix / crossbar（可选，非默认）** |
+| | **树（默认，`Bus()`）** | **分组 crossbar（可选，`Crossbar()`，§4.2）** |
 |---|---|---|
-| 形态 | arbiter → decoder 树 → 叶子 | M×N 交叉 |
-| 适用 | IP 内 cfg、稀流量 | 少数 master **并发**打不相交窗口且 N 很小 |
-| 与旧 Python | 同构 | 新路径，慎用 |
+| 形态 | arbiter → decoder 树 → 叶子 | master 组 × slave 组交叉；组内仍是 arbiter → decoder |
+| 适用 | IP 内 cfg、稀流量 | 少数 master **并发**打不相交窗口且组数很小 |
+| 与旧 Python | 同构 | 新路径；`Bus()` 语义与产物不变 |
 
 - Decoder：地址窗 + 可选 §4.1 广播（写扇出 / 读 OR）；下行仍是 WB（`STB` 扇出，`ACK`/`DAT` 回并）。  
 - Arbiter：多 WB master；口 `rb_grant_en`：**0** = 固定优先级（最低 master 下标胜）；**1** = round-robin（上次 grant 之后的下一个请求者，绕回最低下标）。事务中 `CYC` 锁定 grant。demo/soc：`smoke` `FABRIC.rb_grant_en`（复位 0）驱动 **每个 channel** `rb_grant_en`；`basic_smoke` 写该 CSR，SD→SHA DMA 在 `--sd`。  
 - Bridge：仅边界协议转换（如 `apb2wb`）；**禁止**让 APB 成为 decoder/regfile 原生口。CDC / APB / JTAG master 见 [`wishbone-master.md`](./wishbone-master.md)：先转 WB，再在 arbiter 前做 `wb_cdc`，全部在 `<bus>_bus_cfg` 内。  
-- 即便将来提供 `topology = crossbar`，slave 侧 **仍必须**有地址窗/选通；matrix **不能**取消译码职责。
+- Crossbar 下 slave 侧 **仍然**有地址窗/选通；交叉只决定哪些 master 组和哪些 slave 组之间可以并行，**不**取消译码职责。
 
 ### 4.1 Region 广播：写扇出 / 读 OR（LP6 `BroadcastAddr`）
 
@@ -216,6 +216,45 @@ SlaveBus(hbm_ch, i * 0x1000, {
 7. **与 tag 的顺序。** `TagFromAddr` 先剥离，再做广播译码。因此一次广播只进入当前 tag 别名，不跨 pstate。
 
 HBM：父层 16 个 channel 订阅 `ch_all`（`pipe` 都是 0），`center common` 不订阅。每个 channel 内 `dword0/dword1` 以相同 `pipe` 订阅 `dword_all`，`aword` 不订阅。
+
+### 4.2 分组 crossbar：`Crossbar()` / `MasterGroup()` / `SlaveGroup()`（已落地）
+
+> 状态：**已落地**（`src/plugins/wishbone-bus/dsl.ts`、`emit.ts` `emitCrossbarBody`，`test/wishbone-crossbar.test.ts` + `test/fixtures/wb_crossbar_tb.sv`）。
+
+`Bus()` 的 interconnect 只有一个 arbiter：任意时刻只有一个 master 在访问，哪怕另一个 master 要去的是毫不相干的 regfile。`Crossbar()` 把 master 和 slave 各自分组：**组内互斥，组间并行**。
+
+```ts
+import { Crossbar, Master, MasterGroup, SlaveGroup, SlaveRegion, Size } from ".../wishbone-bus/dsl.ts";
+
+export const xb = Crossbar("xb", "grouped crossbar", {
+  addrWidth: 16,
+  masters: [
+    MasterGroup("cpu", [Master("cpu_i", "ifetch"), Master("cpu_d", "data")]),
+    Master("dma", "dma engine"),                      // 裸 master = 单成员组 "dma"
+  ],
+  slaves: [
+    SlaveGroup("ctrl", [
+      SlaveRegion("gpio", "gpio", 0x0000, Size(0x100)),
+      SlaveRegion("uart", "uart", 0x0100, Size(0x100)),
+    ]),
+    SlaveRegion("mem", "scratch", 0x8000, Size(0x8000), { pipe: 1 }),  // 裸 slave = 单成员组 "mem"
+  ],
+});
+```
+
+语义：
+
+1. **返回值仍是 `BusDef`。** `masters` / `slaves` 被拍平，口名、地址窗、tag、pipe、广播、`.uplink()` 级联、`<bus>_bus_cfg` wrapper、C/UVM/SV/Excel 软件图全部沿用 `Bus()` 的规则；多出 `crossbar: { masters, slaves }` 组元数据。`Bus()` 的语义与产物 **一字不改**。
+2. **master 组 = 一个 arbiter。** 组内多成员时生成与 interconnect 相同的 arbiter（`rb_grant_en` 0 固定 / 1 轮转，`CYC` 锁定）；单成员组没有 arbiter。组的请求先做 **目标译码**：地址落在哪个 slave 组（`mg_<g>_tgt[SG_<NAME>]`）；哪个组都不命中 → 组内立即 `unmapped` ACK，不打扰任何 slave 组。
+3. **slave 组 = 一个 decoder。** 每个 slave 组在 **master 组之间**再仲裁一次（同样的 arbiter，同一个 `rb_grant_en`），然后做经典的组内 `slot_sel` 译码、pipe、广播、响应 OR。不同 (master 组, slave 组) 对互不相干，同时推进。
+4. **无死锁。** 单 outstanding；一个 master 组同一时刻只请求一个 slave 组，`CYC` 落下即释放。没有 hold-and-wait，故不会成环。事务中途换目标组（同一 `CYC` 内多拍打不同窗）会释放旧组、重新申请新组，与经典 interconnect 一样按拍译码。
+5. **延迟。** 每条路径最多两级登记 arbiter（master 组 + slave 组），各加一拍 grant 延迟；单成员 master 组 / 单 master 组时相应一级消失。数据/ACK 路径仍是组合逻辑。
+6. **广播不跨组。** `broadcast` 窗口与它的所有 `broadcastBy` 订阅者必须在同一个 slave 组（扇出发生在一个 decoder 内）；跨组 → 构造期报错。
+7. **组名唯一**（master 侧、slave 侧各自一套），裸成员以自己的名字作组名。组名进入网名前缀 `mg_<g>_*` / `sg_<j>_*` 与 `localparam SG_<NAME>`。
+
+产物：`<bus>_crossbar.sv`（`busModuleKind` = `crossbar`），端口与 interconnect 同形：`rb_grant_en` + `{m}_o_wb_*` / `{m}_i_wb_{dat,ack}` + `{slave}_i_wb_*` / `{slave}_o_wb_*`。wrapper 例化名 `u_crossbar`。`plugin wishbone run` 打印的地址树上每个 slave 标 `group: <name>`，首行列出 master 组。
+
+什么时候用：少数几个 master（CPU 取指/数据、DMA、调试口）要同时打 **不相交** 的窗口，而配置总线本身流量稀。不要为了吞吐把每个 slave 单独成组——组数就是交叉规模，slave 组之间的并行是以每组一套 arbiter + mux 换来的。
 
 ## 5. IP 内 vs SoC interconnect
 
@@ -256,7 +295,7 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 
 - 协议子集与 pipe **以本文为准**；叶子口 **必须**遵守。  
 - 生成编排 **必须**同一 plugin id `wishbone` 一次打出 arb+decoder+regfile（类型仍分立）；每个生成模经 **analysis → RtlIndex 普通叶子**；connect 侧一律 `aw-inst` 例化（**禁止**插件树私有口表向上递推）。  
-- **字符串窗口**：优先 `SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? })`。`Size` 是作者面跨度（字节）；底层 mask = `deriveWindowMask`（向上取 2 的幂）；`(base & mask) === base`。`Bus()` **必须**拒绝 Region 窗口两两重叠（含 `SlaveRegfile`）。原始 `Slave(name, desc, base, mask, …)` 是 **Raw** 口：**禁止**对它做对齐/重叠检查（demo `uart`）。**禁止**给 `Slave` / `SlaveRegion` 重载 `RegfileDef`。  
+- **字符串窗口**：优先 `SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? })`。`Size` 是作者面跨度（字节）；底层 mask = `deriveWindowMask`（向上取 2 的幂）；`(base & mask) === base`。`Bus()` **必须**拒绝 Region 窗口两两重叠（含 `SlaveRegfile`）。原始 `Slave(name, desc, base, mask, …)` 是 **Raw** 口：作者手写 mask，不经 `Size`。`(adr & mask) == base` 必须能命中（基址落在窗口内），忽略位必须是连续低位，并与 Region 窗口一起查重叠。demo `uart` 是 `0x0200_0008` / `0xffff_fff8`。**禁止**给 `Slave` / `SlaveRegion` 重载 `RegfileDef`。  
 - **`SlaveRegfile` = `SlaveRegion` 语法糖**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, size?, desc? })`。默认 `Size(layout span)` 再 2^N 对齐；`size=` 可放大窗口，**禁止**小于 span。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。  
 - **`SlaveBus` = `SlaveRegion` 语法糖**：`SlaveBus(child.uplink(name?), base, { id?, pipe?, tag?, size?, desc? })`。用于 **级联多级 decoder**（也允许子级是 interconnect）。`id` 缺省 = `BusDef.name`；同一 child 多挂用不同 `id`（demo：`sd_sha` ×2 → `ch0`/`ch1`）。默认 `Size(busByteSpan(child))`；`size=` 可放大，**禁止**小于 child span。子总线用 `.uplink(name?)` 指定级联面（单 master 省名、多 master 必须点名；桥接口不能当面）：interconnect 上该 master 口在 Type-A wrapper 里 **remap** 成 `i_wb_*` / `o_wb_*`（父级 Slave 窗 identity）；decoder 子级 remap `m_*`。注册生成与被级联的 **必须是同一个 `.uplink()` 对象**，否则独立 wrapper 看不到级联面（见 §9）。父级译码已下发窗内 offset（`adr & ~mask`），子地址是相对的，子 `addrWidth` **不得超过**这条窗口转发的位数（demo：`soc_wb` 的 4 KiB channel 窗转发 12 位，`sd_sha` 的 `addrWidth` 就是 12，不能再写 32）。channel 内 DMA 的 SRC **必须**写相对地址。**禁止**假设子 DMA 能打到父级 SRAM/flash（没有自动 downlink）。generate **必须**对 child RTL 只打一份，HTML 例化 N 次。  
 - 若 bus 上有挂接的 regfile **或** `.uplink()` 级联面：generate **必须**再打一份 Type-A **wrapper** `<bus>_bus_cfg`。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  
@@ -297,13 +336,13 @@ demo/hbm 是本插件的 VCS + UVM-1.2 验证展示：顶层 `hbm` = interconnec
 下面这些等后续需求再追加，这个阶段不改生成器：
 
 1. Arbiter 更多默认策略（v1：`rb_grant_en` 固定 / 轮转已落地）。  
-2. `topology = crossbar` 以及 M/N 上限。  
+2. ~~`topology = crossbar`~~ 分组 crossbar 已落地（§4.2 `Crossbar()`）。仍不做：M/N 上限、每组独立的 `rb_grant_en`、slave 组之间的 QoS。  
 3. Bridge 目录以外的 master 形态，见 [`wishbone-master.md`](./wishbone-master.md) §8。  
 4. 固件窗 + DMA：块周期连续写。  
 5. 默认 slave `pipe`（现缺省 0；作者按口配置）。  
 6. SlaveBus downlink（子 DMA 打回父级窗口）。v1 **不**自动生成。
 
-**已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。  
+**已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；interconnect / crossbar master `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；单 master → decoder（flat `m_*`）。  
 **已裁定软件图 / 挂接**：`SlaveRegfile(RegfileDef, …)` + Type-A wrapper + bus C overlay / `uvm_reg_block`（见 §6）。  
 **已裁定级联**：`SlaveBus(BusDef, …)` = Region 语法糖；多级 decoder 级联；子级可以是 interconnect；一份 BusDef × N 平行 channel。
 

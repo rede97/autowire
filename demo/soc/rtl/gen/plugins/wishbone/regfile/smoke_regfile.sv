@@ -111,10 +111,8 @@ module smoke_regfile (
 	logic        wr_fire;
 	logic        rd_fire;
 	logic        addr_hit_0;
-	logic        wr_sel_0;
 	logic        rd_sel_0;
 	logic        addr_hit_4;
-	logic        wr_sel_4;
 	logic        rd_sel_4;
 	logic        addr_hit_8;
 	logic        wr_sel_8;
@@ -138,7 +136,6 @@ module smoke_regfile (
 	logic        wr_sel_2c;
 	logic        rd_sel_2c;
 	logic        addr_hit_34;
-	logic        wr_sel_34;
 	logic        rd_sel_34;
 	logic        addr_hit_30;
 	logic        wr_sel_30;
@@ -237,9 +234,7 @@ module smoke_regfile (
 	assign wr_fire = smoke_i_wb_cyc && smoke_i_wb_stb &&  smoke_i_wb_we;
 	assign rd_fire = smoke_i_wb_cyc && smoke_i_wb_stb && ~smoke_i_wb_we;
 
-	assign wr_sel_0 = wr_fire && addr_hit_0;
 	assign rd_sel_0 = rd_fire && addr_hit_0;
-	assign wr_sel_4 = wr_fire && addr_hit_4;
 	assign rd_sel_4 = rd_fire && addr_hit_4;
 	assign wr_sel_8 = wr_fire && addr_hit_8;
 	assign rd_sel_8 = rd_fire && addr_hit_8;
@@ -255,7 +250,6 @@ module smoke_regfile (
 	assign rd_sel_1c = rd_fire && addr_hit_1c;
 	assign wr_sel_2c = wr_fire && addr_hit_2c;
 	assign rd_sel_2c = rd_fire && addr_hit_2c;
-	assign wr_sel_34 = wr_fire && addr_hit_34;
 	assign rd_sel_34 = rd_fire && addr_hit_34;
 	assign wr_sel_30 = wr_fire && addr_hit_30;
 	assign rd_sel_30 = rd_fire && addr_hit_30;
@@ -586,7 +580,12 @@ module smoke_regfile (
 		endcase
 	end
 
-	assign smoke_o_wb_ack = smoke_i_wb_cyc && smoke_i_wb_stb && hit && !rwe_stall_ext_data;
+	assign smoke_o_wb_ack = smoke_i_wb_cyc && smoke_i_wb_stb && (!hit || !rwe_stall_ext_data);
 	assign smoke_o_wb_dat = rd_data;
+
+	// Protocol inputs this leaf does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_bus = &{1'b0, smoke_i_wb_adr[1:0]};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 endmodule

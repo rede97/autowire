@@ -155,4 +155,8 @@ module hbm_ch_decoder (
 	assign m_dat_o = rsp_dat;
 	assign m_ack_o = rsp_ack;
 
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_dec = &{1'b0, clk, rst_n};
+	/* verilator lint_on UNUSEDSIGNAL */
 endmodule

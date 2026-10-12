@@ -72,35 +72,26 @@ module sha256_regfile (
 	//  1. Internal declarations
 	//------------------------------------------------------------------------------
 
-	logic        hit;
 	logic        wr_fire;
 	logic        rd_fire;
 	logic        addr_hit_0;
 	logic        wr_sel_0;
 	logic        rd_sel_0;
 	logic        addr_hit_4;
-	logic        wr_sel_4;
 	logic        rd_sel_4;
 	logic        addr_hit_8;
-	logic        wr_sel_8;
 	logic        rd_sel_8;
 	logic        addr_hit_c;
-	logic        wr_sel_c;
 	logic        rd_sel_c;
 	logic        addr_hit_10;
-	logic        wr_sel_10;
 	logic        rd_sel_10;
 	logic        addr_hit_14;
-	logic        wr_sel_14;
 	logic        rd_sel_14;
 	logic        addr_hit_18;
-	logic        wr_sel_18;
 	logic        rd_sel_18;
 	logic        addr_hit_1c;
-	logic        wr_sel_1c;
 	logic        rd_sel_1c;
 	logic        addr_hit_20;
-	logic        wr_sel_20;
 	logic        rd_sel_20;
 	logic        rg_soft_reset_q;
 	logic [31:0] rd_data;
@@ -139,38 +130,18 @@ module sha256_regfile (
 	// Addr: 0x00000020  RegCell: HASH7 — Digest word 7
 	//   [31:0]  RO   hash7      — hash7
 	assign addr_hit_20 = (sha256_i_wb_adr[31:2] == 30'd8);
-
-	assign hit = |{
-		addr_hit_0,
-		addr_hit_4,
-		addr_hit_8,
-		addr_hit_c,
-		addr_hit_10,
-		addr_hit_14,
-		addr_hit_18,
-		addr_hit_1c,
-		addr_hit_20
-	};
 	assign wr_fire = sha256_i_wb_cyc && sha256_i_wb_stb &&  sha256_i_wb_we;
 	assign rd_fire = sha256_i_wb_cyc && sha256_i_wb_stb && ~sha256_i_wb_we;
 
 	assign wr_sel_0 = wr_fire && addr_hit_0;
 	assign rd_sel_0 = rd_fire && addr_hit_0;
-	assign wr_sel_4 = wr_fire && addr_hit_4;
 	assign rd_sel_4 = rd_fire && addr_hit_4;
-	assign wr_sel_8 = wr_fire && addr_hit_8;
 	assign rd_sel_8 = rd_fire && addr_hit_8;
-	assign wr_sel_c = wr_fire && addr_hit_c;
 	assign rd_sel_c = rd_fire && addr_hit_c;
-	assign wr_sel_10 = wr_fire && addr_hit_10;
 	assign rd_sel_10 = rd_fire && addr_hit_10;
-	assign wr_sel_14 = wr_fire && addr_hit_14;
 	assign rd_sel_14 = rd_fire && addr_hit_14;
-	assign wr_sel_18 = wr_fire && addr_hit_18;
 	assign rd_sel_18 = rd_fire && addr_hit_18;
-	assign wr_sel_1c = wr_fire && addr_hit_1c;
 	assign rd_sel_1c = rd_fire && addr_hit_1c;
-	assign wr_sel_20 = wr_fire && addr_hit_20;
 	assign rd_sel_20 = rd_fire && addr_hit_20;
 
 	//------------------------------------------------------------------------------
@@ -285,7 +256,12 @@ module sha256_regfile (
 		endcase
 	end
 
-	assign sha256_o_wb_ack = sha256_i_wb_cyc && sha256_i_wb_stb && hit;
+	assign sha256_o_wb_ack = sha256_i_wb_cyc && sha256_i_wb_stb;
 	assign sha256_o_wb_dat = rd_data;
+
+	// Protocol inputs this leaf does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_bus = &{1'b0, sha256_i_wb_adr[1:0], sha256_i_wb_dat[31:2], sha256_i_wb_sel[3:1]};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 endmodule

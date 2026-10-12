@@ -35,6 +35,8 @@ connect run（可印性）──error──▶ 拒绝写盘
 | `type` 与推断不一致；缺 `to` 未声明 open | **check** | error | 同上 |
 | 叶子 `aw-param` / `aw-connect@port` 是否存在于 RtlIndex | **check** | error | `ctx.leaf` |
 | 例化目标：叶子 \| 直接子包装模 \| 可见集兄弟 \| 他单元模 | **check** | error | leaf / unitMods / deps |
+| `aw-mod` / 端口 / 信号 / `aw-inst@id` / 净网名：SV 标识符，且不是关键字 | **check** | error | DOM |
+| 同单元 `aw-mod` 重名；跨单元顶层 `aw-mod` 重名 | **check** | error | DOM + unitMods |
 | `aw-mod@deps`：未知兄弟 / 自依赖 / 环 | **check** | error | DOM |
 | `aw-mod@deps` / toml `deps` 写了未引用 | **check** | **warn** | DOM + unitDeps |
 | toml 跨单元引用未列入 `deps` | **check** | error | unitMods + unitDeps |
@@ -56,7 +58,7 @@ connect run（可印性）──error──▶ 拒绝写盘
 ### 3.1 文档与骨架
 
 - 恰好一个顶层 `<autowire>`。  
-- 每个 `aw-mod`：有 `name`；有 `aw-content`。  
+- 每个 `aw-mod`：有 `name`（SystemVerilog 标识符，不是关键字）；有 `aw-content`。同单元重名、跨单元顶层重名都是 error。  
 - `aw-content` 子组标签合法；组内子标签符合方言。
 
 ### 3.2 模板与连线属性
@@ -66,7 +68,7 @@ connect run（可印性）──error──▶ 拒绝写盘
 - `type="open"`：禁止 `to` / `part` / 维 / `nettype`。  
 - 非 open：必须有 `to`；代入后能分为 net 或 const；与 `type=` 声明一致。  
 - const：禁 part/维/nettype；rewrite const 禁正则捕获。  
-- net：`to` 为合法净网名（禁 `[]` / part-select 夹在名字里）。  
+- net：`to` 为合法净网名（SystemVerilog 标识符，不是关键字；禁 `[]` / part-select 夹在名字里）。  
 - `aw-connect@to` / `aw-param@expr` / `inst_name` / 维属性：禁 `$1` 类捕获（rewrite@to 除外）。
 
 ### 3.3 可见集与 deps（[`html.md`](./html.md) §3.3）

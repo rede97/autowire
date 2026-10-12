@@ -175,6 +175,7 @@ module soc_wb_bus_cfg (
 	logic        dbg_fab_we;
 	logic [31:0] dbg_fab_rdat;
 	logic        dbg_fab_ack;
+	logic        dbg_cdc_tga_nc;
 	logic        dbg_src_cyc;
 	logic        dbg_src_stb;
 	logic        dbg_src_we;
@@ -209,7 +210,7 @@ module soc_wb_bus_cfg (
 	);
 	wb_cdc #(
 		.AW                 (32                 ),
-		.TW                 (0                  ),
+		.TW                 (1                  ),
 		.TIMEOUT            (0                  )
 	) u_dbg_cdc (
 		.s_clk              (dbg_tck            ), // i
@@ -220,6 +221,7 @@ module soc_wb_bus_cfg (
 		.s_adr              (dbg_src_adr        ), // i [31:0]
 		.s_dat              (dbg_src_wdat       ), // i [31:0]
 		.s_sel              (dbg_src_sel        ), // i [3:0]
+		.s_tga              (1'b0               ), // i
 		.s_ack              (dbg_src_ack        ), // o
 		.s_err              (dbg_src_err        ), // o
 		.s_rdat             (dbg_src_rdat       ), // o [31:0]
@@ -231,6 +233,7 @@ module soc_wb_bus_cfg (
 		.m_adr              (dbg_fab_adr        ), // o [31:0]
 		.m_dat              (dbg_fab_wdat       ), // o [31:0]
 		.m_sel              (dbg_fab_sel        ), // o [3:0]
+		.m_tga              (dbg_cdc_tga_nc     ), // o
 		.m_ack              (dbg_fab_ack        ), // i
 		.m_rdat             (dbg_fab_rdat       )  // i [31:0]
 	);
@@ -362,4 +365,8 @@ module soc_wb_bus_cfg (
 		.rg_key_2           (rg_key_2           )  // o [31:0]
 	);
 
+
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_cdc_tga = &{1'b0, dbg_cdc_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
 endmodule

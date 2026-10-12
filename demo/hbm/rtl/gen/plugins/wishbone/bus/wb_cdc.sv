@@ -13,12 +13,15 @@
 //   - fabric in reset (alive=0)            -> s_err at once
 //   - no ack within TIMEOUT s_clk cycles   -> s_err (TIMEOUT=0 disables)
 //   - after an abort, new requests get s_err until ack returns low
+// A timeout drops the source request and returns s_err. It does not withdraw
+// a beat the target domain has already accepted: m_cyc stays high until m_ack,
+// so the write can still land after the source has seen s_err.
 // Writes are non-posted: s_ack means the leaf acknowledged.
-// TGA ports are always present; TW=0 keeps a 1-bit dummy.
+// TGA ports are always present. TW is at least 1 (the default).
 
 module wb_cdc #(
 	parameter int unsigned AW      = 32,
-	parameter int unsigned TW      = 0,
+	parameter int unsigned TW      = 1,
 	parameter int unsigned TIMEOUT = 0
 ) (
 	input  logic                  s_clk,
@@ -29,7 +32,7 @@ module wb_cdc #(
 	input  logic [AW-1:0]         s_adr,
 	input  logic [31:0]           s_dat,
 	input  logic [3:0]            s_sel,
-	input  logic [(TW?TW:1)-1:0]  s_tga,
+	input  logic [TW-1:0]         s_tga,
 	output logic                  s_ack,
 	output logic                  s_err,
 	output logic [31:0]           s_rdat,
@@ -42,7 +45,7 @@ module wb_cdc #(
 	output logic [AW-1:0]         m_adr,
 	output logic [31:0]           m_dat,
 	output logic [3:0]            m_sel,
-	output logic [(TW?TW:1)-1:0]  m_tga,
+	output logic [TW-1:0]         m_tga,
 	input  logic                  m_ack,
 	input  logic [31:0]           m_rdat
 );
@@ -65,7 +68,7 @@ module wb_cdc #(
 	logic [AW-1:0]          req_bundle_adr;
 	logic [31:0]            req_bundle_dat;
 	logic [3:0]             req_bundle_sel;
-	logic [(TW?TW:1)-1:0]   req_bundle_tga;
+	logic [TW-1:0]          req_bundle_tga;
 	logic [31:0]            rsp_bundle_dat;
 	logic [TMW-1:0]         tmo_cnt;
 	logic                   s_req_new;

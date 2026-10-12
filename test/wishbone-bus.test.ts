@@ -112,7 +112,7 @@ describe("wishbone-bus", () => {
 		expect(present("soc_wb_map.h")).toBe(true);
 		expect(present("sd_sha_map.h")).toBe(true);
 		expect(present("ral_block_soc_wb.sv")).toBe(true);
-	});
+	}, 60_000);
 
 	test("zero masters also decoder", () => {
 		const def = Bus("solo", "no masters listed", {
@@ -199,7 +199,7 @@ describe("wishbone-bus", () => {
 		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.pipe).toBe(3);
 		const sv = emitBusSv(soc_wb);
 		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(0)) u_sram_pipe",
+			"wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(1)) u_sram_pipe",
 		);
 		expect(sv).toContain(
 			"wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(2)) u_smoke_pipe",
@@ -210,8 +210,9 @@ describe("wishbone-bus", () => {
 			sv.indexOf("u_sram_pipe"),
 			sv.indexOf("u_flash_xip_pipe"),
 		);
-		expect(sramInst).not.toContain("m_tga");
-		expect(sramInst).not.toContain("s_tga");
+		expect(sramInst).toContain(".m_tga(1'b0)");
+		expect(sramInst).toContain(".s_tga(u_sram_pipe_tga_nc)");
+		expect(sramInst).not.toContain(".m_tga(g_tga");
 		const smokeInst = sv.slice(sv.indexOf("u_smoke_pipe"));
 		expect(smokeInst).toContain(".m_tga(g_tga_bank)");
 		expect(smokeInst).toContain(".s_tga(smoke_i_wb_tga_bank)");
@@ -275,6 +276,8 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("assign m0_rdat_q = {32{gsel[0]}} & rsp_dat;");
 		expect(sv).toContain("assign fast_i_wb_ack = m0_pack;");
 		expect(sv).toContain("assign slow_i_wb_ack = gsel[1] & rsp_ack;");
+		expect(sv).not.toContain("m1_adr_q");
+		expect(sv).not.toContain("m1_ack_q");
 		expect(sv).toContain("// Master fast — piped  pipe=2");
 	});
 
@@ -286,7 +289,7 @@ describe("wishbone-bus", () => {
 		});
 		const sv = emitBusSv(def);
 		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(0)) u_cpu_mpipe",
+			"wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(1)) u_cpu_mpipe",
 		);
 		const inst = sv.slice(
 			sv.indexOf("u_cpu_mpipe"),
@@ -295,7 +298,8 @@ describe("wishbone-bus", () => {
 		expect(inst).toContain(".m_cyc(m_cyc_i)");
 		expect(inst).toContain(".m_adr(m_adr_i)");
 		expect(inst).toContain(".s_cyc(m_cyc_q)");
-		expect(inst).not.toContain("m_tga");
+		expect(inst).toContain(".m_tga(1'b0)");
+		expect(inst).toContain(".s_tga(u_cpu_mpipe_tga_nc)");
 		expect(sv).toContain("assign g_cyc   = m_cyc_q;");
 		expect(sv).toContain("assign m_ack_o  = m_pack;");
 		expect(sv).not.toContain("assign g_cyc   = m_cyc_i;");
@@ -455,7 +459,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		).toThrow(/share pipe depth/);
 	});
 
-	test("Bus checks region overlap; raw Slave(mask) is unchecked", () => {
+	test("Bus rejects unsatisfiable, holey, wide, and overlapping windows", () => {
 		expect(() =>
 			Bus("hit", "overlap", {
 				addrWidth: 32,
@@ -478,17 +482,52 @@ ts = "${ts.replaceAll("\\", "/")}"
 			Bus("rawok", "raw vs region", {
 				addrWidth: 32,
 				slaves: [
-					Slave("raw", "unchecked", 0, 0xffff_0000),
+					Slave("raw", "same window", 0, 0xffff_0000),
 					SlaveRegion("sram", "64K", 0, Size(0x1_0000)),
 				],
 			}),
-		).not.toThrow();
+		).toThrow(/overlaps/);
 		expect(() =>
 			Bus("raw2", "two raw", {
 				addrWidth: 32,
 				slaves: [
 					Slave("a", "A", 0, 0xffff_0000),
 					Slave("b", "B", 0, 0xffff_0000),
+				],
+			}),
+		).toThrow(/overlaps/);
+		expect(() =>
+			Bus("dead", "unaligned raw", {
+				addrWidth: 32,
+				slaves: [Slave("uart", "u", 0x0200_0004, 0xffff_fff8)],
+			}),
+		).toThrow(/can never match/);
+		expect(() =>
+			Bus("hole", "holey mask", {
+				addrWidth: 32,
+				slaves: [Slave("s", "s", 0, 0xffff_00ff)],
+			}),
+		).toThrow(/holes/);
+		expect(() =>
+			Bus("wide", "addr past 32", {
+				addrWidth: 40,
+				slaves: [Slave("s", "s", 0, 0xffff_0000)],
+			}),
+		).toThrow(/2\.\.32/);
+		expect(() =>
+			Bus("bcastonly", "broadcast has no data port", {
+				addrWidth: 16,
+				slaves: [
+					SlaveRegion("all", "all", 0, Size(0x100), { broadcast: "all" }),
+				],
+			}),
+		).toThrow(/no data slave/);
+		expect(() =>
+			Bus("adj", "adjacent raw windows", {
+				addrWidth: 32,
+				slaves: [
+					Slave("a", "A", 0, 0xffff_0000),
+					Slave("b", "B", 0x1_0000, 0xffff_0000),
 				],
 			}),
 		).not.toThrow();

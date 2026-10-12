@@ -34,10 +34,11 @@ Not landed (parked; do not implement until a later ask)
                             not required (docs/architecture.md).
   Plugin type B             expand custom tags into core aw-*. Parked. No aw-*
                             plugin tags in use. Type A wishbone run is landed.
-  Wishbone open items       extra arbiter policies, crossbar, SlaveBus downlink,
+  Wishbone open items       extra arbiter policies, SlaveBus downlink,
                             posted async FIFO, CDC constraints, real DFT TAP.
                             Parked (docs/plugins/wishbone-bus.md §8). Tag domains
-                            (ShadowDomain / TagFrom*) are landed.
+                            (ShadowDomain / TagFrom*) and the grouped Crossbar()
+                            (§4.2) are landed.
   Multiple autowire.toml    one file per workspace. Nested copies and dep closure
                             are not needed (docs/workspace/toml.md §6).
 
@@ -119,6 +120,12 @@ Parallel (does not block connect)
     named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
     NM>1 → interconnect (arbiter: rb_grant_en 0=fixed lowest-index /
     1=round-robin after last grant); masters named {m}_o_wb_*/{m}_i_wb_{dat,ack};
+    Crossbar(name, desc, { masters: [Master | MasterGroup(name, [...])],
+    slaves: [slave | SlaveGroup(name, [...])], addrWidth, tagWidth?, tags? })
+    → <bus>_crossbar: one arbiter per master group, one decoder per slave
+    group, groups run in parallel (bare member = group of one); returns a flat
+    BusDef (+ .crossbar) so ports, maps, wrapper and cascade are unchanged;
+    Bus() output is untouched; a broadcast cannot cross slave groups;
     demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives each channel rb_grant_en;
     basic_smoke checks cascade SHA MMIO + grant CSR; --sd is channel DMA+SHA;
     demo/soc sot/wb_bus_soc.ts → soc_wb_interconnect + soc_wb_bus_cfg (+ JTAG TDR / wb_cdc);
@@ -128,8 +135,8 @@ Parallel (does not block connect)
     ADR=byte; fabric addr_width parametrized;
     TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out; a declared tag adds {master}_o_wb_tga_<domain> on every master, including one that does not produce it (tie that input off, or it becomes a parent port);
     slave PIPE: Slave(..., { pipe: N }) instantiates wb_cfg_pipe (posted write /
-    blocking read; PIPE=0 combo; TGA ports always on the module, omitted at
-    instance when Slave has no tag);
+    blocking read; PIPE=0 combo; TGA ports always on the module; TW is at
+    least 1, and a tagless instance uses .TW(1), .m_tga(1'b0), sinks .s_tga);
     master PIPE: Master(..., { pipe: N }) default 0; N>0 inserts wb_cfg_pipe
     in front of the arbiter (decoder: in front of decode); the arbiter holds
     the grant from the pipe s_cyc so a posted write keeps the bus until it drains;
@@ -141,11 +148,13 @@ Parallel (does not block connect)
     bitwise OR of subscriber DAT (any-1 status readback);
     subscribers of one broadcast must share pipe depth;
     raw Slave cannot broadcast; ACK waits for every selected subscriber;
-    Slave(name, desc, base, mask, ...) is a raw port (no overlap check);
+    Slave(name, desc, base, mask, ...) is a raw match mask: the base must lie
+    inside the window, ignored bits are a contiguous low field, and the window
+    is checked for overlap with every other slave;
     SlaveRegfile is SlaveRegion sugar: Size(layout span) + leaf; optional size=;
     SlaveBus is SlaveRegion sugar: Size(child span) + child BusDef; optional size=;
     child picks the cascade face with .uplink(name?) (sole master if omitted);
-    Bus rejects overlapping Region/Regfile/SlaveBus windows; raw Slave is excluded;
+    Bus rejects overlapping windows, raw and region alike; addrWidth is 2..32;
     tag defaults to leaf tga_width; TGA must match; id defaults to RegfileDef.name;
     Type-A wrapper <bus>_bus_cfg instantiates interconnect + attached *_regfile
     (sidebands promoted; WB internalized; HTML aw-inst soc_wb_bus_cfg / sd_sha_bus_cfg);
@@ -153,7 +162,8 @@ Parallel (does not block connect)
     master faces (docs/plugins/wishbone-master.md): Master(name, desc, { apb | jtag | cdc,
     timeout? }); bridge in the source clock → wb_cdc (4-phase req/ack, non-posted) → fabric;
     fabric RTL unchanged, all bridge logic inside <bus>_bus_cfg ({m}_fab_* nets);
-    wb_cdc ERR on fabric reset / timeout / drain (never hangs); APB PPROT mismatch → PSLVERR;
+    wb_cdc ERR on fabric reset / timeout / drain (never hangs the source; a timeout
+    does not withdraw a beat the target domain already accepted); APB PPROT mismatch → PSLVERR;
     JTAG = TDR client of the DFT-owned chip TAP / SIB (no private TAP): shift {op,adr,dat},
     capture {st,adr,rdat}; launch + poll (st 1 busy / 2 err sticky, nop clears); {m}_en gate;
     emits wb_sync_cell / wb_cdc / wb_apb2wb / wb_jtag_tdr.sv + <bus>_bus_cfg.icl/.pdl;

@@ -2,6 +2,13 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [Unreleased]
+
+- Wishbone 总线新增分组 crossbar：`Crossbar(name, desc, { masters: [Master | MasterGroup(...)], slaves: [slave | SlaveGroup(...)], addrWidth, tagWidth?, tags? })`。master 组各有一个 arbiter（组内互斥），slave 组各有一个 decoder，不同 (master 组, slave 组) 对并行推进；裸 master / slave 即单成员组。返回值仍是拍平的 `BusDef`（多出 `crossbar` 组元数据），口名、tag、pipe、广播、`.uplink()` 级联、`<bus>_bus_cfg` wrapper 与 C/UVM/SV/Excel 软件图全部沿用；产物 `<bus>_crossbar.sv`，端口与 interconnect 同形（含 `rb_grant_en`）。广播窗与订阅者必须同在一个 slave 组。经典 `Bus()` 的语义与生成产物逐字节不变。文档 `docs/plugins/wishbone-bus.md` §4.2，`help status`。
+- 修复 interconnect 中 piped master（`Master(..., { pipe: N })`）携带继承 tag 域时，`g_up_<domain>` 引用未声明的 `m<i>_tga_<domain>_q`；现在从 pipe 打包的 `m<i>_tga_q` 正确切片。
+- `plugin wishbone run` 的地址树为 crossbar 标出 `group:` 与 master 组；Excel 总线形态列新增 `crossbar`。
+- 新增 `test/wishbone-crossbar.test.ts` 与 Verilator TB `test/fixtures/wb_crossbar_tb.sv`（并行推进、组内互斥、slave 组互斥、unmapped、固定/轮转混合突发）。
+
 ## [2.4.1] - 2026-10-10
 
 - `.autowire/dsl/` 自愈从「仅缺失时补回」改为「每次 `plugin wishbone run` / `init` 都从内嵌 pack 无条件重新物化」：autowire 升级后解包出的 DSL 随之刷新，被手改/改脏的文件也会覆盖回内嵌版本（`.autowire` 本就是可删、禁手改的缓存）。文件很小，无条件覆盖比字节比对更简单，且没有陈旧缓存的失败模式；不引入版本戳。`ensureWishboneDsl` 返回 `{ files, freshDir }`，`freshDir` 仅用于决定日志措辞（目录原本不存在才打 `restored .autowire/dsl/`）。

@@ -54,6 +54,7 @@
 | [dev/windows-msys2.md](./dev/windows-msys2.md) | Windows：MSYS2 UCRT64 工具链、PATH、LF 行尾、原生 vs UCRT64 分工 | 已实现 |
 | [dev/release.md](./dev/release.md) | 生产包：0.9.1 起发布 `hdxml` + `autowire.js`；obscura 等仍不做 | 部分落地 |
 | [dev/core-perf.md](./dev/core-perf.md) | src/core 性能审查与优化记录（2026-09-29） | 已落地（#3 待单独处理） |
+| [dev/typescript-roadmap.md](./dev/typescript-roadmap.md) | Wishbone 插件 TypeScript 评估、生成 RTL `-Wall` 现状、发射器 / 测试 / DSL 优化方向（2026-10-12） | 方向文；按 §4 顺序落地 |
 
 ## 实战与报告
 

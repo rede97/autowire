@@ -154,7 +154,7 @@ export type SlaveBusOpts = SlaveOpts & {
 	readonly desc?: string;
 };
 
-/** `raw` = `Slave(mask)` (unchecked). `region` = `SlaveRegion` / `SlaveRegfile`. */
+/** `raw` = author mask. `region` = `SlaveRegion` / `SlaveRegfile`. Both must be satisfiable and disjoint. */
 export type SlaveWindow = "raw" | "region";
 
 export type WbSlave = {
@@ -260,6 +260,22 @@ export function isBridgedMaster(m: WbMaster): boolean {
 	return masterBridge(m) !== "wb" || m.cdc === true;
 }
 
+/**
+ * One arbitration / decode domain of a `Crossbar` (wishbone-bus.md 4.2).
+ * Members are referenced by name; the flattened `BusDef.masters` / `.slaves`
+ * stay the single source of port names and address windows.
+ */
+export type WbGroupRef = {
+	readonly name: string;
+	readonly members: readonly string[];
+};
+
+/** Crossbar partition: master groups share one arbiter each, slave groups one decoder each. */
+export type CrossbarGroups = {
+	readonly masters: readonly WbGroupRef[];
+	readonly slaves: readonly WbGroupRef[];
+};
+
 export type BusDef = {
 	readonly kind: "wishbone-bus";
 	readonly name: string;
@@ -275,9 +291,108 @@ export type BusDef = {
 	readonly tags: readonly WbTagSource[];
 	/** Cascade (slave) face master, set by `.uplink()`; undefined = top fabric. */
 	readonly cascadeFace?: string;
+	/** Set by `Crossbar()`: group partition. Undefined = classic tree (`Bus()`). */
+	readonly crossbar?: CrossbarGroups;
 	/** Pick the cascade face for `SlaveBus`; omit the name when there is one master. */
 	uplink(name?: string): BusDef;
 };
+
+/** `MasterGroup(...)`: masters that share one arbiter (mutually exclusive). */
+export type WbMasterGroup = {
+	readonly kind: "wishbone-master-group";
+	readonly name: string;
+	readonly masters: readonly WbMaster[];
+};
+
+/** `SlaveGroup(...)`: slaves that share one decoder (one transaction at a time). */
+export type WbSlaveGroup = {
+	readonly kind: "wishbone-slave-group";
+	readonly name: string;
+	readonly slaves: readonly WbSlave[];
+};
+
+export function isMasterGroup(v: unknown): v is WbMasterGroup {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		(v as WbMasterGroup).kind === "wishbone-master-group"
+	);
+}
+
+export function isSlaveGroup(v: unknown): v is WbSlaveGroup {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		(v as WbSlaveGroup).kind === "wishbone-slave-group"
+	);
+}
+
+function isMasterLike(v: unknown): v is WbMaster {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		typeof (v as WbMaster).name === "string" &&
+		typeof (v as WbMaster).pipe === "number" &&
+		!("window" in (v as object))
+	);
+}
+
+function isSlaveLike(v: unknown): v is WbSlave {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		typeof (v as WbSlave).name === "string" &&
+		typeof (v as WbSlave).window === "string"
+	);
+}
+
+/**
+ * Masters that contend for one arbiter inside a `Crossbar`. Different master
+ * groups run in parallel as long as they target different slave groups.
+ */
+export function MasterGroup(
+	name: string,
+	masters: readonly WbMaster[],
+): WbMasterGroup {
+	requireIdent("master group", name);
+	if (!Array.isArray(masters) || masters.length === 0) {
+		throw new Error(
+			`wishbone-bus: MasterGroup(${name}) needs at least one Master(...)`,
+		);
+	}
+	for (const m of masters) {
+		if (!isMasterLike(m)) {
+			throw new Error(
+				`wishbone-bus: MasterGroup(${name}) members must be Master(...)`,
+			);
+		}
+	}
+	return { kind: "wishbone-master-group", name, masters };
+}
+
+/**
+ * Slaves that share one decoder inside a `Crossbar`: one transaction at a
+ * time in the group, independent of every other slave group.
+ */
+export function SlaveGroup(
+	name: string,
+	slaves: readonly WbSlave[],
+): WbSlaveGroup {
+	requireIdent("slave group", name);
+	if (!Array.isArray(slaves) || slaves.length === 0) {
+		throw new Error(
+			`wishbone-bus: SlaveGroup(${name}) needs at least one slave`,
+		);
+	}
+	for (const s of slaves) {
+		if (!isSlaveLike(s)) {
+			throw new Error(
+				`wishbone-bus: SlaveGroup(${name}) members must be Slave / SlaveRegion / SlaveRegfile / SlaveBus`,
+			);
+		}
+	}
+	return { kind: "wishbone-slave-group", name, slaves };
+}
 
 export function isBusDef(v: unknown): v is BusDef {
 	return (
@@ -770,14 +885,82 @@ function hexWin(n: number): string {
 }
 
 /**
- * Pow2-aligned regions overlap iff one decode window contains the other's base.
- * Raw `Slave(mask)` ports are excluded.
+ * Two match windows overlap when some address satisfies both
+ * `(adr & mask) == base` compares. Each base must already lie inside its
+ * own mask; otherwise the compare is unsatisfiable and is rejected first.
  */
 export function regionWindowsOverlap(a: WbSlave, b: WbSlave): boolean {
-	return (
-		(a.base & b.mask) >>> 0 === b.base >>> 0 ||
-		(b.base & a.mask) >>> 0 === a.base >>> 0
-	);
+	return (a.base & b.mask) >>> 0 === (b.base & a.mask) >>> 0;
+}
+
+/**
+ * Every slave window, raw or region, must be a real decode:
+ * base and mask fit in `addrWidth`, `(adr & mask) == base` can match,
+ * ignored bits are a contiguous low field, and no two windows overlap.
+ */
+function assertSlaveWindows(
+	bus: string,
+	slaves: readonly WbSlave[],
+	addrWidth: number,
+): void {
+	const ones = addrOnes(addrWidth);
+	for (const s of slaves) {
+		const baseText = `0x${s.base.toString(16)}`;
+		const maskText = `0x${s.mask.toString(16)}`;
+		if (s.base >>> 0 !== s.base || s.mask >>> 0 !== s.mask) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} slave "${s.name}" base ${baseText} mask ${maskText} does not fit in 32 bits`,
+			);
+		}
+		if ((s.base & ~ones) >>> 0 !== 0 || (s.mask & ~ones) >>> 0 !== 0) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} slave "${s.name}" base ${baseText} mask ${maskText} exceeds addrWidth ${addrWidth}`,
+			);
+		}
+		if ((s.base & s.mask) >>> 0 !== s.base >>> 0) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} slave "${s.name}" base ${baseText} mask ${maskText} can never match; (adr & mask) == base requires the base to lie inside the window`,
+			);
+		}
+		const ignored = (~s.mask & ones) >>> 0;
+		if ((ignored & ((ignored + 1) >>> 0)) >>> 0 !== 0) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} slave "${s.name}" mask ${maskText} has holes; ignored address bits must be a contiguous low field`,
+			);
+		}
+	}
+	for (let i = 0; i < slaves.length; i++) {
+		for (let j = i + 1; j < slaves.length; j++) {
+			const a = slaves[i];
+			const b = slaves[j];
+			if (!a || !b || !regionWindowsOverlap(a, b)) continue;
+			throw new Error(
+				`wishbone-bus: bus ${bus} window "${a.name}" (${hexWin(a.base)} mask ${hexWin(a.mask)}) overlaps "${b.name}" (${hexWin(b.base)} mask ${hexWin(b.mask)})`,
+			);
+		}
+	}
+}
+
+/** A broadcast window has no WB data port, so a decode scope still needs one. */
+function assertDataSlave(
+	bus: string,
+	slaves: readonly WbSlave[],
+	crossbar: CrossbarGroups | undefined,
+): void {
+	const scopes = crossbar
+		? crossbar.slaves.map((g) => ({
+				where: `bus ${bus} slave group "${g.name}"`,
+				members: slaves.filter((s) => g.members.includes(s.name)),
+			}))
+		: [{ where: `bus ${bus}`, members: slaves }];
+	for (const scope of scopes) {
+		if (scope.members.length === 0) continue;
+		if (scope.members.every((s) => s.broadcast)) {
+			throw new Error(
+				`wishbone-bus: ${scope.where} has no data slave; a broadcast window has no WB port`,
+			);
+		}
+	}
 }
 
 function assertBroadcasts(bus: string, slaves: readonly WbSlave[]): void {
@@ -830,38 +1013,142 @@ function assertBroadcasts(bus: string, slaves: readonly WbSlave[]): void {
 	}
 }
 
-function assertNoRegionOverlap(
-	bus: string,
-	slaves: readonly WbSlave[],
-	addrWidth: number,
-): void {
-	const regions = slaves.filter((s) => s.window === "region");
-	for (let i = 0; i < regions.length; i++) {
-		for (let j = i + 1; j < regions.length; j++) {
-			const a = regions[i];
-			const b = regions[j];
-			if (!a || !b || !regionWindowsOverlap(a, b)) continue;
-			const aSize = a.size ?? windowBytes(a.mask, addrWidth);
-			const bSize = b.size ?? windowBytes(b.mask, addrWidth);
+export type BusOpts = {
+	masters?: readonly WbMaster[];
+	slaves: readonly WbSlave[];
+	/** Fabric ADR width. Required: the allocated address space, not a default of 32. */
+	addrWidth: number;
+	tagWidth?: number;
+	/** Tag domains, low slice first. Bare domain = pass through from uplink. */
+	tags?: readonly (ShadowDomainDef | WbTagSource)[];
+};
+
+export function Bus(name: string, desc: string, opts: BusOpts): BusDef {
+	return buildBus(name, desc, opts, undefined);
+}
+
+export type CrossbarOpts = Omit<BusOpts, "masters" | "slaves"> & {
+	/** Bare `Master(...)` = a group of one, named after the master. */
+	masters: readonly (WbMaster | WbMasterGroup)[];
+	/** Bare slave = a group of one, named after the slave. */
+	slaves: readonly (WbSlave | WbSlaveGroup)[];
+};
+
+/**
+ * Grouped crossbar (wishbone-bus.md 4.2). Inside a group the classic rules
+ * hold: one arbiter per master group, one decoder per slave group. Across
+ * groups transactions proceed in parallel; a slave group arbitrates only
+ * between the master groups that target it. The result is a `BusDef`
+ * whose flat `masters` / `slaves` keep every classic port name, address
+ * window, tag, pipe, broadcast, wrapper and software-map rule unchanged.
+ */
+export function Crossbar(
+	name: string,
+	desc: string,
+	opts: CrossbarOpts,
+): BusDef {
+	const masterGroups: WbGroupRef[] = [];
+	const masters: WbMaster[] = [];
+	for (const entry of opts.masters) {
+		if (isMasterGroup(entry)) {
+			masterGroups.push({
+				name: entry.name,
+				members: entry.masters.map((m) => m.name),
+			});
+			masters.push(...entry.masters);
+		} else if (isMasterLike(entry)) {
+			masterGroups.push({ name: entry.name, members: [entry.name] });
+			masters.push(entry);
+		} else {
 			throw new Error(
-				`wishbone-bus: bus ${bus} region "${a.name}" (${hexWin(a.base)} Size(${hexWin(aSize)})) overlaps "${b.name}" (${hexWin(b.base)} Size(${hexWin(bSize)}))`,
+				`wishbone-bus: crossbar ${name} masters must be Master(...) or MasterGroup(...)`,
 			);
+		}
+	}
+	const slaveGroups: WbGroupRef[] = [];
+	const slaves: WbSlave[] = [];
+	for (const entry of opts.slaves) {
+		if (isSlaveGroup(entry)) {
+			slaveGroups.push({
+				name: entry.name,
+				members: entry.slaves.map((s) => s.name),
+			});
+			slaves.push(...entry.slaves);
+		} else if (isSlaveLike(entry)) {
+			slaveGroups.push({ name: entry.name, members: [entry.name] });
+			slaves.push(entry);
+		} else {
+			throw new Error(
+				`wishbone-bus: crossbar ${name} slaves must be slaves or SlaveGroup(...)`,
+			);
+		}
+	}
+	if (masters.length === 0) {
+		throw new Error(`wishbone-bus: crossbar ${name} needs at least one master`);
+	}
+	assertUniqueGroupNames(name, "master", masterGroups);
+	assertUniqueGroupNames(name, "slave", slaveGroups);
+	const def = buildBus(
+		name,
+		desc,
+		{ ...opts, masters, slaves },
+		{ masters: masterGroups, slaves: slaveGroups },
+	);
+	assertBroadcastInsideGroup(def);
+	return def;
+}
+
+function assertUniqueGroupNames(
+	bus: string,
+	side: "master" | "slave",
+	groups: readonly WbGroupRef[],
+): void {
+	const seen = new Set<string>();
+	for (const g of groups) {
+		if (seen.has(g.name)) {
+			throw new Error(
+				`wishbone-bus: crossbar ${bus} duplicate ${side} group "${g.name}"`,
+			);
+		}
+		seen.add(g.name);
+	}
+}
+
+/** Lookup: slave name → owning slave group (crossbar only). */
+export function slaveGroupOf(def: BusDef, slave: string): string | undefined {
+	return def.crossbar?.slaves.find((g) => g.members.includes(slave))?.name;
+}
+
+/** Lookup: master name → owning master group (crossbar only). */
+export function masterGroupOf(def: BusDef, master: string): string | undefined {
+	return def.crossbar?.masters.find((g) => g.members.includes(master))?.name;
+}
+
+/**
+ * A broadcast fans out inside one decoder, so the window and every
+ * subscriber must sit in the same slave group.
+ */
+function assertBroadcastInsideGroup(def: BusDef): void {
+	for (const src of def.slaves) {
+		if (!src.broadcast) continue;
+		const home = slaveGroupOf(def, src.name);
+		for (const s of def.slaves) {
+			if (!(s.broadcastBy ?? []).includes(src.broadcast)) continue;
+			const g = slaveGroupOf(def, s.name);
+			if (g !== home) {
+				throw new Error(
+					`wishbone-bus: crossbar ${def.name} broadcast "${src.broadcast}" window "${src.name}" is in slave group "${home}" but subscriber "${s.name}" is in "${g}"; a broadcast cannot cross slave groups`,
+				);
+			}
 		}
 	}
 }
 
-export function Bus(
+function buildBus(
 	name: string,
 	desc: string,
-	opts: {
-		masters?: readonly WbMaster[];
-		slaves: readonly WbSlave[];
-		/** Fabric ADR width. Required: the allocated address space, not a default of 32. */
-		addrWidth: number;
-		tagWidth?: number;
-		/** Tag domains, low slice first. Bare domain = pass through from uplink. */
-		tags?: readonly (ShadowDomainDef | WbTagSource)[];
-	},
+	opts: BusOpts,
+	crossbar: CrossbarGroups | undefined,
 ): BusDef {
 	requireIdent("bus", name);
 	const masters = opts.masters ?? [];
@@ -876,9 +1163,9 @@ export function Bus(
 		throw new Error(`wishbone-bus: bus ${name} needs at least one slave`);
 	}
 	const addr_width = opts.addrWidth;
-	if (!Number.isInteger(addr_width) || addr_width < 2 || addr_width > 64) {
+	if (!Number.isInteger(addr_width) || addr_width < 2 || addr_width > 32) {
 		throw new Error(
-			`wishbone-bus: bus ${name} addrWidth must be an integer 2..64`,
+			`wishbone-bus: bus ${name} addrWidth must be an integer 2..32`,
 		);
 	}
 	const slaves = opts.slaves.map((s) => resolveAttached(s, addr_width));
@@ -889,7 +1176,8 @@ export function Bus(
 		}
 		seen.add(s.name);
 	}
-	assertNoRegionOverlap(name, slaves, addr_width);
+	assertSlaveWindows(name, slaves, addr_width);
+	assertDataSlave(name, slaves, crossbar);
 	assertBroadcasts(name, slaves);
 	const declared = orderAddrTags(name, normalizeTags(name, opts.tags ?? []));
 	assertAddrTagsCut(name, addr_width, declared, slaves);
@@ -917,6 +1205,7 @@ export function Bus(
 		addr_width,
 		tag_width,
 		tags,
+		...(crossbar ? { crossbar } : {}),
 	});
 	assertAcyclicBus(def, []);
 	assertTagSingleSource(def, new Map());

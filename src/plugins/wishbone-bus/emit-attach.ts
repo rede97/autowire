@@ -405,6 +405,14 @@ export function emitBusSystemSv(
 		],
 		assigns: masters.assigns,
 		children: [],
+		footer:
+			masters.cdcTgaNc.length === 0
+				? undefined
+				: [
+						"\t/* verilator lint_off UNUSEDSIGNAL */",
+						`\twire _unused_cdc_tga = &{1'b0, ${masters.cdcTgaNc.join(", ")}};`,
+						"\t/* verilator lint_on UNUSEDSIGNAL */",
+					],
 	};
 	return printSv(m, mod, style);
 }

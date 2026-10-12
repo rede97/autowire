@@ -310,10 +310,16 @@ function slaveKind(slave: WbSlave, repeat: boolean): MapKind {
 	return "port";
 }
 
+/** Fabric shape label: crossbar (grouped), interconnect (NM>1) or bus. */
+function busShape(bus: BusDef): string {
+	if (bus.crossbar) return "crossbar";
+	return bus.masters.length > 1 ? "interconnect" : "bus";
+}
+
 function slaveType(slave: WbSlave, repeat: boolean): string {
 	if (slave.broadcast) return "broadcast";
 	if (slave.bus) {
-		const shape = slave.bus.masters.length > 1 ? "interconnect" : "bus";
+		const shape = busShape(slave.bus);
 		return repeat ? `${shape} (repeat)` : shape;
 	}
 	if (slave.regfile) return "regfile";
@@ -444,7 +450,7 @@ function addBusMapSheet(wb: ExcelJS.Workbook, def: BusDef): void {
 			hexWin(busSpan(def), width),
 			def.tags.map(tagText).join(", "),
 		],
-		[def.name, def.masters.length > 1 ? "interconnect" : "bus", def.desc],
+		[def.name, busShape(def), def.desc],
 	);
 	const seen = new Set<string>([def.name]);
 	const walk = (
