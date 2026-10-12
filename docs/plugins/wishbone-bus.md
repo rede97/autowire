@@ -147,6 +147,8 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 
 ### 3.2 协议（对齐 [`rtl/wb_cfg_pipe_template.sv`](./rtl/wb_cfg_pipe_template.sv)）
 
+PIPE 读不可取消：发起后直到 ACK 必须保持 CYC/STB、WE、ADR、SEL、TGA 稳定。仿真协议检查检测未完成读的撤销或控制变化；复位清除检查状态。ACK 被采样后可发下一拍；posted 写与 broadcast 已完成分支屏蔽不受限制。不实现硬件取消。
+
 | 操作 | 入口 ACK | 行为 |
 |---|---|---|
 | **写** | `m_cyc & m_stb & !pipe[1].stb`（下一级空） | posted；不要求已落到叶子 |
@@ -212,7 +214,7 @@ SlaveBus(hbm_ch, i * 0x1000, {
 3. **订阅者选择。** 订阅窗口的选通 = 地址落在自己的窗口，或 `broadcast_<name>`。广播事务把广播窗内的相对地址原样送给每一个订阅者；窗口大小应当与订阅者一致。
 4. **名字必须存在。** `broadcastBy` 引用的名字必须由本层某个 `broadcast` 声明。未声明 → 构造期报错。一个名字可以有多个订阅者；一个 region 可以订阅多个名字。
 5. **写扇出、读 OR。** 广播写把数据写进每一个订阅者。广播读扇出到所有订阅者，返回各订阅者 `DAT` 的 **按位或**，用于「any-1」状态回读（如 16 channel × 2 dword 的 `train_pass_n`，全 0 = 通过；demo/hbm `hbm_bcast_read_seq`）。读 **不**按未映射处理：命中广播窗时 `unmapped` 立即 ACK 被抑制。订阅者应是等长副本，只有各副本同名字段语义一致时 OR 才有意义；对 RW 配置寄存器做广播读得到的是各副本的 OR，一般无意义，**不应当**依赖。
-6. **ACK 合流，且 pipe 等长。** 广播（读或写）的 ACK = 所有被选中的订阅者 ACK 相与。同一广播名的订阅者必须是等长副本：`pipe` 相同，窗口大小应当相同。`pipe` 不同 → `Bus()` 构造期报错。深度不一致时，浅副本的 ACK 先返回并撤掉，深副本的 pipe ACK 还没到，与门对不齐。有 pipe 时等的是 pipe 入口 ACK，不是组合译码。
+6. **逐分支完成，且 pipe 等长。** 每笔广播为各订阅者记录完成状态：收到 ACK 后屏蔽该分支 STB，直到全部分支完成才返回总 ACK，不能直接对瞬时 ACK 相与。读数据在各分支 ACK 时保存，最终按位 OR（提前完成的分支不必持续保持 DAT）。有 pipe 时写完成指入口接受，读完成指读响应返回；相同 pipe 深度不代表队列占用相同。同一广播名仍要求 `pipe` 相同、窗口大小应当相同；不同 pipe 深度仍在构造期报错。总 ACK 被采样时清除本笔完成状态，支持 CYC 保持的连续广播；复位或撤掉 CYC 会清除收集状态。撤掉 CYC 不会撤销已入队的 posted 写；复位会清空 pipe 中尚未送达叶子的请求，但不能回滚叶子已完成的写副作用。
 7. **与 tag 的顺序。** `TagFromAddr` 先剥离，再做广播译码。因此一次广播只进入当前 tag 别名，不跨 pstate。
 
 HBM：父层 16 个 channel 订阅 `ch_all`（`pipe` 都是 0），`center common` 不订阅。每个 channel 内 `dword0/dword1` 以相同 `pipe` 订阅 `dword_all`，`aword` 不订阅。
@@ -250,7 +252,7 @@ export const xb = Crossbar("xb", "grouped crossbar", {
 4. **无死锁。** 单 outstanding；一个 master 组同一时刻只请求一个 slave 组，`CYC` 落下即释放。没有 hold-and-wait，故不会成环。事务中途换目标组（同一 `CYC` 内多拍打不同窗）会释放旧组、重新申请新组，与经典 interconnect 一样按拍译码。
 5. **延迟。** 每条路径最多两级登记 arbiter（master 组 + slave 组），各加一拍 grant 延迟；单成员 master 组 / 单 master 组时相应一级消失。数据/ACK 路径仍是组合逻辑。
 6. **广播不跨组。** `broadcast` 窗口与它的所有 `broadcastBy` 订阅者必须在同一个 slave 组（扇出发生在一个 decoder 内）；跨组 → 构造期报错。
-7. **组名唯一**（master 侧、slave 侧各自一套），裸成员以自己的名字作组名。组名进入网名前缀 `mg_<g>_*` / `sg_<j>_*` 与 `localparam SG_<NAME>`。
+7. **组名唯一**（master 侧、slave 侧各自一套），裸成员以自己的名字作组名。组名进入网名前缀 `mg_<g>_*` / `sg_<j>_*` 与 `localparam SG_<NAME>`。slave 组名转大写后也必须唯一；同一 decoder 内的数据 slave 名转大写后必须唯一，避免 `SG_*` / `SLOT_*` 常量重名（如 `ctrl` / `CTRL`），构造期报告错误。
 
 产物：`<bus>_crossbar.sv`（`busModuleKind` = `crossbar`），端口与 interconnect 同形：`rb_grant_en` + `{m}_o_wb_*` / `{m}_i_wb_{dat,ack}` + `{slave}_i_wb_*` / `{slave}_o_wb_*`。wrapper 例化名 `u_crossbar`。`plugin wishbone run` 打印的地址树上每个 slave 标 `group: <name>`，首行列出 master 组。
 

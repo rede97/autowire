@@ -100,6 +100,24 @@ module wb_cfg_pipe #(
 	assign s_dat = pipe_h.wdat;
 	assign s_sel = pipe_h.sel;
 
+	// Reads cannot cancel. Check only until the completion edge; writes are posted.
+	// synthesis translate_off
+	logic read_pending;
+	logic [AW+TW+4:0] read_control;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			read_pending <= 1'b0;
+			read_control <= '0;
+		end else begin
+			if (read_pending &&
+				(!m_cyc || !m_stb || {m_we, m_adr, m_sel, m_tga} !== read_control))
+				$fatal(1, "wb_cfg_pipe: read request changed before ACK");
+			read_pending <= m_cyc && m_stb && !m_we && !m_ack;
+			read_control <= {m_we, m_adr, m_sel, m_tga};
+		end
+	end
+	// synthesis translate_on
+
 	for (genvar i = 1; i <= PIPE; i++) begin : hop
 		// Forward hop reads request fields; return hop reads ack / rdat.
 		/* verilator lint_off UNUSEDSIGNAL */

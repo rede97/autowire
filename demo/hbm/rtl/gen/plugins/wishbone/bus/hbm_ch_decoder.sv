@@ -113,6 +113,31 @@ module hbm_ch_decoder (
 	logic [11:0] dword_all_off;
 	assign dword_all_off = g_adr - 12'h300;
 
+	logic [1:0] broadcast_dword_all_done;
+	logic [1:0] broadcast_dword_all_acks;
+	logic [31:0] broadcast_dword_all_saved [0:1];
+	logic broadcast_dword_all_active, broadcast_dword_all_ack;
+	logic [31:0] broadcast_dword_all_rdat;
+	assign broadcast_dword_all_active = broadcast_dword_all & g_cyc & g_stb;
+	assign broadcast_dword_all_acks = {dword1_o_wb_ack, dword0_o_wb_ack};
+	assign broadcast_dword_all_ack = broadcast_dword_all_active & (&(broadcast_dword_all_done | broadcast_dword_all_acks));
+	assign broadcast_dword_all_rdat = (broadcast_dword_all_done[0] ? broadcast_dword_all_saved[0] : dword0_o_wb_dat)
+	                                | (broadcast_dword_all_done[1] ? broadcast_dword_all_saved[1] : dword1_o_wb_dat);
+	always_ff @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			broadcast_dword_all_done <= '0;
+			broadcast_dword_all_saved[0] <= '0;
+			broadcast_dword_all_saved[1] <= '0;
+		end else begin
+			if (!broadcast_dword_all_active || broadcast_dword_all_ack) broadcast_dword_all_done <= '0;
+			else broadcast_dword_all_done <= broadcast_dword_all_done | broadcast_dword_all_acks;
+			if (broadcast_dword_all_active && !g_we && !broadcast_dword_all_done[0] && broadcast_dword_all_acks[0])
+				broadcast_dword_all_saved[0] <= dword0_o_wb_dat;
+			if (broadcast_dword_all_active && !g_we && !broadcast_dword_all_done[1] && broadcast_dword_all_acks[1])
+				broadcast_dword_all_saved[1] <= dword1_o_wb_dat;
+		end
+	end
+
 	//------------------------------------------------------------------------------
 	//  Named slave drive (window offset ADR)
 	//------------------------------------------------------------------------------
@@ -129,7 +154,7 @@ module hbm_ch_decoder (
 	assign dword0_i_wb_sel = g_sel;
 	assign dword0_i_wb_tga_pstate = g_tga_pstate;
 	assign dword0_i_wb_cyc = (slot_sel[SLOT_DWORD0] || broadcast_dword_all) & g_cyc;
-	assign dword0_i_wb_stb = (slot_sel[SLOT_DWORD0] || broadcast_dword_all) & g_stb;
+	assign dword0_i_wb_stb = (slot_sel[SLOT_DWORD0] || (broadcast_dword_all & !broadcast_dword_all_done[0])) & g_stb;
 	assign dword0_i_wb_we  = g_we;
 
 	assign dword1_i_wb_adr = (slot_sel[SLOT_DWORD1] || broadcast_dword_all) ? (({12{slot_sel[SLOT_DWORD1]}} & g_adr) | ({12{broadcast_dword_all}} & dword_all_off)) & ~12'hf00 : 12'd0;
@@ -137,7 +162,7 @@ module hbm_ch_decoder (
 	assign dword1_i_wb_sel = g_sel;
 	assign dword1_i_wb_tga_pstate = g_tga_pstate;
 	assign dword1_i_wb_cyc = (slot_sel[SLOT_DWORD1] || broadcast_dword_all) & g_cyc;
-	assign dword1_i_wb_stb = (slot_sel[SLOT_DWORD1] || broadcast_dword_all) & g_stb;
+	assign dword1_i_wb_stb = (slot_sel[SLOT_DWORD1] || (broadcast_dword_all & !broadcast_dword_all_done[1])) & g_stb;
 	assign dword1_i_wb_we  = g_we;
 
 	logic [31:0] rsp_dat;
@@ -146,17 +171,13 @@ module hbm_ch_decoder (
 	assign rsp_dat = ({32{slot_sel[SLOT_AWORD]}} & aword_o_wb_dat)
 	               | ({32{slot_sel[SLOT_DWORD0]}} & dword0_o_wb_dat)
 	               | ({32{slot_sel[SLOT_DWORD1]}} & dword1_o_wb_dat)
-	               | ({32{broadcast_dword_all}} & (dword0_o_wb_dat | dword1_o_wb_dat));
+	               | ({32{broadcast_dword_all}} & broadcast_dword_all_rdat);
 	assign rsp_ack = (unmapped & g_stb & !(broadcast_dword_all))
-	               | (broadcast_dword_all & dword0_o_wb_ack & dword1_o_wb_ack)
+	               | broadcast_dword_all_ack
 	               | (slot_sel[SLOT_AWORD] & aword_o_wb_ack)
 	               | (slot_sel[SLOT_DWORD0] & dword0_o_wb_ack)
 	               | (slot_sel[SLOT_DWORD1] & dword1_o_wb_ack);
 	assign m_dat_o = rsp_dat;
 	assign m_ack_o = rsp_ack;
 
-	// Protocol nets this topology declares but does not consume.
-	/* verilator lint_off UNUSEDSIGNAL */
-	wire _unused_dec = &{1'b0, clk, rst_n};
-	/* verilator lint_on UNUSEDSIGNAL */
 endmodule

@@ -172,13 +172,13 @@ describe("wishbone tag domains", () => {
 		expect(parent).toContain(
 			"ch15_i_wb_cyc   = (slot_sel[SLOT_CH15] || broadcast_ch_all)",
 		);
-		expect(parent).toContain("broadcast_ch_all & ch0_o_wb_ack & ch1_o_wb_ack");
+		expect(parent).toContain("broadcast_ch_all_done | broadcast_ch_all_acks");
 		expect(parent).toContain(
 			"(({19{slot_sel[SLOT_CH0]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000",
 		);
 		// Broadcast read ORs every subscriber's DAT; the window itself is not unmapped.
 		expect(parent).toContain(
-			"({32{broadcast_ch_all}} & (ch0_o_wb_dat | ch1_o_wb_dat",
+			"({32{broadcast_ch_all}} & broadcast_ch_all_rdat)",
 		);
 		expect(parent).toContain("(unmapped & g_stb & !(broadcast_ch_all))");
 		expect(parent).not.toContain("ch_bcast_i_wb_");
@@ -196,7 +196,7 @@ describe("wishbone tag domains", () => {
 			"(({12{slot_sel[SLOT_DWORD0]}} & g_adr) | ({12{broadcast_dword_all}} & dword_all_off)) & ~12'hf00",
 		);
 		expect(child).toContain(
-			"({32{broadcast_dword_all}} & (dword0_o_wb_dat | dword1_o_wb_dat))",
+			"({32{broadcast_dword_all}} & broadcast_dword_all_rdat)",
 		);
 		expect(child).not.toContain("dword_bcast_i_wb_");
 		expect(child).not.toContain("dword_bcast_o_wb_");

@@ -424,6 +424,87 @@ module hbm_interconnect (
 	logic [18:0] ch_all_off;
 	assign ch_all_off = g_adr_dec - 19'h11000;
 
+	logic [15:0] broadcast_ch_all_done;
+	logic [15:0] broadcast_ch_all_acks;
+	logic [31:0] broadcast_ch_all_saved [0:15];
+	logic broadcast_ch_all_active, broadcast_ch_all_ack;
+	logic [31:0] broadcast_ch_all_rdat;
+	assign broadcast_ch_all_active = broadcast_ch_all & g_cyc & g_stb;
+	assign broadcast_ch_all_acks = {ch15_o_wb_ack, ch14_o_wb_ack, ch13_o_wb_ack, ch12_o_wb_ack, ch11_o_wb_ack, ch10_o_wb_ack, ch9_o_wb_ack, ch8_o_wb_ack, ch7_o_wb_ack, ch6_o_wb_ack, ch5_o_wb_ack, ch4_o_wb_ack, ch3_o_wb_ack, ch2_o_wb_ack, ch1_o_wb_ack, ch0_o_wb_ack};
+	assign broadcast_ch_all_ack = broadcast_ch_all_active & (&(broadcast_ch_all_done | broadcast_ch_all_acks));
+	assign broadcast_ch_all_rdat = (broadcast_ch_all_done[0] ? broadcast_ch_all_saved[0] : ch0_o_wb_dat)
+	                             | (broadcast_ch_all_done[1] ? broadcast_ch_all_saved[1] : ch1_o_wb_dat)
+	                             | (broadcast_ch_all_done[2] ? broadcast_ch_all_saved[2] : ch2_o_wb_dat)
+	                             | (broadcast_ch_all_done[3] ? broadcast_ch_all_saved[3] : ch3_o_wb_dat)
+	                             | (broadcast_ch_all_done[4] ? broadcast_ch_all_saved[4] : ch4_o_wb_dat)
+	                             | (broadcast_ch_all_done[5] ? broadcast_ch_all_saved[5] : ch5_o_wb_dat)
+	                             | (broadcast_ch_all_done[6] ? broadcast_ch_all_saved[6] : ch6_o_wb_dat)
+	                             | (broadcast_ch_all_done[7] ? broadcast_ch_all_saved[7] : ch7_o_wb_dat)
+	                             | (broadcast_ch_all_done[8] ? broadcast_ch_all_saved[8] : ch8_o_wb_dat)
+	                             | (broadcast_ch_all_done[9] ? broadcast_ch_all_saved[9] : ch9_o_wb_dat)
+	                             | (broadcast_ch_all_done[10] ? broadcast_ch_all_saved[10] : ch10_o_wb_dat)
+	                             | (broadcast_ch_all_done[11] ? broadcast_ch_all_saved[11] : ch11_o_wb_dat)
+	                             | (broadcast_ch_all_done[12] ? broadcast_ch_all_saved[12] : ch12_o_wb_dat)
+	                             | (broadcast_ch_all_done[13] ? broadcast_ch_all_saved[13] : ch13_o_wb_dat)
+	                             | (broadcast_ch_all_done[14] ? broadcast_ch_all_saved[14] : ch14_o_wb_dat)
+	                             | (broadcast_ch_all_done[15] ? broadcast_ch_all_saved[15] : ch15_o_wb_dat);
+	always_ff @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			broadcast_ch_all_done <= '0;
+			broadcast_ch_all_saved[0] <= '0;
+			broadcast_ch_all_saved[1] <= '0;
+			broadcast_ch_all_saved[2] <= '0;
+			broadcast_ch_all_saved[3] <= '0;
+			broadcast_ch_all_saved[4] <= '0;
+			broadcast_ch_all_saved[5] <= '0;
+			broadcast_ch_all_saved[6] <= '0;
+			broadcast_ch_all_saved[7] <= '0;
+			broadcast_ch_all_saved[8] <= '0;
+			broadcast_ch_all_saved[9] <= '0;
+			broadcast_ch_all_saved[10] <= '0;
+			broadcast_ch_all_saved[11] <= '0;
+			broadcast_ch_all_saved[12] <= '0;
+			broadcast_ch_all_saved[13] <= '0;
+			broadcast_ch_all_saved[14] <= '0;
+			broadcast_ch_all_saved[15] <= '0;
+		end else begin
+			if (!broadcast_ch_all_active || broadcast_ch_all_ack) broadcast_ch_all_done <= '0;
+			else broadcast_ch_all_done <= broadcast_ch_all_done | broadcast_ch_all_acks;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[0] && broadcast_ch_all_acks[0])
+				broadcast_ch_all_saved[0] <= ch0_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[1] && broadcast_ch_all_acks[1])
+				broadcast_ch_all_saved[1] <= ch1_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[2] && broadcast_ch_all_acks[2])
+				broadcast_ch_all_saved[2] <= ch2_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[3] && broadcast_ch_all_acks[3])
+				broadcast_ch_all_saved[3] <= ch3_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[4] && broadcast_ch_all_acks[4])
+				broadcast_ch_all_saved[4] <= ch4_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[5] && broadcast_ch_all_acks[5])
+				broadcast_ch_all_saved[5] <= ch5_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[6] && broadcast_ch_all_acks[6])
+				broadcast_ch_all_saved[6] <= ch6_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[7] && broadcast_ch_all_acks[7])
+				broadcast_ch_all_saved[7] <= ch7_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[8] && broadcast_ch_all_acks[8])
+				broadcast_ch_all_saved[8] <= ch8_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[9] && broadcast_ch_all_acks[9])
+				broadcast_ch_all_saved[9] <= ch9_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[10] && broadcast_ch_all_acks[10])
+				broadcast_ch_all_saved[10] <= ch10_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[11] && broadcast_ch_all_acks[11])
+				broadcast_ch_all_saved[11] <= ch11_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[12] && broadcast_ch_all_acks[12])
+				broadcast_ch_all_saved[12] <= ch12_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[13] && broadcast_ch_all_acks[13])
+				broadcast_ch_all_saved[13] <= ch13_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[14] && broadcast_ch_all_acks[14])
+				broadcast_ch_all_saved[14] <= ch14_o_wb_dat;
+			if (broadcast_ch_all_active && !g_we && !broadcast_ch_all_done[15] && broadcast_ch_all_acks[15])
+				broadcast_ch_all_saved[15] <= ch15_o_wb_dat;
+		end
+	end
+
 	//------------------------------------------------------------------------------
 	//  Named slave drive (window offset ADR)
 	//------------------------------------------------------------------------------
@@ -439,7 +520,7 @@ module hbm_interconnect (
 	assign ch0_i_wb_sel    = g_sel;
 	assign ch0_i_wb_tga_pstate = g_tga_pstate;
 	assign ch0_i_wb_cyc    = (slot_sel[SLOT_CH0] || broadcast_ch_all) & g_cyc;
-	assign ch0_i_wb_stb    = (slot_sel[SLOT_CH0] || broadcast_ch_all) & g_stb;
+	assign ch0_i_wb_stb    = (slot_sel[SLOT_CH0] || (broadcast_ch_all & !broadcast_ch_all_done[0])) & g_stb;
 	assign ch0_i_wb_we     = g_we;
 
 	assign ch1_i_wb_adr    = (slot_sel[SLOT_CH1] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH1]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -447,7 +528,7 @@ module hbm_interconnect (
 	assign ch1_i_wb_sel    = g_sel;
 	assign ch1_i_wb_tga_pstate = g_tga_pstate;
 	assign ch1_i_wb_cyc    = (slot_sel[SLOT_CH1] || broadcast_ch_all) & g_cyc;
-	assign ch1_i_wb_stb    = (slot_sel[SLOT_CH1] || broadcast_ch_all) & g_stb;
+	assign ch1_i_wb_stb    = (slot_sel[SLOT_CH1] || (broadcast_ch_all & !broadcast_ch_all_done[1])) & g_stb;
 	assign ch1_i_wb_we     = g_we;
 
 	assign ch2_i_wb_adr    = (slot_sel[SLOT_CH2] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH2]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -455,7 +536,7 @@ module hbm_interconnect (
 	assign ch2_i_wb_sel    = g_sel;
 	assign ch2_i_wb_tga_pstate = g_tga_pstate;
 	assign ch2_i_wb_cyc    = (slot_sel[SLOT_CH2] || broadcast_ch_all) & g_cyc;
-	assign ch2_i_wb_stb    = (slot_sel[SLOT_CH2] || broadcast_ch_all) & g_stb;
+	assign ch2_i_wb_stb    = (slot_sel[SLOT_CH2] || (broadcast_ch_all & !broadcast_ch_all_done[2])) & g_stb;
 	assign ch2_i_wb_we     = g_we;
 
 	assign ch3_i_wb_adr    = (slot_sel[SLOT_CH3] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH3]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -463,7 +544,7 @@ module hbm_interconnect (
 	assign ch3_i_wb_sel    = g_sel;
 	assign ch3_i_wb_tga_pstate = g_tga_pstate;
 	assign ch3_i_wb_cyc    = (slot_sel[SLOT_CH3] || broadcast_ch_all) & g_cyc;
-	assign ch3_i_wb_stb    = (slot_sel[SLOT_CH3] || broadcast_ch_all) & g_stb;
+	assign ch3_i_wb_stb    = (slot_sel[SLOT_CH3] || (broadcast_ch_all & !broadcast_ch_all_done[3])) & g_stb;
 	assign ch3_i_wb_we     = g_we;
 
 	assign ch4_i_wb_adr    = (slot_sel[SLOT_CH4] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH4]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -471,7 +552,7 @@ module hbm_interconnect (
 	assign ch4_i_wb_sel    = g_sel;
 	assign ch4_i_wb_tga_pstate = g_tga_pstate;
 	assign ch4_i_wb_cyc    = (slot_sel[SLOT_CH4] || broadcast_ch_all) & g_cyc;
-	assign ch4_i_wb_stb    = (slot_sel[SLOT_CH4] || broadcast_ch_all) & g_stb;
+	assign ch4_i_wb_stb    = (slot_sel[SLOT_CH4] || (broadcast_ch_all & !broadcast_ch_all_done[4])) & g_stb;
 	assign ch4_i_wb_we     = g_we;
 
 	assign ch5_i_wb_adr    = (slot_sel[SLOT_CH5] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH5]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -479,7 +560,7 @@ module hbm_interconnect (
 	assign ch5_i_wb_sel    = g_sel;
 	assign ch5_i_wb_tga_pstate = g_tga_pstate;
 	assign ch5_i_wb_cyc    = (slot_sel[SLOT_CH5] || broadcast_ch_all) & g_cyc;
-	assign ch5_i_wb_stb    = (slot_sel[SLOT_CH5] || broadcast_ch_all) & g_stb;
+	assign ch5_i_wb_stb    = (slot_sel[SLOT_CH5] || (broadcast_ch_all & !broadcast_ch_all_done[5])) & g_stb;
 	assign ch5_i_wb_we     = g_we;
 
 	assign ch6_i_wb_adr    = (slot_sel[SLOT_CH6] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH6]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -487,7 +568,7 @@ module hbm_interconnect (
 	assign ch6_i_wb_sel    = g_sel;
 	assign ch6_i_wb_tga_pstate = g_tga_pstate;
 	assign ch6_i_wb_cyc    = (slot_sel[SLOT_CH6] || broadcast_ch_all) & g_cyc;
-	assign ch6_i_wb_stb    = (slot_sel[SLOT_CH6] || broadcast_ch_all) & g_stb;
+	assign ch6_i_wb_stb    = (slot_sel[SLOT_CH6] || (broadcast_ch_all & !broadcast_ch_all_done[6])) & g_stb;
 	assign ch6_i_wb_we     = g_we;
 
 	assign ch7_i_wb_adr    = (slot_sel[SLOT_CH7] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH7]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -495,7 +576,7 @@ module hbm_interconnect (
 	assign ch7_i_wb_sel    = g_sel;
 	assign ch7_i_wb_tga_pstate = g_tga_pstate;
 	assign ch7_i_wb_cyc    = (slot_sel[SLOT_CH7] || broadcast_ch_all) & g_cyc;
-	assign ch7_i_wb_stb    = (slot_sel[SLOT_CH7] || broadcast_ch_all) & g_stb;
+	assign ch7_i_wb_stb    = (slot_sel[SLOT_CH7] || (broadcast_ch_all & !broadcast_ch_all_done[7])) & g_stb;
 	assign ch7_i_wb_we     = g_we;
 
 	assign ch8_i_wb_adr    = (slot_sel[SLOT_CH8] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH8]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -503,7 +584,7 @@ module hbm_interconnect (
 	assign ch8_i_wb_sel    = g_sel;
 	assign ch8_i_wb_tga_pstate = g_tga_pstate;
 	assign ch8_i_wb_cyc    = (slot_sel[SLOT_CH8] || broadcast_ch_all) & g_cyc;
-	assign ch8_i_wb_stb    = (slot_sel[SLOT_CH8] || broadcast_ch_all) & g_stb;
+	assign ch8_i_wb_stb    = (slot_sel[SLOT_CH8] || (broadcast_ch_all & !broadcast_ch_all_done[8])) & g_stb;
 	assign ch8_i_wb_we     = g_we;
 
 	assign ch9_i_wb_adr    = (slot_sel[SLOT_CH9] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH9]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -511,7 +592,7 @@ module hbm_interconnect (
 	assign ch9_i_wb_sel    = g_sel;
 	assign ch9_i_wb_tga_pstate = g_tga_pstate;
 	assign ch9_i_wb_cyc    = (slot_sel[SLOT_CH9] || broadcast_ch_all) & g_cyc;
-	assign ch9_i_wb_stb    = (slot_sel[SLOT_CH9] || broadcast_ch_all) & g_stb;
+	assign ch9_i_wb_stb    = (slot_sel[SLOT_CH9] || (broadcast_ch_all & !broadcast_ch_all_done[9])) & g_stb;
 	assign ch9_i_wb_we     = g_we;
 
 	assign ch10_i_wb_adr   = (slot_sel[SLOT_CH10] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH10]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -519,7 +600,7 @@ module hbm_interconnect (
 	assign ch10_i_wb_sel   = g_sel;
 	assign ch10_i_wb_tga_pstate = g_tga_pstate;
 	assign ch10_i_wb_cyc   = (slot_sel[SLOT_CH10] || broadcast_ch_all) & g_cyc;
-	assign ch10_i_wb_stb   = (slot_sel[SLOT_CH10] || broadcast_ch_all) & g_stb;
+	assign ch10_i_wb_stb   = (slot_sel[SLOT_CH10] || (broadcast_ch_all & !broadcast_ch_all_done[10])) & g_stb;
 	assign ch10_i_wb_we    = g_we;
 
 	assign ch11_i_wb_adr   = (slot_sel[SLOT_CH11] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH11]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -527,7 +608,7 @@ module hbm_interconnect (
 	assign ch11_i_wb_sel   = g_sel;
 	assign ch11_i_wb_tga_pstate = g_tga_pstate;
 	assign ch11_i_wb_cyc   = (slot_sel[SLOT_CH11] || broadcast_ch_all) & g_cyc;
-	assign ch11_i_wb_stb   = (slot_sel[SLOT_CH11] || broadcast_ch_all) & g_stb;
+	assign ch11_i_wb_stb   = (slot_sel[SLOT_CH11] || (broadcast_ch_all & !broadcast_ch_all_done[11])) & g_stb;
 	assign ch11_i_wb_we    = g_we;
 
 	assign ch12_i_wb_adr   = (slot_sel[SLOT_CH12] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH12]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -535,7 +616,7 @@ module hbm_interconnect (
 	assign ch12_i_wb_sel   = g_sel;
 	assign ch12_i_wb_tga_pstate = g_tga_pstate;
 	assign ch12_i_wb_cyc   = (slot_sel[SLOT_CH12] || broadcast_ch_all) & g_cyc;
-	assign ch12_i_wb_stb   = (slot_sel[SLOT_CH12] || broadcast_ch_all) & g_stb;
+	assign ch12_i_wb_stb   = (slot_sel[SLOT_CH12] || (broadcast_ch_all & !broadcast_ch_all_done[12])) & g_stb;
 	assign ch12_i_wb_we    = g_we;
 
 	assign ch13_i_wb_adr   = (slot_sel[SLOT_CH13] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH13]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -543,7 +624,7 @@ module hbm_interconnect (
 	assign ch13_i_wb_sel   = g_sel;
 	assign ch13_i_wb_tga_pstate = g_tga_pstate;
 	assign ch13_i_wb_cyc   = (slot_sel[SLOT_CH13] || broadcast_ch_all) & g_cyc;
-	assign ch13_i_wb_stb   = (slot_sel[SLOT_CH13] || broadcast_ch_all) & g_stb;
+	assign ch13_i_wb_stb   = (slot_sel[SLOT_CH13] || (broadcast_ch_all & !broadcast_ch_all_done[13])) & g_stb;
 	assign ch13_i_wb_we    = g_we;
 
 	assign ch14_i_wb_adr   = (slot_sel[SLOT_CH14] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH14]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -551,7 +632,7 @@ module hbm_interconnect (
 	assign ch14_i_wb_sel   = g_sel;
 	assign ch14_i_wb_tga_pstate = g_tga_pstate;
 	assign ch14_i_wb_cyc   = (slot_sel[SLOT_CH14] || broadcast_ch_all) & g_cyc;
-	assign ch14_i_wb_stb   = (slot_sel[SLOT_CH14] || broadcast_ch_all) & g_stb;
+	assign ch14_i_wb_stb   = (slot_sel[SLOT_CH14] || (broadcast_ch_all & !broadcast_ch_all_done[14])) & g_stb;
 	assign ch14_i_wb_we    = g_we;
 
 	assign ch15_i_wb_adr   = (slot_sel[SLOT_CH15] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH15]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
@@ -559,7 +640,7 @@ module hbm_interconnect (
 	assign ch15_i_wb_sel   = g_sel;
 	assign ch15_i_wb_tga_pstate = g_tga_pstate;
 	assign ch15_i_wb_cyc   = (slot_sel[SLOT_CH15] || broadcast_ch_all) & g_cyc;
-	assign ch15_i_wb_stb   = (slot_sel[SLOT_CH15] || broadcast_ch_all) & g_stb;
+	assign ch15_i_wb_stb   = (slot_sel[SLOT_CH15] || (broadcast_ch_all & !broadcast_ch_all_done[15])) & g_stb;
 	assign ch15_i_wb_we    = g_we;
 
 	logic [31:0] rsp_dat;
@@ -582,9 +663,9 @@ module hbm_interconnect (
 	               | ({32{slot_sel[SLOT_CH13]}} & ch13_o_wb_dat)
 	               | ({32{slot_sel[SLOT_CH14]}} & ch14_o_wb_dat)
 	               | ({32{slot_sel[SLOT_CH15]}} & ch15_o_wb_dat)
-	               | ({32{broadcast_ch_all}} & (ch0_o_wb_dat | ch1_o_wb_dat | ch2_o_wb_dat | ch3_o_wb_dat | ch4_o_wb_dat | ch5_o_wb_dat | ch6_o_wb_dat | ch7_o_wb_dat | ch8_o_wb_dat | ch9_o_wb_dat | ch10_o_wb_dat | ch11_o_wb_dat | ch12_o_wb_dat | ch13_o_wb_dat | ch14_o_wb_dat | ch15_o_wb_dat));
+	               | ({32{broadcast_ch_all}} & broadcast_ch_all_rdat);
 	assign rsp_ack = (unmapped & g_stb & !(broadcast_ch_all))
-	               | (broadcast_ch_all & ch0_o_wb_ack & ch1_o_wb_ack & ch2_o_wb_ack & ch3_o_wb_ack & ch4_o_wb_ack & ch5_o_wb_ack & ch6_o_wb_ack & ch7_o_wb_ack & ch8_o_wb_ack & ch9_o_wb_ack & ch10_o_wb_ack & ch11_o_wb_ack & ch12_o_wb_ack & ch13_o_wb_ack & ch14_o_wb_ack & ch15_o_wb_ack)
+	               | broadcast_ch_all_ack
 	               | (slot_sel[SLOT_CENTER] & center_o_wb_ack)
 	               | (slot_sel[SLOT_CH0] & ch0_o_wb_ack)
 	               | (slot_sel[SLOT_CH1] & ch1_o_wb_ack)

@@ -47,7 +47,7 @@
 理由：
 
 1. **CDC 只写一份、验一份**。协议桥全是 **单时钟同步逻辑**，CDC 集中在 `wb_cdc`；签核只看一个结构。
-2. **WB Classic 单 outstanding** → **不需要 async FIFO**：四相 **req/ack 握手 + 数据束保持稳定（bundled data）**。只有 `req` / `ack` / `alive` 三个单 bit 走 `wb_sync_cell`；请求束由同步后的 `req` 在目标域重新打拍，应答束由同步后的 `ack` 在源域采样。**禁止**逐 bit 同步数据。
+2. **WB Classic 单 outstanding** → **不需要 async FIFO**：四相 **req/ack 握手 + 数据束保持稳定（bundled data）**。`req` / `ack` / `alive` 及恢复握手的单 bit 控制经 `wb_sync_cell` 同步；请求束由同步后的 `req` 在目标域重新打拍，应答束由同步后的 `ack` 在源域采样。**禁止**逐 bit 同步数据。
 3. 仲裁 / 译码 / regfile **保持单时钟**；fabric（`<bus>_decoder` / `<bus>_interconnect`）生成物 **不变**，全部桥接逻辑在 `<bus>_bus_cfg` wrapper 内。
 4. 延迟：每事务约 `2×(2~3)` 个对端时钟的握手往返。配置流量稀，可接受；大批量灌数按 [`wishbone-bus.md`](./wishbone-bus.md) §5.1 走 DMA。
 
@@ -57,10 +57,12 @@
 |---|---|
 | fabric 在复位（`alive=0`） | 源侧 **立即** `ERR`，不发请求 |
 | `TIMEOUT` 个源时钟内无 ack（`TIMEOUT=0` 关闭） | `ERR` 并进入 drain；目标侧仍会把已发出的事务做完（副作用可能已发生） |
-| drain 中的新请求 | 立即 `ERR`，直到 `ack` 回落且 `alive=1` |
-| 单侧复位打断在飞事务 | 四相 level 协议，两侧回 idle 后自洽；源侧 idle 时见到 `ack=1` 一律 `ERR` |
-| 写语义 | **非 posted**：`ACK` = 叶子已应答（v1 无 posted 选项） |
+| drain 中的新请求 | 返回 `ERR`，直到独立恢复握手完成；目标必须确认请求已撤低且旧事务已退出，不能仅凭 `ack=0` 判定排空 |
+| 单侧复位打断在飞事务 | 任一侧复位均启动恢复；源侧复位不撤销目标已捕获的事务，目标侧复位清除目标事务；恢复完成前拒绝新请求 |
+| 写语义 | CDC 自身**非 posted**：等目标 WB 接口 ACK 才应答；若目标接了 posted PIPE，该 ACK 代表入队，不代表叶子完成 |
 | 同步器 | 全部经 `wb_sync_cell`（行为模型 2FF；签核时换 foundry sync cell，**保持端口不变**） |
+
+恢复采用额外的四相控制握手：源侧请求恢复，目标等待旧事务退出并确认，源侧撤销恢复请求，目标再撤销确认。目标尚未捕获请求时，不要求出现旧 ACK。恢复需要两侧时钟运行；目标已捕获的事务仍等待下游 ACK，永久不应答时需要复位目标域。目标复位脉冲通过异步清零、同步释放的 `link_up_s` 保留到源时钟域，源侧在目标持续复位时仍可返回 ERR。集成必须满足复位最小脉宽及各时钟域的释放时序，并完成 CDC/RDC 签核。
 
 错误回报：WB 子集 `ERR` 可选（默认 0）；fabric **不**生成 ERR。`wb_cdc` 源侧出 `s_err`，协议桥映射为 APB `PSLVERR` / JTAG 状态码 / 异步 WB 口的 `{m}_i_wb_err`。
 
@@ -78,7 +80,7 @@
 
 - 芯片 TAP（IR、BYPASS、IDCODE、BSR、TLR）由 **DFT 流程拥有**（Tessent / TestMAX 等插入）。IEEE 1149.1 要求对外只有一个合规 TAP；IP 私自带 TAP 会破坏 BSDL / 边界扫描链。
 - 插件生成 `wb_jtag_tdr`：IEEE 1149.1 **user-DR 客户端**口形，同时是 IEEE 1687（IJTAG）的 ScanInterface，可挂在芯片 TAP 的 user 指令下，或挂在 SIB 网络里。
-- 同时生成 `<bus>_bus_cfg.icl`（ScanInterface / ScanRegister / Alias）与 `<bus>_bus_cfg.pdl`（`<m>_write` / `<m>_read`：launch → `iRunLoop idle -tck` → 轮询 `st`）。ICL **未**建模 CaptureSource（捕获值来自内部状态），接入前 **应当**由 DFT 评审方言差异。
+- 同时生成 `<bus>_bus_cfg.icl`（ScanInterface / ScanRegister / Alias）与 Level-0 `<bus>_bus_cfg.pdl`（`<m>_write` / `<m>_read`：launch → `iRunLoop idle -tck` → 检查 `st=0`）。生成的 PDL 是固定等待后的比较，不自动重试 busy；read 的 `data` 参数是期望值。静态测试需配置足够的 idle；动态轮询由支持 Level-1 的工具或 host 实现，并设置重试上限、处理 err。状态比较失败后不能盲目重新 launch，原写可能已经发生。ICL **未**建模 CaptureSource（捕获值来自内部状态），接入前 **应当**由 DFT 评审方言差异。
 - 私有 TAP：v1 **不**提供。
 
 ### 5.2 端口（TCK 域）

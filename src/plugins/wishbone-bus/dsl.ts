@@ -954,6 +954,17 @@ function assertDataSlave(
 			}))
 		: [{ where: `bus ${bus}`, members: slaves }];
 	for (const scope of scopes) {
+		const slots = new Map<string, string>();
+		for (const s of scope.members.filter((s) => !s.broadcast)) {
+			const symbol = `SLOT_${s.name.toUpperCase()}`;
+			const previous = slots.get(symbol);
+			if (previous !== undefined) {
+				throw new Error(
+					`wishbone-bus: ${scope.where} slaves "${previous}" and "${s.name}" collide as ${symbol}`,
+				);
+			}
+			slots.set(symbol, s.name);
+		}
 		if (scope.members.length === 0) continue;
 		if (scope.members.every((s) => s.broadcast)) {
 			throw new Error(
@@ -1104,6 +1115,7 @@ function assertUniqueGroupNames(
 	groups: readonly WbGroupRef[],
 ): void {
 	const seen = new Set<string>();
+	const symbols = new Map<string, string>();
 	for (const g of groups) {
 		if (seen.has(g.name)) {
 			throw new Error(
@@ -1111,6 +1123,16 @@ function assertUniqueGroupNames(
 			);
 		}
 		seen.add(g.name);
+		if (side === "slave") {
+			const symbol = `SG_${g.name.toUpperCase()}`;
+			const previous = symbols.get(symbol);
+			if (previous !== undefined) {
+				throw new Error(
+					`wishbone-bus: crossbar ${bus} slave groups "${previous}" and "${g.name}" collide as ${symbol}`,
+				);
+			}
+			symbols.set(symbol, g.name);
+		}
 	}
 }
 

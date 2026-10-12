@@ -140,6 +140,39 @@ describe("wishbone crossbar", () => {
 		).toThrow(/overlap/);
 	});
 
+	test("rejects normalized identifiers in their emitted scope", () => {
+		const masters = [Master("m", "m")];
+		const lower = SlaveRegion("gpio", "lowercase", 0, Size(0x100));
+		const upper = SlaveRegion("GPIO", "uppercase", 0x100, Size(0x100));
+		const slaves = [lower, upper];
+		for (const ms of [masters, [...masters, Master("n", "n")]]) {
+			expect(() =>
+				Bus("b", "slot collision", { addrWidth: 16, masters: ms, slaves }),
+			).toThrow(/collide as SLOT_GPIO/);
+		}
+		expect(() =>
+			Crossbar("b", "slot collision", {
+				addrWidth: 16,
+				masters,
+				slaves: [SlaveGroup("ctrl", slaves)],
+			}),
+		).toThrow(/collide as SLOT_GPIO/);
+		expect(() =>
+			Crossbar("b", "group collision", {
+				addrWidth: 16,
+				masters,
+				slaves: [SlaveGroup("ctrl", [lower]), SlaveGroup("CTRL", [upper])],
+			}),
+		).toThrow(/collide as SG_CTRL/);
+		// SLOT constants in separate generate scopes do not collide.
+		const scoped = Crossbar("b", "separate slots", {
+			addrWidth: 16,
+			masters,
+			slaves: [SlaveGroup("left", [lower]), SlaveGroup("right", [upper])],
+		});
+		expect(emitBusSv(scoped)).toContain("module b_crossbar");
+	});
+
 	test("a broadcast window and its subscribers must share one slave group", () => {
 		const good = Crossbar("bc", "broadcast inside a group", {
 			addrWidth: 16,
@@ -155,7 +188,7 @@ describe("wishbone crossbar", () => {
 		});
 		const sv = emitBusSv(good);
 		expect(sv).toContain("logic broadcast_all;");
-		expect(sv).toContain("(broadcast_all & a_o_wb_ack & b_o_wb_ack)");
+		expect(sv).toContain("broadcast_all_done | broadcast_all_acks");
 		expect(() =>
 			Crossbar("bc", "broadcast across groups", {
 				addrWidth: 16,

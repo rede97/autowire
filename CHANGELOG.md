@@ -2,6 +2,14 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [Unreleased]
+
+- 修复 CDC 超时恢复过早接收新请求、可能将旧响应交给新请求的问题：增加目标排空确认握手，覆盖停钟前未捕获请求、单侧复位及复位期间 ERR。
+- 明确 PIPE 读请求不可取消，增加仅仿真使用的请求保持检查；新增 CDC 时钟比例/恢复测试和 PIPE 违规控制测试。
+- 纠正生成 JTAG PDL 的能力说明：Level-0 固定等待后检查状态，不提供自动 busy 轮询。
+- 修复 Bus / Crossbar 广播在订阅者响应错开或 pipe 占用不同时重复接受同一笔请求的问题：逐分支记录完成、屏蔽已完成分支的 STB，并保存读响应后 OR 汇总。保留 posted 写入口 ACK 语义。
+- 构造期拒绝 slave 组名与同一 decoder 内 slot 名大写规范化后的标识符冲突，避免生成重复的 `SG_*` / `SLOT_*` 常量。
+
 ## [2.5.0] - 2026-10-12
 
 - Wishbone 总线新增分组 crossbar：`Crossbar(name, desc, { masters: [Master | MasterGroup(...)], slaves: [slave | SlaveGroup(...)], addrWidth, tagWidth?, tags? })`。master 组各有一个 arbiter（组内互斥），slave 组各有一个 decoder，不同 (master 组, slave 组) 对并行推进；裸 master / slave 即单成员组。返回值仍是拍平的 `BusDef`（多出 `crossbar` 组元数据），口名、tag、pipe、广播、`.uplink()` 级联、`<bus>_bus_cfg` wrapper 与 C/UVM/SV/Excel 软件图全部沿用；产物 `<bus>_crossbar.sv`，端口与 interconnect 同形（含 `rb_grant_en`）。广播窗与订阅者必须同在一个 slave 组。经典 `Bus()` 的语义与生成产物逐字节不变。文档 `docs/plugins/wishbone-bus.md` §4.2，`help status`。

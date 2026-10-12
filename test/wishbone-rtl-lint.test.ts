@@ -1,9 +1,10 @@
 // Generated Wishbone RTL must be clean under `verilator --lint-only -Wall`.
 // Skipped when verilator (and make, via verilatorTest) is not on PATH.
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	Bus,
 	Crossbar,
 	Master,
 	MasterGroup,
@@ -11,13 +12,59 @@ import {
 	SlaveGroup,
 	SlaveRegion,
 } from "../src/plugins/wishbone-bus/dsl.ts";
-import { emitBusSv } from "../src/plugins/wishbone-bus/emit.ts";
+import { busModuleName, emitBusSv } from "../src/plugins/wishbone-bus/emit.ts";
 import { generatePipeModule } from "../src/plugins/wishbone-bus/generate.ts";
 import { verilatorLint, verilatorTest } from "./fixtures/verilator.ts";
 
 const root = join(import.meta.dir, "..");
 const soc = join(root, "demo/soc/rtl/gen/plugins/wishbone");
 const hbm = join(root, "demo/hbm/rtl/gen/plugins/wishbone");
+
+verilatorTest(
+	"broadcast collectors are -Wall clean at every fabric shape",
+	async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw_bcast_lint_"));
+		try {
+			const pipeOut = await generatePipeModule(dir, true);
+			if (!pipeOut) throw new Error("wb_cfg_pipe was not written");
+			for (const depth of [0, 1, 2]) {
+				const slaves = [
+					SlaveRegion("a", "a", 0, Size(0x100), {
+						pipe: depth,
+						broadcastBy: ["all"],
+					}),
+					SlaveRegion("b", "b", 0x100, Size(0x100), {
+						pipe: depth,
+						broadcastBy: ["all"],
+					}),
+					SlaveRegion("win", "win", 0x200, Size(0x100), { broadcast: "all" }),
+				];
+				const masters = [Master("m", "m")];
+				const opts = { addrWidth: 16, masters, slaves };
+				const defs = [
+					Bus("dec", "decoder", opts),
+					Bus("ic", "interconnect", {
+						...opts,
+						masters: [...masters, Master("n", "n")],
+					}),
+					Crossbar("xb", "singleton crossbar", {
+						...opts,
+						slaves: [SlaveGroup("ctrl", slaves)],
+					}),
+				];
+				for (const def of defs) {
+					const top = busModuleName(def);
+					const sv = join(dir, `${top}.sv`);
+					writeFileSync(sv, emitBusSv(def));
+					lint(top, [sv, pipeOut]);
+				}
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	},
+	120_000,
+);
 
 function lint(top: string, sources: string[], args?: string[]): void {
 	const r = verilatorLint({ top, sources, args });

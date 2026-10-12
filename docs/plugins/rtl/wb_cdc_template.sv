@@ -3,18 +3,19 @@
 // wb_cdc — Wishbone Classic clock-domain crossing (single outstanding).
 //
 // Source face (s_*) is a WB slave in s_clk; target face (m_*) is a WB master
-// in the fabric clk. Four-phase req/ack handshake: only req / ack / alive cross
+// in the fabric clk. Four-phase req/ack plus recovery ready/drained controls cross
 // through wb_sync_cell; the request and response bundles are held stable while
 // the handshake is open and are captured by the synchronized control bit.
 //
-// Never hangs the source:
+// Error handling while the source clock runs:
 //   - fabric in reset (alive=0)            -> s_err at once
 //   - no ack within TIMEOUT s_clk cycles   -> s_err (TIMEOUT=0 disables)
-//   - after an abort, new requests get s_err until ack returns low
+//   - after an abort, new requests get s_err until recovery completes
 // A timeout drops the source request and returns s_err. It does not withdraw
 // a beat the target domain has already accepted: m_cyc stays high until m_ack,
 // so the write can still land after the source has seen s_err.
-// Writes are non-posted: s_ack means the leaf acknowledged.
+// CDC writes are non-posted: s_ack follows the target WB ACK. A posted pipe
+// behind that interface may acknowledge before the leaf completes the write.
 // TGA ports are always present. TW is at least 1 (the default).
 
 module wb_cdc #(
@@ -74,9 +75,25 @@ module wb_cdc #(
 
 	logic                   ack_q;
 	logic                   alive_q;
+	logic                   link_rst_n;
+	logic                   link_up_s;
+	logic                   recover_q, ready_t, drained_q, drained_s;
+	assign link_rst_n = s_rst_n & rst_n;
+	// Asynchronous assertion preserves even a target reset between source edges.
+	// The source FSM remains clocked during target reset so it can return ERR.
+	wb_sync_cell u_link_up_sync (
+		.clk(s_clk), .rst_n(link_rst_n), .d(1'b1), .q(link_up_s)
+	);
+	// Synchronize the inverse so reset inhibits target capture immediately.
+	wb_sync_cell u_ready_sync (
+		.clk(clk), .rst_n(link_rst_n), .d(!recover_q && link_up_s), .q(ready_t)
+	);
+	wb_sync_cell u_drained_sync (
+		.clk(s_clk), .rst_n(link_rst_n), .d(drained_q), .q(drained_s)
+	);
 
 	wb_sync_cell u_ack_sync (
-		.clk(s_clk), .rst_n(s_rst_n), .d(ack_q), .q(ack_s)
+		.clk(s_clk), .rst_n(link_rst_n), .d(ack_q), .q(ack_s)
 	);
 	wb_sync_cell u_alive_sync (
 		.clk(s_clk), .rst_n(s_rst_n), .d(alive_q), .q(alive_s)
@@ -87,7 +104,8 @@ module wb_cdc #(
 
 	always_ff @(posedge s_clk or negedge s_rst_n) begin
 		if (!s_rst_n) begin
-			s_state        <= S_IDLE;
+			s_state        <= S_DRAIN;
+			recover_q      <= 1'b1;
 			req_q          <= 1'b0;
 			s_ack          <= 1'b0;
 			s_err          <= 1'b0;
@@ -101,7 +119,12 @@ module wb_cdc #(
 		end else begin
 			s_ack <= 1'b0;
 			s_err <= 1'b0;
-			case (s_state)
+			if (!link_up_s) begin
+				req_q <= 1'b0;
+				recover_q <= 1'b1;
+				s_state <= S_DRAIN;
+				if (s_req_new) s_err <= 1'b1;
+			end else case (s_state)
 				S_IDLE: begin
 					if (s_req_new) begin
 						if (!alive_s || ack_s) begin
@@ -128,6 +151,7 @@ module wb_cdc #(
 					end else if (!alive_s || tmo_hit) begin
 						s_err   <= 1'b1;
 						req_q   <= 1'b0;
+						recover_q <= 1'b1;
 						s_state <= S_DRAIN;
 					end else if (TIMEOUT != 0) begin
 						tmo_cnt <= tmo_cnt + 1'b1;
@@ -137,6 +161,7 @@ module wb_cdc #(
 					if (!ack_s) begin
 						s_state <= S_IDLE;
 					end else if (!alive_s || tmo_hit) begin
+						recover_q <= 1'b1;
 						s_state <= S_DRAIN;
 					end else if (TIMEOUT != 0) begin
 						tmo_cnt <= tmo_cnt + 1'b1;
@@ -145,7 +170,10 @@ module wb_cdc #(
 				default: begin
 					// Aborted: refuse new work until the target handshake closes.
 					if (s_req_new) s_err <= 1'b1;
-					if (!ack_s && alive_s) s_state <= S_IDLE;
+					if (recover_q && drained_s) recover_q <= 1'b0;
+					if (!recover_q && !drained_s && !ack_s && alive_s) begin
+						s_state <= S_IDLE;
+					end
 				end
 			endcase
 		end
@@ -162,7 +190,7 @@ module wb_cdc #(
 	logic       req_t;
 
 	wb_sync_cell u_req_sync (
-		.clk(clk), .rst_n(rst_n), .d(req_q), .q(req_t)
+		.clk(clk), .rst_n(link_rst_n), .d(req_q), .q(req_t)
 	);
 
 	always_ff @(posedge clk or negedge rst_n) begin
@@ -170,6 +198,7 @@ module wb_cdc #(
 			t_state        <= T_IDLE;
 			alive_q        <= 1'b0;
 			ack_q          <= 1'b0;
+			drained_q      <= 1'b0;
 			m_cyc          <= 1'b0;
 			m_stb          <= 1'b0;
 			m_we           <= 1'b0;
@@ -180,9 +209,12 @@ module wb_cdc #(
 			rsp_bundle_dat <= 32'd0;
 		end else begin
 			alive_q <= 1'b1;
+			// No response is required for a request that vanished before capture.
+			// A captured bus beat must retire before recovery can be acknowledged.
+			drained_q <= !ready_t && !req_t && (t_state == T_IDLE);
 			case (t_state)
 				T_IDLE: begin
-					if (req_t) begin
+					if (req_t && ready_t) begin
 						m_we    <= req_bundle_we;
 						m_adr   <= req_bundle_adr;
 						m_dat   <= req_bundle_dat;

@@ -92,6 +92,9 @@ Parallel (does not block connect)
     trunk sheet; shadow as comments; Excel documents leaf cell offset;
     address map + TGA/shadow tag packed in the same Excel / C / uvm_reg / SV sv_reg set;
     DAT=32 ADR=byte; write posted at fabric slave PIPE / read blocks to leaf;
+    PIPE reads cannot cancel: hold CYC/STB and controls until ACK (simulation checked).
+    CDC recovery uses an explicit target drain handshake before accepting retries.
+    JTAG PDL is Level-0 fixed-wait checking, not dynamic busy polling.
     RWE read_write_block default false (posted fabric: true risks bus lock);
     WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
     SEL byte-masked writes (RW/RWW RMW, W1C/W1P masked); RWE ext_<field>_wstrb;
@@ -148,6 +151,9 @@ Parallel (does not block connect)
     bitwise OR of subscriber DAT (any-1 status readback);
     subscribers of one broadcast must share pipe depth;
     raw Slave cannot broadcast; ACK waits for every selected subscriber;
+    broadcast records each branch completion, suppresses completed strobes,
+    and retains each read response until the final OR response;
+    slave-group names and per-decoder slot names must remain unique in uppercase;
     Slave(name, desc, base, mask, ...) is a raw match mask: the base must lie
     inside the window, ignored bits are a contiguous low field, and the window
     is checked for overlap with every other slave;

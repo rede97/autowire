@@ -471,7 +471,10 @@ function emitDecoderBody(def: BusDef): string[] {
 	} else {
 		out.push("\tassign m_dat_o = rsp_dat;", "\tassign m_ack_o = rsp_ack;", "");
 	}
-	const clkUsed = piped || slaves.some((s) => (s.pipe ?? 0) > 0);
+	const clkUsed =
+		piped ||
+		slaves.some((s) => (s.pipe ?? 0) > 0) ||
+		def.slaves.some((s) => s.broadcast);
 	out.push(
 		...emitUnusedSink("dec", [
 			...(clkUsed ? [] : ["clk", "rst_n"]),
@@ -1127,7 +1130,8 @@ function emitCrossbarBody(def: BusDef): string[] {
 		masters.some((m) => (m.pipe ?? 0) > 0) ||
 		def.slaves.some((s) => (s.pipe ?? 0) > 0);
 	const proto: string[] = [];
-	if (!hasPipe && !hasArbiter) proto.push("clk", "rst_n");
+	if (!hasPipe && !hasArbiter && !def.slaves.some((s) => s.broadcast))
+		proto.push("clk", "rst_n");
 	if (!hasArbiter) proto.push("rb_grant_en");
 	out.push(...emitUnusedSink("xb", proto));
 	out.push("");
@@ -1191,6 +1195,7 @@ function emitDecodeAndSlaves(
 			`\tassign ${s.broadcast}_off = ${adr} - ${aw}'h${hex(s.base, aw)};`,
 			"",
 		);
+		out.push(...emitBroadcastCollector(s.broadcast, slaves, gPrefix));
 	}
 
 	out.push(
@@ -1250,6 +1255,7 @@ function emitSlaveCombo(
 		bcast.length > 0
 			? `(${slot.trim()} || ${bcast.map((name) => `broadcast_${name}`).join(" || ")})`
 			: slot.trim();
+	const strobeHit = slaveStrobeHit(s, def, slot.trim());
 	const offset =
 		bcast.length === 0
 			? adr
@@ -1274,7 +1280,7 @@ function emitSlaveCombo(
 	}
 	out.push(
 		`\tassign ${port("i_wb_cyc")} = ${hit} & ${gPrefix}cyc;`,
-		`\tassign ${port("i_wb_stb")} = ${hit} & ${gPrefix}stb;`,
+		`\tassign ${port("i_wb_stb")} = ${strobeHit} & ${gPrefix}stb;`,
 		`\tassign ${port("i_wb_we ")} = ${gPrefix}we;`,
 	);
 	return out;
@@ -1384,6 +1390,7 @@ function emitSlavePipe(
 		bcast.length > 0
 			? `(${slot} || ${bcast.map((name) => `broadcast_${name}`).join(" || ")})`
 			: slot;
+	const strobeHit = slaveStrobeHit(s, def, slot);
 	const offset =
 		bcast.length === 0
 			? adr
@@ -1412,7 +1419,7 @@ function emitSlavePipe(
 		"\t\t.clk(clk),",
 		"\t\t.rst_n(rst_n),",
 		`\t\t.m_cyc(${hit} & ${gPrefix}cyc),`,
-		`\t\t.m_stb(${hit} & ${gPrefix}stb),`,
+		`\t\t.m_stb(${strobeHit} & ${gPrefix}stb),`,
 		`\t\t.m_we(${gPrefix}we),`,
 		`\t\t.m_adr(${winAdr}),`,
 		`\t\t.m_dat(${gPrefix}wdata),`,
@@ -1448,6 +1455,77 @@ function emitSlavePipe(
 	return out;
 }
 
+function broadcastMembers(slaves: readonly WbSlave[], name: string): WbSlave[] {
+	return slaves.filter((s) => s.broadcastBy?.includes(name));
+}
+
+function slaveResponse(s: WbSlave, signal: "ack" | "rdat"): string {
+	return (s.pipe ?? 0) > 0
+		? `${s.name}_pipe_${signal}`
+		: wb(s.name, signal === "ack" ? "o_wb_ack" : "o_wb_dat");
+}
+
+/** A completed broadcast branch must not accept the same held beat again. */
+function slaveStrobeHit(s: WbSlave, def: BusDef, slot: string): string {
+	const terms = (s.broadcastBy ?? []).map((name) => {
+		const i = broadcastMembers(def.slaves, name).findIndex(
+			(member) => member.name === s.name,
+		);
+		return `(broadcast_${name} & !broadcast_${name}_done[${i}])`;
+	});
+	return terms.length > 0 ? `(${[slot, ...terms].join(" || ")})` : slot;
+}
+
+/** Collect each branch once; earlier read replies survive until the last ACK. */
+function emitBroadcastCollector(
+	name: string,
+	slaves: readonly WbSlave[],
+	gPrefix: string,
+): string[] {
+	const members = broadcastMembers(slaves, name);
+	if (members.length === 0) return [];
+	const p = `broadcast_${name}`;
+	const n = members.length;
+	const out = [
+		`\tlogic [${n - 1}:0] ${p}_done;`,
+		`\tlogic [${n - 1}:0] ${p}_acks;`,
+		`\tlogic [31:0] ${p}_saved [0:${n - 1}];`,
+		`\tlogic ${p}_active, ${p}_ack;`,
+		`\tlogic [31:0] ${p}_rdat;`,
+		`\tassign ${p}_active = ${p} & ${gPrefix}cyc & ${gPrefix}stb;`,
+		`\tassign ${p}_acks = {${[...members]
+			.reverse()
+			.map((s) => slaveResponse(s, "ack"))
+			.join(", ")}};`,
+		`\tassign ${p}_ack = ${p}_active & (&(${p}_done | ${p}_acks));`,
+	];
+	pushOrAssign(
+		out,
+		`${p}_rdat`,
+		members.map(
+			(s, i) =>
+				`(${p}_done[${i}] ? ${p}_saved[${i}] : ${slaveResponse(s, "rdat")})`,
+		),
+	);
+	out.push(
+		"\talways_ff @(posedge clk or negedge rst_n) begin",
+		"\t\tif (!rst_n) begin",
+		`\t\t\t${p}_done <= '0;`,
+		...members.map((_, i) => `\t\t\t${p}_saved[${i}] <= '0;`),
+		"\t\tend else begin",
+		`\t\t\tif (!${p}_active || ${p}_ack) ${p}_done <= '0;`,
+		`\t\t\telse ${p}_done <= ${p}_done | ${p}_acks;`,
+	);
+	for (let i = 0; i < n; i++) {
+		out.push(
+			`\t\t\tif (${p}_active && !${gPrefix}we && !${p}_done[${i}] && ${p}_acks[${i}])`,
+			`\t\t\t\t${p}_saved[${i}] <= ${slaveResponse(members[i] as WbSlave, "rdat")};`,
+		);
+	}
+	out.push("\t\tend", "\tend", "");
+	return out;
+}
+
 /** Response OR-reduction (slot_sel is one-hot; unmapped ACKs immediately). */
 function emitResponseMux(
 	slaves: readonly WbSlave[],
@@ -1472,20 +1550,14 @@ function emitResponseMux(
 			: `({32{${slotSel(s.name, slotVec)}}} & ${wb(s.name, "o_wb_dat")})`,
 	);
 	// Broadcast read: OR every subscriber's read data (any-1 status readback).
-	for (const [name, members] of groups) {
-		const terms = members.map((s) =>
-			(s.pipe ?? 0) > 0 ? `${s.name}_pipe_rdat` : wb(s.name, "o_wb_dat"),
-		);
-		datTerms.push(`({32{broadcast_${name}}} & (${terms.join(" | ")}))`);
+	for (const name of groups.keys()) {
+		datTerms.push(`({32{broadcast_${name}}} & broadcast_${name}_rdat)`);
 	}
 	pushOrAssign(out, dat, datTerms);
-	const broadcastAcks = [...groups.entries()].map(([name, members]) => {
-		const terms = members.map((s) =>
-			(s.pipe ?? 0) > 0 ? `${s.name}_pipe_ack` : wb(s.name, "o_wb_ack"),
-		);
-		return `(broadcast_${name} & ${terms.join(" & ")})`;
-	});
-	// A broadcast window hit is not "unmapped": its ACK is the subscriber AND.
+	const broadcastAcks = [...groups.keys()].map(
+		(name) => `broadcast_${name}_ack`,
+	);
+	// A broadcast ACK includes previously completed branches, not only live ACKs.
 	const bcastAny = [...groups.keys()].map((name) => `broadcast_${name}`);
 	pushOrAssign(out, ack, [
 		bcastAny.length > 0
