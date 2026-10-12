@@ -2,7 +2,7 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
-## [Unreleased]
+## [2.5.0] - 2026-10-12
 
 - Wishbone 总线新增分组 crossbar：`Crossbar(name, desc, { masters: [Master | MasterGroup(...)], slaves: [slave | SlaveGroup(...)], addrWidth, tagWidth?, tags? })`。master 组各有一个 arbiter（组内互斥），slave 组各有一个 decoder，不同 (master 组, slave 组) 对并行推进；裸 master / slave 即单成员组。返回值仍是拍平的 `BusDef`（多出 `crossbar` 组元数据），口名、tag、pipe、广播、`.uplink()` 级联、`<bus>_bus_cfg` wrapper 与 C/UVM/SV/Excel 软件图全部沿用；产物 `<bus>_crossbar.sv`，端口与 interconnect 同形（含 `rb_grant_en`）。广播窗与订阅者必须同在一个 slave 组。经典 `Bus()` 的语义与生成产物逐字节不变。文档 `docs/plugins/wishbone-bus.md` §4.2，`help status`。
 - 修复 interconnect 中 piped master（`Master(..., { pipe: N })`）携带继承 tag 域时，`g_up_<domain>` 引用未声明的 `m<i>_tga_<domain>_q`；现在从 pipe 打包的 `m<i>_tga_q` 正确切片。
