@@ -2,12 +2,9 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
-## [Unreleased]
-
-- `[plugins.wishbone]` 新增可选 `regfile_dir` / `bus_dir`，分别覆盖 regfile 与 bus 的 RTL 输出目录；省略时仍写入 `plugins_dir/wishbone/{regfile,bus}`。
-
 ## [2.5.1] - 2026-10-12
 
+- `[plugins.wishbone]` 新增可选 `regfile_dir` / `bus_dir`，分别覆盖 regfile 与 bus 的 RTL 输出目录；省略时仍写入 `plugins_dir/wishbone/{regfile,bus}`。
 - 修复 CDC 超时恢复过早接收新请求、可能将旧响应交给新请求的问题：增加目标排空确认握手，覆盖停钟前未捕获请求、单侧复位及复位期间 ERR。
 - 明确 PIPE 读请求不可取消，增加仅仿真使用的请求保持检查；新增 CDC 时钟比例/恢复测试和 PIPE 违规控制测试。
 - 纠正生成 JTAG PDL 的能力说明：Level-0 固定等待后检查状态，不提供自动 busy 轮询。
