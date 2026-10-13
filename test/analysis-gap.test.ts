@@ -15,6 +15,8 @@ function makeWorkspace(filelist: string[]): {
 		root: string;
 		filelists: string[];
 		pluginsDir: string;
+		wishboneRegfileDir: string;
+		wishboneBusDir: string;
 		connectDir: string;
 		simDir: string;
 	};
@@ -30,6 +32,8 @@ function makeWorkspace(filelist: string[]): {
 			root,
 			filelists: ["rtl/soc.f"],
 			pluginsDir: join(root, "rtl/gen/plugins"),
+			wishboneRegfileDir: join(root, "rtl/gen/plugins/wishbone/regfile"),
+			wishboneBusDir: join(root, "rtl/gen/plugins/wishbone/bus"),
 			connectDir: join(root, "rtl/gen/connect"),
 			simDir: join(root, "rtl/gen/sim"),
 		},

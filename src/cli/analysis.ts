@@ -28,7 +28,13 @@ interface FilelistDumpEntry {
 
 type DumpDirs = Pick<
 	WorkspaceConfig,
-	"root" | "filelists" | "pluginsDir" | "connectDir" | "simDir"
+	| "root"
+	| "filelists"
+	| "pluginsDir"
+	| "wishboneRegfileDir"
+	| "wishboneBusDir"
+	| "connectDir"
+	| "simDir"
 >;
 
 /** Filelist entries that fall under a [workspace.dump] directory. */
@@ -43,6 +49,8 @@ function scanFilelistDumpEntries(cfg: DumpDirs): FilelistDumpEntry[] {
 			return rel === dir || rel.startsWith(`${dir}/`);
 		};
 		if (under(cfg.pluginsDir)) return "plugins";
+		if (under(cfg.wishboneRegfileDir) || under(cfg.wishboneBusDir))
+			return "plugins";
 		if (under(cfg.connectDir)) return "connect";
 		if (under(cfg.simDir)) return "sim";
 		return null;

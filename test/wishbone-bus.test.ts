@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sd_sha } from "../demo/soc/sot/wb_bus_sd_sha.ts";
@@ -112,7 +112,39 @@ describe("wishbone-bus", () => {
 		expect(present("soc_wb_map.h")).toBe(true);
 		expect(present("sd_sha_map.h")).toBe(true);
 		expect(present("ral_block_soc_wb.sv")).toBe(true);
-	}, 60_000);
+	});
+
+	test("configured RTL dirs split regfile leaves from bus fabric", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw-rtl-dirs-"));
+		mkdirSync(join(dir, "sot"), { recursive: true });
+		writeFileSync(
+			join(dir, "sot/wb.ts"),
+			`export { smoke } from ${JSON.stringify(join(import.meta.dir, "../demo/soc/sot/wb_reg_smoke.ts"))};\nexport { sd_sha } from ${JSON.stringify(join(import.meta.dir, "../demo/soc/sot/wb_bus_sd_sha.ts"))};\n`,
+		);
+		writeFileSync(
+			join(dir, "autowire.toml"),
+			`[workspace]\nname = "split"\n[workspace.dump]\nplugins_dir = "gen/plugins"\n[wishbone.one]\nts = "sot/wb.ts"\n[plugins.wishbone]\nbus_dir = "rtl/fabric"\n`,
+		);
+		const ws = await loadWorkspace(join(dir, "autowire.toml"));
+		const paths = (await generateAll(ws)).map((p) => p.replaceAll("\\", "/"));
+		expect(
+			paths.some((p) =>
+				p.endsWith("gen/plugins/wishbone/regfile/smoke_regfile.sv"),
+			),
+		).toBe(true);
+		expect(
+			paths.some((p) => p.endsWith("rtl/fabric/sd_sha_interconnect.sv")),
+		).toBe(true);
+		expect(paths.some((p) => p.endsWith("rtl/fabric/sd_sha_bus_cfg.sv"))).toBe(
+			true,
+		);
+		expect(paths.some((p) => p.endsWith("rtl/fabric/wb_cfg_pipe.sv"))).toBe(
+			true,
+		);
+		expect(paths.some((p) => p.includes("gen/plugins/wishbone/bus/"))).toBe(
+			false,
+		);
+	});
 
 	test("zero masters also decoder", () => {
 		const def = Bus("solo", "no masters listed", {

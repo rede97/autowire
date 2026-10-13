@@ -288,7 +288,7 @@ export async function generateAll(
 	const fabricNames = new Set<string>();
 	const allBuses = flattenBuses(buses);
 	if (allBuses.length > 0) {
-		const outDir = join(ws.pluginsDir, PLUGIN_ID, BUS_DIR);
+		const outDir = ws.wishboneBusDir;
 		await mkdir(outDir, { recursive: true });
 		const pipe = await generatePipeModule(outDir, force);
 		if (pipe) paths.push(pipe);

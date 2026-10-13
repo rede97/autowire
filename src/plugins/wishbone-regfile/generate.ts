@@ -55,7 +55,7 @@ export async function generateDef(
 ): Promise<string[]> {
 	const laid = layoutRegfile(def);
 	const paths: string[] = [];
-	const svDir = join(ws.pluginsDir, PLUGIN_ID, REGFILE_DIR);
+	const svDir = ws.wishboneRegfileDir;
 	await mkdir(svDir, { recursive: true });
 	const svPath = join(svDir, `${def.name.toLowerCase()}_regfile.sv`);
 	if (await writeIfChanged(svPath, emitRegfileSv(laid), force))

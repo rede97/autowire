@@ -22,6 +22,8 @@ Shared by deps / web / cli for the RTL universe:
                         and broadcast windows); uvm= uvm_reg dir (regfile/ + bus/ + ral_<name>.sv; model only, no RALF);
                         sv_reg= SV package dir (regfile/<sheet>_pkg.sv field LSB/WIDTH/MASK/RESET + bus/<bus>_map_pkg.sv
                         BASE/OFFSET/abs addr + <name>_pkg.sv umbrella; package+localparam for non-UVM checks)
+                        optional RTL overrides (workspace-relative; omit keeps the default):
+                        regfile_dir=  bus_dir=  distinct, and not overlapping connect_dir/sim_dir
   [workspace.dump]      product dirs (docs §4.0; legacy dir= still accepted with warn):
                         connect_dir="gen/connect"  DE wrappers
                         sim_dir="gen/sim"          DV TB tops

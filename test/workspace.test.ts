@@ -33,6 +33,10 @@ describe("workspace", () => {
 		expect(cfg.connectDir).toBe(join(dir, "rtl/gen/connect"));
 		expect(cfg.simDir).toBe(join(dir, "rtl/gen/sim"));
 		expect(cfg.pluginsDir).toBe(join(dir, "rtl/gen/plugins"));
+		expect(cfg.wishboneRegfileDir).toBe(
+			join(dir, "rtl/gen/plugins/wishbone/regfile"),
+		);
+		expect(cfg.wishboneBusDir).toBe(join(dir, "rtl/gen/plugins/wishbone/bus"));
 		expect(cfg.simUnits).toEqual([]);
 		expect(cfg.wishboneExcelExport).toBeNull();
 		expect(cfg.wishboneCExport).toBeNull();
@@ -229,6 +233,30 @@ c = ""
 		await expect(loadWorkspace(join(dir, "autowire.toml"))).rejects.toThrow(
 			"[plugins.wishbone] c",
 		);
+	});
+
+	test("[plugins.wishbone] RTL dirs override independently and reject overlap", async () => {
+		const dir = tempWorkspace(`
+[plugins.wishbone]
+regfile_dir = "rtl/leaves"
+`);
+		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
+		expect(cfg.wishboneRegfileDir).toBe(join(dir, "rtl/leaves"));
+		expect(cfg.wishboneBusDir).toBe(join(dir, "gen/plugins/wishbone/bus"));
+
+		const bad = [
+			`regfile_dir = "C:/abs"`,
+			`regfile_dir = ""`,
+			`regfile_dir = "same"\nbus_dir = "same"`,
+			`regfile_dir = "gen/connect"`,
+			`bus_dir = "gen/sim/nested"`,
+		];
+		for (const body of bad) {
+			const badDir = tempWorkspace(`[plugins.wishbone]\n${body}\n`);
+			await expect(
+				loadWorkspace(join(badDir, "autowire.toml")),
+			).rejects.toThrow(/regfile_dir|bus_dir|overlaps/);
+		}
 	});
 
 	test("[regfile.*] is rejected in favor of [wishbone.*]", async () => {

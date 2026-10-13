@@ -46,6 +46,12 @@ export interface WorkspaceConfig {
 	simDir: string;
 	/** Plugin generate root ([dump] plugins_dir, default gen/plugins) */
 	pluginsDir: string;
+	/** Wishbone regfile RTL dir ([plugins.wishbone] regfile_dir).
+	 *  Default plugins_dir/wishbone/regfile. */
+	wishboneRegfileDir: string;
+	/** Wishbone bus RTL dir ([plugins.wishbone] bus_dir).
+	 *  Default plugins_dir/wishbone/bus. */
+	wishboneBusDir: string;
 	/** Param style ([style] param_inline, default true): inline simple overrides
 	 *  into the instance; false folds every override into Mod__Inst__Param. */
 	styleParamInline: boolean;
@@ -433,6 +439,23 @@ export async function loadWorkspace(
 		);
 	}
 	const pluginsWishbone = isObj(plugins.wishbone) ? plugins.wishbone : {};
+	const pluginsDirAbs = rel(pluginsDirRel);
+	const wishboneRegfileDir = wishboneRtlDir(
+		pluginsWishbone,
+		"regfile_dir",
+		join(pluginsDirAbs, "wishbone", "regfile"),
+		rel,
+	);
+	const wishboneBusDir = wishboneRtlDir(
+		pluginsWishbone,
+		"bus_dir",
+		join(pluginsDirAbs, "wishbone", "bus"),
+		rel,
+	);
+	assertDistinctWishboneDirs(wishboneRegfileDir, wishboneBusDir, [
+		rel(connectDirRel),
+		rel(simDirRel),
+	]);
 	const wishboneExcelExport = optPluginPath(pluginsWishbone, "export", rel);
 	const wishboneCExport = optPluginPath(pluginsWishbone, "c", rel);
 	const wishboneUvmExport = optPluginPath(pluginsWishbone, "uvm", rel);
@@ -462,7 +485,9 @@ export async function loadWorkspace(
 		dumpDir: rel(legacyDir ?? connectDirRel),
 		connectDir: rel(connectDirRel),
 		simDir: rel(simDirRel),
-		pluginsDir: rel(pluginsDirRel),
+		pluginsDir: pluginsDirAbs,
+		wishboneRegfileDir,
+		wishboneBusDir,
 		styleParamInline: style.param_inline !== false,
 		stylePortAlign: style.port_align === true,
 		styleParamAlign: style.param_align === true,
@@ -498,6 +523,62 @@ function optPluginPath(
 		);
 	}
 	return rel(v);
+}
+
+/** Optional RTL sink. Omitted keeps the historical plugins_dir location. */
+function wishboneRtlDir(
+	table: Record<string, unknown>,
+	key: string,
+	fallback: string,
+	rel: (p: string) => string,
+): string {
+	const v = table[key];
+	if (v === undefined) return fallback;
+	if (typeof v !== "string" || v.length === 0) {
+		throw new Error(
+			`autowire.toml: [plugins.wishbone] ${key} must be a non-empty workspace-relative path`,
+		);
+	}
+	if (isAbsolute(v) || /^[A-Za-z]:[\\/]/.test(v)) {
+		throw new Error(
+			`autowire.toml: [plugins.wishbone] ${key} must be workspace-relative, not absolute`,
+		);
+	}
+	return rel(v);
+}
+
+function assertDistinctWishboneDirs(
+	regfileDir: string,
+	busDir: string,
+	reserved: readonly string[],
+): void {
+	const norm = (p: string) =>
+		resolve(p)
+			.replace(/[\\/]+/g, "/")
+			.replace(/\/$/, "")
+			.toLowerCase();
+	const same = (a: string, b: string) => {
+		const left = norm(a);
+		const right = norm(b);
+		return (
+			left === right ||
+			left.startsWith(`${right}/`) ||
+			right.startsWith(`${left}/`)
+		);
+	};
+	if (same(regfileDir, busDir)) {
+		throw new Error(
+			"autowire.toml: [plugins.wishbone] regfile_dir and bus_dir must be different directories",
+		);
+	}
+	for (const dir of [regfileDir, busDir]) {
+		const hit = reserved.find((other) => same(dir, other));
+		if (hit) {
+			throw new Error(
+				"autowire.toml: [plugins.wishbone] RTL dir overlaps connect_dir or sim_dir",
+			);
+		}
+	}
 }
 
 function parseWishboneSources(

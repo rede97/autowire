@@ -70,7 +70,8 @@ Parallel (does not block connect)
     a pass-through child is not split again; broadcast windows are addresses);
     git-tracked showcase fw/gen/wishbone (do not delete);
     generate: listed + attached-leaf SV, then fabric/wrapper;
-    RTL → plugins_dir/wishbone/regfile/ (leaves) and plugins_dir/wishbone/bus/ (fabric);
+    RTL → plugins_dir/wishbone/regfile/ (leaves) and plugins_dir/wishbone/bus/ (fabric),
+    or [plugins.wishbone] regfile_dir / bus_dir when set;
     demo/soc: one sha256_regfile RTL, one hang per sd_sha channel via SlaveRegfile;
     C sha256.h; smoke identity-match (id = RegfileDef.name);
     firmware uses generated cell unions; soc_map.h aliases software map macros;
