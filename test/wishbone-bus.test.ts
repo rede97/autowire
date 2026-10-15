@@ -29,6 +29,7 @@ import {
 	emitBusMapUvm,
 } from "../src/plugins/wishbone-bus/emit-map.ts";
 import { loadWorkspace } from "../src/workspace.ts";
+import { smoke_rw } from "./fixtures/wb_reg_access.ts";
 
 const ALIGNED: WrapperStyle = {
 	portAlign: true,
@@ -684,5 +685,48 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(sv).toMatch(/\.m_adr_i\s*\(\s*m_adr_i\s*\)/);
 		expect(sv).not.toMatch(/\.m_adr_i\s*\(\s*i_wb_adr\s*\)/);
 		expect(sv).not.toMatch(/^\s*(input|output).*\bi_wb_adr\b/m);
+	});
+
+	test("attached regfile ADR: slice a wider fabric, zero-fill a narrower one, reject aliasing windows", () => {
+		// Fabric ADR is window-relative (adr & ~mask), so the bits dropped or
+		// filled are always 0; a window wider than the leaf ADR would alias.
+		const wide = Bus("wide_fab", "16-bit fabric, 8-bit leaf", {
+			addrWidth: 16,
+			masters: [Master("cfg", "config")],
+			slaves: [SlaveRegfile(smoke_rw, 0x100)],
+		});
+		expect(emitBusSystemSv(wide, ALIGNED) ?? "").toMatch(
+			/\.smoke_rw_i_wb_adr\s*\(\s*smoke_rw_i_wb_adr\[7:0\]\s*\)/,
+		);
+		const narrow = Bus("narrow_fab", "12-bit fabric, 32-bit leaf", {
+			addrWidth: 12,
+			masters: [Master("cfg", "config")],
+			slaves: [SlaveRegfile(sha256, 0x40)],
+		});
+		expect(emitBusSystemSv(narrow, ALIGNED) ?? "").toMatch(
+			/\.sha256_i_wb_adr\s*\(\s*\{20'd0, sha256_i_wb_adr\}\s*\)/,
+		);
+		const same = Bus("same_fab", "8-bit fabric, 8-bit leaf", {
+			addrWidth: 8,
+			masters: [Master("cfg", "config")],
+			slaves: [SlaveRegfile(smoke_rw, 0x0)],
+		});
+		expect(emitBusSystemSv(same, ALIGNED) ?? "").toMatch(
+			/\.smoke_rw_i_wb_adr\s*\(\s*smoke_rw_i_wb_adr\s*\)/,
+		);
+		Bus("fits", "256 B window = 8 forwarded bits", {
+			addrWidth: 16,
+			masters: [Master("cfg", "config")],
+			slaves: [SlaveRegfile(smoke_rw, 0x100, { size: Size(0x100) })],
+		});
+		expect(() =>
+			Bus("alias", "512 B window into an 8-bit leaf", {
+				addrWidth: 16,
+				masters: [Master("cfg", "config")],
+				slaves: [SlaveRegfile(smoke_rw, 0x200, { size: Size(0x200) })],
+			}),
+		).toThrow(
+			/forwards 9 address bits into "smoke_rw", but regfile "smoke_rw" addrWidth is 8/,
+		);
 	});
 });

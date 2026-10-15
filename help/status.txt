@@ -109,7 +109,10 @@ Parallel (does not block connect)
       one source per domain per path;
       Bus addrWidth is required (the allocated address space, no default 32);
       a child addrWidth may not exceed its parent, nor the bits the parent
-      window actually forwards;
+      window actually forwards; an attached regfile addrWidth may not be
+      smaller than the bits its window forwards (wider is fine);
+      <bus>_bus_cfg slices (fabric wider) or zero-fills (fabric narrower)
+      the regfile ADR to the leaf addrWidth;
       one TagFromAddr per decoder, sitting directly above the slave windows
       and not past addrWidth-1 (bits above the tag and inside addrWidth are
       discarded; decode keeps only the low bits; no hole, no re-pack);

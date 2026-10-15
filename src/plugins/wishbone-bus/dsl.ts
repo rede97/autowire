@@ -1361,21 +1361,30 @@ function assertAddrTagsCut(
 	}
 }
 
-/** A child fabric sees only the bits its parent window forwards. */
+/**
+ * A child fabric sees only the bits its parent window forwards; an attached
+ * regfile must see every bit its window forwards, or the wrapper's ADR slice
+ * would alias the window onto the leaf.
+ */
 function assertChildAddrWidth(
 	bus: string,
 	addrWidth: number,
 	slaves: readonly WbSlave[],
 ): void {
 	for (const s of slaves) {
+		const win = windowBytes(s.mask, addrWidth);
+		const forwarded = win <= 1 ? 1 : Math.ceil(Math.log2(win));
+		if (s.regfile && forwarded > s.regfile.addr_width) {
+			throw new Error(
+				`wishbone-bus: bus ${bus} forwards ${forwarded} address bits into "${s.name}", but regfile "${s.regfile.name}" addrWidth is ${s.regfile.addr_width}`,
+			);
+		}
 		if (!s.bus) continue;
 		if (s.bus.addr_width > addrWidth) {
 			throw new Error(
 				`wishbone-bus: bus ${bus} child "${s.bus.name}" addrWidth ${s.bus.addr_width} exceeds parent addrWidth ${addrWidth}`,
 			);
 		}
-		const win = windowBytes(s.mask, addrWidth);
-		const forwarded = win <= 1 ? 1 : Math.ceil(Math.log2(win));
 		if (s.bus.addr_width > forwarded) {
 			throw new Error(
 				`wishbone-bus: bus ${bus} forwards ${forwarded} address bits into "${s.name}", but child "${s.bus.name}" addrWidth is ${s.bus.addr_width}`,

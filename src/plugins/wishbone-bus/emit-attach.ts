@@ -217,12 +217,31 @@ function wrapperPorts(def: BusDef): Array<{
 	return ports;
 }
 
+/**
+ * Fabric ADR into the leaf ADR port. The fabric drives `adr & ~mask`, so
+ * every bit above the window is 0: a narrower leaf takes the low bits, a
+ * wider leaf is zero-filled. `Bus()` guarantees the window fits the leaf.
+ */
+function leafAdr(
+	net: string,
+	fabricAw: number,
+	leafAw: number,
+): { net: string; part: string; type: string } {
+	if (fabricAw > leafAw) return { net, part: `${leafAw - 1}:0`, type: "" };
+	if (fabricAw < leafAw) {
+		return { net: `{${leafAw - fabricAw}'d0, ${net}}`, part: "", type: "raw" };
+	}
+	return { net, part: "", type: "" };
+}
+
 function leafPairs(
 	def: BusDef,
 	slave: WbSlave,
 ): Array<{
 	port: string;
 	net: string;
+	part: string;
+	type: string;
 	dir: string;
 	packed: string;
 	unpacked: string;
@@ -238,12 +257,20 @@ function leafPairs(
 	const pairs: Array<{
 		port: string;
 		net: string;
+		part: string;
+		type: string;
 		dir: string;
 		packed: string;
 		unpacked: string;
 	}> = [];
 	for (const p of ports) {
-		const meta = { dir: p.dir, packed: p.packed, unpacked: p.unpacked ?? "" };
+		const meta = {
+			part: "",
+			type: "",
+			dir: p.dir,
+			packed: p.packed,
+			unpacked: p.unpacked ?? "",
+		};
 		if (p.name === "i_clk") {
 			pairs.push({ port: p.name, net: "clk", ...meta });
 			continue;
@@ -261,7 +288,14 @@ function leafPairs(
 					`wishbone-bus: wrapper ${slave.name} missing fabric port for ${p.name}`,
 				);
 			}
-			pairs.push({ port: p.name, net: fabric.name, ...meta });
+			const adr = p.name === `${table}_i_wb_adr`;
+			pairs.push({
+				port: p.name,
+				...meta,
+				...(adr
+					? leafAdr(fabric.name, def.addr_width, rf.addr_width)
+					: { net: fabric.name }),
+			});
 			continue;
 		}
 		pairs.push({
@@ -283,8 +317,8 @@ function leafInst(def: BusDef, slave: WbSlave): RenderInst | null {
 		connects: leafPairs(def, slave).map((x) => ({
 			port: x.port,
 			to: x.net,
-			part: "",
-			type: "",
+			part: x.part,
+			type: x.type,
 			dir: x.dir,
 			portPacked: x.packed,
 			portUnpacked: x.unpacked,
