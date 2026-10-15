@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.5.2] - 2026-10-15
+
+- 修复 Type-A wrapper `<bus>_bus_cfg` 把 fabric 全宽 ADR 直接接到挂接 regfile 的 `i_wb_adr`、两者 `addrWidth` 不同时产生端口位宽不匹配的问题（issue #1）。fabric 下发的是窗内 offset（`adr & ~mask`），窗口以上全 0：fabric 更宽 → 接 `net[M-1:0]`；fabric 更窄 → 接 `{(M-N)'d0, net}`。demo/soc `sd_sha_bus_cfg`、demo/hbm `hbm_ch_bus_cfg` 随之重新生成。
+- `Bus()` 构造期拒绝窗口转发位数大于挂接 regfile `addrWidth` 的配置（截断会把窗口别名到叶子上）。regfile 比窗口宽仍然允许。
+
 ## [2.5.1] - 2026-10-12
 
 - `[plugins.wishbone]` 新增可选 `regfile_dir` / `bus_dir`，分别覆盖 regfile 与 bus 的 RTL 输出目录；省略时仍写入 `plugins_dir/wishbone/{regfile,bus}`。
