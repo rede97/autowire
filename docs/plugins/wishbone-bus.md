@@ -18,9 +18,10 @@
 ```
 
 - **默认拓扑必须是树**（bridge + arbiter + decoder），**禁止**把全互连 matrix 当默认生成物。需要并行时显式写 `Crossbar()`（§4.2）：按组交叉，组内仍是树。  
-- **单 outstanding**（与 §2 一致）；配置流量稀，不靠 crossbar 换吞吐——分组 crossbar 解决的是 **互不相干的 master 不互相阻塞**，不是带宽。  
+- **WB Classic 逐笔握手**（与 §2 一致）；CDC / PIPE 可排队 posted 写，读阻塞。配置流量不靠 crossbar 换吞吐——分组 crossbar 解决的是 **互不相干的 master 不互相阻塞**，不是带宽。
 - **SoC 级系统互联**（AXI/NoC/商业 fabric）**禁止**纳入本插件范围——交给专业 interconnect EDA；本插件只在 IP 边界提供 WB（或可选 APB）口以便挂接。  
 - IP 内部 **没有必要**上商业 NoC/matrix；一层 arb + 地址树即可。
+- 异步 master 的 `wb_cdc` 使用命令深度 8 / 读返回深度 2 的双 FIFO：写入队即 ACK，读等目标 ACK 返回数据；停目标钟时读等待、写至 FIFO 满后背压。无 `timeout` / `TIMEOUT` 或自动恢复，必须静默并协调复位两侧；单侧复位不受保证。同路径读仅保证命令顺序，不是下游 posted 队列或其他路径的全局完成栅栏。默认生成 `wb_async_fifo`，无外部 CELL 可仿真；外部选择宏、ABI、复位与签核约束见 [`wishbone-master.md`](./wishbone-master.md) §3.1。用户提供的参考实现硅验证结论不覆盖新增 WB 适配或默认 FIFO。
 
 ## 2. Wishbone Classic 子集（冻结）
 
@@ -347,6 +348,8 @@ demo/hbm 是本插件的 VCS + UVM-1.2 验证展示：顶层 `hbm` = interconnec
 4. 固件窗 + DMA：块周期连续写。  
 5. 默认 slave `pipe`（现缺省 0；作者按口配置）。  
 6. SlaveBus downlink（子 DMA 打回父级窗口）。v1 **不**自动生成。
+
+异步 FIFO CDC 与 posted 写排队已落地，不属于开放项；多笔读 outstanding / 带事务 ID 的乱序完成模式仍未实现。
 
 **已裁定口名**：slave `{name}_i_wb_*` / `{name}_o_wb_*`；所有 fabric / wrapper 的 master 均为 `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`；`Bus()` 未列 master 时补名为 `m` 的默认 master，仍用同一规则。  
 **已裁定软件图 / 挂接**：`SlaveRegfile(RegfileDef, …)` + Type-A wrapper + bus C overlay / `uvm_reg_block`（见 §6）。  

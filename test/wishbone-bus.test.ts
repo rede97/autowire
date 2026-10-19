@@ -105,6 +105,7 @@ describe("wishbone-bus", () => {
 		expect(present("soc_wb_interconnect.sv")).toBe(true);
 		expect(present("wb_jtag_tdr.sv")).toBe(true);
 		expect(present("wb_cdc.sv")).toBe(true);
+		expect(present("wb_async_fifo.sv")).toBe(true);
 		expect(present("soc_wb_bus_cfg.icl")).toBe(true);
 		expect(present("soc_wb_bus_cfg.sv")).toBe(true);
 		expect(present("sd_sha_interconnect.sv")).toBe(true);

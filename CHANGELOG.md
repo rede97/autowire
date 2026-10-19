@@ -2,6 +2,12 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## Unreleased
+
+- `wb_cdc` 迁移 [Gitee master `435180e`](https://gitee.com/lunamiko/autowire/tree/435180e61a2580d5db3f3cc6f8f4e622b638876b) 的 posted 语义：命令 FIFO 深度 8、读返回 FIFO 深度 2，写入队即 ACK、读等目标 WB ACK 返回；保留 TGA 与 APB PPROT 拒绝。用户提供的硅验证结论适用于参考实现，不覆盖新增 WB 适配和默认 Gray FIFO。
+- **接口/行为变更**：移除 `timeout` / RTL `TIMEOUT`、超时/复位 ERR 及自动恢复；要求静默请求并协调两侧复位，不保证单侧复位。停目标钟时读等待，写至 FIFO 满后背压。JTAG 写完成表示排队；同路径读只保证命令顺序，不是下游 posted 写的全局栅栏。
+- 生成 `wb_async_fifo` wrapper 默认使用同文件 `wb_async_fifo_gray`，无需外部 CELL 即可仿真；`AUTOWIRE_ASYNC_FIFO_CELL=CELL_ASYNC_FIFO` 选择实际 CELL/adapter，缺失所选模块会编译失败，不静默回退。两种模式均保留生成 FIFO 文件，外部模式另外加入 CELL/adapter，并在 analysis 使用相同宏/filelist；适配必须满足寄存读出与 reset-busy 契约。外部选择的测试 adapter 不代表 vendor CELL 验证。
+
 ## [2.5.5] - 2026-10-19
 
 - 修复 `wb_cdc` 冷启动：复位后、第一次回到 idle 之前，若目标侧没有在飞事务，新请求等待而不是立刻 `s_err`。APB 桥在此期间保持 `PREADY` 为低。超时、abort，以及源侧复位后目标仍握着已捕获事务时，仍回 `ERR`。`demo/hbm` 与 `demo/soc` 的 `wb_cdc.sv` 已重新生成。

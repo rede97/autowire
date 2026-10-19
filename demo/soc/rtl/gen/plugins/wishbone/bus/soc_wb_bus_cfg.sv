@@ -217,8 +217,7 @@ module soc_wb_bus_cfg (
 	);
 	wb_cdc #(
 		.AW                 (32                 ),
-		.TW                 (1                  ),
-		.TIMEOUT            (0                  )
+		.TW                 (1                  )
 	) u_dbg_cdc (
 		.s_clk              (dbg_tck            ), // i
 		.s_rst_n            (dbg_trst_n         ), // i

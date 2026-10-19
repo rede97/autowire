@@ -282,8 +282,7 @@ module hbm_bus_cfg (
 	);
 	wb_cdc #(
 		.AW(19),
-		.TW(1),
-		.TIMEOUT(64)
+		.TW(1)
 	) u_host_cdc (
 		.s_clk(host_pclk),
 		.s_rst_n(host_presetn),

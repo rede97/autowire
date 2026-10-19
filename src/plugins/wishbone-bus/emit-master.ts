@@ -43,6 +43,7 @@ function fabricRole(
 
 export const MASTER_MODULES = [
 	"wb_sync_cell",
+	"wb_async_fifo",
 	"wb_cdc",
 	"wb_apb2wb",
 	"wb_jtag_tdr",
@@ -392,7 +393,6 @@ function cdcInst(
 		params: [
 			{ name: "AW", value: String(aw) },
 			{ name: "TW", value: String(tw > 0 ? tw : 1) },
-			{ name: "TIMEOUT", value: String(m.timeout ?? 0) },
 		],
 		connects,
 	};

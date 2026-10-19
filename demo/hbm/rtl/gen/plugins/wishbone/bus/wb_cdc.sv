@@ -2,32 +2,23 @@
 // Template: docs/plugins/rtl/wb_cdc_template.sv
 // SPDX-License-Identifier: MIT
 //
-// wb_cdc — Wishbone Classic clock-domain crossing (single outstanding).
+// wb_cdc — posted command FIFO / blocking read FIFO bridge.
+// Reference: Gitee autowire master 435180e, cfgbus/cfg_apb.py.
+// Preserve its depth-8 command FIFO, depth-2 read FIFO, registered pop
+// timing and held target command. WB ACK replaces cfg command-ready /
+// read-data-valid; TGA is carried with the command.
 //
-// Source face (s_*) is a WB slave in s_clk; target face (m_*) is a WB master
-// in the fabric clk. Four-phase req/ack plus recovery ready/drained controls cross
-// through wb_sync_cell; the request and response bundles are held stable while
-// the handshake is open and are captured by the synchronized control bit.
-//
-// Error handling while the source clock runs:
-//   - fabric in reset (alive=0)            -> s_err at once
-//   - no ack within TIMEOUT s_clk cycles   -> s_err (TIMEOUT=0 disables)
-//   - after an abort, new requests get s_err until recovery completes
-//   - reset until the first return to idle, and the target holds no beat:
-//     a new request waits (s_ack and s_err stay 0) while the link and the
-//     empty drain finish. This is not an abort. A source-only reset that
-//     leaves a captured target beat still returns s_err.
-// A timeout drops the source request and returns s_err. It does not withdraw
-// a beat the target domain has already accepted: m_cyc stays high until m_ack,
-// so the write can still land after the source has seen s_err.
-// CDC writes are non-posted: s_ack follows the target WB ACK. A posted pipe
-// behind that interface may acknowledge before the leaf completes the write.
-// TGA ports are always present. TW is at least 1 (the default).
+// Source write ACK means FIFO acceptance, NOT target completion. A read
+// waits behind earlier commands and returns only the target read response.
+// There is no timeout, reset-error response or automatic recovery handshake.
+// Both domains must be reset together, with traffic quiesced; independently
+// resetting a live FIFO endpoint is unsupported. Pausing clocks is allowed.
+// Select CELL_ASYNC_FIFO through the wb_async_fifo wrapper when available;
+// its registered read and coordinated-reset ABI must remain unchanged.
 
 module wb_cdc #(
-	parameter int unsigned AW      = 32,
-	parameter int unsigned TW      = 1,
-	parameter int unsigned TIMEOUT = 0
+	parameter int unsigned AW = 32,
+	parameter int unsigned TW = 1
 ) (
 	input  logic                  s_clk,
 	input  logic                  s_rst_n,
@@ -54,215 +45,80 @@ module wb_cdc #(
 	input  logic                  m_ack,
 	input  logic [31:0]           m_rdat
 );
+	localparam int unsigned CW = 32 + 4 + 1 + AW + TW;
+	logic cmd_full, cmd_empty, cmd_push, cmd_pop;
+	logic read_full, read_empty, read_push, read_pop;
+	logic [CW-1:0] cmd_data;
+	logic [31:0] read_data;
+	logic read_pending, read_pop_p1;
+	logic cmd_valid, cmd_pop_p1;
 
-	localparam int unsigned TMW = (TIMEOUT > 1) ? $clog2(TIMEOUT + 1) : 1;
+	// Like apb2cfg: write acceptance is independent of target execution.
+	assign cmd_push = s_cyc && s_stb && !s_ack && !read_pending && !cmd_full;
+	assign read_pop = read_pending && !read_pop_p1 && !read_empty;
+	assign s_err = 1'b0;
 
-	//--------------------------------------------------------------------------
-	//  Source domain (s_clk)
-	//--------------------------------------------------------------------------
-	localparam logic [1:0] S_IDLE  = 2'd0;
-	localparam logic [1:0] S_REQ   = 2'd1;
-	localparam logic [1:0] S_WAIT  = 2'd2;
-	localparam logic [1:0] S_DRAIN = 2'd3;
-
-	logic [1:0]             s_state;
-	logic                   req_q;
-	logic                   ack_s;
-	logic                   alive_s;
-	logic                   req_bundle_we;
-	logic [AW-1:0]          req_bundle_adr;
-	logic [31:0]            req_bundle_dat;
-	logic [3:0]             req_bundle_sel;
-	logic [TW-1:0]          req_bundle_tga;
-	logic [31:0]            rsp_bundle_dat;
-	logic [TMW-1:0]         tmo_cnt;
-	logic                   s_req_new;
-	logic                   tmo_hit;
-
-	logic                   ack_q;
-	logic                   alive_q;
-	logic                   link_rst_n;
-	logic                   link_up_s;
-	logic                   recover_q, ready_t, drained_q, drained_s;
-	// Set by source reset. Cleared on the first return to idle. While set,
-	// a request waits out the empty drain instead of taking s_err.
-	logic                   cold;
-	// Target beat that survived a source-only reset. Reset by the target
-	// reset only, so s_rst_n does not forget an in-flight capture.
-	logic                   target_busy;
-	logic                   inflight_s;
-	wire                    cold_wait = cold && !inflight_s;
-	assign link_rst_n = s_rst_n & rst_n;
-	// Asynchronous assertion preserves even a target reset between source edges.
-	// The source FSM remains clocked during target reset so it can return ERR.
-	wb_sync_cell u_link_up_sync (
-		.clk(s_clk), .rst_n(link_rst_n), .d(1'b1), .q(link_up_s)
+	wb_async_fifo #(.WIDTH(CW), .DEPTH(8)) u_cmd_fifo (
+		.wr_clk(s_clk), .wr_rst_n(s_rst_n), .rd_clk(clk), .rd_rst_n(rst_n),
+		.wr_en(cmd_push), .wr_data({s_dat, s_sel, s_we, s_adr, s_tga}),
+		.wr_full(cmd_full), .rd_en(cmd_pop), .rd_data(cmd_data), .rd_empty(cmd_empty)
 	);
-	// Synchronize the inverse so reset inhibits target capture immediately.
-	wb_sync_cell u_ready_sync (
-		.clk(clk), .rst_n(link_rst_n), .d(!recover_q && link_up_s), .q(ready_t)
+	wb_async_fifo #(.WIDTH(32), .DEPTH(2)) u_read_fifo (
+		.wr_clk(clk), .wr_rst_n(rst_n), .rd_clk(s_clk), .rd_rst_n(s_rst_n),
+		.wr_en(read_push), .wr_data(m_rdat), .wr_full(read_full),
+		.rd_en(read_pop), .rd_data(read_data), .rd_empty(read_empty)
 	);
-	wb_sync_cell u_drained_sync (
-		.clk(s_clk), .rst_n(link_rst_n), .d(drained_q), .q(drained_s)
-	);
-
-	wb_sync_cell u_ack_sync (
-		.clk(s_clk), .rst_n(link_rst_n), .d(ack_q), .q(ack_s)
-	);
-	wb_sync_cell u_alive_sync (
-		.clk(s_clk), .rst_n(s_rst_n), .d(alive_q), .q(alive_s)
-	);
-	wb_sync_cell u_inflight_sync (
-		.clk(s_clk), .rst_n(rst_n), .d(target_busy), .q(inflight_s)
-	);
-
-	assign s_req_new = s_cyc && s_stb && !s_ack && !s_err;
-	assign tmo_hit   = (TIMEOUT != 0) && (tmo_cnt == TMW'(TIMEOUT));
 
 	always_ff @(posedge s_clk or negedge s_rst_n) begin
 		if (!s_rst_n) begin
-			s_state        <= S_DRAIN;
-			recover_q      <= 1'b1;
-			cold           <= 1'b1;
-			req_q          <= 1'b0;
-			s_ack          <= 1'b0;
-			s_err          <= 1'b0;
-			s_rdat         <= 32'd0;
-			tmo_cnt        <= '0;
-			req_bundle_we  <= 1'b0;
-			req_bundle_adr <= '0;
-			req_bundle_dat <= 32'd0;
-			req_bundle_sel <= 4'd0;
-			req_bundle_tga <= '0;
-		end else begin
+			read_pending <= 1'b0;
+			read_pop_p1 <= 1'b0;
 			s_ack <= 1'b0;
-			s_err <= 1'b0;
-			if (!link_up_s) begin
-				req_q <= 1'b0;
-				recover_q <= 1'b1;
-				s_state <= S_DRAIN;
-				if (s_req_new && !cold_wait) s_err <= 1'b1;
-			end else case (s_state)
-				S_IDLE: begin
-					if (s_req_new) begin
-						if (!alive_s || ack_s) begin
-							s_err <= 1'b1;
-						end else begin
-							req_bundle_we  <= s_we;
-							req_bundle_adr <= s_adr;
-							req_bundle_dat <= s_dat;
-							req_bundle_sel <= s_sel;
-							req_bundle_tga <= s_tga;
-							req_q          <= 1'b1;
-							tmo_cnt        <= '0;
-							s_state        <= S_REQ;
-						end
-					end
-				end
-				S_REQ: begin
-					if (ack_s) begin
-						s_ack   <= 1'b1;
-						s_rdat  <= rsp_bundle_dat;
-						req_q   <= 1'b0;
-						tmo_cnt <= '0;
-						s_state <= S_WAIT;
-					end else if (!alive_s || tmo_hit) begin
-						s_err   <= 1'b1;
-						req_q   <= 1'b0;
-						recover_q <= 1'b1;
-						s_state <= S_DRAIN;
-					end else if (TIMEOUT != 0) begin
-						tmo_cnt <= tmo_cnt + 1'b1;
-					end
-				end
-				S_WAIT: begin
-					if (!ack_s) begin
-						s_state <= S_IDLE;
-					end else if (!alive_s || tmo_hit) begin
-						recover_q <= 1'b1;
-						s_state <= S_DRAIN;
-					end else if (TIMEOUT != 0) begin
-						tmo_cnt <= tmo_cnt + 1'b1;
-					end
-				end
-				default: begin
-					// Aborted: refuse new work until the target handshake closes.
-					// The empty drain after reset is not an abort.
-					if (s_req_new && !cold_wait) s_err <= 1'b1;
-					if (recover_q && drained_s) recover_q <= 1'b0;
-					if (!recover_q && !drained_s && !ack_s && alive_s) begin
-						s_state <= S_IDLE;
-						cold    <= 1'b0;
-					end
-				end
-			endcase
+			s_rdat <= '0;
+		end else begin
+			read_pop_p1 <= read_pop;
+			s_ack <= 1'b0;
+			if (cmd_push) begin
+				if (s_we) s_ack <= 1'b1;
+				else read_pending <= 1'b1;
+			end
+			if (read_pop_p1) begin
+				s_rdat <= read_data;
+				s_ack <= 1'b1;
+				read_pending <= 1'b0;
+			end
 		end
 	end
 
-	//--------------------------------------------------------------------------
-	//  Target domain (clk)
-	//--------------------------------------------------------------------------
-	localparam logic [1:0] T_IDLE = 2'd0;
-	localparam logic [1:0] T_BUS  = 2'd1;
-	localparam logic [1:0] T_ACK  = 2'd2;
-
-	logic [1:0] t_state;
-	logic       req_t;
-	assign target_busy = (t_state != T_IDLE);
-
-	wb_sync_cell u_req_sync (
-		.clk(clk), .rst_n(link_rst_n), .d(req_q), .q(req_t)
-	);
-
+	// Reference cfg_cmd_vld / fifo_pop_p1 sequencing. A registered FIFO
+	// read is captured one edge after pop and held until the WB ACK.
+	// Reserve read-response space before taking another command.
+	assign cmd_pop = !cmd_empty && !cmd_valid && !read_full;
+	assign read_push = m_cyc && m_ack && !m_we;
 	always_ff @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
-			t_state        <= T_IDLE;
-			alive_q        <= 1'b0;
-			ack_q          <= 1'b0;
-			drained_q      <= 1'b0;
-			m_cyc          <= 1'b0;
-			m_stb          <= 1'b0;
-			m_we           <= 1'b0;
-			m_adr          <= '0;
-			m_dat          <= 32'd0;
-			m_sel          <= 4'd0;
-			m_tga          <= '0;
-			rsp_bundle_dat <= 32'd0;
+			cmd_valid <= 1'b0;
+			cmd_pop_p1 <= 1'b0;
+			m_cyc <= 1'b0;
+			m_stb <= 1'b0;
+			m_we <= 1'b0;
+			m_adr <= '0;
+			m_dat <= '0;
+			m_sel <= '0;
+			m_tga <= '0;
 		end else begin
-			alive_q <= 1'b1;
-			// No response is required for a request that vanished before capture.
-			// A captured bus beat must retire before recovery can be acknowledged.
-			drained_q <= !ready_t && !req_t && (t_state == T_IDLE);
-			case (t_state)
-				T_IDLE: begin
-					if (req_t && ready_t) begin
-						m_we    <= req_bundle_we;
-						m_adr   <= req_bundle_adr;
-						m_dat   <= req_bundle_dat;
-						m_sel   <= req_bundle_sel;
-						m_tga   <= req_bundle_tga;
-						m_cyc   <= 1'b1;
-						m_stb   <= 1'b1;
-						t_state <= T_BUS;
-					end
-				end
-				T_BUS: begin
-					if (m_ack) begin
-						rsp_bundle_dat <= m_rdat;
-						m_cyc          <= 1'b0;
-						m_stb          <= 1'b0;
-						ack_q          <= 1'b1;
-						t_state        <= T_ACK;
-					end
-				end
-				default: begin
-					if (!req_t) begin
-						ack_q   <= 1'b0;
-						t_state <= T_IDLE;
-					end
-				end
-			endcase
+			cmd_pop_p1 <= cmd_pop;
+			if (cmd_pop) cmd_valid <= 1'b1;
+			if (cmd_pop_p1) begin
+				{m_dat, m_sel, m_we, m_adr, m_tga} <= cmd_data;
+				m_cyc <= 1'b1;
+				m_stb <= 1'b1;
+			end
+			if (m_cyc && m_ack) begin
+				cmd_valid <= 1'b0;
+				m_cyc <= 1'b0;
+				m_stb <= 1'b0;
+			end
 		end
 	end
-
 endmodule

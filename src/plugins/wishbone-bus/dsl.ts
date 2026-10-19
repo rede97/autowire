@@ -230,8 +230,6 @@ export type MasterOpts = {
 	readonly pipe?: number;
 	/** Master runs in its own clock: insert `wb_cdc` into the fabric `clk`. */
 	readonly cdc?: boolean;
-	/** Source-clock cycles before `wb_cdc` aborts with ERR (0 = off). */
-	readonly timeout?: number;
 	/** APB completer face (`wb_apb2wb`). */
 	readonly apb?: true | ApbMasterOpts;
 	/** IEEE 1149.1 / 1687 TDR face (`wb_jtag_tdr`); always crosses from TCK. */
@@ -244,7 +242,6 @@ export type WbMaster = {
 	/** Omitted = `wb` (fabric-clock WB port, no wrapper logic). */
 	readonly bridge?: WbMasterBridge;
 	readonly cdc?: boolean;
-	readonly timeout?: number;
 	readonly pprot?: { readonly value: number; readonly mask: number };
 	readonly idle?: number;
 	/** Fabric-side pipe stages (0 = combinational). */
@@ -796,18 +793,10 @@ export function Master(
 	if (!Number.isInteger(pipe) || pipe < 0 || pipe > 16) {
 		throw new Error(`wishbone-bus: master ${name} pipe must be 0..16`);
 	}
-	const timeout = opts.timeout ?? 0;
-	if (!Number.isInteger(timeout) || timeout < 0 || timeout > 0xffff) {
-		throw new Error(`wishbone-bus: master ${name} timeout must be 0..65535`);
-	}
-	// The abort counter lives in wb_cdc, so a timeout is meaningless without it.
-	if (timeout > 0 && !cdc) {
-		throw new Error(`wishbone-bus: master ${name} timeout needs cdc`);
-	}
 	// Bare fabric-clock WB master: no wrapper logic, so emit the minimal shape
-	// (bridge/cdc/timeout stay omitted and read back as their defaults).
+	// (bridge/cdc stay omitted and read back as their defaults).
 	if (bridge === "wb" && !cdc) return { name, desc, pipe };
-	const m: WbMaster = { name, desc, bridge, cdc, timeout, pipe };
+	const m: WbMaster = { name, desc, bridge, cdc, pipe };
 	if (bridge === "apb") {
 		// `apb: true` means no PPROT filter; only the object form carries one.
 		const p = opts.apb === true ? undefined : opts.apb?.pprot;

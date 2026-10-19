@@ -84,7 +84,7 @@ export async function generatePipeModule(
 	return writeTemplateModule(outDir, PIPE_MODULE, force);
 }
 
-/** Shared master-face modules (sync cell, CDC, APB / JTAG bridges). */
+/** Shared master-face modules (sync cell, async FIFO, CDC, APB / JTAG bridges). */
 export async function generateMasterModules(
 	outDir: string,
 	force = false,

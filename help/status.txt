@@ -35,7 +35,7 @@ Not landed (parked; do not implement until a later ask)
   Plugin type B             expand custom tags into core aw-*. Parked. No aw-*
                             plugin tags in use. Type A wishbone run is landed.
   Wishbone open items       extra arbiter policies, SlaveBus downlink,
-                            posted async FIFO, CDC constraints, real DFT TAP.
+                            multiple outstanding reads, CDC constraints, real DFT TAP.
                             Parked (docs/plugins/wishbone-bus.md §8). Tag domains
                             (ShadowDomain / TagFrom*) and the grouped Crossbar()
                             (§4.2) are landed.
@@ -95,7 +95,19 @@ Parallel (does not block connect)
     address map + TGA/shadow tag packed in the same Excel / C / uvm_reg / SV sv_reg set;
     DAT=32 ADR=byte; write posted at fabric slave PIPE / read blocks to leaf;
     PIPE reads cannot cancel: hold CYC/STB and controls until ACK (simulation checked).
-    CDC recovery uses an explicit target drain handshake before accepting retries.
+    CDC uses command/read-return async FIFOs (depth 8/2): writes ACK on enqueue;
+    reads wait for target ACK/data. Stopped target clock: reads wait, writes backpressure
+    when full. No timeout, automatic recovery, or independent-reset guarantee;
+    quiesce requests/no active target WB and coordinate reset of both sides; queued writes
+    may be discarded despite posted ACK. Independent reset is unsupported even when empty.
+    Same-path readback orders commands, not a global downstream/other-path posted-write fence.
+    Generated wb_async_fifo defaults to wb_async_fifo_gray: no CELL/config needed for simulation.
+    AUTOWIRE_ASYNC_FIFO_CELL=CELL_ASYNC_FIFO selects the external cell/adapter; always retain
+    wb_async_fifo.sv in filelists and add the actual CELL/adapter when selected. Missing
+    selected module fails compilation, never silently falls back. Analysis needs the same
+    macro and actual CELL sources. Registered-read latency/reset-busy adapter requirements:
+    docs/plugins/wishbone-master.md section 3.1. User-reported silicon validation applies
+    to Gitee master435180e, not this WB adaptation/default FIFO or test adapter.
     JTAG PDL is Level-0 fixed-wait checking, not dynamic busy polling.
     RWE read_write_block default false (posted fabric: true risks bus lock);
     WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
@@ -174,14 +186,16 @@ Parallel (does not block connect)
     (sidebands promoted; WB internalized; HTML aw-inst soc_wb_bus_cfg / sd_sha_bus_cfg);
     .uplink() only selects the cascade face; every topology keeps its named master ports;
     parent slave requests map to child master requests, responses map back explicitly;
-    master faces (docs/plugins/wishbone-master.md): Master(name, desc, { apb | jtag | cdc,
-    timeout? }); bridge in the source clock → wb_cdc (4-phase req/ack, non-posted) → fabric;
+    master faces (docs/plugins/wishbone-master.md): Master(name, desc, { apb | jtag | cdc });
+    bridge in the source clock → wb_cdc (posted writes, blocking reads) → fabric;
     fabric RTL unchanged, all bridge logic inside <bus>_bus_cfg ({m}_fab_* nets);
-    wb_cdc ERR on fabric reset / timeout / drain (never hangs the source; a timeout
-    does not withdraw a beat the target domain already accepted); APB PPROT mismatch → PSLVERR;
+    timeout/TIMEOUT removed; wb_cdc s_err is tied low. APB PPROT mismatch → PSLVERR;
+    JTAG write completion means queued, not leaf completion; read completion returns data.
+    TAP/source reset alone is not CDC recovery; coordinate both domains and quiesce requests.
     JTAG = TDR client of the DFT-owned chip TAP / SIB (no private TAP): shift {op,adr,dat},
     capture {st,adr,rdat}; launch + poll (st 1 busy / 2 err sticky, nop clears); {m}_en gate;
-    emits wb_sync_cell / wb_cdc / wb_apb2wb / wb_jtag_tdr.sv + <bus>_bus_cfg.icl/.pdl;
+    emits wb_sync_cell / wb_async_fifo / wb_cdc / wb_apb2wb / wb_jtag_tdr.sv
+    + <bus>_bus_cfg.icl/.pdl; custom filelists retain FIFO wrapper plus selected CELL/adapter;
     cascade face (.uplink()) cannot be bridged; duplicate master names rejected
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)

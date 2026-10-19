@@ -79,7 +79,11 @@ verilatorTest(
 		const socBus = join(soc, "bus");
 		const hbmBus = join(hbm, "bus");
 		const pipe = join(socBus, "wb_cfg_pipe.sv");
-		const cdc = [join(socBus, "wb_cdc.sv"), join(socBus, "wb_sync_cell.sv")];
+		const cdc = [
+			join(socBus, "wb_cdc.sv"),
+			join(socBus, "wb_async_fifo.sv"),
+			join(socBus, "wb_sync_cell.sv"),
+		];
 		lint("soc_wb_bus_cfg", [
 			join(socBus, "soc_wb_bus_cfg.sv"),
 			join(socBus, "soc_wb_interconnect.sv"),
@@ -105,6 +109,7 @@ verilatorTest(
 			join(hbmBus, "hbm_bus_cfg.sv"),
 			join(hbmBus, "hbm_interconnect.sv"),
 			join(hbmBus, "wb_cdc.sv"),
+			join(hbmBus, "wb_async_fifo.sv"),
 			join(hbmBus, "wb_sync_cell.sv"),
 			join(hbmBus, "wb_apb2wb.sv"),
 			join(hbm, "regfile/center_regfile.sv"),

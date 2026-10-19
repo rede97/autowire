@@ -210,10 +210,20 @@ module tb;
 		check("wbx read", rd, 32'h3030_3030);
 		check("wbx err", err, 0);
 
-		// JTAG TDR: write then read, status ok.
+		// JTAG write OK means queued, not committed; its read fences the write.
+		mem_stall = 1;
 		jtag_op(2'd2, 16'h0040, 32'h4040_CAFE, st, rd);
-		check("jtag write st", st, 0);
-		check("jtag write mem", mem[16], 32'h4040_CAFE);
+		check("jtag posted write st", st, 0);
+		check("jtag posted write not committed", mem[16], 0);
+		jtag_scan(dr(2'd1, 16'h0040, 32'h0), o);
+		jtag_idle(80);
+		jtag_scan(dr(2'd0, 16'h0, 32'h0), o);
+		check("jtag read waits for posted write", o[W-1 -: 2], 2'd1);
+		@(negedge clk); mem_stall = 0;
+		jtag_idle(16);
+		jtag_scan(dr(2'd0, 16'h0, 32'h0), o);
+		check("jtag resumed read st", o[W-1 -: 2], 0);
+		check("jtag resumed read data", o[31:0], 32'h4040_CAFE);
 		jtag_op(2'd1, 16'h0040, 32'h0, st, rd);
 		check("jtag read st", st, 0);
 		check("jtag read", rd, 32'h4040_CAFE);
@@ -241,48 +251,59 @@ module tb;
 		jtag_idle(4);
 		jtag_scan(dr(2'd0, 16'h0, 32'h0), o);
 
-		// Stalled leaf: APB aborts with PSLVERR after TIMEOUT, then recovers.
+		// APB writes post while the leaf is stalled; a read fences both writes.
 		mem_stall = 1;
-		apb_xfer(0, 16'h0020, 32'h0, 4'h0, 3'b000, rd, err);
-		check("apb timeout err", err, 1);
-		mem_stall = 0;
-		repeat (20) @(posedge host_pclk);
-		apb_xfer(0, 16'h0020, 32'h0, 4'h0, 3'b000, rd, err);
-		check("apb after timeout", rd, 32'hA5A5_00EE);
-		check("apb after timeout err", err, 0);
-
-		// Fabric in reset: bridged masters get errors at once, never hang.
-		rst_n = 0;
-		repeat (5) @(posedge host_pclk);
-		apb_xfer(0, 16'h0020, 32'h0, 4'h0, 3'b000, rd, err);
-		check("apb fabric reset err", err, 1);
-		wbx_xfer(0, 16'h0030, 32'h0, rd, err);
-		check("wbx fabric reset err", err, 1);
-		jtag_op(2'd1, 16'h0040, 32'h0, st, rd);
-		check("jtag fabric reset st", st, 2'd2);
-		jtag_scan(dr(2'd0, 16'h0, 32'h0), o);
-		rst_n = 1;
-		repeat (10) @(posedge host_pclk);
-		apb_xfer(0, 16'h0020, 32'h0, 4'h0, 3'b000, rd, err);
-		check("apb after fabric reset", rd, 32'hA5A5_00EE);
+		apb_xfer(1, 16'h0024, 32'hA5A5_0024, 4'hf, 3'b000, rd, err);
+		check("apb posted write err", err, 0);
+		apb_xfer(1, 16'h0024, 32'h0000_00EE, 4'h1, 3'b000, rd, err);
+		check("apb posted byte write err", err, 0);
+		check("apb posted writes not committed", mem[9], 0);
+		fork
+			begin
+				apb_xfer(0, 16'h0024, 32'h0, 4'h0, 3'b000, rd, err);
+				if (mem_stall) $fatal(1, "APB read completed while target stalled");
+				check("apb ordered read after stall", rd, 32'hA5A5_00EE);
+				check("apb ordered read err", err, 0);
+			end
+			begin
+				wait(host_psel && host_penable && !host_pwrite);
+				repeat (100) begin
+					@(negedge host_pclk);
+					if (host_pready || host_pslverr)
+						$fatal(1, "APB completed while target stalled");
+				end
+				@(negedge clk); mem_stall = 0;
+			end
+		join
 
 		// All four masters at once through the arbiter.
 		fork
 			begin : par_cpu
 				logic [31:0] r;
 				for (int i = 0; i < 8; i++) cpu_xfer(1, 16'h0100 + 16'(i * 4), 32'hC000_0000 + i, r);
+				cpu_xfer(0, 16'h011c, 0, r);
+				check("par cpu fence", r, 32'hC000_0007);
 			end
 			begin : par_apb
 				logic [31:0] r; logic e;
 				for (int i = 0; i < 8; i++) apb_xfer(1, 16'h0200 + 16'(i * 4), 32'hA000_0000 + i, 4'hf, 3'b000, r, e);
+				apb_xfer(0, 16'h021c, 0, 4'h0, 3'b000, r, e);
+				check("par apb fence", r, 32'hA000_0007);
+				check("par apb err", e, 0);
 			end
 			begin : par_wbx
 				logic [31:0] r; logic e;
 				for (int i = 0; i < 8; i++) wbx_xfer(1, 16'h0300 + 16'(i * 4), 32'hB000_0000 + i, r, e);
+				wbx_xfer(0, 16'h031c, 0, r, e);
+				check("par wbx fence", r, 32'hB000_0007);
+				check("par wbx err", e, 0);
 			end
 			begin : par_jtag
 				logic [1:0] s; logic [31:0] r;
 				for (int i = 0; i < 2; i++) jtag_op(2'd2, 16'h0400 + 16'(i * 4), 32'hD000_0000 + i, s, r);
+				jtag_op(2'd1, 16'h0404, 0, s, r);
+				check("par jtag fence", r, 32'hD000_0001);
+				check("par jtag status", s, 0);
 			end
 		join
 		for (int i = 0; i < 8; i++) begin

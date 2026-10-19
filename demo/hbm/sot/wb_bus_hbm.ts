@@ -59,7 +59,6 @@ export const hbm = Bus("hbm", "HBM channel interconnect (16 channels)", {
 		Master("host", "SoC APB host (100 MHz PCLK)", {
 			apb: true,
 			cdc: true,
-			timeout: 64,
 		}),
 	],
 	slaves: [

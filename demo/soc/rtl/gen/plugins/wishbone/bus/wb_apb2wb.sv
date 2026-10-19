@@ -5,7 +5,8 @@
 // wb_apb2wb — APB3/APB4 completer to Wishbone Classic master (single clock).
 //
 // Runs in the APB clock. Pair with wb_cdc when PCLK is not the fabric clk.
-// PREADY waits for WB ACK/ERR (non-posted); ERR maps to PSLVERR.
+// PREADY waits for WB ACK/ERR; ERR maps to PSLVERR. With wb_cdc, writes
+// complete on command enqueue; a subsequent read waits for prior writes.
 // PPROT filter: (pprot & PPROT_MASK) != PPROT_VAL completes at once with
 // PSLVERR=1 (never hangs). PPROT_MASK=0 accepts everything.
 // Reads drive SEL=4'hf; writes drive SEL=PSTRB (tie 4'hf for APB3).

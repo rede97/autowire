@@ -18,7 +18,6 @@ import {
 	emitBusIcl,
 	emitBusPdl,
 	jtagDrWidth,
-	MASTER_MODULES,
 } from "../src/plugins/wishbone-bus/emit-master.ts";
 import {
 	generateMasterModules,
@@ -42,10 +41,9 @@ function mb(tagWidth?: number, pipe = 0) {
 			Master("host", "SoC APB", {
 				apb: { pprot: { value: 0, mask: 0b001 } },
 				cdc: true,
-				timeout: 64,
 			}),
 			Master("dbg", "DFT JTAG", { jtag: true }),
-			Master("wbx", "async WB", { cdc: true, timeout: 64, pipe }),
+			Master("wbx", "async WB", { cdc: true, pipe }),
 		],
 		slaves: [Slave("mem", "TB memory", 0x0000, 0xf000, tagWidth)],
 		addrWidth: 16,
@@ -72,7 +70,6 @@ describe("wishbone master bridges", () => {
 		expect(() => Master("m", "x", { jtag: true, cdc: false })).toThrow(
 			/always crosses/,
 		);
-		expect(() => Master("m", "x", { timeout: 8 })).toThrow(/needs cdc/);
 		expect(() =>
 			Master("m", "x", { apb: { pprot: { value: 0b100, mask: 0b001 } } }),
 		).toThrow(/outside mask/);
@@ -188,133 +185,6 @@ describe("wishbone master bridges", () => {
 		expect(emitBusPdl(plain)).toBeNull();
 	});
 
-	for (const half of [3, 11]) {
-		verilatorTest(
-			`CDC recovery: late ACK, stopped clock and resets (${half})`,
-			() => {
-				const dir = mkdtempSync(join(tmpdir(), "aw-cdc-recovery-"));
-				const tb = join(dir, "tb.sv");
-				writeFileSync(
-					tb,
-					`
-module tb;
-logic s_clk=0, clk=0, running=1, s_rst_n=0, rst_n=0;
-always #5 s_clk=~s_clk;
-always #${half} if(running) clk=~clk;
-logic cyc=0, ack, err, mc, ms, mw, ma=0;
-logic [7:0] adr=0, maddr;
-logic [31:0] rd, md, response=0;
-logic [3:0] sel;
-logic tag;
-logic reject_response=0;
-always @(posedge s_clk) begin
- if(reject_response && ack) $fatal(1,"stale ACK completed retry");
-end
-wb_cdc #(.AW(8), .TIMEOUT(32)) dut(
-.s_clk(s_clk), .s_rst_n(s_rst_n), .s_cyc(cyc), .s_stb(cyc),
-.s_we(1'b0), .s_adr(adr), .s_dat(32'd0), .s_sel(4'hf), .s_tga(1'b0),
-.s_ack(ack), .s_err(err), .s_rdat(rd), .clk(clk), .rst_n(rst_n),
-.m_cyc(mc), .m_stb(ms), .m_we(mw), .m_adr(maddr), .m_dat(md),
-.m_sel(sel), .m_tga(tag), .m_ack(ma), .m_rdat(response));
-task settle; repeat(40) @(negedge s_clk); endtask
-task launch(input logic [7:0] a);
- @(negedge s_clk); adr=a; cyc=1;
-endtask
-task drop; @(negedge s_clk); cyc=0; endtask
-task finish_old;
- @(negedge clk); response=32'haaaa; ma=1;
- @(negedge clk); ma=0;
-endtask
-task good;
- launch(8'hb0);
- wait(mc);
- if(maddr!==8'hb0) $fatal(1,"wrong new address");
- @(negedge clk); response=32'hbbbb; ma=1;
- @(negedge clk); ma=0;
- wait(ack || err);
- if(err || rd!==32'hbbbb) $fatal(1,"new transaction got old response");
- drop(); settle();
-endtask
-initial begin
- #1; s_rst_n=0; rst_n=0;
- #20; s_rst_n=1; rst_n=1;
- // Cold start: a request while the empty drain runs must wait for ACK, not ERR.
- adr=8'h11; cyc=1;
- fork
-  begin
-   wait(mc);
-   if(maddr!==8'h11) $fatal(1,"cold start address");
-   @(negedge clk); response=32'h1111; ma=1;
-   @(negedge clk); ma=0;
-  end
-  begin
-   wait(ack || err);
-   if(err || rd!==32'h1111) $fatal(1,"cold start returned ERR");
-  end
- join
- drop(); settle();
- // Immediate retry must never turn the old response into a successful new beat.
- launch(8'ha0); wait(mc); wait(err); drop(); reject_response=1; launch(8'hb0);
- repeat(8) @(negedge s_clk);
- finish_old();
- repeat(8) begin @(negedge s_clk); if(ack) $fatal(1,"stale ACK completed retry"); end
- drop(); settle(); reject_response=0; good();
- // Timeout before capture: no old ACK will ever arrive.
- @(negedge clk); running=0;
- launch(8'ha0); wait(err); drop();
- running=1; settle(); good();
- // Source-only reset preserves a captured target request until its ACK.
- launch(8'ha0); wait(mc);
- @(negedge s_clk); s_rst_n=0; cyc=0;
- repeat(3) @(negedge s_clk); s_rst_n=1;
- reject_response=1; launch(8'hb0); repeat(8) @(negedge s_clk);
- finish_old();
- repeat(8) begin @(negedge s_clk); if(ack) $fatal(1,"reset stale ACK"); end
- drop(); settle(); reject_response=0; good();
- // Target-only reset invalidates the old request and establishes recovery.
- launch(8'ha0); wait(mc);
- @(negedge s_clk); #1; rst_n=0;
- #2; rst_n=1;
- wait(err); drop(); settle(); good();
- // A held target reset must not hold the source ERR register in reset.
- @(negedge s_clk); rst_n=0;
- launch(8'ha0);
- repeat(4) @(negedge s_clk);
- if(ack || mc) $fatal(1,"transaction during target reset");
- wait(err); drop();
- if(rst_n) $fatal(1,"test released reset too early");
- @(negedge s_clk); rst_n=1;
- settle(); good();
- $display("PASS"); $finish;
-end
-initial begin #100000; $fatal(1,"watchdog"); end
-endmodule
-`,
-				);
-				const cdc = join(
-					import.meta.dir,
-					"../docs/plugins/rtl/wb_cdc_template.sv",
-				);
-				const r = verilatorSim({
-					dir: join(dir, "obj"),
-					top: "tb",
-					sources: [
-						tb,
-						cdc,
-						join(
-							import.meta.dir,
-							"../docs/plugins/rtl/wb_sync_cell_template.sv",
-						),
-					],
-				});
-				expect(r.buildOk, r.buildLog).toBe(true);
-				expect(r.exitCode, r.stdout + r.stderr).toBe(0);
-				expect(r.stdout).toContain("PASS");
-			},
-			180_000,
-		);
-	}
-
 	for (const change of ["none", "cyc", "stb", "we", "adr", "sel", "tga"]) {
 		verilatorTest(
 			`PIPE read contract: ${change}`,
@@ -410,7 +280,6 @@ endmodule
 			writeFileSync(fabric, emitBusSv(def));
 			writeFileSync(system, emitBusSystemSv(def, ALIGNED) ?? "");
 			const mods = await generateMasterModules(dir);
-			expect(mods.length).toBe(MASTER_MODULES.length);
 			const pipe = await generatePipeModule(dir);
 			if (!pipe) throw new Error("wb_cfg_pipe was not written");
 			const tb = join(import.meta.dir, "fixtures/wb_master_tb.sv");

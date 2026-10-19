@@ -18,6 +18,7 @@ rtl/macro_probe.sv
 # Type-A wishbone (CPU + JTAG interconnect + two sd_sha channel interconnects + leaves)
 rtl/gen/plugins/wishbone/bus/wb_cfg_pipe.sv
 rtl/gen/plugins/wishbone/bus/wb_sync_cell.sv
+rtl/gen/plugins/wishbone/bus/wb_async_fifo.sv
 rtl/gen/plugins/wishbone/bus/wb_cdc.sv
 rtl/gen/plugins/wishbone/bus/wb_jtag_tdr.sv
 rtl/gen/plugins/wishbone/bus/soc_wb_interconnect.sv
