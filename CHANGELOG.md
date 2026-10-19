@@ -2,6 +2,13 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.5.4] - 2026-10-19
+
+- 总线 WB 端口统一由一个端点 schema 生成名称、方向、位宽、TGA 和请求/响应角色；decoder / interconnect / crossbar 的 RTL 声明、wrapper 与原生 WB/CDC 桥接面共享来源，删除重复端口表及名字反向解析。
+- **接口变更**：所有拓扑的 `.uplink()` 只选择级联 master，不再把 wrapper 端口改成 flat `i_wb_*` / `o_wb_*`。上层使用具名 `{master}_o_wb_*` / `{master}_i_wb_*` 显式连接父级 slave；demo/soc 已迁移成束 rewrite，保留手写 channel 外壳接口。
+- **接口变更**：`Bus()` 的 `masters` 省略或为空时归一化为名为 `m` 的默认 master，统一输出 `m_o_wb_*` / `m_i_wb_*`，删除旧 `m_adr_i` 等端口格式，不保留兼容别名。
+- 更新 SoC/HBM 生成物、级联端口契约和 tagged/pipe/broadcast/bridge 回归；仲裁、译码和基础 pipe/CDC 模块协议不变。
+
 ## [2.5.3] - 2026-10-19
 
 - **接口变更**：Wishbone decoder 的已声明 master 端口与 interconnect / crossbar 统一为 `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`（含 TGA），不再使用 flat `m_*`；未声明 `masters` 的 decoder 保持原有 flat 口。
