@@ -8,11 +8,16 @@
 // PPROT filter: (pprot & PPROT_MASK) != PPROT_VAL completes at once with
 // PSLVERR=1 (never hangs). PPROT_MASK=0 accepts everything.
 // Reads drive SEL=4'hf; writes drive SEL=PSTRB (tie 4'hf for APB3).
+// TIMEOUT (PCLK cycles, 0 = off): no ACK/ERR within TIMEOUT cycles of the
+// WB request drops CYC/STB and completes with PSLVERR=1. Only legal in front
+// of wb_cdc, which absorbs the abandoned beat: a timed-out write may still
+// land; a timed-out read's late response is drained, never returned.
 
 module wb_apb2wb #(
 	parameter int unsigned AW         = 32,
 	parameter logic [2:0]  PPROT_MASK = 3'b000,
-	parameter logic [2:0]  PPROT_VAL  = 3'b000
+	parameter logic [2:0]  PPROT_VAL  = 3'b000,
+	parameter int unsigned TIMEOUT    = 0
 ) (
 	input  logic          pclk,
 	input  logic          presetn,
@@ -38,11 +43,16 @@ module wb_apb2wb #(
 	input  logic [31:0]   wb_rdat
 );
 
+	localparam int unsigned TMW = (TIMEOUT > 1) ? $clog2(TIMEOUT + 1) : 1;
+
 	logic access;
 	logic prot_ok;
+	logic [TMW-1:0] tmo_cnt;
+	logic tmo_hit;
 
 	assign access  = psel && penable && !pready;
 	assign prot_ok = (pprot & PPROT_MASK) == PPROT_VAL;
+	assign tmo_hit = (TIMEOUT != 0) && (tmo_cnt == TMW'(TIMEOUT));
 
 	always_ff @(posedge pclk or negedge presetn) begin
 		if (!presetn) begin
@@ -55,6 +65,7 @@ module wb_apb2wb #(
 			wb_adr  <= '0;
 			wb_dat  <= 32'd0;
 			wb_sel  <= 4'd0;
+			tmo_cnt <= '0;
 		end else begin
 			pready  <= 1'b0;
 			pslverr <= 1'b0;
@@ -65,6 +76,16 @@ module wb_apb2wb #(
 					pready  <= 1'b1;
 					pslverr <= wb_err;
 					prdata  <= wb_we ? 32'd0 : wb_rdat;
+					tmo_cnt <= '0;
+				end else if (tmo_hit) begin
+					wb_cyc  <= 1'b0;
+					wb_stb  <= 1'b0;
+					pready  <= 1'b1;
+					pslverr <= 1'b1;
+					prdata  <= 32'd0;
+					tmo_cnt <= '0;
+				end else if (TIMEOUT != 0) begin
+					tmo_cnt <= tmo_cnt + 1'b1;
 				end
 			end else if (access) begin
 				if (!prot_ok) begin

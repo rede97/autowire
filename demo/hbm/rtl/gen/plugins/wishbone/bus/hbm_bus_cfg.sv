@@ -256,7 +256,8 @@ module hbm_bus_cfg (
 	wb_apb2wb #(
 		.AW(19),
 		.PPROT_MASK(3'b000),
-		.PPROT_VAL(3'b000)
+		.PPROT_VAL(3'b000),
+		.TIMEOUT(64)
 	) u_host_apb (
 		.pclk(host_pclk),
 		.presetn(host_presetn),

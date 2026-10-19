@@ -478,6 +478,7 @@ function apbMasterInsts(
 			{ name: "AW", value: String(aw) },
 			{ name: "PPROT_MASK", value: bits3(mask) },
 			{ name: "PPROT_VAL", value: bits3(val) },
+			{ name: "TIMEOUT", value: String(m.timeout ?? 0) },
 		],
 		connects: [
 			conn("pclk", pclk),

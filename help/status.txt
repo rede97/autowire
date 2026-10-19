@@ -97,9 +97,10 @@ Parallel (does not block connect)
     PIPE reads cannot cancel: hold CYC/STB and controls until ACK (simulation checked).
     CDC uses command/read-return async FIFOs (depth 8/2): writes ACK on enqueue;
     reads wait for target ACK/data. Stopped target clock: reads wait, writes backpressure
-    when full. No timeout, automatic recovery, or independent-reset guarantee;
-    quiesce requests/no active target WB and coordinate reset of both sides; queued writes
-    may be discarded despite posted ACK. Independent reset is unsupported even when empty.
+    when full. Either reset (s_rst_n or rst_n) resets both FIFO endpoints via link_rst_n:
+    no replay after a one-sided or stopped-clock reset; a pending read lost to it gets one
+    s_err; a target beat already issued finishes, its data dropped; requests wait while the
+    link is down. Queued writes may be discarded despite posted ACK. RDC signoff required.
     Same-path readback orders commands, not a global downstream/other-path posted-write fence.
     Generated wb_async_fifo defaults to wb_async_fifo_gray: no CELL/config needed for simulation.
     AUTOWIRE_ASYNC_FIFO_CELL=CELL_ASYNC_FIFO selects the external cell/adapter; always retain
@@ -187,11 +188,12 @@ Parallel (does not block connect)
     .uplink() only selects the cascade face; every topology keeps its named master ports;
     parent slave requests map to child master requests, responses map back explicitly;
     master faces (docs/plugins/wishbone-master.md): Master(name, desc, { apb | jtag | cdc });
+    apb: { timeout } (PCLK cycles, needs cdc) → wb_apb2wb TIMEOUT: drops CYC, PSLVERR;
     bridge in the source clock → wb_cdc (posted writes, blocking reads) → fabric;
     fabric RTL unchanged, all bridge logic inside <bus>_bus_cfg ({m}_fab_* nets);
-    timeout/TIMEOUT removed; wb_cdc s_err is tied low. APB PPROT mismatch → PSLVERR;
+    wb_cdc has no timeout; s_err only for a read lost to link reset. APB PPROT mismatch → PSLVERR;
     JTAG write completion means queued, not leaf completion; read completion returns data.
-    TAP/source reset alone is not CDC recovery; coordinate both domains and quiesce requests.
+    A source that drops CYC during a read abandons it; wb_cdc drains the late response.
     JTAG = TDR client of the DFT-owned chip TAP / SIB (no private TAP): shift {op,adr,dat},
     capture {st,adr,rdat}; launch + poll (st 1 busy / 2 err sticky, nop clears); {m}_en gate;
     emits wb_sync_cell / wb_async_fifo / wb_cdc / wb_apb2wb / wb_jtag_tdr.sv

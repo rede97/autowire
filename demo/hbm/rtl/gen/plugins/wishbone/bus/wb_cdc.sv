@@ -10,11 +10,18 @@
 //
 // Source write ACK means FIFO acceptance, NOT target completion. A read
 // waits behind earlier commands and returns only the target read response.
-// There is no timeout, reset-error response or automatic recovery handshake.
-// Both domains must be reset together, with traffic quiesced; independently
-// resetting a live FIFO endpoint is unsupported. Pausing clocks is allowed.
+//
+// Link reset: either s_rst_n or rst_n resets BOTH FIFO endpoints (async
+// assertion, works with the other clock stopped; each side releases through
+// its local synchronizer), so a one-sided reset can never replay stale FIFO
+// entries. Queued posted writes are discarded. A read lost to a link reset
+// returns s_err once. A target beat already on m_* survives a source-only
+// reset until its ACK; its read data is dropped. New requests wait (no ACK,
+// no ERR) while the link is down. A source that drops CYC/STB while its read
+// is pending abandons it: the late response is drained without s_ack.
+// No timeout here; wb_apb2wb TIMEOUT provides one for APB sources.
 // Select CELL_ASYNC_FIFO through the wb_async_fifo wrapper when available;
-// its registered read and coordinated-reset ABI must remain unchanged.
+// its registered read and reset ABI must remain unchanged.
 
 module wb_cdc #(
 	parameter int unsigned AW = 32,
@@ -50,42 +57,76 @@ module wb_cdc #(
 	logic read_full, read_empty, read_push, read_pop;
 	logic [CW-1:0] cmd_data;
 	logic [31:0] read_data;
-	logic read_pending, read_pop_p1;
-	logic cmd_valid, cmd_pop_p1;
+	logic read_pending, read_live, read_pop_p1;
+	logic cmd_pop_p1, beat_owned;
+
+	// Either domain's reset clears both FIFO endpoints and the link-owned
+	// state below. Combinational AND of two async resets; signoff may swap
+	// in a reset cell (RDC: see docs/plugins/wishbone-master.md section 3).
+	wire link_rst_n = s_rst_n & rst_n;
+
+	// Source view of the link. s_link drops asynchronously with link_rst_n and
+	// rises two s_clk edges after release; s_link_q is its s_clk-synchronized
+	// copy, so a link reset pulse is always seen by s_clk logic even if it
+	// ended between source edges or while s_clk was stopped.
+	wire s_link, s_link_q;
+	wb_sync_cell #(.STAGES(2), .RESET_VAL(1'b0)) u_s_link (
+		.clk(s_clk), .rst_n(link_rst_n), .d(1'b1), .q(s_link)
+	);
+	wb_sync_cell #(.STAGES(2), .RESET_VAL(1'b0)) u_s_link_q (
+		.clk(s_clk), .rst_n(s_rst_n), .d(s_link), .q(s_link_q)
+	);
+	wire s_up = s_link && s_link_q;
+	wire s_req = s_cyc && s_stb;
 
 	// Like apb2cfg: write acceptance is independent of target execution.
-	assign cmd_push = s_cyc && s_stb && !s_ack && !read_pending && !cmd_full;
-	assign read_pop = read_pending && !read_pop_p1 && !read_empty;
-	assign s_err = 1'b0;
+	assign cmd_push = s_req && !s_ack && !s_err && !read_pending && s_up && !cmd_full;
+	assign read_pop = read_pending && s_up && !read_pop_p1 && !read_empty;
 
 	wb_async_fifo #(.WIDTH(CW), .DEPTH(8)) u_cmd_fifo (
-		.wr_clk(s_clk), .wr_rst_n(s_rst_n), .rd_clk(clk), .rd_rst_n(rst_n),
+		.wr_clk(s_clk), .wr_rst_n(link_rst_n), .rd_clk(clk), .rd_rst_n(link_rst_n),
 		.wr_en(cmd_push), .wr_data({s_dat, s_sel, s_we, s_adr, s_tga}),
 		.wr_full(cmd_full), .rd_en(cmd_pop), .rd_data(cmd_data), .rd_empty(cmd_empty)
 	);
 	wb_async_fifo #(.WIDTH(32), .DEPTH(2)) u_read_fifo (
-		.wr_clk(clk), .wr_rst_n(rst_n), .rd_clk(s_clk), .rd_rst_n(s_rst_n),
+		.wr_clk(clk), .wr_rst_n(link_rst_n), .rd_clk(s_clk), .rd_rst_n(link_rst_n),
 		.wr_en(read_push), .wr_data(m_rdat), .wr_full(read_full),
 		.rd_en(read_pop), .rd_data(read_data), .rd_empty(read_empty)
 	);
 
+	// Source handshake state lives on s_rst_n only, so a target reset can be
+	// reported as s_err instead of silently clearing the pending read.
 	always_ff @(posedge s_clk or negedge s_rst_n) begin
 		if (!s_rst_n) begin
 			read_pending <= 1'b0;
+			read_live <= 1'b0;
 			read_pop_p1 <= 1'b0;
 			s_ack <= 1'b0;
+			s_err <= 1'b0;
 			s_rdat <= '0;
 		end else begin
 			read_pop_p1 <= read_pop;
 			s_ack <= 1'b0;
+			s_err <= 1'b0;
 			if (cmd_push) begin
 				if (s_we) s_ack <= 1'b1;
-				else read_pending <= 1'b1;
+				else begin
+					read_pending <= 1'b1;
+					read_live <= 1'b1;
+				end
 			end
-			if (read_pop_p1) begin
-				s_rdat <= read_data;
-				s_ack <= 1'b1;
+			// Source abandoned the read (e.g. wb_apb2wb TIMEOUT): drain silently.
+			if (read_pending && !s_req) read_live <= 1'b0;
+			if (read_pending && !s_up) begin
+				// FIFOs were reset: the command or its response is gone.
 				read_pending <= 1'b0;
+				read_live <= 1'b0;
+				s_err <= read_live && s_req;
+			end else if (read_pop_p1) begin
+				read_pending <= 1'b0;
+				read_live <= 1'b0;
+				s_rdat <= read_data;
+				s_ack <= read_live && s_req;
 			end
 		end
 	end
@@ -93,12 +134,26 @@ module wb_cdc #(
 	// Reference cfg_cmd_vld / fifo_pop_p1 sequencing. A registered FIFO
 	// read is captured one edge after pop and held until the WB ACK.
 	// Reserve read-response space before taking another command.
-	assign cmd_pop = !cmd_empty && !cmd_valid && !read_full;
-	assign read_push = m_cyc && m_ack && !m_we;
+	assign cmd_pop = !cmd_empty && !cmd_pop_p1 && !m_cyc && !read_full;
+	// Only a beat launched since the last link reset may return read data.
+	assign read_push = m_cyc && m_ack && !m_we && beat_owned;
+
+	// Pop pipeline and beat ownership reset with the FIFOs.
+	always_ff @(posedge clk or negedge link_rst_n) begin
+		if (!link_rst_n) begin
+			cmd_pop_p1 <= 1'b0;
+			beat_owned <= 1'b0;
+		end else begin
+			cmd_pop_p1 <= cmd_pop;
+			if (cmd_pop_p1) beat_owned <= 1'b1;
+			else if (m_cyc && m_ack) beat_owned <= 1'b0;
+		end
+	end
+
+	// The target beat resets with rst_n only: WB Classic (and PIPE reads)
+	// cannot be withdrawn, so a source-only reset lets it finish.
 	always_ff @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
-			cmd_valid <= 1'b0;
-			cmd_pop_p1 <= 1'b0;
 			m_cyc <= 1'b0;
 			m_stb <= 1'b0;
 			m_we <= 1'b0;
@@ -107,15 +162,12 @@ module wb_cdc #(
 			m_sel <= '0;
 			m_tga <= '0;
 		end else begin
-			cmd_pop_p1 <= cmd_pop;
-			if (cmd_pop) cmd_valid <= 1'b1;
 			if (cmd_pop_p1) begin
 				{m_dat, m_sel, m_we, m_adr, m_tga} <= cmd_data;
 				m_cyc <= 1'b1;
 				m_stb <= 1'b1;
 			end
 			if (m_cyc && m_ack) begin
-				cmd_valid <= 1'b0;
 				m_cyc <= 1'b0;
 				m_stb <= 1'b0;
 			end

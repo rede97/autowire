@@ -74,6 +74,21 @@ describe("wishbone master bridges", () => {
 			Master("m", "x", { apb: { pprot: { value: 0b100, mask: 0b001 } } }),
 		).toThrow(/outside mask/);
 		expect(() => Master("m", "x", { jtag: { idle: 0 } })).toThrow(/idle/);
+		expect(
+			Master("host", "x", { apb: { timeout: 64 }, cdc: true }).timeout,
+		).toBe(64);
+		expect(
+			Master("host", "x", { apb: { timeout: 0 }, cdc: true }),
+		).not.toHaveProperty("timeout");
+		// Without wb_cdc the bridge would withdraw a fabric beat on timeout.
+		expect(() => Master("m", "x", { apb: { timeout: 8 } })).toThrow(
+			/needs cdc/,
+		);
+		for (const timeout of [-1, 1.5, 0x10000]) {
+			expect(() => Master("m", "x", { apb: { timeout }, cdc: true })).toThrow(
+				/timeout must be 0\.\.65535/,
+			);
+		}
 	});
 
 	test("Bus rejects duplicate masters and a bridged cascade face", () => {

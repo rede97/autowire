@@ -57,16 +57,27 @@
 |---|---|
 | 写语义 | 命令 FIFO 接受写即源侧 ACK；不表示目标或叶子完成，不能事后回报目标写错误 |
 | 读语义 | 按命令顺序送至目标，等待目标 ACK 与读返回 FIFO 数据才源侧 ACK |
-| 目标停钟或不应答 | 读持续等待；写可排队直到命令 FIFO 满，然后背压，无超时错误 |
+| 目标停钟或不应答 | 读持续等待；写可排队直到命令 FIFO 满，然后背压；`wb_cdc` 自身无超时，APB 源可用 `apb: { timeout }`（§4） |
 | 源时钟停止 | 目标可继续处理已入队命令、缓存读响应；源恢复时钟后才能取回应答 |
-| 复位 | 必须静默两侧请求并协调复位源域与目标域；没有单侧复位保证、自动 flush/drain 或恢复协议 |
+| 链路复位 | `link_rst_n = s_rst_n & rst_n`：**任一侧**复位同时复位两个 FIFO 的两端（异步断言，对侧停钟也生效；各侧经本地同步器释放），单侧复位不会重放旧命令、不会发出 X 命令、不会让读数据错拍 |
+| 复位丢失的读 | 读已入队（或已在目标执行）时发生链路复位：源侧回 **一次** `s_err`（源自身复位时除外）；随后新请求正常 |
+| 已发出的目标拍 | 目标 `m_*` 只随 `rst_n` 复位：源侧单独复位时，已在 fabric 上的拍保持到 ACK（WB/PIPE 读不可撤销），其读数据被丢弃；之后的新命令排在它后面 |
+| 链路未就绪 | 目标复位保持中或复位刚释放：新请求等待，`s_ack` / `s_err` 都为 0，直至链路同步完成 |
+| 源放弃读 | 读挂起期间源侧撤掉 `CYC/STB`（如 APB 超时）：该读的迟到响应被静默排空，不会完成后续请求；新请求等其排空后再入队 |
 | 同步器 | 默认经 `wb_sync_cell`（行为模型 2FF；签核时换 foundry sync cell，保持端口不变） |
 
-`timeout` / RTL `TIMEOUT` 已移除。必须静默新请求、确保没有活动目标 WB 事务，再协调两侧复位；即使 FIFO 看似空，发生过流量后两端指针也未必为零，不能独立复位一端。协调复位可以有意丢弃尚在队列中的写，**已返回 posted ACK 不保证写跨复位存活**，且复位不能回滚已经发生的副作用。两侧均从复位启动、请求保持静默时允许错开释放；满足 FIFO/CELL 就绪条件后才能重新发请求。不能用复位一侧或撤销请求当作取消/重试机制。
+复位仍会丢弃尚在命令 FIFO 中的写：**已返回 posted ACK 不保证写跨复位存活**，复位也不能回滚已经发生的副作用。不能用复位一侧或撤销请求当作取消/重试机制；超时或 `s_err` 后，软件应重新读回状态再决定是否重做。
 
 同一 CDC 路径后续读只保证前序命令已经按序通过该路径；若下游 ACK 本身是 posted 入队，它不是全局下游写完成栅栏，也不保证其他路径、master 或分支已排空。
 
-错误回报：fabric 不生成 ERR，`wb_cdc` 的兼容源侧 `s_err` 恒 0，不对停钟、复位或不应答报错。APB PPROT 拒绝仍由协议桥返回 `PSLVERR`；JTAG 本地访问使能/busy 违规仍可返回状态错误。
+错误回报：fabric 不生成 ERR。`wb_cdc` 的 `s_err` 只在链路复位丢失挂起读时出现一次；停钟或不应答不报错（APB 由桥内 `TIMEOUT` 报 `PSLVERR`）。APB PPROT 拒绝仍由协议桥返回 `PSLVERR`；JTAG 本地访问使能/busy 违规仍可返回状态错误。
+
+集成与签核注意事项：
+
+- **RDC**：`link_rst_n` 是两路异步复位的组合 AND；源复位断言会异步清除目标域的 pop 流水与 `beat_owned`，目标复位断言会异步拉低源域的 `s_link`。这些是复位域交叉，RTL 仿真只覆盖功能，断言沿附近的亚稳态需 RDC 工具签核（或签核时换成复位单元）。在请求静默时断言复位仍是推荐做法。
+- **复位脉宽**：两侧复位断言须满足 `wb_sync_cell` / CELL 的最小脉宽；释放后各侧至少两个本地时钟沿才就绪。源侧对链路复位的观测经 `s_clk` 同步，源时钟停止期间发生的目标复位会在 `s_clk` 恢复后被看到。
+- **JTAG**：`{m}_trst_n` 与系统 `rst_n` 天然独立（调试器 TRST、看门狗/软复位），任一单独复位都按上表处理；系统复位丢失的读经 `wb_err` 进 TDR 的 sticky err，host 读到 err 后用 nop 清除再重发。
+- **外部 CELL**：两侧端口接同一个 `link_rst_n`；CELL 必须允许两端在对侧停钟时异步复位，reset-busy 合并到 full/empty（§3.1）。
 
 ### 3.1 默认 FIFO 与外部 CELL 接入
 
@@ -80,7 +91,7 @@
 | 写侧 | `wr_clk`, `wr_rst_n`, `wr_en`, `wr_data[WIDTH-1:0]`, `wr_full`, `wr_afull`；上升沿 `wr_en && !wr_full` 才接受 |
 | 读侧 | `rd_clk`, `rd_rst_n`, `rd_en`, `rd_data[WIDTH-1:0]`, `rd_empty`, `rd_aempty`；上升沿 `rd_en && !rd_empty` 才接受 |
 | 读延迟 | 接受 pop 的边沿后更新 `rd_data`，消费方在下一边沿采样；无 pop 时保持。FWFT CELL 须由 adapter 在 pop 时寄存队首数据，不能直接接组合队首 |
-| 复位 | 低有效、异步断言，各侧同步释放；系统必须协调两侧复位/静默。默认释放等待两个本地上升沿；释放前 `wr_full=1` / `rd_empty=1`，不接受操作 |
+| 复位 | 低有效、异步断言，各侧同步释放；`wb_cdc` 把两端都接到 `link_rst_n`，任一侧断言即两端同时复位，对侧停钟时也必须生效。默认释放等待两个本地上升沿；释放前 `wr_full=1` / `rd_empty=1`，不接受操作 |
 | reset-busy | 实际 CELL 的 reset-busy 必须由 adapter 合并到 full/empty，保证未就绪时不能接受读写；停钟时也须满足 CELL 的复位要求 |
 
 不同端口、读延迟或复位约定的 CELL 必须提供真实 adapter，不能只改模块名。超过一拍的读延迟需预取以呈现上述 ABI。外部选择冒烟使用内建核心的测试 adapter，不是实际 vendor RTL 验证；工程必须用实际 CELL/adapter 重新验证 FIFO、CDC 与复位行为。
@@ -93,6 +104,8 @@
 - `PREADY` 等 WB `ACK/ERR`；经 CDC 的写 ACK 表示入队（posted），读等返回；无 CDC 时完成语义由下游 WB/PIPE 决定。`ERR` → `PSLVERR=1`。
 - `PPROT` 过滤：`(PPROT & mask) !== value` 时 **立即** `PREADY=1, PSLVERR=1`，不发 WB（修复主干挂死）。缺省 mask=0 全收。
 - `cdc: false`（缺省）时桥跑在 fabric `clk`/`rst_n`，wrapper 不出 `{m}_pclk` / `{m}_presetn`，`wb_err` 接 `1'b0`。
+- `apb: { timeout: N }`（PCLK 周期，1..65535；缺省/0 关闭；**必须** `cdc: true`）：WB 请求发出后 N 个 PCLK 内无 `ACK/ERR` → 撤 `CYC/STB`，`PREADY=1, PSLVERR=1, PRDATA=0`。`wb_cdc` 负责善后：已发到目标的拍继续做完，超时读的迟到响应被排空、不会交给下一笔；在命令 FIFO 满时超时的写未入队，不会落地；但与超时同拍入队的写仍可能落地。无 CDC 时拒绝该选项：撤 `CYC` 会撤销 fabric 上的拍，而 PIPE 读不可取消。
+- 超时预算要覆盖最坏的 **排队** 时间：读排在命令 FIFO 中最多 8 笔已 posted 写之后，加上两向指针同步、目标应答和 PCLK/clk 频率比。预算太小会在目标正常但较慢时误报。超时后跟着的请求会等前一笔读排空，目标持续不应答时它也会超时。
 - APB **禁止**成为 decoder / regfile 原生口（[`wishbone-bus.md`](./wishbone-bus.md) §4）。
 
 ## 5. JTAG master：接入 DFT 全局 JTAG
@@ -109,7 +122,7 @@
 | 端口 | 方向 | 说明 |
 |---|---|---|
 | `{m}_tck` | in | TCK；同时是该 master `wb_cdc` 的源时钟 |
-| `{m}_trst_n` | in | TDR/CDC 源侧低有效复位（1687 `ResetPort`），不复位 fabric；集成方必须协调两侧复位并静默请求，不能把独立 TAP reset 当作 CDC 恢复。demo/soc 的 `dbg_trst_n` 直接来自 `jtag_trst_n`，不是 TLR 状态派生复位 |
+| `{m}_trst_n` | in | TDR/CDC 源侧低有效复位（1687 `ResetPort`），不复位 fabric；经 `wb_cdc` 链路复位同时清空两向 FIFO（§3），可独立于系统 `rst_n` 断言。demo/soc 的 `dbg_trst_n` 直接来自 `jtag_trst_n`，不是 TLR 状态派生复位 |
 | `{m}_sel` | in | 本 TDR 被选中（IR 译码 / SIB 输出，DFT 驱动） |
 | `{m}_capture_dr` / `{m}_shift_dr` / `{m}_update_dr` | in | TAP 状态解码（DFT 驱动） |
 | `{m}_tdi` | in | 串入 |
@@ -131,7 +144,7 @@ st: 0 ok    1 busy（事务在飞）   2 err（sticky）
 
 - `Update-DR`：op=read/write 且空闲、`en=1` → 锁存并拉起 TCK 域 WB 请求 → `wb_cdc` → fabric。
 - busy 时再发 read/write：**丢弃**该 op 并置 err。
-- err 来源：`en=0`、busy 时丢弃 op，以及桥输入 WB `ERR`（当前 CDC 恒 0）；不包含 fabric 复位或超时。空闲时一次 **nop 的 Update-DR 清 err**（其 Capture-DR 已先读出 err）。
+- err 来源：`en=0`、busy 时丢弃 op，以及桥输入 WB `ERR`（`wb_cdc` 仅在系统复位丢失挂起读时给出）；没有超时。空闲时一次 **nop 的 Update-DR 清 err**（其 Capture-DR 已先读出 err）。
 - 写完成/`st=0` 表示命令已排入 CDC 队列，不表示叶子完成；读完成表示读数据返回。同一路径读可保持命令先后顺序，但不是跨路径或下游 posted 队列的全局栅栏。
 - 源侧进展与读取响应需要 TCK 沿：两次扫描之间插入 N 个 Run-Test/Idle（PDL `iRunLoop`，`Master(..., { jtag: { idle } })`，缺省 16）；不足则读到 busy 再轮询。无硬件超时；host 停止轮询不会取消事务，不得盲目重新 launch。
 
@@ -148,7 +161,7 @@ Bus("soc_wb", "SoC cfg", {
   masters: [
     Master("cpu", "same-clock WB"),                                   // 原生口，不进 wrapper 逻辑
     Master("host", "SoC APB", {
-      apb: { pprot: { value: 0b000, mask: 0b001 } },                  // mask 缺省 0b111
+      apb: { pprot: { value: 0b000, mask: 0b001 }, timeout: 64 },     // mask 缺省 0b111；timeout PCLK 周期，需 cdc
       cdc: true,
     }),
     Master("dbg", "DFT JTAG", { jtag: { idle: 16 } }),                // jtag 恒 cdc
@@ -158,7 +171,7 @@ Bus("soc_wb", "SoC cfg", {
 });
 ```
 
-- `apb` / `jtag` 互斥；`jtag` + `cdc: false` 报错；不再提供 `timeout` 选项。
+- `apb` / `jtag` 互斥；`jtag` + `cdc: false` 报错；`apb.timeout` 范围 0..65535，`> 0` 时必须 `cdc: true`。
 - 级联面（`child.uplink(name?)` 选出的 master 口）**禁止**带 apb/jtag/cdc；`Bus` 拒绝重名 master。
 - 有任一桥接 master 时 generate **必须**打 `<bus>_bus_cfg`；fabric 上该 master 的 WB 口在 wrapper 内接 `{m}_fab_*`，协议桥源侧接 `{m}_src_*`。connect HTML 只看到：
 
@@ -180,11 +193,11 @@ Bus("soc_wb", "SoC cfg", {
 
 - 同域 WB、APB（字节写、PPROT 违例 → PSLVERR 且不写）、异步 WB 读写。
 - JTAG 写 / 读、busy 状态、busy 时丢弃 op → sticky err → nop 清除、`en=0` → err 且不写。
-- CDC posted 写、读排序、停钟等待/满背压及两侧协调复位；不承诺单侧复位或超时恢复。
+- CDC posted 写、读排序、停钟等待/满背压、协调复位，以及单侧/停钟复位不重放、丢失读回 ERR、源放弃读的响应排空；APB 超时经 CDC 的 PSLVERR 与善后。
 - 四个 master 并发经仲裁写不同窗口后逐字校验。
 
 - `test/async-fifo.test.ts`：深度 2/8 × 快写慢读/慢写快读，满/空保护、回绕顺序、并发生产消费、停读钟背压、停钟时复位清空及新数据读取。
-- `test/wishbone-cdc.test.ts`：WB/APB 入口、时钟比、posted 写排队、读返回顺序、停钟与协调复位行为。
+- `test/wishbone-cdc.test.ts`：WB/APB 入口、时钟比、posted 写排队、读返回顺序、停钟与协调复位（`wb_cdc_boundary_tb.sv`）；任一侧单独复位或对侧停钟时复位不重放/无 X、丢失读一次 ERR、已发目标拍在源复位后做完且数据丢弃、源放弃读排空、目标复位保持中请求等待（`wb_cdc_reset_tb.sv`）；APB `TIMEOUT` 慢目标不误报、卡死目标 PSLVERR 及耗时、迟到响应排空、FIFO 满时超时写不落地（`wb_apb_timeout_tb.sv`）。
 - `test/wishbone-master.test.ts`：APB/JTAG/异步 WB 经仲裁和 PIPE 的端到端行为；`test/wishbone-rtl-lint.test.ts` 检查生成 RTL 的 Verilator `-Wall`。这些是仓库回归范围，不构成硅验证或实际 vendor CELL 验证。
 
 demo/soc 接入（JTAG）：`sot/wb_bus_soc.ts` 加 `Master("dbg", …, { jtag: true, pipe: 2 })`（fabric 侧、CDC 之后 2 级 posted 写 pipe）；`rtl/demo_tap.v` 为 **DFT 占位 TAP**（IDCODE / BYPASS / USER=1000 → `dbg_sel`），顶层引出 `jtag_*`，`dbg_en` 绑 1。外部 JTAG 冒烟与 CPU 固件并发（共享 soc_wb 仲裁）：
@@ -197,7 +210,7 @@ demo/soc 接入（JTAG）：`sot/wb_bus_soc.ts` 加 `Master("dbg", …, { jtag: 
 
 ## 8. 暂时不做
 
-已裁定且已实现：写 **posted**；`wb_cdc` 使用命令/读返回双异步 FIFO，默认可综合实现，也可按 §3.1 选择外部 CELL/adapter；无超时与自动恢复，要求两侧协调复位；JTAG **单 DR**、地址宽 = bus `addrWidth`；输出 PDL；无私有 TAP；同步单元为可替换壳（无 toml 选项）。demo/soc 的 JTAG master 已接入。
+已裁定且已实现：写 **posted**；`wb_cdc` 使用命令/读返回双异步 FIFO，默认可综合实现，也可按 §3.1 选择外部 CELL/adapter；任一侧复位经 `link_rst_n` 复位两向 FIFO，丢失读回 ERR，无自动重试；超时只在 APB 桥（`apb.timeout`，需 cdc）；JTAG **单 DR**、地址宽 = bus `addrWidth`；输出 PDL；无私有 TAP；同步单元为可替换壳（无 toml 选项）。demo/soc 的 JTAG master 已接入。
 
 等后续需求再追加：
 

@@ -213,6 +213,11 @@ export type WbMasterBridge = "wb" | "apb" | "jtag";
 export type ApbMasterOpts = {
 	/** PPROT filter: accept iff `(PPROT & mask) === value`; mismatch → PSLVERR. */
 	readonly pprot?: { readonly value: number; readonly mask?: number };
+	/**
+	 * PCLK cycles `wb_apb2wb` waits for the WB answer before PSLVERR (0 = off).
+	 * Needs `cdc: true`: only `wb_cdc` can absorb the abandoned beat.
+	 */
+	readonly timeout?: number;
 };
 
 export type JtagMasterOpts = {
@@ -243,6 +248,8 @@ export type WbMaster = {
 	readonly bridge?: WbMasterBridge;
 	readonly cdc?: boolean;
 	readonly pprot?: { readonly value: number; readonly mask: number };
+	/** `wb_apb2wb` TIMEOUT in PCLK cycles; omitted = 0 (off). */
+	readonly timeout?: number;
 	readonly idle?: number;
 	/** Fabric-side pipe stages (0 = combinational). */
 	readonly pipe: number;
@@ -798,9 +805,22 @@ export function Master(
 	if (bridge === "wb" && !cdc) return { name, desc, pipe };
 	const m: WbMaster = { name, desc, bridge, cdc, pipe };
 	if (bridge === "apb") {
-		// `apb: true` means no PPROT filter; only the object form carries one.
-		const p = opts.apb === true ? undefined : opts.apb?.pprot;
-		if (p === undefined) return m;
+		// `apb: true` means no PPROT filter and no timeout.
+		const o = opts.apb === true ? undefined : opts.apb;
+		const timeout = o?.timeout ?? 0;
+		if (!Number.isInteger(timeout) || timeout < 0 || timeout > 0xffff) {
+			throw new Error(
+				`wishbone-bus: master ${name} apb timeout must be 0..65535`,
+			);
+		}
+		// Dropping CYC on the fabric would withdraw a beat (PIPE reads cannot
+		// be cancelled); wb_cdc keeps the target beat and drains the response.
+		if (timeout > 0 && !cdc) {
+			throw new Error(`wishbone-bus: master ${name} apb timeout needs cdc`);
+		}
+		const withTimeout = timeout > 0 ? { ...m, timeout } : m;
+		const p = o?.pprot;
+		if (p === undefined) return withTimeout;
 		const mask = p.mask ?? 0b111; // default: match all three PPROT bits
 		for (const [k, v] of [
 			["value", p.value],
@@ -816,7 +836,7 @@ export function Master(
 				`wishbone-bus: master ${name} pprot value sets bits outside mask`,
 			);
 		}
-		return { ...m, pprot: { value: p.value, mask } };
+		return { ...withTimeout, pprot: { value: p.value, mask } };
 	}
 	if (bridge === "jtag") {
 		// Run-Test/Idle padding cycles in the emitted PDL; default 16.
