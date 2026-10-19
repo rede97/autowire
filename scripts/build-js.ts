@@ -30,6 +30,9 @@ const defines = [
 	`process.env.AUTOWIRE_VERSION=${JSON.stringify(release)}`,
 	`process.env.AUTOWIRE_COMMIT=${JSON.stringify(commit)}`,
 	`process.env.AUTOWIRE_BUILT=${JSON.stringify(built)}`,
+	// Free identifier, not an env var: only the bundle replaces it, so
+	// packaged JS never takes the repo-docs branch in templateBytes().
+	"AUTOWIRE_BUNDLED=true",
 ];
 
 mkdirSync(join(root, "out"), { recursive: true });
