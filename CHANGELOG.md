@@ -2,7 +2,7 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
-## Unreleased
+## [2.5.6] - 2026-10-19
 
 - `wb_cdc` 迁移 [Gitee master `435180e`](https://gitee.com/lunamiko/autowire/tree/435180e61a2580d5db3f3cc6f8f4e622b638876b) 的 posted 语义：命令 FIFO 深度 8、读返回 FIFO 深度 2，写入队即 ACK、读等目标 WB ACK 返回；保留 TGA 与 APB PPROT 拒绝。用户提供的硅验证结论适用于参考实现，不覆盖新增 WB 适配和默认 Gray FIFO。
 - **接口/行为变更**：移除 `timeout` / RTL `TIMEOUT`、超时/复位 ERR 及自动恢复；要求静默请求并协调两侧复位，不保证单侧复位。停目标钟时读等待，写至 FIFO 满后背压。JTAG 写完成表示排队；同路径读只保证命令顺序，不是下游 posted 写的全局栅栏。
