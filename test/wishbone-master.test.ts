@@ -237,7 +237,22 @@ task good;
 endtask
 initial begin
  #1; s_rst_n=0; rst_n=0;
- #20; s_rst_n=1; rst_n=1; settle();
+ #20; s_rst_n=1; rst_n=1;
+ // Cold start: a request while the empty drain runs must wait for ACK, not ERR.
+ adr=8'h11; cyc=1;
+ fork
+  begin
+   wait(mc);
+   if(maddr!==8'h11) $fatal(1,"cold start address");
+   @(negedge clk); response=32'h1111; ma=1;
+   @(negedge clk); ma=0;
+  end
+  begin
+   wait(ack || err);
+   if(err || rd!==32'h1111) $fatal(1,"cold start returned ERR");
+  end
+ join
+ drop(); settle();
  // Immediate retry must never turn the old response into a successful new beat.
  launch(8'ha0); wait(mc); wait(err); drop(); reject_response=1; launch(8'hb0);
  repeat(8) @(negedge s_clk);

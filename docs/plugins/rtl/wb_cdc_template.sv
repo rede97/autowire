@@ -11,6 +11,10 @@
 //   - fabric in reset (alive=0)            -> s_err at once
 //   - no ack within TIMEOUT s_clk cycles   -> s_err (TIMEOUT=0 disables)
 //   - after an abort, new requests get s_err until recovery completes
+//   - reset until the first return to idle, and the target holds no beat:
+//     a new request waits (s_ack and s_err stay 0) while the link and the
+//     empty drain finish. This is not an abort. A source-only reset that
+//     leaves a captured target beat still returns s_err.
 // A timeout drops the source request and returns s_err. It does not withdraw
 // a beat the target domain has already accepted: m_cyc stays high until m_ack,
 // so the write can still land after the source has seen s_err.
@@ -78,6 +82,14 @@ module wb_cdc #(
 	logic                   link_rst_n;
 	logic                   link_up_s;
 	logic                   recover_q, ready_t, drained_q, drained_s;
+	// Set by source reset. Cleared on the first return to idle. While set,
+	// a request waits out the empty drain instead of taking s_err.
+	logic                   cold;
+	// Target beat that survived a source-only reset. Reset by the target
+	// reset only, so s_rst_n does not forget an in-flight capture.
+	logic                   target_busy;
+	logic                   inflight_s;
+	wire                    cold_wait = cold && !inflight_s;
 	assign link_rst_n = s_rst_n & rst_n;
 	// Asynchronous assertion preserves even a target reset between source edges.
 	// The source FSM remains clocked during target reset so it can return ERR.
@@ -98,6 +110,9 @@ module wb_cdc #(
 	wb_sync_cell u_alive_sync (
 		.clk(s_clk), .rst_n(s_rst_n), .d(alive_q), .q(alive_s)
 	);
+	wb_sync_cell u_inflight_sync (
+		.clk(s_clk), .rst_n(rst_n), .d(target_busy), .q(inflight_s)
+	);
 
 	assign s_req_new = s_cyc && s_stb && !s_ack && !s_err;
 	assign tmo_hit   = (TIMEOUT != 0) && (tmo_cnt == TMW'(TIMEOUT));
@@ -106,6 +121,7 @@ module wb_cdc #(
 		if (!s_rst_n) begin
 			s_state        <= S_DRAIN;
 			recover_q      <= 1'b1;
+			cold           <= 1'b1;
 			req_q          <= 1'b0;
 			s_ack          <= 1'b0;
 			s_err          <= 1'b0;
@@ -123,7 +139,7 @@ module wb_cdc #(
 				req_q <= 1'b0;
 				recover_q <= 1'b1;
 				s_state <= S_DRAIN;
-				if (s_req_new) s_err <= 1'b1;
+				if (s_req_new && !cold_wait) s_err <= 1'b1;
 			end else case (s_state)
 				S_IDLE: begin
 					if (s_req_new) begin
@@ -169,10 +185,12 @@ module wb_cdc #(
 				end
 				default: begin
 					// Aborted: refuse new work until the target handshake closes.
-					if (s_req_new) s_err <= 1'b1;
+					// The empty drain after reset is not an abort.
+					if (s_req_new && !cold_wait) s_err <= 1'b1;
 					if (recover_q && drained_s) recover_q <= 1'b0;
 					if (!recover_q && !drained_s && !ack_s && alive_s) begin
 						s_state <= S_IDLE;
+						cold    <= 1'b0;
 					end
 				end
 			endcase
@@ -188,6 +206,7 @@ module wb_cdc #(
 
 	logic [1:0] t_state;
 	logic       req_t;
+	assign target_busy = (t_state != T_IDLE);
 
 	wb_sync_cell u_req_sync (
 		.clk(clk), .rst_n(link_rst_n), .d(req_q), .q(req_t)
