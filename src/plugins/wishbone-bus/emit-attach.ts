@@ -68,29 +68,11 @@ function isCascadeMasterPort(name: string, def: BusDef): boolean {
 	);
 }
 
-function isDecoderMasterPort(name: string): boolean {
-	return (
-		(name.startsWith("m_") && (name.endsWith("_i") || name.endsWith("_o"))) ||
-		name.startsWith("m_tga_")
-	);
-}
-
-/** Fabric port → wrapper net when the cascade face is remapped to i_wb_* / o_wb_*. */
+/** Fabric port → wrapper net when an interconnect/crossbar cascade face is
+ * remapped to i_wb_* / o_wb_*. Decoder cascade faces keep their master name. */
 function cascadeNet(fabricName: string, def: BusDef): string {
-	// Only a declared cascade face (`.uplink()`) remaps the fabric master to the
-	// wrapper's i_wb_* / o_wb_* ports. Without it the wrapper keeps the fabric's
-	// own m_* ports, so the fabric instance must stay on m_* too — otherwise the
-	// instance drives undeclared i_wb_* nets while the m_* ports dangle.
-	if (!hasCascadeFace(def)) return fabricName;
-	if (busModuleKind(def) === "decoder") {
-		const tag = /^m_tga_(\w+)$/.exec(fabricName);
-		if (tag?.[1]) return `i_wb_tga_${tag[1]}`;
-		const inn = /^m_(\w+)_i$/.exec(fabricName);
-		if (inn?.[1]) return `i_wb_${inn[1]}`;
-		const out = /^m_(\w+)_o$/.exec(fabricName);
-		if (out?.[1]) return `o_wb_${out[1]}`;
+	if (!hasCascadeFace(def) || busModuleKind(def) === "decoder")
 		return fabricName;
-	}
 	const oPre = `${def.cascadeFace}_o_wb_`;
 	const iPre = `${def.cascadeFace}_i_wb_`;
 	if (fabricName.startsWith(oPre))
@@ -101,8 +83,7 @@ function cascadeNet(fabricName: string, def: BusDef): string {
 }
 
 function hidesCascadeFabricPort(p: FabricPort, def: BusDef): boolean {
-	if (!hasCascadeFace(def)) return false;
-	if (busModuleKind(def) === "decoder") return isDecoderMasterPort(p.name);
+	if (!hasCascadeFace(def) || busModuleKind(def) === "decoder") return false;
 	return isCascadeMasterPort(p.name, def);
 }
 
@@ -191,7 +172,7 @@ function wrapperPorts(def: BusDef): Array<{
 		if (hide) continue;
 		ports.push(p);
 	}
-	if (hasCascadeFace(def)) {
+	if (hasCascadeFace(def) && busModuleKind(def) !== "decoder") {
 		ports.push(...cascadeWrapperPorts(def));
 	}
 	ports.push(...masterFacePorts(def));
@@ -385,7 +366,9 @@ export function emitBusSystemSv(
 	];
 	if (cascade) {
 		header.push(
-			"// Cascade face (.uplink()) is remapped to i_wb_* / o_wb_* (parent SlaveBus).",
+			busModuleKind(def) === "decoder"
+				? "// Cascade face (.uplink()) keeps the named decoder master ports."
+				: "// Cascade face (.uplink()) is remapped to i_wb_* / o_wb_* (parent SlaveBus).",
 		);
 	}
 	header.push(

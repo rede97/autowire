@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	Bus,
+	type BusDef,
 	Crossbar,
 	Master,
 	MasterGroup,
@@ -72,7 +73,7 @@ function topology(kind: Fabric, depth: number, masterPipe: number) {
 }
 
 // Bind public fabric ports only; the scoreboard never reads DUT internals.
-function instance(def: ReturnType<typeof topology>, kind: Fabric) {
+function instance(def: BusDef) {
 	const signals: Record<string, string> = {
 		adr: "adr",
 		dat: "wdata",
@@ -87,14 +88,7 @@ function instance(def: ReturnType<typeof topology>, kind: Fabric) {
 		let signal: string | undefined;
 		if (name === "clk" || name === "rst_n") signal = name;
 		else if (name === "rb_grant_en") signal = "1'b1";
-		else if (kind === "decoder" && name.startsWith("m_")) {
-			signal =
-				name === "m_dat_o"
-					? "rdata"
-					: name === "m_ack_o"
-						? "ack"
-						: signals[name.slice(2).replace(/_i$/, "")];
-		} else if (name.startsWith("host_")) {
+		else if (name.startsWith("host_")) {
 			signal =
 				name === "host_i_wb_dat"
 					? "rdata"
@@ -154,7 +148,7 @@ describe("wishbone broadcast behavior", () => {
 				)
 					.replace("__DEPTH__", String(depth))
 					.replace("__MASTER_PIPE__", String(masterPipe))
-					.replace("__DUT__", instance(def, kind));
+					.replace("__DUT__", instance(def));
 				const tb = join(dir, "tb.sv");
 				writeFileSync(tb, fixture);
 				const pipe = await generatePipeModule(dir);

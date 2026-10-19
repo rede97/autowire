@@ -17,7 +17,7 @@ import {
 	type WbMaster,
 	type WbTagSource,
 } from "./dsl.ts";
-import { busModuleKind, busSystemModuleName, type FabricPort } from "./emit.ts";
+import { busSystemModuleName, type FabricPort } from "./emit.ts";
 import { packedTagExpr, tagPlan, tagPort } from "./tag.ts";
 
 export const MASTER_MODULES = [
@@ -38,18 +38,7 @@ type Role =
 	| "rdat"
 	| "ack";
 
-const DECODER_ROLES: Record<string, Role> = {
-	m_adr_i: "adr",
-	m_dat_i: "wdat",
-	m_sel_i: "sel",
-	m_cyc_i: "cyc",
-	m_stb_i: "stb",
-	m_we_i: "we",
-	m_dat_o: "rdat",
-	m_ack_o: "ack",
-};
-
-const IC_ROLES: Record<string, Role> = {
+const WB_ROLES: Record<string, Role> = {
 	o_wb_adr: "adr",
 	o_wb_dat: "wdat",
 	o_wb_sel: "sel",
@@ -82,21 +71,12 @@ function fabricRole(
 	def: BusDef,
 	name: string,
 ): { m: WbMaster; role: Role; domain?: string } | undefined {
-	if (busModuleKind(def) === "decoder") {
-		const m = def.masters[0];
-		if (!m || !isBridgedMaster(m)) return undefined;
-		if (name.startsWith("m_tga_"))
-			return { m, role: "tga", domain: name.slice("m_tga_".length) };
-		const role = DECODER_ROLES[name];
-		if (!role) return undefined;
-		return { m, role };
-	}
 	for (const m of bridgedMasters(def)) {
 		if (!name.startsWith(`${m.name}_`)) continue;
 		const rest = name.slice(m.name.length + 1);
 		if (rest.startsWith("o_wb_tga_"))
 			return { m, role: "tga", domain: rest.slice("o_wb_tga_".length) };
-		const role = IC_ROLES[rest];
+		const role = WB_ROLES[rest];
 		if (role) return { m, role };
 	}
 	return undefined;

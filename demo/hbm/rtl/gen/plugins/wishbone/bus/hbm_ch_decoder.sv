@@ -17,16 +17,16 @@
 module hbm_ch_decoder (
 	input  logic        clk,
 	input  logic        rst_n,
-	// Single master (flat; decoder mode),
-	input  logic [11:0] m_adr_i,
-	input  logic [31:0] m_dat_i,
-	input  logic [3:0]  m_sel_i,
-	input  logic [1:0] m_tga_pstate,
-	input  logic        m_cyc_i,
-	input  logic        m_stb_i,
-	input  logic        m_we_i,
-	output logic [31:0] m_dat_o,
-	output logic        m_ack_o,
+	// Master cfg — Channel config from the decoder,
+	input  logic [11:0] cfg_o_wb_adr,
+	input  logic [31:0] cfg_o_wb_dat,
+	input  logic [3:0]  cfg_o_wb_sel,
+	input  logic [1:0]  cfg_o_wb_tga_pstate,
+	input  logic        cfg_o_wb_cyc,
+	input  logic        cfg_o_wb_stb,
+	input  logic        cfg_o_wb_we,
+	output logic [31:0] cfg_i_wb_dat,
+	output logic        cfg_i_wb_ack,
 	// Slave aword — HBM aword CSR (command/address lane),
 	//   base=0x00000000  size=0x00000100  mask=0x00000f00,
 	output logic [11:0] aword_i_wb_adr,
@@ -71,14 +71,14 @@ module hbm_ch_decoder (
 	logic        g_stb;
 	logic        g_we;
 
-	assign g_adr   = m_adr_i;
-	assign g_wdata = m_dat_i;
-	assign g_sel   = m_sel_i;
-	assign g_up_pstate = m_tga_pstate;
+	assign g_adr   = cfg_o_wb_adr;
+	assign g_wdata = cfg_o_wb_dat;
+	assign g_sel   = cfg_o_wb_sel;
+	assign g_up_pstate = cfg_o_wb_tga_pstate;
 	assign g_tga_pstate = g_up_pstate;
-	assign g_cyc   = m_cyc_i;
-	assign g_stb   = m_stb_i;
-	assign g_we    = m_we_i;
+	assign g_cyc   = cfg_o_wb_cyc;
+	assign g_stb   = cfg_o_wb_stb;
+	assign g_we    = cfg_o_wb_we;
 
 	//------------------------------------------------------------------------------
 	//  Address decode: lowest matching slave wins (mutually exclusive)
@@ -177,7 +177,7 @@ module hbm_ch_decoder (
 	               | (slot_sel[SLOT_AWORD] & aword_o_wb_ack)
 	               | (slot_sel[SLOT_DWORD0] & dword0_o_wb_ack)
 	               | (slot_sel[SLOT_DWORD1] & dword1_o_wb_ack);
-	assign m_dat_o = rsp_dat;
-	assign m_ack_o = rsp_ack;
+	assign cfg_i_wb_dat = rsp_dat;
+	assign cfg_i_wb_ack = rsp_ack;
 
 endmodule

@@ -142,8 +142,8 @@ describe("wishbone master bridges", () => {
 		expect(dec).toMatch(
 			/\.s_tga\s*\(\s*\{cfg_o_wb_tga_way,\s*cfg_o_wb_tga_bank\}\s*\)/,
 		);
-		expect(dec).toMatch(/\.m_tga_bank\s*\(\s*cfg_fab_tga\[1:0\]\s*\)/);
-		expect(dec).toMatch(/\.m_tga_way\s*\(\s*cfg_fab_tga\[2\]\s*\)/);
+		expect(dec).toMatch(/\.cfg_o_wb_tga_bank\s*\(\s*cfg_fab_tga\[1:0\]\s*\)/);
+		expect(dec).toMatch(/\.cfg_o_wb_tga_way\s*\(\s*cfg_fab_tga\[2\]\s*\)/);
 		expect(dec ?? "").not.toContain("cfg_o_wb_tga_tag");
 		const ic = emitBusSystemSv(
 			Bus("ti", "interconnect tags", {
@@ -182,7 +182,7 @@ describe("wishbone master bridges", () => {
 		expect(sv).not.toContain("wb_cdc #(");
 		expect(sv).toMatch(/\.pclk\s*\(\s*clk\s*\)/);
 		expect(sv).toMatch(/\.wb_err\s*\(\s*1'b0\s*\)/);
-		expect(sv).toMatch(/\.m_adr_i\s+\(\s*host_fab_adr\s*\)/);
+		expect(sv).toMatch(/\.host_o_wb_adr\s*\(\s*host_fab_adr\s*\)/);
 	});
 
 	test("ICL / PDL for JTAG masters only", () => {

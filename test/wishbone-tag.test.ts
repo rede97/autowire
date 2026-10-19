@@ -61,9 +61,9 @@ describe("wishbone tag domains", () => {
 		expect(plan.addrMask).toBe(0);
 		const sv = emitBusSv(hbm_ch);
 		// Decoder body declares its request bundle (no implicit nets) and the
-		// inherited tag arrives on the flat master port.
+		// inherited tag arrives on the named cfg master port.
 		expect(sv).toContain("logic [11:0] g_adr;");
-		expect(sv).toContain("assign g_up_pstate = m_tga_pstate;");
+		expect(sv).toContain("assign g_up_pstate = cfg_o_wb_tga_pstate;");
 		expect(sv).toContain("assign g_tga_pstate = g_up_pstate;");
 		expect(sv).not.toContain("g_adr_dec");
 		expect(sv).toContain("assign aword_i_wb_tga_pstate");

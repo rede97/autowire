@@ -50,8 +50,11 @@ describe("wishbone-bus", () => {
 		expect(busModuleName(def)).toBe("demo_decoder");
 		const sv = emitBusSv(def);
 		expect(sv).toContain("module demo_decoder");
+		expect(sv).toContain("cpu_o_wb_adr");
+		expect(sv).toContain("cpu_i_wb_ack");
 		expect(sv).toContain("csr_i_wb_cyc");
 		expect(sv).toContain("csr_o_wb_ack");
+		expect(sv).not.toContain("m_adr_i");
 		expect(sv).not.toContain("grant");
 		expect(sv).not.toContain("rb_grant_en");
 	});
@@ -163,7 +166,7 @@ describe("wishbone-bus", () => {
 		});
 		expect(def.tag_width).toBe(2);
 		const sv = emitBusSv(def);
-		expect(sv).toContain("m_tga_tag");
+		expect(sv).toContain("cpu_o_wb_tga_tag");
 		expect(sv).toContain("s0_i_wb_tga_tag");
 		expect(sv).toContain("g_tga_tag = g_up_tag");
 	});
@@ -203,7 +206,7 @@ describe("wishbone-bus", () => {
 		});
 		const sv = emitBusSv(def);
 		expect(sv).toContain("g_adr & 16'h");
-		expect(sv).toContain("[15:0] m_adr_i");
+		expect(sv).toContain("[15:0] cpu_o_wb_adr");
 	});
 
 	test("demo interconnect produces smoke TGA and forwards it", () => {
@@ -328,14 +331,14 @@ describe("wishbone-bus", () => {
 			sv.indexOf("u_cpu_mpipe"),
 			sv.indexOf("Address decode"),
 		);
-		expect(inst).toContain(".m_cyc(m_cyc_i)");
-		expect(inst).toContain(".m_adr(m_adr_i)");
+		expect(inst).toContain(".m_cyc(cpu_o_wb_cyc)");
+		expect(inst).toContain(".m_adr(cpu_o_wb_adr)");
 		expect(inst).toContain(".s_cyc(m_cyc_q)");
 		expect(inst).toContain(".m_tga(1'b0)");
 		expect(inst).toContain(".s_tga(u_cpu_mpipe_tga_nc)");
 		expect(sv).toContain("assign g_cyc   = m_cyc_q;");
-		expect(sv).toContain("assign m_ack_o  = m_pack;");
-		expect(sv).not.toContain("assign g_cyc   = m_cyc_i;");
+		expect(sv).toContain("assign cpu_i_wb_ack = m_pack;");
+		expect(sv).not.toContain("assign g_cyc   = cpu_o_wb_cyc;");
 	});
 
 	test("slave PIPE instantiates wb_cfg_pipe; TGA ports connected only when tagged", () => {
@@ -654,8 +657,9 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(busModuleKind(parent)).toBe("decoder");
 		expect(busModuleKind(child)).toBe("decoder");
 		const wrap = emitBusSystemSv(child.uplink(), ALIGNED);
-		expect(wrap).toContain("i_wb_cyc");
-		expect(wrap).toMatch(/\.m_cyc_i\s+\(\s*i_wb_cyc\s*\)/);
+		expect(wrap).toMatch(/^\s*input\s+.*\bcfg_o_wb_cyc\b/m);
+		expect(wrap).toMatch(/\.cfg_o_wb_cyc\s*\(\s*cfg_o_wb_cyc\s*\)/);
+		expect(wrap).not.toMatch(/^\s*(input|output).*\bi_wb_adr\b/m);
 		expect(wrap).not.toMatch(/^\s*(input|output).*m_adr_i/m);
 		const wide = Bus("wide_child", "wider than the window it is hung in", {
 			addrWidth: 16,
@@ -671,19 +675,18 @@ ts = "${ts.replaceAll("\\", "/")}"
 		).toThrow(/forwards 12 address bits/);
 	});
 
-	test("no cascade face: wrapper keeps the fabric m_* face (no dangling i_wb_*)", () => {
+	test("no cascade face: wrapper keeps the named decoder master", () => {
 		// A decoder with an attached regfile but no .uplink() is a top fabric:
-		// the wrapper must keep the decoder's own m_* ports and wire the
-		// instance to them, never to undeclared i_wb_* nets (regression).
+		// the wrapper keeps the same named master ports as the fabric instance.
 		const leaf = Bus("cfgbus", "decoder + attached regfile, no cascade", {
 			addrWidth: 16,
 			masters: [Master("cfg", "config")],
 			slaves: [SlaveRegfile(sha256, 0x0)],
 		});
 		const sv = emitBusSystemSv(leaf, ALIGNED) ?? "";
-		expect(sv).toMatch(/^\tinput\s+logic\s+\[15:0\]\s*m_adr_i,/m);
-		expect(sv).toMatch(/\.m_adr_i\s*\(\s*m_adr_i\s*\)/);
-		expect(sv).not.toMatch(/\.m_adr_i\s*\(\s*i_wb_adr\s*\)/);
+		expect(sv).toMatch(/^\tinput\s+logic\s+\[15:0\]\s*cfg_o_wb_adr,/m);
+		expect(sv).toMatch(/\.cfg_o_wb_adr\s*\(\s*cfg_o_wb_adr\s*\)/);
+		expect(sv).not.toMatch(/\.cfg_o_wb_adr\s*\(\s*i_wb_adr\s*\)/);
 		expect(sv).not.toMatch(/^\s*(input|output).*\bi_wb_adr\b/m);
 	});
 
