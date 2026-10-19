@@ -2,7 +2,7 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
-## Unreleased
+## [2.5.7] - 2026-10-19
 
 - 修复 `wb_cdc` 单侧复位（2.5.6 起）：只复位一侧（JTAG TRST 或系统 `rst_n`）会让 FIFO 重放历史命令、发出未初始化的 X 命令，并使后续读数据永久错一拍。现在 `link_rst_n = s_rst_n & rst_n` 同时复位两向 FIFO 两端（对侧停钟也生效）；丢失的挂起读回一次 `s_err`；源侧单独复位时已在 fabric 上的拍做完、数据丢弃；目标复位期间新请求等待；源撤 `CYC` 放弃的读，其迟到响应被排空。不再要求协调两侧复位。新增 `test/fixtures/wb_cdc_reset_tb.sv`。
 - 新增 `Master(..., { apb: { timeout: N }, cdc: true })`：`wb_apb2wb` 参数 `TIMEOUT`（PCLK 周期，0 关闭），超时撤 `CYC` 并回 `PSLVERR`；必须经 `wb_cdc`，无 CDC 时报错。`wb_cdc` 自身仍无超时。`demo/hbm` 的 `host` 恢复 `timeout: 64`。新增 `test/fixtures/wb_apb_timeout_tb.sv`。RDC、复位脉宽、超时预算等集成注意事项见 `docs/plugins/wishbone-master.md` §3、§4。
