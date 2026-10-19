@@ -25,6 +25,7 @@ module soc_wb_bus_cfg (
 	output logic [31:0] cpu_i_wb_dat,
 	output logic        cpu_i_wb_ack,
 	// Slave sram — 64 KiB SRAM
+	//   base=0x00000000  size=0x00010000  mask=0xffff0000  pipe=2
 	output logic [31:0] sram_i_wb_adr,
 	output logic [31:0] sram_i_wb_dat,
 	output logic [3:0]  sram_i_wb_sel,
@@ -34,6 +35,7 @@ module soc_wb_bus_cfg (
 	input  logic [31:0] sram_o_wb_dat,
 	input  logic        sram_o_wb_ack,
 	// Slave flash_xip — SPI flash XIP
+	//   base=0x01000000  size=0x01000000  mask=0xff000000  pipe=1
 	output logic [31:0] flash_xip_i_wb_adr,
 	output logic [31:0] flash_xip_i_wb_dat,
 	output logic [3:0]  flash_xip_i_wb_sel,
@@ -43,6 +45,7 @@ module soc_wb_bus_cfg (
 	input  logic [31:0] flash_xip_o_wb_dat,
 	input  logic        flash_xip_o_wb_ack,
 	// Slave flash_cfg — SPI flash cfg
+	//   base=0x02000000  size=0x00000004  mask=0xfffffffc
 	output logic [31:0] flash_cfg_i_wb_adr,
 	output logic [31:0] flash_cfg_i_wb_dat,
 	output logic [3:0]  flash_cfg_i_wb_sel,
@@ -52,6 +55,7 @@ module soc_wb_bus_cfg (
 	input  logic [31:0] flash_cfg_o_wb_dat,
 	input  logic        flash_cfg_o_wb_ack,
 	// Slave uart — simpleuart
+	//   base=0x02000008  mask=0xfffffff8  pipe=3
 	output logic [31:0] uart_i_wb_adr,
 	output logic [31:0] uart_i_wb_dat,
 	output logic [3:0]  uart_i_wb_sel,
@@ -61,6 +65,7 @@ module soc_wb_bus_cfg (
 	input  logic [31:0] uart_o_wb_dat,
 	input  logic        uart_o_wb_ack,
 	// Slave testout — test output
+	//   base=0x02000010  size=0x00000004  mask=0xfffffffc  pipe=1
 	output logic [31:0] testout_i_wb_adr,
 	output logic [31:0] testout_i_wb_dat,
 	output logic [3:0]  testout_i_wb_sel,
@@ -70,6 +75,7 @@ module soc_wb_bus_cfg (
 	input  logic [31:0] testout_o_wb_dat,
 	input  logic        testout_o_wb_ack,
 	// Slave ch0 — SD + DMA + SHA256 channel interconnect (cfg + engine)
+	//   base=0x03000000  size=0x00001000  mask=0xfffff000  pipe=2
 	output logic [31:0] ch0_i_wb_adr,
 	output logic [31:0] ch0_i_wb_dat,
 	output logic [3:0]  ch0_i_wb_sel,
@@ -80,6 +86,7 @@ module soc_wb_bus_cfg (
 	input  logic [31:0] ch0_o_wb_dat,
 	input  logic        ch0_o_wb_ack,
 	// Slave ch1 — SD + DMA + SHA256 channel interconnect (cfg + engine)
+	//   base=0x03001000  size=0x00001000  mask=0xfffff000  pipe=4
 	output logic [31:0] ch1_i_wb_adr,
 	output logic [31:0] ch1_i_wb_dat,
 	output logic [3:0]  ch1_i_wb_sel,

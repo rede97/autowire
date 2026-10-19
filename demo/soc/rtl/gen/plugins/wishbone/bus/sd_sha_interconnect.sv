@@ -18,7 +18,7 @@ module sd_sha_interconnect (
 	input  logic        clk,
 	input  logic        rst_n,
 	input  logic        rb_grant_en,
-	// Master cfg — Parent decoder cascade,
+	// Master cfg — Parent decoder cascade
 	input  logic [11:0] cfg_o_wb_adr,
 	input  logic [31:0] cfg_o_wb_dat,
 	input  logic [3:0]  cfg_o_wb_sel,
@@ -28,7 +28,7 @@ module sd_sha_interconnect (
 	input  logic        cfg_o_wb_we,
 	output logic [31:0] cfg_i_wb_dat,
 	output logic        cfg_i_wb_ack,
-	// Master eng — sd_rd_dma engine,
+	// Master eng — sd_rd_dma engine
 	input  logic [11:0] eng_o_wb_adr,
 	input  logic [31:0] eng_o_wb_dat,
 	input  logic [3:0]  eng_o_wb_sel,
@@ -38,8 +38,8 @@ module sd_sha_interconnect (
 	input  logic        eng_o_wb_we,
 	output logic [31:0] eng_i_wb_dat,
 	output logic        eng_i_wb_ack,
-	// Slave sd — sdspi CSR,
-	//   base=0x00000000  size=0x00000010  mask=0x00000ff0  pipe=2,
+	// Slave sd — sdspi CSR
+	//   base=0x00000000  size=0x00000010  mask=0x00000ff0  pipe=2
 	output logic [11:0] sd_i_wb_adr,
 	output logic [31:0] sd_i_wb_dat,
 	output logic [3:0]  sd_i_wb_sel,
@@ -48,8 +48,8 @@ module sd_sha_interconnect (
 	output logic        sd_i_wb_we,
 	input  logic [31:0] sd_o_wb_dat,
 	input  logic        sd_o_wb_ack,
-	// Slave dma — sd_rd_dma CSR,
-	//   base=0x00000010  size=0x00000010  mask=0x00000ff0  pipe=3,
+	// Slave dma — sd_rd_dma CSR
+	//   base=0x00000010  size=0x00000010  mask=0x00000ff0  pipe=3
 	output logic [11:0] dma_i_wb_adr,
 	output logic [31:0] dma_i_wb_dat,
 	output logic [3:0]  dma_i_wb_sel,
@@ -58,8 +58,8 @@ module sd_sha_interconnect (
 	output logic        dma_i_wb_we,
 	input  logic [31:0] dma_o_wb_dat,
 	input  logic        dma_o_wb_ack,
-	// Slave sha256 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane,
-	//   base=0x00000040  size=0x00000024  mask=0x00000fc0  pipe=2,
+	// Slave sha256 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane
+	//   base=0x00000040  size=0x00000024  mask=0x00000fc0  pipe=2
 	output logic [11:0] sha256_i_wb_adr,
 	output logic [31:0] sha256_i_wb_dat,
 	output logic [3:0]  sha256_i_wb_sel,

@@ -8,17 +8,38 @@ import type {
 	RenderInst,
 	RenderSignal,
 } from "../../core/printer.ts";
+import type { BusDef, WbMaster, WbTagSource } from "./dsl.ts";
 import {
-	type BusDef,
 	domainWidth,
 	isBridgedMaster,
 	masterBridge,
 	tagDomainsWidth,
-	type WbMaster,
-	type WbTagSource,
 } from "./dsl.ts";
-import { busSystemModuleName, type FabricPort } from "./emit.ts";
-import { packedTagExpr, tagPlan, tagPort } from "./tag.ts";
+import { busSystemModuleName } from "./emit.ts";
+import {
+	type FabricPort,
+	masterEndpointPorts,
+	type WbRole,
+	wbPortName,
+} from "./endpoint.ts";
+import { packedTagExpr, tagPlan } from "./tag.ts";
+
+function packedRange(width: number): string {
+	return width > 1 ? `[${width - 1}:0]` : "";
+}
+function fabricRole(
+	def: BusDef,
+	port: FabricPort,
+): { m: WbMaster; role: WbRole; domain?: string } | undefined {
+	const semantic = port.wb;
+	if (semantic?.kind !== "master") return undefined;
+	const m = def.masters.find(
+		(candidate) => candidate.name === semantic.endpoint,
+	);
+	return m && isBridgedMaster(m)
+		? { m, role: semantic.role, domain: semantic.domain }
+		: undefined;
+}
 
 export const MASTER_MODULES = [
 	"wb_sync_cell",
@@ -26,32 +47,6 @@ export const MASTER_MODULES = [
 	"wb_apb2wb",
 	"wb_jtag_tdr",
 ] as const;
-
-type Role =
-	| "adr"
-	| "wdat"
-	| "sel"
-	| "tga"
-	| "cyc"
-	| "stb"
-	| "we"
-	| "rdat"
-	| "ack";
-
-const WB_ROLES: Record<string, Role> = {
-	o_wb_adr: "adr",
-	o_wb_dat: "wdat",
-	o_wb_sel: "sel",
-	o_wb_cyc: "cyc",
-	o_wb_stb: "stb",
-	o_wb_we: "we",
-	i_wb_dat: "rdat",
-	i_wb_ack: "ack",
-};
-
-function packedRange(width: number): string {
-	return width > 1 ? `[${width - 1}:0]` : "";
-}
 
 export function bridgedMasters(def: BusDef): WbMaster[] {
 	return def.masters.filter(isBridgedMaster);
@@ -63,23 +58,6 @@ export function busNeedsMasterModules(def: BusDef): boolean {
 
 export function jtagMasters(def: BusDef): WbMaster[] {
 	return def.masters.filter((m) => masterBridge(m) === "jtag");
-}
-
-/** Bridged master owning fabric port `name`, with the port's WB role.
- *  TGA is one packed fabric net sliced back out to each `{stem}_tga_<domain>`. */
-function fabricRole(
-	def: BusDef,
-	name: string,
-): { m: WbMaster; role: Role; domain?: string } | undefined {
-	for (const m of bridgedMasters(def)) {
-		if (!name.startsWith(`${m.name}_`)) continue;
-		const rest = name.slice(m.name.length + 1);
-		if (rest.startsWith("o_wb_tga_"))
-			return { m, role: "tga", domain: rest.slice("o_wb_tga_".length) };
-		const role = WB_ROLES[rest];
-		if (role) return { m, role };
-	}
-	return undefined;
 }
 
 /** Slice of the packed `{m}_fab_tga` that belongs to one inherited domain.
@@ -102,54 +80,35 @@ function tgaSlice(
 	return net;
 }
 
-function fab(m: WbMaster, role: Role): string {
+function fab(m: WbMaster, role: WbRole): string {
 	return `${m.name}_fab_${role}`;
 }
 
-function src(m: WbMaster, role: Role | "err"): string {
+function src(m: WbMaster, role: WbRole): string {
 	return `${m.name}_src_${role}`;
 }
-
-/** Fabric port hidden behind a bridged master (wrapper drives `{m}_fab_*`). */
-export function isBridgedFabricPort(def: BusDef, name: string): boolean {
-	return fabricRole(def, name) !== undefined;
+export function isBridgedFabricPort(def: BusDef, port: FabricPort): boolean {
+	return fabricRole(def, port) !== undefined;
 }
 
 /** Wrapper net for a fabric port owned by a bridged master. */
 export function bridgedFabricNet(
 	def: BusDef,
-	name: string,
+	port: FabricPort,
 ): string | undefined {
-	const hit = fabricRole(def, name);
+	const hit = fabricRole(def, port);
 	if (!hit) return undefined;
 	if (hit.role !== "tga" || hit.domain === undefined)
 		return fab(hit.m, hit.role);
 	return tgaSlice(fab(hit.m, "tga"), tagPlan(def).inherited, hit.domain);
 }
 
-function wbFacePorts(def: BusDef, m: WbMaster, aw: number): FabricPort[] {
-	const n = m.name;
-	const ports: FabricPort[] = [
-		{ dir: "input", packed: "", name: `${n}_clk` },
-		{ dir: "input", packed: "", name: `${n}_rst_n` },
-		{ dir: "input", packed: packedRange(aw), name: `${n}_o_wb_adr` },
-		{ dir: "input", packed: "[31:0]", name: `${n}_o_wb_dat` },
-		{ dir: "input", packed: "[3:0]", name: `${n}_o_wb_sel` },
-		...tagPlan(def).inherited.map((t) => ({
-			dir: "input" as const,
-			packed: packedRange(domainWidth(t.domain)),
-			name: tagPort(`${n}_o_wb`, t.domain.name),
-		})),
+function wbFacePorts(def: BusDef, m: WbMaster): FabricPort[] {
+	return [
+		{ dir: "input", packed: "", name: `${m.name}_clk` },
+		{ dir: "input", packed: "", name: `${m.name}_rst_n` },
+		...masterEndpointPorts(def, m.name, true),
 	];
-	ports.push(
-		{ dir: "input", packed: "", name: `${n}_o_wb_cyc` },
-		{ dir: "input", packed: "", name: `${n}_o_wb_stb` },
-		{ dir: "input", packed: "", name: `${n}_o_wb_we` },
-		{ dir: "output", packed: "[31:0]", name: `${n}_i_wb_dat` },
-		{ dir: "output", packed: "", name: `${n}_i_wb_ack` },
-		{ dir: "output", packed: "", name: `${n}_i_wb_err` },
-	);
-	return ports;
 }
 
 function apbFacePorts(m: WbMaster, aw: number): FabricPort[] {
@@ -212,7 +171,7 @@ export function masterFacePorts(def: BusDef): FabricPort[] {
 				? apbFacePorts(m, def.addr_width)
 				: b === "jtag"
 					? jtagFacePorts(m)
-					: wbFacePorts(def, m, def.addr_width);
+					: wbFacePorts(def, m);
 		const [first, ...rest] = ports;
 		if (!first) continue;
 		out.push({ ...first, comment: faceComment(m) }, ...rest);
@@ -462,7 +421,9 @@ function wbMasterInsts(
 	const n = m.name;
 	const sTga =
 		tw > 0
-			? packedTagExpr(tags, (t) => tagPort(`${n}_o_wb`, t.domain.name))
+			? packedTagExpr(tags, (t) =>
+					wbPortName("master", n, "tga", t.domain.name),
+				)
 			: undefined;
 	return [
 		cdcInst(
@@ -472,15 +433,15 @@ function wbMasterInsts(
 			`${n}_clk`,
 			`${n}_rst_n`,
 			{
-				cyc: `${n}_o_wb_cyc`,
-				stb: `${n}_o_wb_stb`,
-				we: `${n}_o_wb_we`,
-				adr: `${n}_o_wb_adr`,
-				wdat: `${n}_o_wb_dat`,
-				sel: `${n}_o_wb_sel`,
-				ack: `${n}_i_wb_ack`,
-				err: `${n}_i_wb_err`,
-				rdat: `${n}_i_wb_dat`,
+				cyc: wbPortName("master", n, "cyc"),
+				stb: wbPortName("master", n, "stb"),
+				we: wbPortName("master", n, "we"),
+				adr: wbPortName("master", n, "adr"),
+				wdat: wbPortName("master", n, "wdat"),
+				sel: wbPortName("master", n, "sel"),
+				ack: wbPortName("master", n, "ack"),
+				err: wbPortName("master", n, "err"),
+				rdat: wbPortName("master", n, "rdat"),
 			},
 			sTga,
 		),

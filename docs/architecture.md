@@ -126,4 +126,5 @@ autowire connect run [unit]
   - **类型 B**（自定义标签展开成 `aw-*`）：裁定保留，当前没有这类标签，不实现。  
   - 现网编排：`plugin wishbone run`(外) → 静态 check → elaborate（`on-init` / `on-template`）→ `connect run` 写 `.sv`。页面不写。  
 - **寄存器 / Wishbone**：叶子 [plugins/wishbone-regfile.md](./plugins/wishbone-regfile.md)；块内配置树 [plugins/wishbone-bus.md](./plugins/wishbone-bus.md)。开放项暂时不动。  
+  - 总线端口由同一 WB 端点规则生成，decoder / interconnect / crossbar、wrapper 与原生 WB 桥接面共享名称、方向、位宽和 tag 元数据；`.uplink()` 只选面不改名。上层按请求/响应角色显式连接，不按拓扑另造 flat 口。
 - 叶子 RTL：Rust sidecar 出 RtlIndex，连接页只读端口表。

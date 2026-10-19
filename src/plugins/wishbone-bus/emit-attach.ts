@@ -10,12 +10,11 @@ import {
 } from "../../core/printer.ts";
 import { collectPorts, type PortDecl } from "../wishbone-regfile/emit.ts";
 import { layoutRegfile } from "../wishbone-regfile/layout.ts";
-import { type BusDef, domainWidth, type WbSlave } from "./dsl.ts";
+import type { BusDef, WbSlave } from "./dsl.ts";
 import {
 	busModuleKind,
 	busModuleName,
 	busSystemModuleName,
-	type FabricPort,
 	listFabricPorts,
 } from "./emit.ts";
 import { attachedSlaves } from "./emit-map.ts";
@@ -27,7 +26,6 @@ import {
 	masterModel,
 	masterSummary,
 } from "./emit-master.ts";
-import { tagPlan, tagPort } from "./tag.ts";
 
 /** The [workspace.style] switches this wrapper follows (PrintStyle) plus the
  *  net keyword: the plugin's own modules are all logic, so "auto" inherits
@@ -54,75 +52,6 @@ function isSlaveWbPort(name: string, slave: string): boolean {
 
 function hasCascadeFace(def: BusDef): boolean {
 	return def.cascadeFace !== undefined;
-}
-
-function packedRange(width: number): string {
-	return width > 1 ? `[${width - 1}:0]` : "";
-}
-
-function isCascadeMasterPort(name: string, def: BusDef): boolean {
-	const face = def.cascadeFace;
-	return (
-		face !== undefined &&
-		(name.startsWith(`${face}_o_wb_`) || name.startsWith(`${face}_i_wb_`))
-	);
-}
-
-/** Fabric port → wrapper net when an interconnect/crossbar cascade face is
- * remapped to i_wb_* / o_wb_*. Decoder cascade faces keep their master name. */
-function cascadeNet(fabricName: string, def: BusDef): string {
-	if (!hasCascadeFace(def) || busModuleKind(def) === "decoder")
-		return fabricName;
-	const oPre = `${def.cascadeFace}_o_wb_`;
-	const iPre = `${def.cascadeFace}_i_wb_`;
-	if (fabricName.startsWith(oPre))
-		return `i_wb_${fabricName.slice(oPre.length)}`;
-	if (fabricName.startsWith(iPre))
-		return `o_wb_${fabricName.slice(iPre.length)}`;
-	return fabricName;
-}
-
-function hidesCascadeFabricPort(p: FabricPort, def: BusDef): boolean {
-	if (!hasCascadeFace(def) || busModuleKind(def) === "decoder") return false;
-	return isCascadeMasterPort(p.name, def);
-}
-
-function cascadeWrapperPorts(def: BusDef): Array<{
-	dir: "input" | "output";
-	packed: string;
-	name: string;
-	comment?: string;
-}> {
-	const aw = def.addr_width;
-	const inherited = tagPlan(def).inherited;
-	const ports: Array<{
-		dir: "input" | "output";
-		packed: string;
-		name: string;
-		comment?: string;
-	}> = [
-		{
-			dir: "input",
-			packed: packedRange(aw),
-			name: "i_wb_adr",
-			comment: "Cascade uplink (slave face toward parent decoder)",
-		},
-		{ dir: "input", packed: "[31:0]", name: "i_wb_dat" },
-		{ dir: "input", packed: "[3:0]", name: "i_wb_sel" },
-		...inherited.map((t) => ({
-			dir: "input" as const,
-			packed: packedRange(domainWidth(t.domain)),
-			name: tagPort("i_wb", t.domain.name),
-		})),
-	];
-	ports.push(
-		{ dir: "input", packed: "", name: "i_wb_cyc" },
-		{ dir: "input", packed: "", name: "i_wb_stb" },
-		{ dir: "input", packed: "", name: "i_wb_we" },
-		{ dir: "output", packed: "[31:0]", name: "o_wb_dat" },
-		{ dir: "output", packed: "", name: "o_wb_ack" },
-	);
-	return ports;
 }
 
 function promoteName(slaveId: string, table: string, port: string): string {
@@ -166,14 +95,10 @@ function wrapperPorts(def: BusDef): Array<{
 	}> = [];
 	for (const p of listFabricPorts(def)) {
 		const hide =
-			[...attachedIds].some((id) => isSlaveWbPort(p.name, id)) ||
-			hidesCascadeFabricPort(p, def) ||
-			isBridgedFabricPort(def, p.name);
+			(p.wb?.kind === "slave" && attachedIds.has(p.wb.endpoint)) ||
+			isBridgedFabricPort(def, p);
 		if (hide) continue;
 		ports.push(p);
-	}
-	if (hasCascadeFace(def) && busModuleKind(def) !== "decoder") {
-		ports.push(...cascadeWrapperPorts(def));
 	}
 	ports.push(...masterFacePorts(def));
 	for (const s of attached) {
@@ -338,7 +263,7 @@ function fabricInst(def: BusDef): RenderInst {
 		params: [],
 		connects: listFabricPorts(def).map((p) => ({
 			port: p.name,
-			to: bridgedFabricNet(def, p.name) ?? cascadeNet(p.name, def),
+			to: bridgedFabricNet(def, p) ?? p.name,
 			part: "",
 			type: "",
 			dir: p.dir,
@@ -366,9 +291,7 @@ export function emitBusSystemSv(
 	];
 	if (cascade) {
 		header.push(
-			busModuleKind(def) === "decoder"
-				? "// Cascade face (.uplink()) keeps the named decoder master ports."
-				: "// Cascade face (.uplink()) is remapped to i_wb_* / o_wb_* (parent SlaveBus).",
+			"// Cascade face (.uplink()) preserves the selected master's named WB ports.",
 		);
 	}
 	header.push(

@@ -371,9 +371,6 @@ module soc_top (
 		.o_test_data       (test_data         )  // o [31:0]
 	);
 	sd_sha_ch u_ch0 (
-		.rst_n             (rst_ni            ), // i
-		.rb_grant_en       (rg_rb_grant_en    ), // i
-		.clk               (clk               ), // i
 		.i_wb_adr          (ch0_i_wb_adr[11:0]), // i [11:0]
 		.i_wb_dat          (ch0_i_wb_dat      ), // i [31:0]
 		.i_wb_sel          (ch0_i_wb_sel      ), // i [3:0]
@@ -383,6 +380,9 @@ module soc_top (
 		.i_wb_we           (ch0_i_wb_we       ), // i
 		.o_wb_dat          (ch0_o_wb_dat      ), // o [31:0]
 		.o_wb_ack          (ch0_o_wb_ack      ), // o
+		.clk               (clk               ), // i
+		.rst_n             (rst_ni            ), // i
+		.rb_grant_en       (rg_rb_grant_en    ), // i
 		.rst               (rst               ), // i
 		.o_cs_n            (sd0_cs_n          ), // o
 		.o_sck             (sd0_sck           ), // o
@@ -395,9 +395,6 @@ module soc_top (
 		.o_sha_irq         (irq_srcs[4]       )  // o
 	);
 	sd_sha_ch u_ch1 (
-		.rst_n             (rst_ni            ), // i
-		.rb_grant_en       (rg_rb_grant_en    ), // i
-		.clk               (clk               ), // i
 		.i_wb_adr          (ch1_i_wb_adr[11:0]), // i [11:0]
 		.i_wb_dat          (ch1_i_wb_dat      ), // i [31:0]
 		.i_wb_sel          (ch1_i_wb_sel      ), // i [3:0]
@@ -407,6 +404,9 @@ module soc_top (
 		.i_wb_we           (ch1_i_wb_we       ), // i
 		.o_wb_dat          (ch1_o_wb_dat      ), // o [31:0]
 		.o_wb_ack          (ch1_o_wb_ack      ), // o
+		.clk               (clk               ), // i
+		.rst_n             (rst_ni            ), // i
+		.rb_grant_en       (rg_rb_grant_en    ), // i
 		.rst               (rst               ), // i
 		.o_cs_n            (sd1_cs_n          ), // o
 		.o_sck             (sd1_sck           ), // o

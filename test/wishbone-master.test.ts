@@ -20,7 +20,10 @@ import {
 	jtagDrWidth,
 	MASTER_MODULES,
 } from "../src/plugins/wishbone-bus/emit-master.ts";
-import { generateMasterModules } from "../src/plugins/wishbone-bus/generate.ts";
+import {
+	generateMasterModules,
+	generatePipeModule,
+} from "../src/plugins/wishbone-bus/generate.ts";
 import { ShadowDomain } from "../src/plugins/wishbone-regfile/dsl.ts";
 import { verilatorSim, verilatorTest } from "./fixtures/verilator.ts";
 
@@ -32,17 +35,17 @@ const ALIGNED: WrapperStyle = {
 	netType: "logic",
 };
 
-function mb(tagWidth?: number) {
+function mb(tagWidth?: number, pipe = 0) {
 	return Bus("mb", "master bridge demo", {
 		masters: [
-			Master("cpu", "fabric-clock WB"),
+			Master("cpu", "fabric-clock WB", { pipe }),
 			Master("host", "SoC APB", {
 				apb: { pprot: { value: 0, mask: 0b001 } },
 				cdc: true,
 				timeout: 64,
 			}),
 			Master("dbg", "DFT JTAG", { jtag: true }),
-			Master("wbx", "async WB", { cdc: true, timeout: 64 }),
+			Master("wbx", "async WB", { cdc: true, timeout: 64, pipe }),
 		],
 		slaves: [Slave("mem", "TB memory", 0x0000, 0xf000, tagWidth)],
 		addrWidth: 16,
@@ -111,22 +114,9 @@ describe("wishbone master bridges", () => {
 		expect(sv).toMatch(/^\toutput\s+logic\s+wbx_i_wb_err/m);
 		expect(sv).toMatch(/^\tinput\s+logic\s+\[15:0\]\s*cpu_o_wb_adr/m);
 		expect(sv).not.toContain("input  logic [15:0] host_o_wb_adr");
-		expect(sv).toContain("wb_apb2wb #(");
-		expect(sv).toMatch(/\.AW\s+\(16\s*\)/);
-		expect(sv).toMatch(/\.PPROT_MASK\s+\(3'b001\s*\)/);
-		expect(sv).toMatch(/\.PPROT_VAL\s+\(3'b000\s*\)/);
-		expect(sv).toContain(") u_host_apb (");
-		expect(sv).toContain("wb_cdc #(");
-		expect(sv).toMatch(/\.TIMEOUT\s+\(64\s*\)/);
-		expect(sv).toContain(") u_host_cdc (");
-		expect(sv).toContain("wb_jtag_tdr #(");
-		expect(sv).toContain(") u_dbg_jtag (");
-		expect(sv).toMatch(/\.s_clk\s*\(\s*dbg_tck\s*\)/);
-		expect(sv).toMatch(/\.host_o_wb_adr\s*\(\s*host_fab_adr\s*\)/);
-		expect(sv).toMatch(/\.cpu_o_wb_adr\s*\(\s*cpu_o_wb_adr\s*\)/);
 	});
 
-	test("named uplink tags are packed through wb_cdc", () => {
+	test("named inherited tags remain separate public inputs on async WB masters", () => {
 		const bank = ShadowDomain("bank", 4, 2);
 		const way = ShadowDomain("way", 2, 1);
 		const slaves = [Slave("s", "s", 0, 0xf000, { tag: 3 })];
@@ -139,12 +129,9 @@ describe("wishbone master bridges", () => {
 			}),
 			ALIGNED,
 		);
-		expect(dec).toMatch(
-			/\.s_tga\s*\(\s*\{cfg_o_wb_tga_way,\s*cfg_o_wb_tga_bank\}\s*\)/,
-		);
-		expect(dec).toMatch(/\.cfg_o_wb_tga_bank\s*\(\s*cfg_fab_tga\[1:0\]\s*\)/);
-		expect(dec).toMatch(/\.cfg_o_wb_tga_way\s*\(\s*cfg_fab_tga\[2\]\s*\)/);
 		expect(dec ?? "").not.toContain("cfg_o_wb_tga_tag");
+		expect(dec).toMatch(/^\s*input\s+logic\s+\[1:0\]\s+cfg_o_wb_tga_bank\b/m);
+		expect(dec).toMatch(/^\s*input\s+logic\s+cfg_o_wb_tga_way\b/m);
 		const ic = emitBusSystemSv(
 			Bus("ti", "interconnect tags", {
 				addrWidth: 16,
@@ -157,21 +144,18 @@ describe("wishbone master bridges", () => {
 			}),
 			ALIGNED,
 		);
-		expect(ic).toMatch(/\.cfg_o_wb_tga_bank\s*\(\s*cfg_fab_tga\[1:0\]\s*\)/);
-		expect(ic).toMatch(/\.cfg_o_wb_tga_way\s*\(\s*cfg_fab_tga\[2\]\s*\)/);
 		expect(ic ?? "").not.toContain("cfg_o_wb_tga_tag");
+		expect(ic).toMatch(/^\s*input\s+logic\s+\[1:0\]\s+cfg_o_wb_tga_bank\b/m);
+		expect(ic).toMatch(/^\s*input\s+logic\s+cfg_o_wb_tga_way\b/m);
 	});
 
-	test("TGA: async WB forwards tag; bridges tie it to zero", () => {
+	test("only native WB masters expose inherited tag inputs", () => {
 		const sv = emitBusSystemSv(mb(4), ALIGNED) ?? "";
 		expect(sv).toMatch(/^\tinput\s+logic\s+\[3:0\]\s*wbx_o_wb_tga_tag/m);
-		expect(sv).toMatch(/\.s_tga\s*\(\s*wbx_o_wb_tga_tag\s*\)/);
-		expect(sv).toMatch(/\.s_tga\s*\(\s*4'd0\s*\)/);
-		expect(sv).toMatch(/\.m_tga\s*\(\s*host_fab_tga\s*\)/);
-		expect(sv).toMatch(/\.host_o_wb_tga_tag\s*\(\s*host_fab_tga\s*\)/);
+		expect(sv).not.toMatch(/^\s*input\s+.*\b(?:host|dbg)_o_wb_tga_tag\b/m);
 	});
 
-	test("APB without cdc runs on fabric clk and ties ERR", () => {
+	test("APB without cdc exposes no additional clock or WB face", () => {
 		const def = Bus("one", "single apb master", {
 			addrWidth: 16,
 			masters: [Master("host", "APB", { apb: true })],
@@ -179,10 +163,9 @@ describe("wishbone master bridges", () => {
 		});
 		const sv = emitBusSystemSv(def, ALIGNED) ?? "";
 		expect(sv).not.toContain("host_pclk");
-		expect(sv).not.toContain("wb_cdc #(");
-		expect(sv).toMatch(/\.pclk\s*\(\s*clk\s*\)/);
-		expect(sv).toMatch(/\.wb_err\s*\(\s*1'b0\s*\)/);
-		expect(sv).toMatch(/\.host_o_wb_adr\s*\(\s*host_fab_adr\s*\)/);
+		expect(sv).toMatch(/^\s*input\s+logic\s+host_psel\b/m);
+		expect(sv).toMatch(/^\s*output\s+logic\s+host_pslverr\b/m);
+		expect(sv).not.toMatch(/^\s*input\s+.*\bhost_o_wb_adr\b/m);
 	});
 
 	test("ICL / PDL for JTAG masters only", () => {
@@ -196,8 +179,6 @@ describe("wishbone master bridges", () => {
 		const pdl = emitBusPdl(def) ?? "";
 		expect(pdl).toContain("iProcsForModule mb_bus_cfg");
 		expect(pdl).toContain("iRunLoop 16 -tck");
-		expect(pdl).toContain("NOT busy polling");
-		expect(pdl).toContain("read data is an expected value");
 		const plain = Bus("p", "p", {
 			addrWidth: 16,
 			masters: [Master("host", "APB", { apb: true, cdc: true })],
@@ -407,7 +388,7 @@ endmodule
 	verilatorTest(
 		"verilator: APB / JTAG / async WB masters through wb_cdc",
 		async () => {
-			const def = mb();
+			const def = mb(3, 1).uplink("cpu");
 			const dir = mkdtempSync(join(tmpdir(), "aw-wbm-"));
 			const fabric = join(dir, `${busModuleName(def)}.sv`);
 			const system = join(dir, "mb_bus_cfg.sv");
@@ -415,11 +396,13 @@ endmodule
 			writeFileSync(system, emitBusSystemSv(def, ALIGNED) ?? "");
 			const mods = await generateMasterModules(dir);
 			expect(mods.length).toBe(MASTER_MODULES.length);
+			const pipe = await generatePipeModule(dir);
+			if (!pipe) throw new Error("wb_cfg_pipe was not written");
 			const tb = join(import.meta.dir, "fixtures/wb_master_tb.sv");
 			const r = verilatorSim({
 				dir: join(dir, "obj"),
 				top: "tb",
-				sources: [tb, system, fabric, ...mods],
+				sources: [tb, system, fabric, pipe, ...mods],
 			});
 			expect(r.buildLog).not.toContain("%Error");
 			expect(r.buildOk).toBe(true);

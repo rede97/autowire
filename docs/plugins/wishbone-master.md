@@ -148,6 +148,8 @@ Bus("soc_wb", "SoC cfg", {
 | JTAG | §5.2 |
 | 异步 WB | `{m}_clk` / `{m}_rst_n`、`{m}_o_wb_*`（含 tga）→ `{m}_i_wb_dat` / `ack` / `err` |
 
+原生 WB 面与 fabric master 面使用同一端点生成规则（名称、方向、位宽、TGA 域和可选 ERR），不在桥接发射器内另写一份 WB 端口表。APB / JTAG 的原生协议口不属于 WB 命名规则。
+
 - TGA：异步 WB 口把每个继承域 `{m}_o_wb_tga_<domain>` 按声明顺序打包进 `wb_cdc` 的 `s_tga`（先声明的域在低位），目标侧再拆回 fabric 的同名口。域名不是 `tag` 时也走这条打包，不另造 `*_tga_tag`。APB / JTAG 桥把 tag 接 0。
 - 公共模块：任一 bus 有桥接 master 时，`plugins_dir/wishbone/` 额外出 `wb_sync_cell.sv`、`wb_cdc.sv`、`wb_apb2wb.sv`、`wb_jtag_tdr.sv`（模板在 [`rtl/`](./rtl/)，与 `wb_cfg_pipe` 同纪律）；有 JTAG master 的 bus 另出 `<bus>_bus_cfg.icl` / `.pdl`（非 SV，不进 filelist）。
 - 单 master（NM=1 → decoder）同样适用：桥 / CDC 在 decoder 前。

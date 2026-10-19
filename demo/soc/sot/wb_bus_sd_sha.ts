@@ -1,7 +1,8 @@
 // Channel fabric SoT: one BusDef reused as parallel SD+DMA+SHA lanes.
 // Generate → rtl/gen/plugins/wishbone/bus/sd_sha_interconnect.sv + sd_sha_bus_cfg.sv
 // The "cfg" master is the cascade face: parent soc_wb hangs this bus with
-// `sd_sha.uplink("cfg")`, and the wrapper remaps it to i_wb_* / o_wb_*.
+// `sd_sha.uplink("cfg")`; the wrapper retains cfg_o_wb_* / cfg_i_wb_*.
+// sd_sha_ch.html explicitly maps that face onto the channel's external WB nets.
 // Parent soc_wb hangs this bus in a 4 KiB window and forwards ADR[11:0].
 // Child addresses are window-relative; parent SlaveBus forwards adr & ~mask.
 // DMA SRC must be programmed with these relative addresses (not parent MMIO).

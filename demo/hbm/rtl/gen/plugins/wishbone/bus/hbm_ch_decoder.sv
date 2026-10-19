@@ -17,7 +17,7 @@
 module hbm_ch_decoder (
 	input  logic        clk,
 	input  logic        rst_n,
-	// Master cfg — Channel config from the decoder,
+	// Master cfg — Channel config from the decoder
 	input  logic [11:0] cfg_o_wb_adr,
 	input  logic [31:0] cfg_o_wb_dat,
 	input  logic [3:0]  cfg_o_wb_sel,
@@ -27,8 +27,8 @@ module hbm_ch_decoder (
 	input  logic        cfg_o_wb_we,
 	output logic [31:0] cfg_i_wb_dat,
 	output logic        cfg_i_wb_ack,
-	// Slave aword — HBM aword CSR (command/address lane),
-	//   base=0x00000000  size=0x00000100  mask=0x00000f00,
+	// Slave aword — HBM aword CSR (command/address lane)
+	//   base=0x00000000  size=0x00000100  mask=0x00000f00
 	output logic [11:0] aword_i_wb_adr,
 	output logic [31:0] aword_i_wb_dat,
 	output logic [3:0]  aword_i_wb_sel,
@@ -38,8 +38,8 @@ module hbm_ch_decoder (
 	output logic        aword_i_wb_we,
 	input  logic [31:0] aword_o_wb_dat,
 	input  logic        aword_o_wb_ack,
-	// Slave dword0 — HBM dword CSR (data lane),
-	//   base=0x00000100  size=0x00000100  mask=0x00000f00,
+	// Slave dword0 — HBM dword CSR (data lane)
+	//   base=0x00000100  size=0x00000100  mask=0x00000f00
 	output logic [11:0] dword0_i_wb_adr,
 	output logic [31:0] dword0_i_wb_dat,
 	output logic [3:0]  dword0_i_wb_sel,
@@ -49,8 +49,8 @@ module hbm_ch_decoder (
 	output logic        dword0_i_wb_we,
 	input  logic [31:0] dword0_o_wb_dat,
 	input  logic        dword0_o_wb_ack,
-	// Slave dword1 — HBM dword CSR (data lane),
-	//   base=0x00000200  size=0x00000100  mask=0x00000f00,
+	// Slave dword1 — HBM dword CSR (data lane)
+	//   base=0x00000200  size=0x00000100  mask=0x00000f00
 	output logic [11:0] dword1_i_wb_adr,
 	output logic [31:0] dword1_i_wb_dat,
 	output logic [3:0]  dword1_i_wb_sel,

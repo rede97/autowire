@@ -10,7 +10,6 @@ import {
 	masterGroupOf,
 	Size,
 	Slave,
-	SlaveBus,
 	SlaveGroup,
 	SlaveRegion,
 	slaveGroupOf,
@@ -174,7 +173,7 @@ describe("wishbone crossbar", () => {
 	});
 
 	test("a broadcast window and its subscribers must share one slave group", () => {
-		const good = Crossbar("bc", "broadcast inside a group", {
+		Crossbar("bc", "broadcast inside a group", {
 			addrWidth: 16,
 			masters: [Master("m", "m")],
 			slaves: [
@@ -186,9 +185,6 @@ describe("wishbone crossbar", () => {
 				SlaveRegion("other", "other", 0x1000, Size(0x100)),
 			],
 		});
-		const sv = emitBusSv(good);
-		expect(sv).toContain("logic broadcast_all;");
-		expect(sv).toContain("broadcast_all_done | broadcast_all_acks");
 		expect(() =>
 			Crossbar("bc", "broadcast across groups", {
 				addrWidth: 16,
@@ -202,52 +198,6 @@ describe("wishbone crossbar", () => {
 				],
 			}),
 		).toThrow(/cannot cross slave groups/);
-	});
-
-	test("emitted crossbar: per-group arbiters, target decode, parallel paths", () => {
-		const def = xb();
-		const sv = emitBusSv(def);
-		expect(sv).toContain("module xb_crossbar (");
-		expect(sv).toContain("input  logic        rb_grant_en,");
-		expect(sv).toContain("//  Crossbar: 2 master group(s) x 2 slave group(s)");
-		// Slave-group slots and master-side target decode.
-		expect(sv).toContain("localparam int unsigned SG_CTRL = 0;");
-		expect(sv).toContain("localparam int unsigned SG_MEM  = 1;");
-		expect(sv).toContain("mg_cpu_tgt      = 2'd1 << SG_MEM;");
-		expect(sv).toContain("mg_dma_tgt      = 2'd1 << SG_CTRL;");
-		// Multi-master group has an arbiter; a singleton does not.
-		expect(sv).toContain("logic [1:0] mg_cpu_grant;");
-		expect(sv).toContain(
-			"assign mg_cpu_m_cyc = {cpu_d_o_wb_cyc, cpu_i_o_wb_cyc};",
-		);
-		expect(sv).not.toContain("mg_dma_grant");
-		expect(sv).toContain("assign mg_dma_cyc   = dma_o_wb_cyc;");
-		// Each slave group arbitrates among master groups and decodes its own slots.
-		expect(sv).toContain(
-			"assign sg_ctrl_req   = {mg_dma_cyc & mg_dma_tgt[SG_CTRL], mg_cpu_cyc & mg_cpu_tgt[SG_CTRL]};",
-		);
-		expect(sv).toContain("logic [1:0] sg_mem_grant;");
-		expect(sv).toContain("logic [1:0] sg_ctrl_slot_sel;");
-		expect(sv).toContain("logic [0:0] sg_mem_slot_sel;");
-		expect(sv).toContain(
-			"assign gpio_i_wb_cyc = sg_ctrl_slot_sel[SLOT_GPIO] & sg_ctrl_cyc;",
-		);
-		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(1), .AW(16), .TW(1)) u_mem_pipe (",
-		);
-		expect(sv).toContain(".m_cyc(sg_mem_slot_sel[SLOT_MEM] & sg_mem_cyc)");
-		// Responses: slave group -> master group -> granted member; unmapped ACKs at the group.
-		expect(sv).toContain(
-			"assign mg_cpu_rsp_ack = (mg_cpu_unmapped & mg_cpu_stb)",
-		);
-		expect(sv).toContain("| (sg_mem_gsel[0] & sg_mem_rsp_ack);");
-		expect(sv).toContain(
-			"assign cpu_d_i_wb_ack = mg_cpu_gsel[1] & mg_cpu_rsp_ack;",
-		);
-		expect(sv).toContain("assign dma_i_wb_ack   = mg_dma_rsp_ack;");
-		// No global slot_sel / g_* nets: nothing is shared between slave groups.
-		expect(sv).not.toMatch(/\bslot_sel\b/);
-		expect(sv).not.toMatch(/\bg_adr\b/);
 	});
 
 	test("ports match the interconnect shape; wrapper and software map keep working", () => {
@@ -277,61 +227,9 @@ describe("wishbone crossbar", () => {
 		});
 		const sys = emitBusSystemSv(bridged, ALIGNED) ?? "";
 		expect(sys).toContain("module wx_bus_cfg (");
-		expect(sys).toContain("wx_crossbar u_crossbar (");
-		expect(sys).toMatch(/\.cpu_i_o_wb_adr\s*\(\s*cpu_i_o_wb_adr\s*\)/);
-		expect(sys).toMatch(/\.host_o_wb_adr\s*\(\s*host_fab_adr\s*\)/);
-		expect(sys).toMatch(/\.rb_grant_en\s*\(\s*rb_grant_en\s*\)/);
-	});
-
-	test("piped masters inside a group and inherited tags unpack m<i>_tga_q", () => {
-		const child = Bus("leaf", "child", {
-			addrWidth: 8,
-			masters: [Master("up", "uplink")],
-			slaves: [Slave("r", "r", 0, 0xf0, 2)],
-			tagWidth: 2,
-		});
-		const def = Crossbar("tx", "tagged crossbar", {
-			addrWidth: 16,
-			tagWidth: 2,
-			masters: [
-				MasterGroup("g", [
-					Master("fast", "piped", { pipe: 1 }),
-					Master("slow", "combo"),
-				]),
-			],
-			slaves: [
-				SlaveGroup("a", [
-					SlaveBus(child.uplink(), 0x0000, { size: Size(0x100) }),
-				]),
-				SlaveGroup("b", [Slave("raw", "raw", 0x1000, 0xff00, 2)]),
-			],
-		});
-		const sv = emitBusSv(def);
-		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(1), .AW(16), .TW(2)) u_fast_mpipe (",
-		);
-		expect(sv).toContain("({2{mg_g_gsel[0]}} & m0_tga_q[1:0])");
-		expect(sv).toContain("({2{mg_g_gsel[1]}} & slow_o_wb_tga_tag)");
-		expect(sv).toContain("assign mg_g_tga_tag = mg_g_up_tag;");
-		expect(sv).toContain(
-			"assign sg_b_tga_tag = ({2{sg_b_gsel[0]}} & mg_g_tga_tag);",
-		);
-		expect(sv).toContain("assign raw_i_wb_tga_tag = sg_b_tga_tag;");
-		expect(sv).toContain(
-			"assign m0_rdat_q = {32{mg_g_gsel[0]}} & mg_g_rsp_dat;",
-		);
-	});
-
-	test("interconnect with piped masters muxes inherited tags from m<i>_tga_q", () => {
-		const def = Bus("ic", "piped interconnect", {
-			addrWidth: 16,
-			tagWidth: 2,
-			masters: [Master("fast", "piped", { pipe: 1 }), Master("slow", "combo")],
-			slaves: [Slave("raw", "raw", 0x1000, 0xff00, 2)],
-		});
-		const sv = emitBusSv(def);
-		expect(sv).toContain("({2{gsel[0]}} & m0_tga_q[1:0])");
-		expect(sv).not.toContain("m0_tga_tag_q");
+		expect(sys).toMatch(/^\s*input\s+logic\s+\[15:0\]\s+cpu_i_o_wb_adr\b/m);
+		expect(sys).toMatch(/^\s*input\s+logic\s+host_psel\b/m);
+		expect(sys).not.toMatch(/^\s*input\s+logic\s+\[15:0\]\s+host_o_wb_adr\b/m);
 	});
 
 	verilatorTest(

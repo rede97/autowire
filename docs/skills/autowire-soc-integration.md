@@ -42,7 +42,7 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
 4. **不同名批量改名 → 一条 `aw-rewrite` 正则**（`$1`/`$&` + `` `${id}` ``）；禁止把同束口拆成多条逐端口 rewrite，也禁止抄同名 `aw-connect`。
 
 - **口名对齐总线**：手写叶子 CSR 用 `i_wb_adr`/`i_wb_dat`/`o_wb_dat`（勿 `addr`/`data`），则 `wb_slv` 一条 `^([io]_wb_.+)$ → ${id}_$1` 即可；第三方 sdspi 仍 `addr`/`data` 时才额外 override。
-- **扁平向量总线**：interconnect 主从端口全部摊平成 `m_*[NM*32-1:0]` / `s_*[NS*32-1:0]` 大向量，连接侧用 `part` 算术切片：`part="32*${idx}+31:32*${idx}"`、单位 bit 用 `part="${idx}"`。net 各连接点的 `width` 写法必须**逐字一致**（文本级一致性检查）。
+- **具名总线端口**：decoder / interconnect / crossbar 的 fabric 与 wrapper 共享 `{master}_o_wb_*` / `{master}_i_wb_*`、`{slave}_i_wb_*` / `{slave}_o_wb_*` 规则，不摊平成 `m_*` / `s_*` 公共向量，也不因 `.uplink()` 改名。级联时父级 slave 请求接子级 master 请求，响应反向接回；用成束 rewrite 映射名字，ADR 位宽不同时用 `part` 取低位。
 - **BASE/MASK 译码表**走 `aw-param` 拼接字面量；含操作符/拼接的 override 自动折叠成 `Mod__Inst__Param` localparam，纯字面量 inline。
 - **常量绑死**必须显式 `type="const"`（`to="1'b0"` 裸写报错）；**显式悬空** `type="open"`（只 output/inout）。
 - **跨单元封装**：被引方独立 `[connect.<id>]` 单元（如 sha256wb），引用方 toml `deps=[...]`；`connect run` 按拓扑先 elaborate 依赖。reset 极性不一致（`rst_ni` vs `wb_rst_i`/`i_sd_reset`）用一个小桥接模块，别想在连接方言里内嵌逻辑。

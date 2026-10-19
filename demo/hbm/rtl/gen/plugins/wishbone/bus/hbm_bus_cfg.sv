@@ -25,6 +25,7 @@ module hbm_bus_cfg (
 	output logic [31:0] cfg_i_wb_dat,
 	output logic cfg_i_wb_ack,
 	// Slave ch0 — HBM channel 0
+	//   base=0x00001000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch0_i_wb_adr,
 	output logic [31:0] ch0_i_wb_dat,
 	output logic [3:0] ch0_i_wb_sel,
@@ -35,6 +36,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch0_o_wb_dat,
 	input logic ch0_o_wb_ack,
 	// Slave ch1 — HBM channel 1
+	//   base=0x00002000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch1_i_wb_adr,
 	output logic [31:0] ch1_i_wb_dat,
 	output logic [3:0] ch1_i_wb_sel,
@@ -45,6 +47,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch1_o_wb_dat,
 	input logic ch1_o_wb_ack,
 	// Slave ch2 — HBM channel 2
+	//   base=0x00003000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch2_i_wb_adr,
 	output logic [31:0] ch2_i_wb_dat,
 	output logic [3:0] ch2_i_wb_sel,
@@ -55,6 +58,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch2_o_wb_dat,
 	input logic ch2_o_wb_ack,
 	// Slave ch3 — HBM channel 3
+	//   base=0x00004000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch3_i_wb_adr,
 	output logic [31:0] ch3_i_wb_dat,
 	output logic [3:0] ch3_i_wb_sel,
@@ -65,6 +69,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch3_o_wb_dat,
 	input logic ch3_o_wb_ack,
 	// Slave ch4 — HBM channel 4
+	//   base=0x00005000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch4_i_wb_adr,
 	output logic [31:0] ch4_i_wb_dat,
 	output logic [3:0] ch4_i_wb_sel,
@@ -75,6 +80,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch4_o_wb_dat,
 	input logic ch4_o_wb_ack,
 	// Slave ch5 — HBM channel 5
+	//   base=0x00006000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch5_i_wb_adr,
 	output logic [31:0] ch5_i_wb_dat,
 	output logic [3:0] ch5_i_wb_sel,
@@ -85,6 +91,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch5_o_wb_dat,
 	input logic ch5_o_wb_ack,
 	// Slave ch6 — HBM channel 6
+	//   base=0x00007000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch6_i_wb_adr,
 	output logic [31:0] ch6_i_wb_dat,
 	output logic [3:0] ch6_i_wb_sel,
@@ -95,6 +102,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch6_o_wb_dat,
 	input logic ch6_o_wb_ack,
 	// Slave ch7 — HBM channel 7
+	//   base=0x00008000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch7_i_wb_adr,
 	output logic [31:0] ch7_i_wb_dat,
 	output logic [3:0] ch7_i_wb_sel,
@@ -105,6 +113,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch7_o_wb_dat,
 	input logic ch7_o_wb_ack,
 	// Slave ch8 — HBM channel 8
+	//   base=0x00009000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch8_i_wb_adr,
 	output logic [31:0] ch8_i_wb_dat,
 	output logic [3:0] ch8_i_wb_sel,
@@ -115,6 +124,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch8_o_wb_dat,
 	input logic ch8_o_wb_ack,
 	// Slave ch9 — HBM channel 9
+	//   base=0x0000a000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch9_i_wb_adr,
 	output logic [31:0] ch9_i_wb_dat,
 	output logic [3:0] ch9_i_wb_sel,
@@ -125,6 +135,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch9_o_wb_dat,
 	input logic ch9_o_wb_ack,
 	// Slave ch10 — HBM channel 10
+	//   base=0x0000b000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch10_i_wb_adr,
 	output logic [31:0] ch10_i_wb_dat,
 	output logic [3:0] ch10_i_wb_sel,
@@ -135,6 +146,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch10_o_wb_dat,
 	input logic ch10_o_wb_ack,
 	// Slave ch11 — HBM channel 11
+	//   base=0x0000c000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch11_i_wb_adr,
 	output logic [31:0] ch11_i_wb_dat,
 	output logic [3:0] ch11_i_wb_sel,
@@ -145,6 +157,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch11_o_wb_dat,
 	input logic ch11_o_wb_ack,
 	// Slave ch12 — HBM channel 12
+	//   base=0x0000d000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch12_i_wb_adr,
 	output logic [31:0] ch12_i_wb_dat,
 	output logic [3:0] ch12_i_wb_sel,
@@ -155,6 +168,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch12_o_wb_dat,
 	input logic ch12_o_wb_ack,
 	// Slave ch13 — HBM channel 13
+	//   base=0x0000e000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch13_i_wb_adr,
 	output logic [31:0] ch13_i_wb_dat,
 	output logic [3:0] ch13_i_wb_sel,
@@ -165,6 +179,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch13_o_wb_dat,
 	input logic ch13_o_wb_ack,
 	// Slave ch14 — HBM channel 14
+	//   base=0x0000f000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch14_i_wb_adr,
 	output logic [31:0] ch14_i_wb_dat,
 	output logic [3:0] ch14_i_wb_sel,
@@ -175,6 +190,7 @@ module hbm_bus_cfg (
 	input logic [31:0] ch14_o_wb_dat,
 	input logic ch14_o_wb_ack,
 	// Slave ch15 — HBM channel 15
+	//   base=0x00010000  size=0x00001000  mask=0x0007f000
 	output logic [18:0] ch15_i_wb_adr,
 	output logic [31:0] ch15_i_wb_dat,
 	output logic [3:0] ch15_i_wb_sel,

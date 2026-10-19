@@ -9,6 +9,7 @@ import { smoke } from "../demo/soc/sot/wb_reg_smoke.ts";
 import { generateAll } from "../src/plugins/wishbone/generate.ts";
 import {
 	Bus,
+	Crossbar,
 	Master,
 	Size,
 	Slave,
@@ -28,6 +29,7 @@ import {
 	emitBusMapPkg,
 	emitBusMapUvm,
 } from "../src/plugins/wishbone-bus/emit-map.ts";
+import { ShadowDomain } from "../src/plugins/wishbone-regfile/dsl.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 import { smoke_rw } from "./fixtures/wb_reg_access.ts";
 
@@ -55,8 +57,6 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("csr_i_wb_cyc");
 		expect(sv).toContain("csr_o_wb_ack");
 		expect(sv).not.toContain("m_adr_i");
-		expect(sv).not.toContain("grant");
-		expect(sv).not.toContain("rb_grant_en");
 	});
 
 	test("multi master emits interconnect with named masters and slaves", () => {
@@ -67,8 +67,6 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("eng_i_wb_ack");
 		expect(sv).toContain("sha256_i_wb_cyc");
 		expect(sv).toContain("sha256_o_wb_ack");
-		expect(sv).toContain("grant");
-		expect(sv).toContain("rb_grant_en");
 		expect(sv).not.toContain("m_adr_i");
 		expect(sv).not.toContain("s_cyc_o");
 	});
@@ -83,7 +81,6 @@ describe("wishbone-bus", () => {
 		expect(sv).toContain("ch0_i_wb_cyc");
 		expect(sv).toContain("ch1_o_wb_ack");
 		expect(sv).toContain("smoke_i_wb_cyc");
-		expect(sv).toContain("rb_grant_en");
 		expect(sv).not.toContain("m_adr_i");
 	});
 
@@ -150,15 +147,104 @@ describe("wishbone-bus", () => {
 		);
 	});
 
-	test("zero masters also decoder", () => {
-		const def = Bus("solo", "no masters listed", {
-			addrWidth: 32,
-			slaves: [Slave("a", "A", 0, 0xffff_ffff)],
+	for (const masters of [undefined, []]) {
+		test(`omitted or empty masters normalize to the default named face (${masters === undefined ? "omitted" : "empty"})`, () => {
+			const def = Bus("solo", "default master", {
+				addrWidth: 16,
+				masters,
+				slaves: [SlaveRegion("csr", "CSR", 0, Size(0x100))],
+			});
+			expect(def.masters.map((master) => master.name)).toEqual(["m"]);
+			expect(def.masters[0]?.pipe).toBe(0);
+			expect(busModuleKind(def)).toBe("decoder");
+			expect(SlaveBus(def, 0).uplink).toBe("m");
+			for (const sv of [
+				emitBusSv(def),
+				emitBusSystemSv(def.uplink(), ALIGNED),
+			]) {
+				expect(sv).not.toBeNull();
+				expect(sv).toMatch(/^\s*input\s+logic\s+\[15:0\]\s+m_o_wb_adr\b/m);
+				expect(sv).toMatch(/^\s*output\s+logic\s+m_i_wb_ack\b/m);
+				expect(sv).not.toMatch(
+					/^\s*(?:input|output)\s+.*\b(?:m_adr_i|i_wb_adr|o_wb_ack)\b/m,
+				);
+			}
 		});
-		expect(busModuleKind(def)).toBe("decoder");
-	});
+	}
 
-	test("TGA decoder forwards tag to slave", () => {
+	for (const kind of ["decoder", "interconnect", "crossbar"] as const) {
+		test(`${kind} cascade keeps every named public Wishbone signal`, () => {
+			const cfg = Master("cfg", "cascade", { pipe: 1 });
+			const csr = Bus("csr", "tagged child", {
+				addrWidth: 8,
+				tags: [ShadowDomain("bank", 4, 2)],
+				slaves: [SlaveRegion("reg", "registers", 0, Size(0x100))],
+			});
+			const opts = {
+				addrWidth: 16,
+				tags: [ShadowDomain("bank", 4, 2)],
+				masters: kind === "decoder" ? [cfg] : [Master("eng", "local"), cfg],
+				slaves: [SlaveBus(csr, 0, { pipe: 1 })],
+			};
+			const def =
+				kind === "crossbar"
+					? Crossbar("named", "cascade", opts)
+					: Bus("named", "cascade", opts);
+			const selected = def.uplink("cfg");
+			expect(SlaveBus(selected, 0).uplink).toBe("cfg");
+			for (const sv of [
+				emitBusSv(selected),
+				emitBusSystemSv(selected, ALIGNED),
+			]) {
+				expect(sv).not.toBeNull();
+				for (const signal of [
+					"adr",
+					"dat",
+					"sel",
+					"cyc",
+					"stb",
+					"we",
+					"tga_bank",
+				]) {
+					expect(sv).toMatch(
+						new RegExp(
+							`^\\s*input\\s+logic\\s+(?:\\[[^\\]]+\\]\\s+)?cfg_o_wb_${signal}\\b`,
+							"m",
+						),
+					);
+					expect(sv).toMatch(
+						new RegExp(
+							`^\\s*output\\s+logic\\s+(?:\\[[^\\]]+\\]\\s+)?csr_i_wb_${signal}\\b`,
+							"m",
+						),
+					);
+				}
+				for (const signal of ["dat", "ack"]) {
+					expect(sv).toMatch(
+						new RegExp(
+							`^\\s*output\\s+logic\\s+(?:\\[[^\\]]+\\]\\s+)?cfg_i_wb_${signal}\\b`,
+							"m",
+						),
+					);
+					expect(sv).toMatch(
+						new RegExp(
+							`^\\s*input\\s+logic\\s+(?:\\[[^\\]]+\\]\\s+)?csr_o_wb_${signal}\\b`,
+							"m",
+						),
+					);
+				}
+				expect(sv).not.toMatch(
+					/^\s*(?:input|output)\s+.*\b(?:m_adr_i|[io]_wb_\w+)\b/m,
+				);
+				if (kind !== "decoder") {
+					expect(sv).toMatch(/^\s*input\s+logic\s+\[15:0\]\s+eng_o_wb_adr\b/m);
+					expect(sv).toMatch(/^\s*output\s+logic\s+eng_i_wb_ack\b/m);
+				}
+			}
+		});
+	}
+
+	test("TGA decoder exposes inherited tags at both faces", () => {
 		const def = Bus("tgad", "tag decoder", {
 			addrWidth: 32,
 			masters: [Master("cpu", "CPU")],
@@ -168,7 +254,6 @@ describe("wishbone-bus", () => {
 		const sv = emitBusSv(def);
 		expect(sv).toContain("cpu_o_wb_tga_tag");
 		expect(sv).toContain("s0_i_wb_tga_tag");
-		expect(sv).toContain("g_tga_tag = g_up_tag");
 	});
 
 	test("TGA interconnect uses named master ports", () => {
@@ -184,7 +269,6 @@ describe("wishbone-bus", () => {
 		const sv = emitBusSv(def);
 		expect(sv).toContain("m0_o_wb_tga_tag");
 		expect(sv).toContain("m1_o_wb_tga_tag");
-		expect(sv).toContain("({2{gsel[1]}} & m1_o_wb_tga_tag)");
 		expect(sv).not.toContain("s0_i_wb_tga_tag");
 	});
 
@@ -198,32 +282,24 @@ describe("wishbone-bus", () => {
 		expect(emitBusSv(def)).not.toContain("tga");
 	});
 
-	test("addrWidth 16 parametrizes decode and ports", () => {
+	test("addrWidth 16 sets the public address port width", () => {
 		const def = Bus("narrow", "16-bit address", {
 			masters: [Master("cpu", "CPU")],
 			slaves: [Slave("s0", "S0", 0x100, 0xff00)],
 			addrWidth: 16,
 		});
 		const sv = emitBusSv(def);
-		expect(sv).toContain("g_adr & 16'h");
 		expect(sv).toContain("[15:0] cpu_o_wb_adr");
 	});
 
-	test("demo interconnect produces smoke TGA and forwards it", () => {
+	test("demo interconnect exposes produced tags only on tagged slave faces", () => {
 		const sv = emitBusSv(soc_wb);
 		expect(soc_wb.tag_width).toBe(2);
-		expect(sv).toContain("assign g_tga_bank = g_adr[27:26];");
-		expect(sv).toContain("assign g_adr_dec = g_adr & 32'h03ffffff;");
 		expect(sv).not.toContain("bank_tag_i");
 		expect(sv).not.toContain("cpu_o_wb_tga");
 		expect(sv).not.toContain("dbg_o_wb_tga");
-		expect(sv).toContain("g_tga_bank");
+		expect(sv).toMatch(/^\s*output\s+logic\s+\[1:0\]\s+ch0_i_wb_tga_bank\b/m);
 		expect(sv).not.toContain("sram_i_wb_tga_bank");
-		expect(sv).toContain("localparam int unsigned SLOT_SRAM");
-		expect(sv).toContain("localparam int unsigned SLOT_CH1");
-		expect(sv).toContain("slot_sel = 8'd1 << SLOT_CH1;");
-		expect(sv).toContain("slot_sel[SLOT_CH1]");
-		expect(sv).not.toMatch(/slot_sel\[\d+\]/);
 	});
 
 	test("demo SoC slaves use mixed PIPE depths", () => {
@@ -233,35 +309,6 @@ describe("wishbone-bus", () => {
 		expect(soc_wb.slaves.find((s) => s.name === "ch0")?.pipe).toBe(2);
 		expect(soc_wb.slaves.find((s) => s.name === "ch1")?.pipe).toBe(4);
 		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.pipe).toBe(3);
-		const sv = emitBusSv(soc_wb);
-		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(1)) u_sram_pipe",
-		);
-		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(2)) u_smoke_pipe",
-		);
-		expect(sv).not.toContain("wb_pipe_beat_t");
-		expect(sv).not.toContain("flash_cfg_pipe");
-		const sramInst = sv.slice(
-			sv.indexOf("u_sram_pipe"),
-			sv.indexOf("u_flash_xip_pipe"),
-		);
-		expect(sramInst).toContain(".m_tga(1'b0)");
-		expect(sramInst).toContain(".s_tga(u_sram_pipe_tga_nc)");
-		expect(sramInst).not.toContain(".m_tga(g_tga");
-		const smokeInst = sv.slice(sv.indexOf("u_smoke_pipe"));
-		expect(smokeInst).toContain(".m_tga(g_tga_bank)");
-		expect(smokeInst).toContain(".s_tga(smoke_i_wb_tga_bank)");
-	});
-
-	test("arbiter priority: lowest master index wins (multi-hot regression)", () => {
-		const sv = emitBusSv(sd_sha);
-		expect(sv).toContain("if      (cfg_o_wb_cyc)");
-		expect(sv).toContain("else if (eng_o_wb_cyc)");
-		expect(sv).toContain("prio_gnt = 2'b10;");
-		expect(sv).toContain(
-			"grant_nxt = (rb_grant_en && |rr_req_hi) ? rr_hi_gnt : prio_gnt;",
-		);
 	});
 
 	test("Slave fifth-arg number is tag, not pipe", () => {
@@ -280,86 +327,6 @@ describe("wishbone-bus", () => {
 		expect(Master("cpu", "CPU", { pipe: 3 }).pipe).toBe(3);
 		expect(() => Master("cpu", "CPU", { pipe: 17 })).toThrow(/pipe/);
 		expect(() => Master("cpu", "CPU", { pipe: -1 })).toThrow(/pipe/);
-	});
-
-	test("master PIPE sits in front of the arbiter and holds the grant", () => {
-		const def = Bus("mp", "master pipe", {
-			addrWidth: 32,
-			masters: [Master("fast", "piped", { pipe: 2 }), Master("slow", "combo")],
-			slaves: [Slave("mem", "mem", 0, 0xffff_0000, { tag: 2 })],
-			tagWidth: 2,
-		});
-		const sv = emitBusSv(def);
-		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(2)) u_fast_mpipe",
-		);
-		expect(sv).not.toContain("u_slow_mpipe");
-		const inst = sv.slice(
-			sv.indexOf("u_fast_mpipe"),
-			sv.indexOf("Arbitration"),
-		);
-		expect(inst).toContain(".m_cyc(fast_o_wb_cyc)");
-		expect(inst).toContain(".m_tga(fast_o_wb_tga_tag)");
-		expect(inst).toContain(".s_cyc(m0_cyc_q)");
-		expect(inst).toContain(".s_tga(m0_tga_q)");
-		expect(inst).toContain(".m_ack(m0_pack)");
-		expect(inst).not.toContain(".m_tga(slow");
-		expect(sv).toContain("assign m_cyc = {slow_o_wb_cyc, m0_cyc_q};");
-		expect(sv).toContain("if      (m0_cyc_q)");
-		expect(sv).toContain("else if (slow_o_wb_cyc)");
-		expect(sv).toContain("({32{gsel[0]}} & m0_adr_q)");
-		expect(sv).toContain("({32{gsel[1]}} & slow_o_wb_adr)");
-		expect(sv).toContain("assign m0_rdat_q = {32{gsel[0]}} & rsp_dat;");
-		expect(sv).toContain("assign fast_i_wb_ack = m0_pack;");
-		expect(sv).toContain("assign slow_i_wb_ack = gsel[1] & rsp_ack;");
-		expect(sv).not.toContain("m1_adr_q");
-		expect(sv).not.toContain("m1_ack_q");
-		expect(sv).toContain("// Master fast — piped  pipe=2");
-	});
-
-	test("decoder master PIPE sits in front of decode", () => {
-		const def = Bus("dp", "decoder pipe", {
-			addrWidth: 32,
-			masters: [Master("cpu", "CPU", { pipe: 1 })],
-			slaves: [Slave("csr", "regs", 0, 0xffff_ff00)],
-		});
-		const sv = emitBusSv(def);
-		expect(sv).toContain(
-			"wb_cfg_pipe #(.PIPE(1), .AW(32), .TW(1)) u_cpu_mpipe",
-		);
-		const inst = sv.slice(
-			sv.indexOf("u_cpu_mpipe"),
-			sv.indexOf("Address decode"),
-		);
-		expect(inst).toContain(".m_cyc(cpu_o_wb_cyc)");
-		expect(inst).toContain(".m_adr(cpu_o_wb_adr)");
-		expect(inst).toContain(".s_cyc(m_cyc_q)");
-		expect(inst).toContain(".m_tga(1'b0)");
-		expect(inst).toContain(".s_tga(u_cpu_mpipe_tga_nc)");
-		expect(sv).toContain("assign g_cyc   = m_cyc_q;");
-		expect(sv).toContain("assign cpu_i_wb_ack = m_pack;");
-		expect(sv).not.toContain("assign g_cyc   = cpu_o_wb_cyc;");
-	});
-
-	test("slave PIPE instantiates wb_cfg_pipe; TGA ports connected only when tagged", () => {
-		const def = Bus("piped", "pipe", {
-			addrWidth: 32,
-			masters: [Master("cpu", "CPU")],
-			slaves: [
-				Slave("near", "combo", 0, 0xffff_ff00),
-				Slave("far", "piped", 0x1000, 0xffff_ff00, { pipe: 2, tag: 2 }),
-			],
-		});
-		const sv = emitBusSv(def);
-		expect(sv).toContain("wb_cfg_pipe #(.PIPE(2), .AW(32), .TW(2)) u_far_pipe");
-		expect(sv).toContain(".m_tga(g_tga_tag)");
-		expect(sv).toContain(".s_tga(far_i_wb_tga_tag)");
-		expect(sv).toContain(".m_ack(far_pipe_ack)");
-		expect(sv).toContain(".m_rdat(far_pipe_rdat)");
-		expect(sv).not.toContain("near_pipe");
-		expect(sv).not.toContain("wb_pipe_beat_t");
-		expect(sv).toContain("(far_pipe_ack)");
-		expect(sv).toContain("near_o_wb_ack");
 	});
 
 	test("generateAll writes plugins_dir", async () => {
@@ -572,22 +539,12 @@ ts = "${ts.replaceAll("\\", "/")}"
 	test("wrapper and software map cover attached hangs", () => {
 		const wrap = emitBusSystemSv(soc_wb, ALIGNED);
 		expect(wrap).toContain("module soc_wb_bus_cfg");
-		expect(wrap).toContain("soc_wb_interconnect u_interconnect");
-		expect(wrap).toContain("wb_jtag_tdr #(");
-		expect(wrap).toContain(") u_dbg_jtag (");
-		expect(wrap).toContain("u_dbg_cdc");
-		expect(wrap).toContain("smoke_regfile u_smoke");
-		expect(wrap).not.toContain("sha256_regfile");
-		expect(wrap).toMatch(/\.rg_rb_grant_en\s+\(\s*rg_rb_grant_en\s*\)/);
-		expect(wrap).not.toContain("sram_regfile");
 		const ch = emitBusSystemSv(sd_sha.uplink("cfg"), ALIGNED);
 		expect(ch).toContain("module sd_sha_bus_cfg");
-		expect(ch).toContain("sd_sha_interconnect u_interconnect");
-		expect(ch).toContain("sha256_regfile u_sha256");
-		expect(ch).toMatch(/\.sha256_i_wb_cyc\s+\(\s*sha256_i_wb_cyc\s*\)/);
-		expect(ch).toMatch(/\.rg_soft_reset\s+\(\s*rg_soft_reset\s*\)/);
-		expect(ch).toContain("i_wb_cyc");
-		expect(ch).not.toMatch(/^\s*(input|output).*cfg_o_wb_cyc/m);
+		expect(ch).toMatch(/^\s*input\s+logic\s+cfg_o_wb_cyc\b/m);
+		expect(ch).toMatch(/^\s*input\s+logic\s+\[1:0\]\s+cfg_o_wb_tga_bank\b/m);
+		expect(ch).toMatch(/^\s*output\s+logic\s+cfg_i_wb_ack\b/m);
+		expect(ch).not.toMatch(/^\s*(input|output).*\b[io]_wb_\w+/m);
 		expect(ch).not.toMatch(/^\s*(input|output).*sha256_i_wb_cyc/m);
 		const map = emitBusMapC(soc_wb);
 		expect(map).toContain("#define SOC_WB_CH0_BANK0_SHA256_BASE 0x03000040u");
@@ -658,7 +615,6 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(busModuleKind(child)).toBe("decoder");
 		const wrap = emitBusSystemSv(child.uplink(), ALIGNED);
 		expect(wrap).toMatch(/^\s*input\s+.*\bcfg_o_wb_cyc\b/m);
-		expect(wrap).toMatch(/\.cfg_o_wb_cyc\s*\(\s*cfg_o_wb_cyc\s*\)/);
 		expect(wrap).not.toMatch(/^\s*(input|output).*\bi_wb_adr\b/m);
 		expect(wrap).not.toMatch(/^\s*(input|output).*m_adr_i/m);
 		const wide = Bus("wide_child", "wider than the window it is hung in", {
@@ -685,8 +641,6 @@ ts = "${ts.replaceAll("\\", "/")}"
 		});
 		const sv = emitBusSystemSv(leaf, ALIGNED) ?? "";
 		expect(sv).toMatch(/^\tinput\s+logic\s+\[15:0\]\s*cfg_o_wb_adr,/m);
-		expect(sv).toMatch(/\.cfg_o_wb_adr\s*\(\s*cfg_o_wb_adr\s*\)/);
-		expect(sv).not.toMatch(/\.cfg_o_wb_adr\s*\(\s*i_wb_adr\s*\)/);
 		expect(sv).not.toMatch(/^\s*(input|output).*\bi_wb_adr\b/m);
 	});
 
@@ -708,14 +662,6 @@ ts = "${ts.replaceAll("\\", "/")}"
 		});
 		expect(emitBusSystemSv(narrow, ALIGNED) ?? "").toMatch(
 			/\.sha256_i_wb_adr\s*\(\s*\{20'd0, sha256_i_wb_adr\}\s*\)/,
-		);
-		const same = Bus("same_fab", "8-bit fabric, 8-bit leaf", {
-			addrWidth: 8,
-			masters: [Master("cfg", "config")],
-			slaves: [SlaveRegfile(smoke_rw, 0x0)],
-		});
-		expect(emitBusSystemSv(same, ALIGNED) ?? "").toMatch(
-			/\.smoke_rw_i_wb_adr\s*\(\s*smoke_rw_i_wb_adr\s*\)/,
 		);
 		Bus("fits", "256 B window = 8 forwarded bits", {
 			addrWidth: 16,

@@ -80,7 +80,7 @@ Parallel (does not block connect)
     string slaves (SRAM/UART) stay aw-inst (prefer SlaveRegion+Size);
     SlaveBus is SlaveRegion sugar: hang a child BusDef as a window; child RTL
     once, N instances; child .uplink(name?) picks the cascade face master;
-    decoder wrappers keep {m}_o_wb_*/{m}_i_wb_*; interconnect/crossbar wrappers remap that face to i_wb_* / o_wb_*;
+    every fabric/wrapper keeps {m}_o_wb_*/{m}_i_wb_*; .uplink() never renames ports;
     parent forwards window-offset ADR (adr & ~mask; not base subtraction; cannot invert an address bit; the window must contain its own base);
     demo: top soc_wb = interconnect (cpu + JTAG dbg master behind demo_tap USER);
     two SlaveBus(sd_sha) channels (ch0/ch1);
@@ -125,10 +125,12 @@ Parallel (does not block connect)
     Access RC = ReadConst (reset= baked readback);
     wide-field split: ports stay per-slice (rg_<field>_0 = LSB), not one
     concatenated vector; comments/desc name[hi:lo] of [W-1:0] (index 0 = LSB);
-    named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM<=1 → decoder;
+    one WB endpoint schema supplies names, directions, widths and tags to fabric RTL,
+    wrappers and native WB bridge faces; no topology-specific naming aliases;
+    named slaves {slave}_i_wb_*/o_wb_* (identity-match regfile); NM=1 → decoder;
     NM>1 → interconnect (arbiter: rb_grant_en 0=fixed lowest-index /
-    1=round-robin after last grant); declared masters on decoder / interconnect / crossbar
-    use {m}_o_wb_*/{m}_i_wb_{dat,ack}; zero-master decoder keeps flat m_*;
+    1=round-robin after last grant); all masters use {m}_o_wb_*/{m}_i_wb_{dat,ack};
+    omitted/empty Bus masters normalize to one named "m" master using the same rule;
     Crossbar(name, desc, { masters: [Master | MasterGroup(name, [...])],
     slaves: [slave | SlaveGroup(name, [...])], addrWidth, tagWidth?, tags? })
     → <bus>_crossbar: one arbiter per master group, one decoder per slave
@@ -168,10 +170,10 @@ Parallel (does not block connect)
     child picks the cascade face with .uplink(name?) (sole master if omitted);
     Bus rejects overlapping windows, raw and region alike; addrWidth is 2..32;
     tag defaults to leaf tga_width; TGA must match; id defaults to RegfileDef.name;
-    Type-A wrapper <bus>_bus_cfg instantiates interconnect + attached *_regfile
+    Type-A wrapper <bus>_bus_cfg instantiates fabric + attached *_regfile
     (sidebands promoted; WB internalized; HTML aw-inst soc_wb_bus_cfg / sd_sha_bus_cfg);
-    on an interconnect/crossbar child, the .uplink() cascade-face master becomes i_wb_* / o_wb_*;
-    a decoder child keeps its named {m}_o_wb_*/{m}_i_wb_* cascade face;
+    .uplink() only selects the cascade face; every topology keeps its named master ports;
+    parent slave requests map to child master requests, responses map back explicitly;
     master faces (docs/plugins/wishbone-master.md): Master(name, desc, { apb | jtag | cdc,
     timeout? }); bridge in the source clock → wb_cdc (4-phase req/ack, non-posted) → fabric;
     fabric RTL unchanged, all bridge logic inside <bus>_bus_cfg ({m}_fab_* nets);

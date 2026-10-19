@@ -23,6 +23,7 @@ module tb;
 	logic        cpu_o_wb_cyc = 0, cpu_o_wb_stb = 0, cpu_o_wb_we = 0;
 	logic [31:0] cpu_i_wb_dat;
 	logic        cpu_i_wb_ack;
+	logic [2:0]  cpu_o_wb_tga_tag = 3'b101;
 
 	logic [15:0] mem_i_wb_adr;
 	logic [31:0] mem_i_wb_dat;
@@ -30,6 +31,7 @@ module tb;
 	logic        mem_i_wb_cyc, mem_i_wb_stb, mem_i_wb_we;
 	logic [31:0] mem_o_wb_dat;
 	logic        mem_o_wb_ack;
+	logic [2:0]  mem_i_wb_tga_tag;
 
 	logic [15:0] host_paddr = 0;
 	logic        host_psel = 0, host_penable = 0, host_pwrite = 0;
@@ -49,6 +51,7 @@ module tb;
 	logic        wbx_o_wb_cyc = 0, wbx_o_wb_stb = 0, wbx_o_wb_we = 0;
 	logic [31:0] wbx_i_wb_dat;
 	logic        wbx_i_wb_ack, wbx_i_wb_err;
+	logic [2:0]  wbx_o_wb_tga_tag = 3'b110;
 
 	mb_bus_cfg u_dut (.*);
 
@@ -68,6 +71,16 @@ module tb;
 		end else begin
 			mem_o_wb_ack <= 1'b0;
 			if (mem_i_wb_cyc && mem_i_wb_stb && !mem_o_wb_ack && !mem_stall) begin
+				// Observe only the public leaf face, after CDC, arbitration and pipes.
+				if (mem_i_wb_adr == 16'h0010 || mem_i_wb_adr[11:8] == 4'h1) begin
+					if (mem_i_wb_tga_tag !== 3'b101)
+						$fatal(1, "FAIL CPU inherited tag through master pipe");
+				end else if (mem_i_wb_adr == 16'h0030 || mem_i_wb_adr[11:8] == 4'h3) begin
+					if (mem_i_wb_tga_tag !== 3'b110)
+						$fatal(1, "FAIL async WB inherited tag through CDC and pipe");
+				end else if (mem_i_wb_tga_tag !== 3'b000) begin
+					$fatal(1, "FAIL APB/JTAG must supply zero inherited tags");
+				end
 				mem_o_wb_ack <= 1'b1;
 				mem_o_wb_dat <= mem[mem_i_wb_adr[11:2]];
 				if (mem_i_wb_we)
@@ -90,12 +103,13 @@ module tb;
 	//--------------------------------------------------------------------------
 	task automatic cpu_xfer(input logic wr, input logic [15:0] a, input logic [31:0] d,
 	                        output logic [31:0] rd);
-		@(posedge clk); #1;
+		@(negedge clk);
 		cpu_o_wb_cyc = 1; cpu_o_wb_stb = 1; cpu_o_wb_we = wr;
 		cpu_o_wb_adr = a; cpu_o_wb_dat = d; cpu_o_wb_sel = 4'hf;
-		@(posedge clk); #1;
-		while (!cpu_i_wb_ack) begin @(posedge clk); #1; end
+		// Complete only when ACK is sampled at an active edge, before NBA updates.
+		do @(posedge clk); while (!cpu_i_wb_ack);
 		rd = cpu_i_wb_dat;
+		@(negedge clk);
 		cpu_o_wb_cyc = 0; cpu_o_wb_stb = 0;
 	endtask
 

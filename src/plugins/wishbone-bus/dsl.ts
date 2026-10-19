@@ -730,7 +730,7 @@ export function SlaveBus(
 /**
  * Child fabrics hung via `SlaveBus`, depth-first, unique by `BusDef.name`.
  * A cascade-marked copy (`.uplink()`) wins over an unmarked same-name export,
- * so the standalone wrapper is generated with its `i_wb_*` face.
+ * so the standalone wrapper retains the selected named master as its uplink.
  */
 export function flattenBuses(listed: readonly BusDef[]): BusDef[] {
 	const byName = new Map<string, BusDef>();
@@ -1173,7 +1173,10 @@ function buildBus(
 	crossbar: CrossbarGroups | undefined,
 ): BusDef {
 	requireIdent("bus", name);
-	const masters = opts.masters ?? [];
+	const masters =
+		opts.masters === undefined || opts.masters.length === 0
+			? [Master("m", "Default master")]
+			: [...opts.masters];
 	const masterNames = new Set<string>();
 	for (const m of masters) {
 		if (masterNames.has(m.name)) {
