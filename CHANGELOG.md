@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.5.3] - 2026-10-19
+
+- **接口变更**：Wishbone decoder 的已声明 master 端口与 interconnect / crossbar 统一为 `{master}_o_wb_*` / `{master}_i_wb_{dat,ack}`（含 TGA），不再使用 flat `m_*`；未声明 `masters` 的 decoder 保持原有 flat 口。
+- decoder 的 `.uplink()` Type-A wrapper 保留具名 master 口，不再 remap 成 `i_wb_*` / `o_wb_*`，上层按 master 名显式连接；interconnect / crossbar 的级联 remap 不变。master pipe、APB/JTAG/CDC、demo/hbm 与回归测试已同步。
+
 ## [2.5.2] - 2026-10-15
 
 - 修复 Type-A wrapper `<bus>_bus_cfg` 把 fabric 全宽 ADR 直接接到挂接 regfile 的 `i_wb_adr`、两者 `addrWidth` 不同时产生端口位宽不匹配的问题（issue #1）。fabric 下发的是窗内 offset（`adr & ~mask`），窗口以上全 0：fabric 更宽 → 接 `net[M-1:0]`；fabric 更窄 → 接 `{(M-N)'d0, net}`。demo/soc `sd_sha_bus_cfg`、demo/hbm `hbm_ch_bus_cfg` 随之重新生成。
