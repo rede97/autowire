@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.5.5] - 2026-10-19
+
+- 修复 `wb_cdc` 冷启动：复位后、第一次回到 idle 之前，若目标侧没有在飞事务，新请求等待而不是立刻 `s_err`。APB 桥在此期间保持 `PREADY` 为低。超时、abort，以及源侧复位后目标仍握着已捕获事务时，仍回 `ERR`。`demo/hbm` 与 `demo/soc` 的 `wb_cdc.sv` 已重新生成。
+- 仓库内直接跑 TypeScript 时，Wishbone RTL 模板从 Git 里的 `docs/plugins/rtl/` 读取。打包后的 `autowire.js` 仍只使用内嵌文档包，不打开本地 `docs/`。
+
 ## [2.5.4] - 2026-10-19
 
 - 总线 WB 端口统一由一个端点 schema 生成名称、方向、位宽、TGA 和请求/响应角色；decoder / interconnect / crossbar 的 RTL 声明、wrapper 与原生 WB/CDC 桥接面共享来源，删除重复端口表及名字反向解析。
