@@ -7,8 +7,8 @@ module tb_soc;
 	wire         flash_io1;
 	wire         flash_io2;
 	wire         flash_io3;
-	logic        rst_ni;
 	logic        clk;
+	logic        rst_ni;
 	logic        trap;
 	logic        jtag_tck;
 	logic        jtag_tms;
@@ -30,8 +30,8 @@ module tb_soc;
 	logic [31:0] test_data;
 
 	soc_top u_dut (
-		.rst_ni      (rst_ni      ), // i
 		.clk         (clk         ), // i
+		.rst_ni      (rst_ni      ), // i
 		.trap        (trap        ), // o
 		.jtag_tck    (jtag_tck    ), // i
 		.jtag_tms    (jtag_tms    ), // i
@@ -56,16 +56,16 @@ module tb_soc;
 		.ser_tx      (ser_tx      ), // o
 		.test_valid  (test_valid  ), // o
 		.test_data   (test_data   ), // o [31:0]
+		.sd0_miso    (1'b1        ), // i
+		.sd0_cd      (1'b1        ), // i
 		.sd0_cs_n    (            ), // o
 		.sd0_sck     (            ), // o
 		.sd0_mosi    (            ), // o
-		.sd0_miso    (1'b1        ), // i
-		.sd0_cd      (1'b1        ), // i
+		.sd1_miso    (1'b1        ), // i
+		.sd1_cd      (1'b1        ), // i
 		.sd1_cs_n    (            ), // o
 		.sd1_sck     (            ), // o
-		.sd1_mosi    (            ), // o
-		.sd1_miso    (1'b1        ), // i
-		.sd1_cd      (1'b1        )  // i
+		.sd1_mosi    (            )  // o
 	);
 
 `include "tb_board.svh"

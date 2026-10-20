@@ -33,6 +33,8 @@ Lifecycle scripts: docs/connect/lifecycle.md —
   check is static (no scripts). elaborate runs scripts and hooks, then freezes aw-render.
   No author before-dump. Type-A plugin wishbone run stays outside this pipeline (docs/plugins/).
 Templates are per-aw-mod only. Connected nets → aw-signals; identity/export may auto-export ports.
+Export port order: explicit aw-ports (author order) first, then auto-exported nets grouped
+by instance document order, ordered within each instance by the target module's port table.
 aw-imports → SV import at module head (deduped).
 
 Skeleton

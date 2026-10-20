@@ -2,11 +2,17 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## Unreleased
+
+## [2.5.8] - 2026-10-20
+
+- connect 顶层导出端口排序规则化：显式 `aw-ports` 按作者文档序在前；自动导出的网按实例文档序分组，组内按目标模块自身端口表顺序排列，模板里 connect 规则的书写顺序不再影响导出顺序。契约见 `docs/connect/html.md` §4.1；demo/soc `rtl/gen` 随之重新生成。
+- `wb_sync_cell` 新增参数 `WIDTH`（缺省 1，备用；多位为逐位独立同步，不是总线同步器），`d`/`q` 变为 `[WIDTH-1:0]`，`STAGES < 2` 编译期报错。新增编译宏 `AUTOWIRE_SYNC_CELL=CELL_SYNC` 选择外部同步单元/adapter：透传 `STAGES`、`RESET_VAL`、`WIDTH`，缺失所选模块编译失败、不静默回退；生成的 `wb_sync_cell.sv` 两种模式都留在 filelist。契约见 `docs/plugins/wishbone-master.md` §3.2。新增 `test/sync-cell.test.ts`。
+
 ## [2.5.7] - 2026-10-19
 
 - 修复 `wb_cdc` 单侧复位（2.5.6 起）：只复位一侧（JTAG TRST 或系统 `rst_n`）会让 FIFO 重放历史命令、发出未初始化的 X 命令，并使后续读数据永久错一拍。现在 `link_rst_n = s_rst_n & rst_n` 同时复位两向 FIFO 两端（对侧停钟也生效）；丢失的挂起读回一次 `s_err`；源侧单独复位时已在 fabric 上的拍做完、数据丢弃；目标复位期间新请求等待；源撤 `CYC` 放弃的读，其迟到响应被排空。不再要求协调两侧复位。新增 `test/fixtures/wb_cdc_reset_tb.sv`。
 - 新增 `Master(..., { apb: { timeout: N }, cdc: true })`：`wb_apb2wb` 参数 `TIMEOUT`（PCLK 周期，0 关闭），超时撤 `CYC` 并回 `PSLVERR`；必须经 `wb_cdc`，无 CDC 时报错。`wb_cdc` 自身仍无超时。`demo/hbm` 的 `host` 恢复 `timeout: 64`。新增 `test/fixtures/wb_apb_timeout_tb.sv`。RDC、复位脉宽、超时预算等集成注意事项见 `docs/plugins/wishbone-master.md` §3、§4。
-- `wb_sync_cell` 新增参数 `WIDTH`（缺省 1，备用；多位为逐位独立同步，不是总线同步器），`d`/`q` 变为 `[WIDTH-1:0]`，`STAGES < 2` 编译期报错。新增编译宏 `AUTOWIRE_SYNC_CELL=CELL_SYNC` 选择外部同步单元/adapter：透传 `STAGES`、`RESET_VAL`、`WIDTH`，缺失所选模块编译失败、不静默回退；生成的 `wb_sync_cell.sv` 两种模式都留在 filelist。契约见 `docs/plugins/wishbone-master.md` §3.2。新增 `test/sync-cell.test.ts`。
 
 ## [2.5.6] - 2026-10-19
 

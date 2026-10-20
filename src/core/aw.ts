@@ -1942,8 +1942,29 @@ function elaborateMod(
 		});
 	}
 	if (!tb) {
-		for (const [net, sig] of signals) {
-			if (explicit.has(net)) continue;
+		// Auto-export order (docs/connect/html.md §4.1): instance document
+		// order, then the target module's own port order within each instance
+		// (a net stays in the group of the instance that first touches it).
+		// Leftovers not reachable from any connect keep first-touch order.
+		const autoNets: string[] = [];
+		const queued = new Set<string>();
+		for (const ri of renderInsts) {
+			const orderIdx = new Map(ri.order.map((n, i) => [n, i]));
+			const byPort = [...ri.connects.entries()].sort(
+				(a, b) => (orderIdx.get(a[0]) ?? 1e9) - (orderIdx.get(b[0]) ?? 1e9),
+			);
+			for (const [, c] of byPort) {
+				if (c.open || c.isRaw || c.isConst) continue;
+				if (c.to && !queued.has(c.to)) {
+					queued.add(c.to);
+					autoNets.push(c.to);
+				}
+			}
+		}
+		for (const net of signals.keys()) if (!queued.has(net)) autoNets.push(net);
+		for (const net of autoNets) {
+			const sig = signals.get(net);
+			if (!sig || explicit.has(net)) continue;
 			const dirs = netDirs.get(net) ?? new Set();
 			let dir = null;
 			if (dirs.has("inout")) dir = "inout";

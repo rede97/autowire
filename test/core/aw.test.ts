@@ -541,6 +541,38 @@ describe("elaborate (render)", () => {
 		).not.toBeNull();
 	});
 
+	test("auto-export order: explicit aw-ports first, then inst document order × leaf port order", () => {
+		const leaf = leafOf([
+			{ name: "z_i", dir: "input" },
+			{ name: "m_i", dir: "input" },
+			{ name: "a_o", dir: "output" },
+		]);
+		const leafB = leafOf([{ name: "q_o", dir: "output" }]);
+		const doc = docOf(
+			`<aw-mod name="m"><aw-content>
+				<aw-ports><aw-port name="explicit_in" dir="input"></aw-port></aw-ports>
+				<aw-insts>
+					<aw-inst id="b" mod="leafB"><aw-template>
+						<aw-connect port="q_o" to="b_q"></aw-connect>
+					</aw-template></aw-inst>
+					<aw-inst id="a" mod="leaf"><aw-template>
+						<aw-connect port="a_o" to="a_z"></aw-connect>
+						<aw-connect port="m_i" to="a_m"></aw-connect>
+						<aw-connect port="z_i" to="a_x"></aw-connect>
+					</aw-template></aw-inst>
+				</aw-insts>
+			</aw-content></aw-mod>`,
+		);
+		const res = elaborate(doc, ctxWith({ leaf, leafB }));
+		expect(res.errors).toEqual([]);
+		const ports = [
+			...doc.querySelectorAll("aw-render > aw-ports > aw-port"),
+		].map((p) => p.getAttribute("name"));
+		// Rule order inside inst a (a_z, a_m, a_x) must not leak into the
+		// export: leaf port order z_i < m_i < a_o wins.
+		expect(ports).toEqual(["explicit_in", "b_q", "a_x", "a_m", "a_z"]);
+	});
+
 	test("dimension conflict on one net is an error (after constant folding)", () => {
 		const doc = docOf(
 			`<aw-mod name="m"><aw-content><aw-insts>
