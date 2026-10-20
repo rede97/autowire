@@ -64,7 +64,7 @@
 | 已发出的目标拍 | 目标 `m_*` 只随 `rst_n` 复位：源侧单独复位时，已在 fabric 上的拍保持到 ACK（WB/PIPE 读不可撤销），其读数据被丢弃；之后的新命令排在它后面 |
 | 链路未就绪 | 目标复位保持中或复位刚释放：新请求等待，`s_ack` / `s_err` 都为 0，直至链路同步完成 |
 | 源放弃读 | 读挂起期间源侧撤掉 `CYC/STB`（如 APB 超时）：该读的迟到响应被静默排空，不会完成后续请求；新请求等其排空后再入队 |
-| 同步器 | 默认经 `wb_sync_cell`（行为模型 2FF；签核时换 foundry sync cell，保持端口不变） |
+| 同步器 | 全部经 `wb_sync_cell`：默认内建 `STAGES` 级触发器链（缺省 2），可用宏 `AUTOWIRE_SYNC_CELL` 换成外部 `CELL_SYNC`（§3.2），端口不变 |
 
 复位仍会丢弃尚在命令 FIFO 中的写：**已返回 posted ACK 不保证写跨复位存活**，复位也不能回滚已经发生的副作用。不能用复位一侧或撤销请求当作取消/重试机制；超时或 `s_err` 后，软件应重新读回状态再决定是否重做。
 
@@ -97,6 +97,23 @@
 不同端口、读延迟或复位约定的 CELL 必须提供真实 adapter，不能只改模块名。超过一拍的读延迟需预取以呈现上述 ABI。外部选择冒烟使用内建核心的测试 adapter，不是实际 vendor RTL 验证；工程必须用实际 CELL/adapter 重新验证 FIFO、CDC 与复位行为。
 
 物理实现必须约束 Gray 指针跨域路径的最大延迟和位间 skew，正确映射双时钟存储/同步单元，满足复位脉宽与释放时序，并完成 CDC/RDC 签核。RTL 仿真和 `-Wall` 不覆盖亚稳态及布局布线。
+
+### 3.2 同步单元 `wb_sync_cell` 与外部 CELL 接入
+
+参数：`STAGES`（缺省 2，≥ 2）、`RESET_VAL`（缺省 0，复位时每一位都取该值）、`WIDTH`（缺省 1，≥ 1）；端口 `clk`、`rst_n`、`d[WIDTH-1:0]`、`q[WIDTH-1:0]`。现有调用方（FIFO 指针/复位释放、`wb_cdc` 链路检测、JTAG `en`）都用 `WIDTH=1`；`WIDTH` 是备用参数。
+
+`WIDTH > 1` 等价于 `WIDTH` 个**互相独立**的单 bit 同步器，各位可能在不同边沿稳定，**不是**总线同步器：只能用于 Gray 码、每次只变一位或准静态的值，禁止用于二进制计数/多位数据（多位数据走 `wb_async_fifo`）。
+
+外部 CELL 通过编译宏 `AUTOWIRE_SYNC_CELL` 选择模块名，规则与 §3.1 相同：生成的 `wb_sync_cell.sv` 两种模式下都留在 filelist，另加入实际 CELL/adapter；analysis 使用相同宏和 filelist；没有宏用内建实现；指定模块缺失编译失败，**不会静默回退**；无 TOML 选项。Verilator `-DAUTOWIRE_SYNC_CELL=CELL_SYNC`，VCS `+define+AUTOWIRE_SYNC_CELL=CELL_SYNC`。两个宏互相独立：选了外部 FIFO CELL 时，FIFO 内部同步由该 CELL 负责，`AUTOWIRE_SYNC_CELL` 仍作用于 `wb_cdc` 链路检测和 JTAG `en`。
+
+| 项 | 所选外部模块的契约（CELL_SYNC ABI） |
+|---|---|
+| 参数 | `STAGES`, `RESET_VAL`, `WIDTH`，`wb_sync_cell` 原样透传，例化一次（`u_cell`）。CELL 自己处理多位：单 bit 的 vendor cell 由 adapter 按位 generate；只支持固定级数或宽度的 CELL 须在 adapter 中对不支持的值报 `$fatal`，不能静默忽略 |
+| 端口 | `clk`, `rst_n`, `d[WIDTH-1:0]`, `q[WIDTH-1:0]` |
+| 复位 | 低有效、异步断言，`q` 每一位立即为 `RESET_VAL`；对端停钟时也须生效。复位释放由本地 `clk` 同步 |
+| 时序 | 每一位至少 `STAGES` 级触发器、各位独立；延迟可以多于 `STAGES` 拍（调用方只依赖“最终跟随”，不依赖精确拍数）；`q` 无毛刺 |
+
+测试 adapter `test/fixtures/sync_cell_adapter.sv` 比内建实现多一级，只用于证明宏选择与 `WIDTH` 透传生效、CDC 对额外延迟不敏感，不是 vendor CELL 验证。
 
 ## 4. APB master（`wb_apb2wb`）
 
@@ -184,7 +201,7 @@ Bus("soc_wb", "SoC cfg", {
 原生 WB 面与 fabric master 面使用同一端点生成规则（名称、方向、位宽、TGA 域和可选 ERR），不在桥接发射器内另写一份 WB 端口表。APB / JTAG 的原生协议口不属于 WB 命名规则。
 
 - TGA：异步 WB 口把每个继承域 `{m}_o_wb_tga_<domain>` 按声明顺序打包进 `wb_cdc` 的 `s_tga`（先声明的域在低位），目标侧再拆回 fabric 的同名口。域名不是 `tag` 时也走这条打包，不另造 `*_tga_tag`。APB / JTAG 桥把 tag 接 0。
-- 公共模块：任一 bus 有桥接 master 时，`plugins_dir/wishbone/bus/` 额外出 `wb_sync_cell.sv`、`wb_async_fifo.sv`、`wb_cdc.sv`、`wb_apb2wb.sv`、`wb_jtag_tdr.sv`（模板在 [`rtl/`](./rtl/)，与 `wb_cfg_pipe` 同纪律）；手写 filelist 必须包含 `wb_async_fifo.sv`，选择外部 CELL 时另外加入 §3.1 的 CELL/adapter。有 JTAG master 的 bus 另出 `<bus>_bus_cfg.icl` / `.pdl`（非 SV，不进 filelist）。
+- 公共模块：任一 bus 有桥接 master 时，`plugins_dir/wishbone/bus/` 额外出 `wb_sync_cell.sv`、`wb_async_fifo.sv`、`wb_cdc.sv`、`wb_apb2wb.sv`、`wb_jtag_tdr.sv`（模板在 [`rtl/`](./rtl/)，与 `wb_cfg_pipe` 同纪律）；手写 filelist 必须包含 `wb_sync_cell.sv` 与 `wb_async_fifo.sv`，选择外部 CELL 时另外加入 §3.1 / §3.2 的 CELL/adapter。有 JTAG master 的 bus 另出 `<bus>_bus_cfg.icl` / `.pdl`（非 SV，不进 filelist）。
 - 单 master（NM=1 → decoder）同样适用：桥 / CDC 在 decoder 前。
 
 ## 7. 验证
@@ -198,6 +215,7 @@ Bus("soc_wb", "SoC cfg", {
 
 - `test/async-fifo.test.ts`：深度 2/8 × 快写慢读/慢写快读，满/空保护、回绕顺序、并发生产消费、停读钟背压、停钟时复位清空及新数据读取。
 - `test/wishbone-cdc.test.ts`：WB/APB 入口、时钟比、posted 写排队、读返回顺序、停钟与协调复位（`wb_cdc_boundary_tb.sv`）；任一侧单独复位或对侧停钟时复位不重放/无 X、丢失读一次 ERR、已发目标拍在源复位后做完且数据丢弃、源放弃读排空、目标复位保持中请求等待（`wb_cdc_reset_tb.sv`）；APB `TIMEOUT` 慢目标不误报、卡死目标 PSLVERR 及耗时、迟到响应排空、FIFO 满时超时写不落地（`wb_apb_timeout_tb.sv`）。
+- `test/sync-cell.test.ts`：`wb_sync_cell` 内建与 `AUTOWIRE_SYNC_CELL` 测试 adapter 两种模式下，按 `STAGES` / `WIDTH` / `RESET_VAL` 检查逐位延迟与异步复位值；所选模块缺失时编译失败；CDC 复位与 APB 超时用例在 adapter 上重跑。
 - `test/wishbone-master.test.ts`：APB/JTAG/异步 WB 经仲裁和 PIPE 的端到端行为；`test/wishbone-rtl-lint.test.ts` 检查生成 RTL 的 Verilator `-Wall`。这些是仓库回归范围，不构成硅验证或实际 vendor CELL 验证。
 
 demo/soc 接入（JTAG）：`sot/wb_bus_soc.ts` 加 `Master("dbg", …, { jtag: true, pipe: 2 })`（fabric 侧、CDC 之后 2 级 posted 写 pipe）；`rtl/demo_tap.v` 为 **DFT 占位 TAP**（IDCODE / BYPASS / USER=1000 → `dbg_sel`），顶层引出 `jtag_*`，`dbg_en` 绑 1。外部 JTAG 冒烟与 CPU 固件并发（共享 soc_wb 仲裁）：
@@ -210,7 +228,7 @@ demo/soc 接入（JTAG）：`sot/wb_bus_soc.ts` 加 `Master("dbg", …, { jtag: 
 
 ## 8. 暂时不做
 
-已裁定且已实现：写 **posted**；`wb_cdc` 使用命令/读返回双异步 FIFO，默认可综合实现，也可按 §3.1 选择外部 CELL/adapter；任一侧复位经 `link_rst_n` 复位两向 FIFO，丢失读回 ERR，无自动重试；超时只在 APB 桥（`apb.timeout`，需 cdc）；JTAG **单 DR**、地址宽 = bus `addrWidth`；输出 PDL；无私有 TAP；同步单元为可替换壳（无 toml 选项）。demo/soc 的 JTAG master 已接入。
+已裁定且已实现：写 **posted**；`wb_cdc` 使用命令/读返回双异步 FIFO，默认可综合实现，也可按 §3.1 选择外部 CELL/adapter；任一侧复位经 `link_rst_n` 复位两向 FIFO，丢失读回 ERR，无自动重试；超时只在 APB 桥（`apb.timeout`，需 cdc）；JTAG **单 DR**、地址宽 = bus `addrWidth`；输出 PDL；无私有 TAP；同步单元可按 §3.2 用宏选择外部 CELL（无 toml 选项）。demo/soc 的 JTAG master 已接入。
 
 等后续需求再追加：
 

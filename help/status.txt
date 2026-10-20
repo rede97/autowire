@@ -109,6 +109,9 @@ Parallel (does not block connect)
     macro and actual CELL sources. Registered-read latency/reset-busy adapter requirements:
     docs/plugins/wishbone-master.md section 3.1. User-reported silicon validation applies
     to Gitee master435180e, not this WB adaptation/default FIFO or test adapter.
+    wb_sync_cell (STAGES, RESET_VAL, WIDTH=1 spare; per-bit independent, not a bus sync):
+    AUTOWIRE_SYNC_CELL=CELL_SYNC selects an external cell/adapter receiving the same three
+    parameters and d/q[WIDTH-1:0]; same retain-file / no-fallback rules (section 3.2).
     JTAG PDL is Level-0 fixed-wait checking, not dynamic busy polling.
     RWE read_write_block default false (posted fabric: true risks bus lock);
     WB ports {name}_i_wb_*/{name}_o_wb_*; sideband Access prefixes (ro_/rg_/ext_/p_rg_/c_rg_);
@@ -197,7 +200,7 @@ Parallel (does not block connect)
     JTAG = TDR client of the DFT-owned chip TAP / SIB (no private TAP): shift {op,adr,dat},
     capture {st,adr,rdat}; launch + poll (st 1 busy / 2 err sticky, nop clears); {m}_en gate;
     emits wb_sync_cell / wb_async_fifo / wb_cdc / wb_apb2wb / wb_jtag_tdr.sv
-    + <bus>_bus_cfg.icl/.pdl; custom filelists retain FIFO wrapper plus selected CELL/adapter;
+    + <bus>_bus_cfg.icl/.pdl; custom filelists retain sync/FIFO wrappers plus selected CELLs;
     cascade face (.uplink()) cannot be bridged; duplicate master names rejected
   Register Table + Block/Cell (data); Excel is documentation only
   Leaf port tables from RtlIndex (read-only on the connect page)

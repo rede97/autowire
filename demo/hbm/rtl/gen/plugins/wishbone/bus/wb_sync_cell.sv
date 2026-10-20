@@ -2,29 +2,53 @@
 // Template: docs/plugins/rtl/wb_sync_cell_template.sv
 // SPDX-License-Identifier: MIT
 //
-// wb_sync_cell — single-bit multi-flop synchronizer (behavioral).
+// wb_sync_cell — multi-flop synchronizer with an optional technology cell.
 //
 // Every CDC crossing in the wishbone master path goes through this module so
-// CDC tools see one synchronizer type. Replace the body with the foundry sync
-// cell for signoff; keep the port list.
+// CDC tools see one synchronizer type. Without AUTOWIRE_SYNC_CELL, use the
+// built-in behavioral STAGES-flop chain per bit. Define AUTOWIRE_SYNC_CELL to
+// a module name to select an external CELL_SYNC-compatible cell/adapter with
+// the same parameters (STAGES, RESET_VAL, WIDTH) and ports (clk, rst_n,
+// d[WIDTH-1:0], q[WIDTH-1:0]), instantiated once. A selected but missing cell
+// is a compilation error, never a fallback.
+//
+// WIDTH > 1 is WIDTH independent single-bit synchronizers: bits may resolve
+// on different edges. Only use it for Gray-coded, one-bit-change or
+// quasi-static values, never for a binary bus. Asynchronous active-low reset
+// drives every bit to RESET_VAL.
 
 module wb_sync_cell #(
 	parameter int unsigned STAGES    = 2,
-	parameter bit          RESET_VAL = 1'b0
+	parameter bit          RESET_VAL = 1'b0,
+	parameter int unsigned WIDTH     = 1
 ) (
-	input  logic clk,
-	input  logic rst_n,
-	input  logic d,
-	output logic q
+	input  logic             clk,
+	input  logic             rst_n,
+	input  logic [WIDTH-1:0] d,
+	output logic [WIDTH-1:0] q
 );
 
-	logic [STAGES-1:0] sync_q;
+`ifdef AUTOWIRE_SYNC_CELL
+	`AUTOWIRE_SYNC_CELL #(.STAGES(STAGES), .RESET_VAL(RESET_VAL), .WIDTH(WIDTH)) u_cell (
+		.clk(clk), .rst_n(rst_n), .d(d), .q(q)
+	);
+`else
+	// sync_q[0] samples d; sync_q[STAGES-1] drives q.
+	logic [STAGES-1:0][WIDTH-1:0] sync_q;
 
 	always_ff @(posedge clk or negedge rst_n) begin
-		if (!rst_n) sync_q <= {STAGES{RESET_VAL}};
+		if (!rst_n) sync_q <= {(STAGES * WIDTH){RESET_VAL}};
 		else        sync_q <= {sync_q[STAGES-2:0], d};
 	end
 
 	assign q = sync_q[STAGES-1];
+`endif
+
+	initial begin
+		if (STAGES < 2)
+			$fatal(1, "wb_sync_cell STAGES must be at least 2");
+		if (WIDTH < 1)
+			$fatal(1, "wb_sync_cell WIDTH must be at least 1");
+	end
 
 endmodule
