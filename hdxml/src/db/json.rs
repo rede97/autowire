@@ -179,7 +179,7 @@ impl<'a> JsonExport<'a> {
     /// 模块对象：键次序镜像 XML 属性/子元素次序；空组省略键（XML 写空 <module/>）
     fn module_json(&self, m: &ModuleDecl) -> Obj {
         let mut o = Obj::new();
-        o.str("name", &m.name);
+        o.str("name", &restore_raw_macros(&m.name));
         o.str("kind", m.kind.as_str());
         o.str("span", &span_text(m.span));
         o.str("contentHash", &m.content_hash);
@@ -231,8 +231,8 @@ impl<'a> JsonExport<'a> {
             let mut arr = Arr::new();
             for i in &m.instances {
                 let mut io = Obj::new();
-                io.str("name", &i.inst);
-                io.str("target", &i.target);
+                io.str("name", &restore_raw_macros(&i.inst));
+                io.str("target", &restore_raw_macros(&i.target));
                 io.str("span", &span_text(i.span));
                 if !i.params.is_empty() {
                     let mut ps = Arr::new();
@@ -303,7 +303,7 @@ impl<'a> JsonExport<'a> {
                 continue;
             }
             let mut o = Obj::new();
-            o.str("name", name);
+            o.str("name", &restore_raw_macros(name));
             o.str("index", &index_of[&m.file]);
             modules.obj(o);
         }
@@ -315,18 +315,20 @@ impl<'a> JsonExport<'a> {
                 continue;
             }
             let mut o = Obj::new();
-            o.str("name", name);
+            o.str("name", &restore_raw_macros(name));
             o.str("index", &index_of[&m.file]);
             packages.obj(o);
         }
         root.arr("packages", packages);
 
         let mut hierarchy = Arr::new();
-        for t in &self.db.tops {
+        let mut tops = self.db.tops.clone();
+        tops.sort_by(|a, b| restore_raw_macros(a).cmp(&restore_raw_macros(b)));
+        for t in &tops {
             let mut visited = BTreeSet::new();
             visited.insert(t.clone());
             let mut node = Obj::new();
-            node.str("module", t);
+            node.str("module", &restore_raw_macros(t));
             node.boolean("blackbox", false);
             node.boolean("cycle", false);
             node.arr("children", self.dag_children(t, &mut visited));
@@ -340,10 +342,13 @@ impl<'a> JsonExport<'a> {
     /// DAG 子节点数组（镜像 render_dag_node：黑盒/环标注为叶节点并截断）
     fn dag_children(&self, name: &str, visited: &mut BTreeSet<String>) -> Arr {
         let mut arr = Arr::new();
-        for sub in self.db.submods(name) {
+        let mut subs = self.db.submods(name);
+        subs.sort_by(|a, b| restore_raw_macros(a).cmp(&restore_raw_macros(b)));
+        for sub in subs {
+            let shown = restore_raw_macros(&sub);
             if self.db.undef.contains(&sub) {
                 let mut o = Obj::new();
-                o.str("module", &sub);
+                o.str("module", &shown);
                 o.boolean("blackbox", true);
                 o.boolean("cycle", false);
                 arr.obj(o);
@@ -351,7 +356,7 @@ impl<'a> JsonExport<'a> {
             }
             if visited.contains(&sub) {
                 let mut o = Obj::new();
-                o.str("module", &sub);
+                o.str("module", &shown);
                 o.boolean("blackbox", false);
                 o.boolean("cycle", true);
                 arr.obj(o);
@@ -359,7 +364,7 @@ impl<'a> JsonExport<'a> {
             }
             visited.insert(sub.clone());
             let mut o = Obj::new();
-            o.str("module", &sub);
+            o.str("module", &shown);
             o.boolean("blackbox", false);
             o.boolean("cycle", false);
             o.arr("children", self.dag_children(&sub, visited));

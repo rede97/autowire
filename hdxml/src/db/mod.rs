@@ -441,8 +441,9 @@ use std::collections::HashMap;
 use sv_parser::{Define, DefineText};
 
 /// 保原文宏的展开哨兵前缀（svo `__MACRO__DEFINE__` 同式）：
-/// `` `WIDTH `` 展开为 `__MACRO__DEFINE__WIDTH`，仅存在于分析文本；
-/// 导出 XML 时由 `db::xml::restore_raw_macros` 还原为 `` `WIDTH ``。
+/// `` `WIDTH `` 展开为 `__MACRO__DEFINE__WIDTH`，仅存在于分析文本。
+/// `assemble` 把模块名和例化 target 还原成 `` `WIDTH ``（层级键）；
+/// 导出时 `db::xml::restore_raw_macros` 再过一遍（幂等，覆盖未走 assemble 的路径）。
 /// （sv-parser-pp 0.13.4 的 None 值是**删除**宏引用而非原文保留，故不能用 None。）
 pub const MACRO_RAW_PREFIX: &str = "__MACRO__DEFINE__";
 
@@ -460,6 +461,29 @@ fn sentinel_define(name: &str, args: &[(String, Option<String>)]) -> Option<Defi
         args.to_vec(),
         Some(DefineText::new(text, None)),
     ))
+}
+
+/// sv-parser 把宏名与宏体之间的分隔空白算进 `DefineText`（`` `define CELL foo ``
+/// 的文本是 `" foo"`）。IEEE 1800 该空白不属于替换文本。去掉后展开结果和
+/// `<define value>` / `definesFp` 与 `-D CELL=foo` 一致。origin 起点同步前移，
+/// 展开文本长度与源范围仍然对齐。
+fn strip_define_separator(def: Option<Define>) -> Option<Define> {
+    let Some(mut def) = def else {
+        return None;
+    };
+    if let Some(body) = def.text.as_mut() {
+        let n = body.text.len() - body.text.trim_start().len();
+        if n > 0 {
+            if let Some((_, range)) = body.origin.as_mut() {
+                let begin = range.begin + n;
+                if begin <= range.end {
+                    range.begin = begin;
+                }
+            }
+            body.text = body.text[n..].to_string();
+        }
+    }
+    Some(def)
 }
 
 /// 构建宏定义表（K-2 修复：无 `=VALUE` 视为 `NAME=1`；SV_COV* 过滤保留）
@@ -514,15 +538,17 @@ pub fn build_defines(
         }
     }
     for h in expand_headers {
-        // 真展开通道：宏体原样进入宏表（ASSERT 等模块项宏的展开结果必须可解析，
-        // 哨兵占位符在模块项位置不合法）
+        // 真展开通道：宏体进入宏表（ASSERT 等模块项宏的展开结果必须可解析，
+        // 哨兵占位符在模块项位置不合法）。sv-parser 把宏名与宏体之间的分隔空白
+        // 算进 DefineText；IEEE 1800 该空白不属于替换文本，去掉后与 `-D` 的
+        // value / definesFp 一致。
         let (_, hdr_defs) = sv_parser::preprocess(h, &defines, incdirs, true, false)
             .map_err(|e| anyhow::anyhow!("expand header preprocess failed {}: {}", h.display(), e))?;
         for (name, def) in hdr_defs {
             if name.starts_with("SV_COV") {
                 continue;
             }
-            defines.insert(name, def);
+            defines.insert(name, strip_define_separator(def));
         }
     }
     // -D 压顶：同名 header 哨兵被显式展开值覆盖（keep_raw 仍最强，见下）
@@ -635,7 +661,13 @@ fn assemble(
 ) -> DesignDb {
     let mut defs = BTreeMap::new();
     for (file, mods) in by_file {
-        for m in mods {
+        for mut m in mods {
+            // 哨兵只活在分析文本里。模块名 / 例化 target 是层级键，必须在 solve 前
+            // 还原，否则缓存回读的 `` `NAME `` 与新解析的哨兵对不上。
+            m.name = xml::restore_raw_macros(&m.name);
+            for inst in &mut m.instances {
+                inst.target = xml::restore_raw_macros(&inst.target);
+            }
             if let Some(prev) = defs.insert(m.name.clone(), m) {
                 // 同名且规范化内容相同（文件既被 include 展开又被作为源扫描）= 良性重复
                 if prev.norm_hash == defs[&prev.name].norm_hash {
@@ -709,20 +741,28 @@ pub fn analyze_incremental(
     Ok((assemble(d, by_file, errors), stamps, reused))
 }
 
-/// 依赖树打印（termtree；黑盒标 [blackbox]）
+/// 依赖树打印（termtree；黑盒标 [blackbox]）。显示名走哨兵还原；查找仍用库内键。
 pub fn dep_tree(db: &DesignDb) -> Vec<termtree::Tree<String>> {
     fn build(db: &DesignDb, name: &str, visited: &mut BTreeSet<String>) -> termtree::Tree<String> {
+        let shown = xml::restore_raw_macros(name);
         if !visited.insert(name.to_string()) {
-            return termtree::Tree::new(format!("{name} [cycle]"));
+            return termtree::Tree::new(format!("{shown} [cycle]"));
         }
         let label = if db.undef.contains(name) {
-            format!("{name} [blackbox]")
+            format!("{shown} [blackbox]")
         } else {
-            name.to_string()
+            shown
         };
         let mut tree = termtree::Tree::new(label);
         if let Some(m) = db.defs.get(name) {
-            let subs: BTreeSet<String> = m.instances.iter().map(|i| i.target.clone()).collect();
+            let mut subs: Vec<String> = m
+                .instances
+                .iter()
+                .map(|i| i.target.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            subs.sort_by(|a, b| xml::restore_raw_macros(a).cmp(&xml::restore_raw_macros(b)));
             for s in subs {
                 tree.push(build(db, &s, visited));
             }
@@ -894,4 +934,205 @@ mod tests {
         assert!(defs.contains_key("GATED"), "-D seed must be visible to header `ifdef");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// `--expand-headers` 的宏体不得带 sv-parser 计入的分隔空格，否则与 `-D` 的 definesFp 分叉。
+    #[test]
+    fn expand_headers_strips_separator_space() {
+        let dir = std::env::temp_dir().join(format!("hdxml_test_expand_sp_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let hdr = dir.join("defs.svh");
+        std::fs::write(
+            &hdr,
+            "`define CELL foo\n`define WMAC 8\n`define MSG hello  world\n`define ASSERT(name) \\\n  assert(name)\n",
+        )
+        .unwrap();
+        let expanded = build_defines(&[], &[], std::slice::from_ref(&hdr), &[], &[]).unwrap();
+        let text = |defs: &std::collections::HashMap<String, Option<sv_parser::Define>>, name: &str| {
+            defs.get(name).unwrap().as_ref().unwrap().text.as_ref().unwrap().text.clone()
+        };
+        assert_eq!(text(&expanded, "CELL"), "foo");
+        assert_eq!(text(&expanded, "WMAC"), "8");
+        assert_eq!(text(&expanded, "MSG"), "hello  world", "interior spaces stay");
+        let assert_body = text(&expanded, "ASSERT");
+        assert!(
+            !assert_body.starts_with(' ') && assert_body.contains("assert(name)"),
+            "continuation body must keep its text: {assert_body:?}"
+        );
+        let via_d = build_defines(
+            &["CELL=foo".to_string(), "WMAC=8".to_string()],
+            &[],
+            &[],
+            &[],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(text(&expanded, "CELL"), text(&via_d, "CELL"));
+        assert_eq!(text(&expanded, "WMAC"), text(&via_d, "WMAC"));
+
+        let src = "module top; `CELL u(); endmodule\n";
+        let (pp, _) = sv_parser::preprocess_str(src, "<test>", &expanded, &[] as &[&std::path::Path], false, false, 0, 0)
+            .unwrap();
+        assert!(
+            pp.text().contains("foo u()"),
+            "expanded cell name must not keep the separator space: {}",
+            pp.text()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// issue: 保原文宏作模块名时，哨兵不得进 instance target / hierarchy。
+    #[test]
+    fn raw_macro_cell_name_restores_on_export() {
+        let dir = std::env::temp_dir().join(format!("hdxml_test_raw_cell_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let hdr = dir.join("defs.svh");
+        std::fs::write(&hdr, "`define CELL foo\n`define WMAC 8\n").unwrap();
+        let foo = dir.join("foo.sv");
+        let top = dir.join("top.sv");
+        std::fs::write(
+            &foo,
+            "module foo #(parameter int W = 1) (input logic [W-1:0] d, output logic [W-1:0] q);\n  assign q = d;\nendmodule\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &top,
+            "module top (input logic [`WMAC-1:0] d, output logic [`WMAC-1:0] q);\n`ifdef CELL\n  `CELL #(.W(`WMAC)) u_cell (.d(d), .q(q));\n`else\n  assign q = d;\n`endif\nendmodule\n",
+        )
+        .unwrap();
+        let files = vec![top.clone(), foo.clone()];
+
+        let run = |defines: std::collections::HashMap<String, Option<sv_parser::Define>>,
+                   pairs: &[(String, Option<String>)],
+                   out_name: &str|
+         -> (super::DesignDb, String, String) {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
+            let pc = crate::progress::ProgressCenter::new();
+            let incdirs: Vec<std::path::PathBuf> = Vec::new();
+            let drive = super::Drive {
+                files: &files,
+                defines: &defines,
+                incdirs: &incdirs,
+                pool: &pool,
+                pc: &pc,
+                sub_bars: false,
+            };
+            let (db, stamps) = super::analyze_files(&drive).unwrap();
+            assert!(db.errors.is_empty(), "{:?}", db.errors);
+            let out = dir.join(out_name);
+            let _ = std::fs::remove_dir_all(&out);
+            super::xml::XmlExport::new(&db, &files, pairs, &stamps, &incdirs)
+                .write(&out)
+                .unwrap();
+            let xml = super::slurp_dir(&out);
+            let jout = dir.join(format!("{out_name}_json"));
+            let _ = std::fs::remove_dir_all(&jout);
+            super::json::JsonExport::new(&db, &files, pairs, &stamps, &incdirs)
+                .write(&jout)
+                .unwrap();
+            let json = super::slurp_dir(&jout);
+            (db, xml, json)
+        };
+
+        let defines = build_defines(&[], std::slice::from_ref(&hdr), &[], &[], &[]).unwrap();
+        let pairs = vec![
+            ("CELL".to_string(), None),
+            ("WMAC".to_string(), None),
+        ];
+        let (db, xml, json) = run(defines, &pairs, "hdr");
+        let target = &db.defs.get("top").unwrap().instances[0].target;
+        assert_eq!(target, "`CELL", "assemble must restore the instance target");
+        assert!(db.undef.contains("`CELL"));
+        assert!(!db.undef.iter().any(|n| n.contains(MACRO_RAW_PREFIX)));
+        assert!(!xml.contains(MACRO_RAW_PREFIX), "{xml}");
+        assert!(!json.contains(MACRO_RAW_PREFIX), "{json}");
+        assert!(xml.contains("target=\"`CELL\""), "{xml}");
+        assert!(xml.contains("value=\"`WMAC\""), "{xml}");
+        assert!(xml.contains("module=\"`CELL\""), "{xml}");
+        assert!(xml.contains("blackbox=\"true\""), "{xml}");
+        assert!(xml.contains("[`WMAC-1:0]") || xml.contains("logic [`WMAC-1:0]"), "{xml}");
+        assert!(json.contains("\"target\": \"`CELL\""), "{json}");
+        assert!(json.contains("\"module\": \"`CELL\""), "{json}");
+
+        // 缓存回读的是已还原 target，再导出不得把哨兵写回来
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
+        let pc = crate::progress::ProgressCenter::new();
+        let incdirs: Vec<std::path::PathBuf> = Vec::new();
+        let defines = build_defines(&[], std::slice::from_ref(&hdr), &[], &[], &[]).unwrap();
+        let drive = super::Drive {
+            files: &files,
+            defines: &defines,
+            incdirs: &incdirs,
+            pool: &pool,
+            pc: &pc,
+            sub_bars: false,
+        };
+        let (db2, _, reused) = super::analyze_incremental(
+            &drive,
+            &pairs,
+            &dir.join("hdr"),
+            false,
+            super::cache::Payload::Xml,
+        )
+        .unwrap();
+        assert_eq!(reused, 2, "both files must hit the restored cache");
+        assert_eq!(db2.defs.get("top").unwrap().instances[0].target, "`CELL");
+        assert!(db2.undef.contains("`CELL"));
+
+        // -D WMAC=8 --keep-raw CELL：宽度展开，模块名仍是原文
+        let defines = build_defines(
+            &["WMAC=8".to_string()],
+            &[],
+            &[],
+            &["CELL".to_string()],
+            &[],
+        )
+        .unwrap();
+        let pairs = vec![
+            ("CELL".to_string(), None),
+            ("WMAC".to_string(), Some("8".to_string())),
+        ];
+        let (db, xml, json) = run(defines, &pairs, "keep");
+        assert_eq!(db.defs.get("top").unwrap().instances[0].target, "`CELL");
+        assert!(xml.contains("target=\"`CELL\""), "{xml}");
+        assert!(xml.contains("value=\"8\""), "{xml}");
+        assert!(xml.contains("logic [8-1:0]") || xml.contains("[8-1:0]"), "{xml}");
+        assert!(!xml.contains(MACRO_RAW_PREFIX) && !json.contains(MACRO_RAW_PREFIX));
+
+        // --expand-headers：cell 解析到 foo，define value 无前导空格
+        let defines = build_defines(&[], &[], std::slice::from_ref(&hdr), &[], &[]).unwrap();
+        let pairs = vec![
+            ("CELL".to_string(), Some("foo".to_string())),
+            ("WMAC".to_string(), Some("8".to_string())),
+        ];
+        let (db, xml, _) = run(defines, &pairs, "expand");
+        assert_eq!(db.defs.get("top").unwrap().instances[0].target, "foo");
+        assert!(!db.undef.contains("foo"), "expanded cell must resolve to module foo");
+        assert!(xml.contains("target=\"foo\""), "{xml}");
+        assert!(xml.contains("name=\"CELL\" value=\"foo\""), "{xml}");
+        assert!(!xml.contains("value=\" foo\""), "{xml}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+fn slurp_dir(dir: &std::path::Path) -> String {
+    fn walk(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        for ent in std::fs::read_dir(dir).unwrap() {
+            let p = ent.unwrap().path();
+            if p.is_dir() {
+                walk(&p, files);
+            } else {
+                files.push(p);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(dir, &mut files);
+    files.sort();
+    let mut out = String::new();
+    for p in files {
+        out.push_str(&std::fs::read_to_string(&p).unwrap());
+    }
+    out
 }

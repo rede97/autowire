@@ -181,7 +181,7 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 - **增量模式**：`autowire analysis` 默认增量——未变更文件复用 `.autowire/hdxml/` 缓存（`` `include `` 闭包追踪；`--refresh` 强制全量并重写缓存）；语义见 `hdxml/cli.md` 与 `hdxml/rtlindex-xml.md` §5.8。
 - **`[analysis] hdxml_bin`** 只给 autowire 定位二进制用，**不**映射为 hdxml 参数；设置了但文件不存在 ⇒ analysis 直接报错（不静默回退）。未设置时按默认链查找，最终落到 PATH。
 - **`[workspace]`（Cargo 风格顶层身份表）**：`name` **必填**（C 标识符 `[A-Za-z_][A-Za-z0-9_]*`），缺失 ⇒ 加载报错；用于 wishbone 顶层伞文件名与 include guard。产出目录三分与打印风格作为其子表 `[workspace.dump]` / `[workspace.style]`。**破坏性变更**：旧的顶层 `[dump]` / `[style]` 已分别移至 `[workspace.dump]` / `[workspace.style]`，旧的 `[hdxml] bin` 移至 `[analysis] hdxml_bin`；仍写旧位置 ⇒ 加载报错并提示新位置。  
-- **宏集合** = `[analysis.defines]`（展开）+ `keep_raw`（保原文哨兵）；二者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。覆盖顺序 `[analysis.defines]` → `keep_raw`；`[analysis.defines]` 同时作为 `define_headers` 预处理的种子（header 内 `` `ifdef `` 可见），同名 header 宏随后再被其压顶。空串保原文约定已**废弃**（空串值直接报错）。哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。
+- **宏集合** = `[analysis.defines]`（展开）+ `keep_raw`（保原文哨兵）；二者 **必须**进入 hdxml，并反映到 `index.xml` 的 `<defines>` / `definesFp`。覆盖顺序 `[analysis.defines]` → `keep_raw`；`[analysis.defines]` 同时作为 `define_headers` 预处理的种子（header 内 `` `ifdef `` 可见），同名 header 宏随后再被其压顶。用宏选择模块名（`` `CELL u (...) ``）时，该宏必须是 `[analysis.defines]` 的带值项：`define_headers` / `keep_raw` 只登记哨兵，例化目标导出为 `` `CELL `` 黑盒，所选模块接不上。hdxml `--expand-headers` 不映射进 toml。空串保原文约定已**废弃**（空串值直接报错）。哨兵机制与还原规则见 `hdxml/module-info.md` §3 / B-6。
 - **宏作用域**：CLI/toml 宏作为 pre_defines 对**每个文件**一致生效（编译单元级种子）；各文件内 `` `define `` 不外泄（按文件独立预处理）。跨文件一致的宏**必须**走本表，禁止依赖文件间宏传递。
 
 - **`.autowire/`** 是工作区**生成临时目录**（索引等缓存），可整体删除重建；**禁止**放入手写内容或任何 SoT。  

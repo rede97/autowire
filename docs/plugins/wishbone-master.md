@@ -83,7 +83,7 @@
 
 默认生成可综合的 `wb_async_fifo.sv`，无配置、无外部 CELL 即可仿真，默认选择同文件内的 `wb_async_fifo_gray`。工程外部单元统一命名 `CELL_ASYNC_FIFO`；实际 CELL RTL 未随本仓库提供，默认实现不是已获硅验证的 vendor CELL。
 
-外部 CELL 通过编译宏 `AUTOWIRE_ASYNC_FIFO_CELL` 选择模块名，**不要修改或排除生成的 `wb_async_fifo.sv`**：它在两种模式下都必须留在 filelist；另加入实际 CELL 或 adapter 及其依赖。Verilator 示例 `-DAUTOWIRE_ASYNC_FIFO_CELL=CELL_ASYNC_FIFO`；VCS 示例 `+define+AUTOWIRE_ASYNC_FIFO_CELL=CELL_ASYNC_FIFO`。analysis 必须使用相同宏和包含实际 CELL 的 filelist。没有该宏就用默认实现；指定模块缺失会编译失败，**不会静默回退**。不需要 TOML 选项。
+外部 CELL 通过编译宏 `AUTOWIRE_ASYNC_FIFO_CELL` 选择模块名，**不要修改或排除生成的 `wb_async_fifo.sv`**：它在两种模式下都必须留在 filelist；另加入实际 CELL 或 adapter 及其依赖。Verilator 示例 `-DAUTOWIRE_ASYNC_FIFO_CELL=CELL_ASYNC_FIFO`；VCS 示例 `+define+AUTOWIRE_ASYNC_FIFO_CELL=CELL_ASYNC_FIFO`。没有该宏就用默认实现；指定模块缺失会编译失败，**不会静默回退**。analysis 不另设选项：把同一个值写进 `[analysis.defines]`（映射为 hdxml `-D`），并让 filelist 包含实际 CELL。只放进 `define_headers` 或 `keep_raw` 时宏是保原文哨兵，所选 cell 接不上——例化目标是黑盒 `` `AUTOWIRE_ASYNC_FIFO_CELL ``，默认模块变成孤儿顶层。
 
 | 项 | 所选外部模块的契约（CELL_ASYNC_FIFO ABI） |
 |---|---|
@@ -104,7 +104,7 @@
 
 `WIDTH > 1` 等价于 `WIDTH` 个**互相独立**的单 bit 同步器，各位可能在不同边沿稳定，**不是**总线同步器：只能用于 Gray 码、每次只变一位或准静态的值，禁止用于二进制计数/多位数据（多位数据走 `wb_async_fifo`）。
 
-外部 CELL 通过编译宏 `AUTOWIRE_SYNC_CELL` 选择模块名，规则与 §3.1 相同：生成的 `wb_sync_cell.sv` 两种模式下都留在 filelist，另加入实际 CELL/adapter；analysis 使用相同宏和 filelist；没有宏用内建实现；指定模块缺失编译失败，**不会静默回退**；无 TOML 选项。Verilator `-DAUTOWIRE_SYNC_CELL=CELL_SYNC`，VCS `+define+AUTOWIRE_SYNC_CELL=CELL_SYNC`。两个宏互相独立：选了外部 FIFO CELL 时，FIFO 内部同步由该 CELL 负责，`AUTOWIRE_SYNC_CELL` 仍作用于 `wb_cdc` 链路检测和 JTAG `en`。
+外部 CELL 通过编译宏 `AUTOWIRE_SYNC_CELL` 选择模块名，规则与 §3.1 相同：生成的 `wb_sync_cell.sv` 两种模式下都留在 filelist，另加入实际 CELL/adapter；没有宏用内建实现；指定模块缺失编译失败，**不会静默回退**。analysis 同样把宏值写进 `[analysis.defines]`，不要只放进 `define_headers` / `keep_raw`。Verilator `-DAUTOWIRE_SYNC_CELL=CELL_SYNC`，VCS `+define+AUTOWIRE_SYNC_CELL=CELL_SYNC`。两个宏互相独立：选了外部 FIFO CELL 时，FIFO 内部同步由该 CELL 负责，`AUTOWIRE_SYNC_CELL` 仍作用于 `wb_cdc` 链路检测和 JTAG `en`。
 
 | 项 | 所选外部模块的契约（CELL_SYNC ABI） |
 |---|---|

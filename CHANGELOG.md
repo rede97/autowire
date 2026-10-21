@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+- 修复 hdxml 0.4.1（issue #2）：保原文宏（`--define-headers` / `--keep-raw`）用作模块名时，内部哨兵不再出现在例化 `target` 和 hierarchy 节点。XML / JSON 导出还原为 `` `NAME ``，未展开的 cell 是黑盒叶子。
+- `--expand-headers` 的宏值去掉前导分隔空白，与 `-D` 的 `definesFp` 一致。用宏选择外部 FIFO / sync cell 时把带值项写在 `[analysis.defines]`；只放进 `define_headers` / `keep_raw` 不会把 cell 接上。
+
 ## [2.5.8] - 2026-10-20
 
 - connect 顶层导出端口排序规则化：显式 `aw-ports` 按作者文档序在前；自动导出的网按实例文档序分组，组内按目标模块自身端口表顺序排列，模板里 connect 规则的书写顺序不再影响导出顺序。契约见 `docs/connect/html.md` §4.1；demo/soc `rtl/gen` 随之重新生成。

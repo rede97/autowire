@@ -87,7 +87,7 @@
 | `value` | string | 是 | 宏值文本（`-D NAME` 无值按 EDA 惯例记为 `1`；来自 `-D` 与 `--define-headers`） |
 | `raw` | bool | 否 | `true` = 登记未展开的保原文宏（分析期哨兵，见 module-info.md §3）；此时**必须**无 `value` |
 
-只有本组宏参与展开：`raw="true"` 的宏在类型/维度/缺省表达式中以 SV 原文 `` `NAME `` 出现（分析期哨兵已在导出时还原，module-info.md B-6）——消费方**禁止求值**，按标识符重写表达式时必须跳过带前导反引号的记号；**未登记**的宏引用使生产者预处理报 `DefineNotFound`。
+只有本组宏参与展开：`raw="true"` 的宏在类型/维度/缺省表达式中以 SV 原文 `` `NAME `` 出现（分析期哨兵已在导出时还原，module-info.md B-6）。例化 `target`、模块名和 `<hierarchy>` 的 `module` 同样还原为 `` `NAME ``，导出文本不得残留 `__MACRO__DEFINE__`。消费方**禁止求值**，按标识符重写表达式时必须跳过带前导反引号的记号；**未登记**的宏引用使生产者预处理报 `DefineNotFound`。
 
 预处理结果由宏集合决定，因此宏是索引有效性的一部分：消费方**必须**以当前宏集合按同一规则计算指纹并与 `definesFp` 比对，不一致不得使用该索引。
 
@@ -128,6 +128,8 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 | `node` | `cycle` | bool | 否 | `true`：沿当前路径回到已访问模块；不继续展开 |
 
 约束：`blackbox`/`cycle` 缺省等价 `false`；两者为 `true` 的节点**必须**为叶子。`<hierarchy>` 只表达模块级依赖关系；例化名、参数覆盖等实例级信息在各文件 XML 的 `<instance>` 中。
+
+保原文宏被当作模块名例化时，`module` 写成 `` `NAME ``（通常是 `blackbox="true"` 的叶子），不是分析期哨兵。还原规则同 §4.2 / module-info.md B-6。子节点按还原后的模块名字典序排列。
 
 ## 5. 文件 XML（`<stem 路径>.sv.xml`）
 
@@ -224,7 +226,7 @@ package 在文件 XML 中同样以 `<module kind="package">` 记录（§5.2）�
 | 属性 | 类型 | 必须 | 含义 |
 |---|---|---|---|
 | `name` | string | 是 | 例化名 |
-| `target` | string | 是 | 目标模块名（可能为黑盒，见 index.xml `<hierarchy>`） |
+| `target` | string | 是 | 目标模块名（可能为黑盒，见 index.xml `<hierarchy>`）。保原文宏还原为 `` `NAME `` |
 | `span` | `int:int` | 是 | 例化范围 |
 
 子元素 `<param>` 为参数覆盖（**不记录端口连接**——连接关系由消费方需要时按 `span` 回源重取）：

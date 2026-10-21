@@ -178,7 +178,7 @@ impl<'a> XmlExport<'a> {
         for m in mods {
             // package 无 interfaceSig（契约 §5.2：无端口，签名无意义）
             let mut attrs = vec![
-                ("name", m.name.clone()),
+                ("name", restore_raw_macros(&m.name)),
                 ("kind", m.kind.as_str().to_string()),
                 ("span", span_text(m.span)),
                 ("contentHash", m.content_hash.clone()),
@@ -246,8 +246,8 @@ impl<'a> XmlExport<'a> {
                         w.empty(
                             "instance",
                             &[
-                                ("name", i.inst.clone()),
-                                ("target", i.target.clone()),
+                                ("name", restore_raw_macros(&i.inst)),
+                                ("target", restore_raw_macros(&i.target)),
                                 ("span", span_text(i.span)),
                             ],
                         );
@@ -256,8 +256,8 @@ impl<'a> XmlExport<'a> {
                     w.open(
                         "instance",
                         &[
-                            ("name", i.inst.clone()),
-                            ("target", i.target.clone()),
+                            ("name", restore_raw_macros(&i.inst)),
+                            ("target", restore_raw_macros(&i.target)),
                             ("span", span_text(i.span)),
                         ],
                     );
@@ -362,7 +362,10 @@ impl<'a> XmlExport<'a> {
             }
             w.empty(
                 "module",
-                &[("name", name.clone()), ("index", index_of[&m.file].clone())],
+                &[
+                    ("name", restore_raw_macros(name)),
+                    ("index", index_of[&m.file].clone()),
+                ],
             );
         }
         w.close("modules");
@@ -373,14 +376,19 @@ impl<'a> XmlExport<'a> {
             }
             w.empty(
                 "package",
-                &[("name", name.clone()), ("index", index_of[&m.file].clone())],
+                &[
+                    ("name", restore_raw_macros(name)),
+                    ("index", index_of[&m.file].clone()),
+                ],
             );
         }
         w.close("packages");
         w.open("hierarchy", &[]);
-        for t in &self.db.tops {
+        let mut tops = self.db.tops.clone();
+        tops.sort_by(|a, b| restore_raw_macros(a).cmp(&restore_raw_macros(b)));
+        for t in &tops {
             let mut visited = std::collections::BTreeSet::new();
-            w.open("top", &[("module", t.clone())]);
+            w.open("top", &[("module", restore_raw_macros(t))]);
             self.render_dag_node(&mut w, t, &mut visited);
             w.close("top");
         }
@@ -399,22 +407,23 @@ impl<'a> XmlExport<'a> {
         if !visited.insert(name.to_string()) {
             return;
         }
-        for sub in self.db.submods(name) {
+        // 子节点按导出后的模块名排序（哨兵还原为 `NAME` 后字典序才是契约序）
+        let mut subs = self.db.submods(name);
+        subs.sort_by(|a, b| restore_raw_macros(a).cmp(&restore_raw_macros(b)));
+        for sub in subs {
+            let shown = restore_raw_macros(&sub);
             if self.db.undef.contains(&sub) {
                 w.empty(
                     "node",
-                    &[("module", sub.clone()), ("blackbox", "true".to_string())],
+                    &[("module", shown), ("blackbox", "true".to_string())],
                 );
                 continue;
             }
             if visited.contains(&sub) {
-                w.empty(
-                    "node",
-                    &[("module", sub.clone()), ("cycle", "true".to_string())],
-                );
+                w.empty("node", &[("module", shown), ("cycle", "true".to_string())]);
                 continue;
             }
-            w.open("node", &[("module", sub.clone())]);
+            w.open("node", &[("module", shown)]);
             self.render_dag_node(w, &sub, visited);
             w.close("node");
         }
@@ -433,8 +442,9 @@ pub(crate) fn push_deps(attrs: &mut Vec<(&'static str, String)>, e: &ExprText) {
 }
 
 /// 保原文宏还原：分析文本里的哨兵 `__MACRO__DEFINE__NAME` 写出为 SV 原文 `` `NAME ``。
-/// 哨兵只是预处理期的占位手段（标识符形，不扰 span/`ifdef`），不属于对外格式；
-/// XML 承诺类型/维度/缺省表达式是可直接落 SV 的原文（docs/hdxml/rtlindex-xml.md §4.2）。
+/// 哨兵只是预处理期的占位手段（标识符形，不扰 span/`ifdef`），不属于对外格式。
+/// 类型/维度/缺省、模块名、例化名、例化 target、hierarchy 的 module 都走这里
+/// （docs/hdxml/rtlindex-xml.md §4.2 / §4.6 / §5.6，module-info.md B-6）。
 /// 已还原文本二次调用为 no-op——增量缓存回读自产 XML 时依赖这个幂等性。
 pub(crate) fn restore_raw_macros(text: &str) -> String {
     if !text.contains(super::MACRO_RAW_PREFIX) {
@@ -911,15 +921,24 @@ mod tests {
                 default: None,
                 span: [21, 30],
             }],
-            instances: vec![InstanceInfo {
-                inst: "u0".into(),
-                target: "leaf".into(),
-                params: vec![crate::db::ParamConn {
-                    name: Some("PW".into()),
-                    value: format!("{pfx}MACRO_W"),
-                }],
-                span: [60, 70],
-            }],
+            instances: vec![
+                InstanceInfo {
+                    inst: "u0".into(),
+                    target: format!("{pfx}CELL"),
+                    params: vec![crate::db::ParamConn {
+                        name: Some("PW".into()),
+                        value: format!("{pfx}MACRO_W"),
+                    }],
+                    span: [60, 70],
+                },
+                // 无参数例化走 empty 分支，target 同样必须还原
+                InstanceInfo {
+                    inst: format!("{pfx}U"),
+                    target: format!("{pfx}GATE"),
+                    params: vec![],
+                    span: [71, 80],
+                },
+            ],
             content_hash: "h".into(),
             interface_sig: "s".into(),
         };
@@ -938,7 +957,26 @@ mod tests {
         assert!(body.contains("unpacked=\"[0:`MACRO_DEPTH-1]\""), "{body}");
         assert!(body.contains("default=\"`MACRO_W\""), "{body}");
         assert!(body.contains("value=\"`MACRO_W\""), "{body}");
+        assert!(body.contains("target=\"`CELL\""), "{body}");
+        assert!(body.contains("target=\"`GATE\""), "{body}");
+        assert!(body.contains("name=\"`U\""), "{body}");
+        let index = std::fs::read_to_string(dir.join("index.xml")).unwrap();
+        assert!(!index.contains(pfx), "sentinel must not reach index.xml: {index}");
+        assert!(index.contains("module=\"`CELL\""), "{index}");
+        assert!(index.contains("module=\"`GATE\""), "{index}");
+        assert!(index.contains("blackbox=\"true\""), "{index}");
+        let jdir = tmpdir("raw_macro_json");
+        crate::db::json::JsonExport::new(&db, &files, &[], &BTreeMap::new(), &[])
+            .write(&jdir)
+            .unwrap();
+        let jbody = std::fs::read_to_string(jdir.join("nonexistent/macro.sv.json")).unwrap();
+        let jindex = std::fs::read_to_string(jdir.join("index.json")).unwrap();
+        assert!(!jbody.contains(pfx) && !jindex.contains(pfx), "{jbody}\n{jindex}");
+        assert!(jbody.contains("\"target\": \"`CELL\""), "{jbody}");
+        assert!(jindex.contains("\"module\": \"`CELL\""), "{jindex}");
+        assert!(jindex.contains("\"blackbox\": true"), "{jindex}");
         let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&jdir);
         // 幂等：增量缓存回读的是已还原文本，再导出不得二次改写
         assert_eq!(restore_raw_macros("[`MACRO_W-1:0]"), "[`MACRO_W-1:0]");
         assert_eq!(restore_raw_macros("W-1:0"), "W-1:0");
