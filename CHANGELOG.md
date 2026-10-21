@@ -2,7 +2,7 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
-## Unreleased
+## [2.5.9] - 2026-10-21
 
 - 修复 hdxml 0.4.1（issue #2）：保原文宏（`--define-headers` / `--keep-raw`）用作模块名时，内部哨兵不再出现在例化 `target` 和 hierarchy 节点。XML / JSON 导出还原为 `` `NAME ``，未展开的 cell 是黑盒叶子。
 - `--expand-headers` 的宏值去掉前导分隔空白，与 `-D` 的 `definesFp` 一致。用宏选择外部 FIFO / sync cell 时把带值项写在 `[analysis.defines]`；只放进 `define_headers` / `keep_raw` 不会把 cell 接上。
