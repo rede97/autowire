@@ -115,7 +115,17 @@ if (!existsSync(extracted))
 	throw new Error(`fetch-hdxml: ${asset} has no hdxml binary`);
 mkdirSync(join(root, ".cache", "hdxml", version), { recursive: true });
 rmSync(dest, { force: true });
-Bun.write(dest, Bun.file(extracted));
+await Bun.write(dest, Bun.file(extracted));
 if (process.platform !== "win32") chmodSync(dest, 0o755);
 rmSync(tmp, { recursive: true, force: true });
+const probe = Bun.spawnSync({
+	cmd: [dest, "--version"],
+	stdout: "pipe",
+	stderr: "pipe",
+});
+const shown = `${probe.stdout}${probe.stderr}`.trim();
+if (probe.exitCode !== 0 || !shown.includes(version))
+	throw new Error(
+		`fetch-hdxml: ${dest} did not report ${version} (exit ${probe.exitCode}: ${shown})`,
+	);
 console.log(`hdxml ${version} -> ${dest}`);
