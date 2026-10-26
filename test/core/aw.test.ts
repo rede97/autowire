@@ -573,6 +573,148 @@ describe("elaborate (render)", () => {
 		expect(ports).toEqual(["explicit_in", "b_q", "a_x", "a_m", "a_z"]);
 	});
 
+	describe("aw-port-groups", () => {
+		const leaf = leafOf([
+			{ name: "clk_i", dir: "input" },
+			{ name: "rst_ni", dir: "input" },
+			{ name: "tx_o", dir: "output" },
+			{ name: "rx_i", dir: "input" },
+			{ name: "irq_o", dir: "output" },
+		]);
+		const jtag = leafOf([
+			{ name: "tck", dir: "input" },
+			{ name: "tdo", dir: "output" },
+		]);
+		const mod = (groups: string, extra = "") =>
+			docOf(
+				`<aw-mod name="m"><aw-content>
+					${groups}
+					<aw-insts>
+						<aw-inst id="u_uart" mod="leaf"><aw-template>
+							<aw-connect port="clk_i" to="clk"></aw-connect>
+							<aw-connect port="rst_ni" to="rst_n"></aw-connect>
+							<aw-connect port="tx_o" to="ser_tx"></aw-connect>
+							<aw-connect port="rx_i" to="uart_rx"></aw-connect>
+							<aw-connect port="irq_o" to="irq"></aw-connect>
+						</aw-template></aw-inst>
+						<aw-inst id="u_tap" mod="jtag"><aw-template>
+							<aw-rewrite match="^(.+)$" to="jtag_$1"></aw-rewrite>
+						</aw-template></aw-inst>
+						${extra}
+					</aw-insts>
+				</aw-content></aw-mod>`,
+			);
+		const rendered = (doc: Document) =>
+			[...doc.querySelectorAll("aw-render > aw-ports > aw-port")].map((p) => [
+				p.getAttribute("name"),
+				p.getAttribute("comment"),
+			]);
+
+		test("without groups, export order is unchanged", () => {
+			const doc = mod("");
+			expect(elaborate(doc, ctxWith({ leaf, jtag })).errors).toEqual([]);
+			expect(rendered(doc).map(([n]) => n)).toEqual([
+				"clk",
+				"rst_n",
+				"ser_tx",
+				"uart_rx",
+				"irq",
+				"jtag_tck",
+				"jtag_tdo",
+			]);
+		});
+
+		test("groups reorder ports, banner the first one, and keep the rest in Other", () => {
+			const doc = mod(`<aw-port-groups>
+				<aw-port-group name="JTAG" inst="u_tap"></aw-port-group>
+				<aw-port-group name="Clock / reset" match="^(clk|rst_n)$"></aw-port-group>
+				<aw-port-group name="UART">
+					<aw-port-match match="^uart_rx$"></aw-port-match>
+					<aw-port-match match="^ser_"></aw-port-match>
+				</aw-port-group>
+			</aw-port-groups>`);
+			const res = elaborate(doc, ctxWith({ leaf, jtag }));
+			expect(res.errors).toEqual([]);
+			expect(res.warnings).toEqual([]);
+			// UART: aw-port-match order wins over the §4.1 order (ser_tx came first).
+			expect(rendered(doc)).toEqual([
+				["jtag_tck", "JTAG"],
+				["jtag_tdo", null],
+				["clk", "Clock / reset"],
+				["rst_n", null],
+				["uart_rx", "UART"],
+				["ser_tx", null],
+				["irq", "Other"],
+			]);
+		});
+
+		test("first matching group wins, with a warning; empty group warns", () => {
+			const doc = mod(`<aw-port-groups>
+				<aw-port-group name="Serial" match="^(ser|uart)_"></aw-port-group>
+				<aw-port-group name="UART" match="^uart_"></aw-port-group>
+				<aw-port-group name="SPI" match="^spi_"></aw-port-group>
+				<aw-port-group name="All" match="." order="name"></aw-port-group>
+			</aw-port-groups>`);
+			const res = elaborate(doc, ctxWith({ leaf, jtag }));
+			expect(res.errors).toEqual([]);
+			expect(res.warnings.join("\n")).toContain(
+				'port "uart_rx" matches port groups "Serial", "UART", "All"; using "Serial"',
+			);
+			expect(res.warnings.join("\n")).toContain(
+				'port group "UART" matches no export port',
+			);
+			expect(res.warnings.join("\n")).toContain(
+				'port group "SPI" matches no export port',
+			);
+			// Every port is grouped, so there is no "Other" banner; order="name" sorts.
+			expect(rendered(doc)).toEqual([
+				["ser_tx", "Serial"],
+				["uart_rx", null],
+				["clk", "All"],
+				["irq", null],
+				["jtag_tck", null],
+				["jtag_tdo", null],
+				["rst_n", null],
+			]);
+		});
+
+		test("match + inst on one selector must both hold", () => {
+			const doc = mod(`<aw-port-groups>
+				<aw-port-group name="UART out" inst="u_uart" match="_tx$|^irq$"></aw-port-group>
+			</aw-port-groups>`);
+			expect(elaborate(doc, ctxWith({ leaf, jtag })).errors).toEqual([]);
+			expect(rendered(doc).slice(0, 3)).toEqual([
+				["ser_tx", "UART out"],
+				["irq", null],
+				["clk", "Other"],
+			]);
+		});
+
+		test("check rejects bad regex, unknown inst, missing selector, duplicate name", () => {
+			const doc = mod(`<aw-port-groups>
+				<aw-port-group name="A" match="("></aw-port-group>
+				<aw-port-group name="B" inst="u_missing"></aw-port-group>
+				<aw-port-group name="C"></aw-port-group>
+				<aw-port-group name="A" match="^clk$"></aw-port-group>
+				<aw-port-group name="D" order="width" match="^x"></aw-port-group>
+				<aw-port-group name="E"><aw-port-match></aw-port-match></aw-port-group>
+			</aw-port-groups>`);
+			const errs = check(doc, ctxWith({ leaf, jtag })).errors.join("\n");
+			expect(errs).toContain('aw-port-group "A": bad match regex "("');
+			expect(errs).toContain(
+				'aw-port-group "B": inst "u_missing" is not an aw-inst id here',
+			);
+			expect(errs).toContain(
+				'aw-port-group "C": needs match / inst or an aw-port-match',
+			);
+			expect(errs).toContain('aw-port-group "A": duplicate name');
+			expect(errs).toContain('aw-port-group "D": order must be "name"');
+			expect(errs).toContain(
+				'aw-port-group "E": aw-port-match needs match or inst',
+			);
+		});
+	});
+
 	test("dimension conflict on one net is an error (after constant folding)", () => {
 		const doc = docOf(
 			`<aw-mod name="m"><aw-content><aw-insts>

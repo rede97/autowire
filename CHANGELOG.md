@@ -2,9 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
-## [Unreleased]
+## [2.5.12] - 2026-10-26
 
 - 发布纪律：推送 `main` 不再触发 CI。检查、构建和 GitHub Release 只在人工推送 `v*` tag 时跑；CI 仍不创建 tag，已存在的 release 仍拒绝覆盖。
+- connect 新增 `aw-content/aw-port-groups`：导出端口的打印分组提示（弱规则，不改连线）。每个 `aw-port-group name=` 按序带多个选择器（自身 `match=` / `inst=`，再加若干 `aw-port-match`）；端口归第一个命中的组，组内按选择器优先级、再按原 §4.1 顺序排（`order="name"` 改按名字排），未归组的放到最后的 `Other`；每组首个端口打印 `// <组名>`。重叠或空组给警告，非法正则 / 未知 `inst` / 缺选择器在 `check` 报错。契约见 `docs/connect/html.md` §4.1.1。demo/soc `soc_top` 按时钟复位 / JTAG / SPI flash / UART / SD0 / SD1 / 状态分组，`rtl/gen/connect/soc_top.sv` 与 `rtl/gen/sim/tb_soc.sv` 已重新生成。
 
 ## [2.5.11] - 2026-10-26
 

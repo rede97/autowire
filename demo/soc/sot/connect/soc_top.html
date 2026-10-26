@@ -37,6 +37,25 @@
           <aw-params></aw-params>
           <aw-localparams></aw-localparams>
           <aw-ports></aw-ports>
+          <!-- Print-order hint only: groups and banners for the top port list. -->
+          <aw-port-groups>
+            <aw-port-group name="Clock / reset">
+              <aw-port-match match="^clk$"></aw-port-match>
+              <aw-port-match match="^rst_ni$"></aw-port-match>
+            </aw-port-group>
+            <aw-port-group name="JTAG" inst="u_tap"></aw-port-group>
+            <aw-port-group name="SPI flash">
+              <aw-port-match match="^flash_(csb|clk)$"></aw-port-match>
+              <aw-port-match match="^flash_"></aw-port-match>
+            </aw-port-group>
+            <aw-port-group name="UART" match="^ser_"></aw-port-group>
+            <aw-port-group name="SD card 0" match="^sd0_"></aw-port-group>
+            <aw-port-group name="SD card 1" match="^sd1_"></aw-port-group>
+            <aw-port-group name="Status / test">
+              <aw-port-match match="^trap$"></aw-port-match>
+              <aw-port-match match="^test_"></aw-port-match>
+            </aw-port-group>
+          </aw-port-groups>
           <aw-templates>
             <aw-template name="wb_mst" inst_name="${id}_${idx}">
               <aw-rewrite match="^wbm_(.+)_o$" to="${id}_o_wb_$1"></aw-rewrite>

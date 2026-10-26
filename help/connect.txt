@@ -35,12 +35,17 @@ Lifecycle scripts: docs/connect/lifecycle.md —
 Templates are per-aw-mod only. Connected nets → aw-signals; identity/export may auto-export ports.
 Export port order: explicit aw-ports (author order) first, then auto-exported nets grouped
 by instance document order, ordered within each instance by the target module's port table.
+Optional aw-port-groups (print-order hint, no netlist change): each aw-port-group name=
+takes ordered selectors (its own match= / inst=, then each aw-port-match); a port joins
+the first group that hits, ordered by selector then the order above (order="name" sorts);
+unmatched ports go last under "Other"; each group's first port prints "// <name>".
+Overlap or an empty group warns. Contract: docs/connect/html.md §4.1.1.
 aw-imports → SV import at module head (deduped).
 
 Skeleton
   <autowire>
     <aw-mod name="…">
-      <aw-content>  aw-imports / aw-params / aw-localparams / aw-ports / aw-templates / aw-insts  </aw-content>
+      <aw-content>  aw-imports / aw-params / aw-localparams / aw-ports / aw-port-groups / aw-templates / aw-insts  </aw-content>
       <aw-submods>  nested aw-mod (optional deps="sibling_a sibling_b") …  </aw-submods>
       <aw-render>   aw-params / aw-imports / aw-localparams / aw-ports / aw-signals / aw-insts  </aw-render>
     </aw-mod>

@@ -9,7 +9,6 @@ module tb_soc;
 	wire         flash_io3;
 	logic        clk;
 	logic        rst_ni;
-	logic        trap;
 	logic        jtag_tck;
 	logic        jtag_tms;
 	logic        jtag_tdi;
@@ -26,24 +25,24 @@ module tb_soc;
 	logic        flash_io2_do;
 	logic        flash_io3_do;
 	logic        ser_tx;
+	logic        trap;
 	logic        test_valid;
 	logic [31:0] test_data;
 
 	soc_top u_dut (
 		.clk         (clk         ), // i
 		.rst_ni      (rst_ni      ), // i
-		.trap        (trap        ), // o
 		.jtag_tck    (jtag_tck    ), // i
 		.jtag_tms    (jtag_tms    ), // i
 		.jtag_tdi    (jtag_tdi    ), // i
 		.jtag_trst_n (jtag_trst_n ), // i
 		.jtag_tdo    (jtag_tdo    ), // o
+		.flash_csb   (flash_csb   ), // o
+		.flash_clk   (flash_clk   ), // o
 		.flash_io0_di(flash_io0   ), // i
 		.flash_io1_di(flash_io1   ), // i
 		.flash_io2_di(flash_io2   ), // i
 		.flash_io3_di(flash_io3   ), // i
-		.flash_csb   (flash_csb   ), // o
-		.flash_clk   (flash_clk   ), // o
 		.flash_io0_oe(flash_io0_oe), // o
 		.flash_io1_oe(flash_io1_oe), // o
 		.flash_io2_oe(flash_io2_oe), // o
@@ -54,8 +53,6 @@ module tb_soc;
 		.flash_io3_do(flash_io3_do), // o
 		.ser_rx      (SER_RX_IDLE ), // i
 		.ser_tx      (ser_tx      ), // o
-		.test_valid  (test_valid  ), // o
-		.test_data   (test_data   ), // o [31:0]
 		.sd0_miso    (1'b1        ), // i
 		.sd0_cd      (1'b1        ), // i
 		.sd0_cs_n    (            ), // o
@@ -65,7 +62,10 @@ module tb_soc;
 		.sd1_cd      (1'b1        ), // i
 		.sd1_cs_n    (            ), // o
 		.sd1_sck     (            ), // o
-		.sd1_mosi    (            )  // o
+		.sd1_mosi    (            ), // o
+		.trap        (trap        ), // o
+		.test_valid  (test_valid  ), // o
+		.test_data   (test_data   )  // o [31:0]
 	);
 
 `include "tb_board.svh"

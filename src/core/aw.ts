@@ -121,6 +121,8 @@ interface RuleConnect {
 
 interface RenderInstDraft {
 	id: string;
+	/** Author aw-inst@id (before inst_name expansion); port groups match on it. */
+	authorId: string;
 	mod: string;
 	params: Map<string, { expr: string; uniq: string; renderValue: string }>;
 	connects: Map<string, RuleConnect>;
@@ -156,6 +158,10 @@ interface PortOut {
 	interface?: string | null;
 	modport?: string | null;
 	auto?: boolean;
+	/** Author aw-inst@id of the instance that first touched this auto port. */
+	srcInst?: string;
+	/** Group banner printed above this port (first port of an aw-port-group). */
+	comment?: string;
 }
 
 interface WriteModel {
@@ -302,6 +308,7 @@ const CONTENT_GROUPS = [
 	"aw-params",
 	"aw-localparams",
 	"aw-ports",
+	"aw-port-groups",
 	"aw-templates",
 	"aw-insts",
 ];
@@ -310,6 +317,7 @@ const GROUP_CHILD = {
 	"aw-params": "aw-param",
 	"aw-localparams": "aw-localparam",
 	"aw-ports": "aw-port",
+	"aw-port-groups": "aw-port-group",
 	"aw-templates": "aw-template",
 	"aw-insts": "aw-inst",
 };
@@ -1176,6 +1184,7 @@ function checkContent(
 	const ownDeps = (attr(mod, "deps") ?? "").split(/[\s,]+/).filter(Boolean);
 	const visible = new Set([...visibleFromAbove, ...ownDeps]);
 	const usedDeps = new Set();
+	const instIds = new Set<string>();
 	for (const inst of children(
 		child(content, "aw-insts") ?? content,
 		"aw-inst",
@@ -1184,9 +1193,12 @@ function checkContent(
 		const target = attr(inst, "mod") ?? "";
 		const iwhere = `${where} aw-inst "${id ?? "?"}"`;
 		if (!id) res.errors.push(`${iwhere}: missing id`);
-		else if (!id.includes("$")) {
-			const problem = svIdentProblem(id);
-			if (problem) res.errors.push(`${iwhere}: ${problem}`);
+		else {
+			instIds.add(id);
+			if (!id.includes("$")) {
+				const problem = svIdentProblem(id);
+				if (problem) res.errors.push(`${iwhere}: ${problem}`);
+			}
 		}
 		if (!target) res.errors.push(`${iwhere}: missing mod`);
 		// Only aw-template may live under aw-inst (connect-rules §1).
@@ -1223,6 +1235,63 @@ function checkContent(
 		if (!usedDeps.has(d)) {
 			res.warnings.push(`${where}: deps "${d}" declared but never referenced`);
 		}
+	}
+	checkPortGroups(content, res, where, tb, instIds);
+}
+
+/** Static legality of `aw-port-groups` (docs/connect/html.md §4.1). */
+function checkPortGroups(
+	content: Element,
+	res: CheckResult,
+	where: string,
+	tb: boolean,
+	instIds: Set<string>,
+): void {
+	const group = child(content, "aw-port-groups");
+	if (!group) return;
+	if (tb) {
+		res.errors.push(`${where}: aw-tb-mod forbids aw-port-groups (no ports)`);
+		return;
+	}
+	const seen = new Set<string>();
+	const checkSel = (el: Element, gwhere: string): boolean => {
+		const src = attr(el, "match");
+		const inst = attr(el, "inst");
+		if (src == null && inst == null) return false;
+		if (src != null) {
+			try {
+				new RegExp(src);
+			} catch (e) {
+				res.errors.push(
+					`${gwhere}: bad match regex "${src}": ${(e as Error).message}`,
+				);
+			}
+		}
+		if (inst != null && !instIds.has(inst))
+			res.errors.push(`${gwhere}: inst "${inst}" is not an aw-inst id here`);
+		return true;
+	};
+	for (const g of children(group, "aw-port-group")) {
+		const name = attr(g, "name");
+		const gwhere = `${where} aw-port-group "${name ?? "?"}"`;
+		if (!name) res.errors.push(`${gwhere}: missing name`);
+		else if (seen.has(name)) res.errors.push(`${gwhere}: duplicate name`);
+		else seen.add(name);
+		const order = attr(g, "order");
+		if (order != null && order !== "name")
+			res.errors.push(`${gwhere}: order must be "name" (got "${order}")`);
+		let selectors = checkSel(g, gwhere) ? 1 : 0;
+		for (const c of g.children ?? []) {
+			const tag = (c.tagName ?? "").toLowerCase();
+			if (tag !== "aw-port-match") {
+				res.errors.push(`${gwhere}: <${tag}> not allowed (use aw-port-match)`);
+				continue;
+			}
+			if (checkSel(c, gwhere)) selectors++;
+			else res.errors.push(`${gwhere}: aw-port-match needs match or inst`);
+		}
+		if (selectors === 0)
+			res.errors.push(`${gwhere}: needs match / inst or an aw-port-match`);
 	}
 }
 function checkLeafInst(
@@ -1517,6 +1586,122 @@ export function elaborate(doc: UnitRoot, ctx: EngineCtx = {}): CheckResult {
 		elaborateMod(mod, ctx, res, [], new Map());
 	}
 	return res;
+}
+
+/** One selector: optional name regex AND optional source instance. */
+interface PortSelector {
+	match: RegExp | null;
+	inst: string | null;
+}
+
+/** One `aw-port-group`: banner + ordered selectors (earlier = higher priority). */
+interface PortGroupRule {
+	name: string;
+	selectors: PortSelector[];
+	byName: boolean;
+}
+
+/** null when the element names no selector or the regex does not compile (check reports it). */
+function parseSelector(el: Element): PortSelector | null {
+	const src = attr(el, "match");
+	const inst = attr(el, "inst");
+	if (src == null && inst == null) return null;
+	let match: RegExp | null = null;
+	if (src != null) {
+		try {
+			match = new RegExp(src);
+		} catch {
+			return null;
+		}
+	}
+	return { match, inst };
+}
+
+/**
+ * Parse `aw-port-groups`. A group's own `match` / `inst` attributes are its
+ * first selector; each child `aw-port-match` adds the next one in order.
+ */
+function portGroupRules(content: Element): PortGroupRule[] {
+	const group = child(content, "aw-port-groups");
+	const out: PortGroupRule[] = [];
+	for (const g of group ? children(group, "aw-port-group") : []) {
+		const name = attr(g, "name");
+		if (!name) continue;
+		const selectors: PortSelector[] = [];
+		const own = parseSelector(g);
+		if (own) selectors.push(own);
+		for (const m of children(g, "aw-port-match")) {
+			const s = parseSelector(m);
+			if (s) selectors.push(s);
+		}
+		if (selectors.length === 0) continue;
+		out.push({ name, selectors, byName: attr(g, "order") === "name" });
+	}
+	return out;
+}
+
+/**
+ * Weak print-order hint (docs/connect/html.md §4.1): reorder export ports into
+ * the author's `aw-port-groups` and put each group banner on its first port.
+ * First matching group wins. Inside a group, ports follow selector order
+ * (first selector first), then the §4.1 order; `order="name"` sorts by name.
+ * Unmatched ports keep their order in a trailing "Other" group.
+ * Never changes a port's name, direction, width or nets.
+ */
+function applyPortGroups(
+	content: Element,
+	ports: PortOut[],
+	res: CheckResult,
+	where: string,
+): PortOut[] {
+	const rules = portGroupRules(content);
+	if (rules.length === 0) return ports;
+	const buckets = rules.map(() => [] as { p: PortOut; sel: number }[]);
+	const rest: PortOut[] = [];
+	for (const p of ports) {
+		const hits = rules.flatMap((r, i) => {
+			const sel = r.selectors.findIndex(
+				(s) =>
+					(!s.match || s.match.test(p.name)) &&
+					(s.inst == null || p.srcInst === s.inst),
+			);
+			return sel < 0 ? [] : [{ i, sel }];
+		});
+		const first = hits[0];
+		if (first === undefined) {
+			rest.push(p);
+			continue;
+		}
+		if (hits.length > 1)
+			res.warnings.push(
+				`${where}: port "${p.name}" matches port groups ${hits.map((h) => `"${rules[h.i]?.name}"`).join(", ")}; using "${rules[first.i]?.name}"`,
+			);
+		buckets[first.i]?.push({ p, sel: first.sel });
+	}
+	const out: PortOut[] = [];
+	const emit = (name: string, list: PortOut[]) => {
+		for (const [i, p] of list.entries())
+			out.push({ ...p, ...(i === 0 ? { comment: name } : {}) });
+	};
+	for (const [i, rule] of rules.entries()) {
+		const list = buckets[i] ?? [];
+		if (list.length === 0) {
+			res.warnings.push(
+				`${where}: port group "${rule.name}" matches no export port`,
+			);
+			continue;
+		}
+		// Stable sort: selector priority first, original order within a selector.
+		list.sort((a, b) =>
+			rule.byName ? (a.p.name < b.p.name ? -1 : 1) : a.sel - b.sel,
+		);
+		emit(
+			rule.name,
+			list.map((x) => x.p),
+		);
+	}
+	emit("Other", rest);
+	return out;
 }
 
 /** Elaborate one aw-mod; fills and freezes its aw-render. Returns render facts. */
@@ -1814,6 +1999,7 @@ function elaborateMod(
 		}
 		renderInsts.push({
 			id: instName,
+			authorId: id,
 			mod: target,
 			params: instParams,
 			connects,
@@ -1947,6 +2133,7 @@ function elaborateMod(
 		// (a net stays in the group of the instance that first touches it).
 		// Leftovers not reachable from any connect keep first-touch order.
 		const autoNets: string[] = [];
+		const srcOf = new Map<string, string>();
 		const queued = new Set<string>();
 		for (const ri of renderInsts) {
 			const orderIdx = new Map(ri.order.map((n, i) => [n, i]));
@@ -1958,6 +2145,7 @@ function elaborateMod(
 				if (c.to && !queued.has(c.to)) {
 					queued.add(c.to);
 					autoNets.push(c.to);
+					srcOf.set(c.to, ri.authorId);
 				}
 			}
 		}
@@ -1981,8 +2169,13 @@ function elaborateMod(
 				interface: sig.interface ?? null,
 				modport: null,
 				auto: true,
+				...(srcOf.has(net) ? { srcInst: srcOf.get(net) } : {}),
 			});
 		}
+	}
+	if (!tb) {
+		const grouped = applyPortGroups(content, portsOut, res, where);
+		portsOut.splice(0, portsOut.length, ...grouped);
 	}
 
 	// net_type materialization: fill the keyword the author left unset. logic
@@ -2373,6 +2566,7 @@ function writeRender(mod: Element, m: WriteModel): void {
 				nettype: p.nettype,
 				interface: p.interface,
 				modport: p.modport,
+				comment: p.comment,
 			}),
 		);
 	}
@@ -2512,6 +2706,8 @@ const AW_TAGS = [
 	"aw-param",
 	"aw-localparam",
 	"aw-port",
+	"aw-port-group",
+	"aw-port-match",
 	"aw-template",
 	"aw-inst",
 	"aw-connect",

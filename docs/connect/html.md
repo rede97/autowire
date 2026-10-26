@@ -38,6 +38,7 @@
       <aw-params>…</aw-params>
       <aw-localparams>…</aw-localparams>  # 可选：本模内部 localparam
       <aw-ports>…</aw-ports>
+      <aw-port-groups>…</aw-port-groups>  # 可选：导出端口打印分组提示（§4.1.1）
       <aw-templates>…</aw-templates>
       <aw-insts>…</aw-insts>
     </aw-content>
@@ -80,6 +81,7 @@
 | `aw-params` | 本模参数 |
 | `aw-localparams` | 可选：本模内部 localparam（`name`+`expr`）；可供例化 `aw-param@expr` 引用并参与折叠（[`rules.md`](./rules.md) §7） |
 | `aw-ports` | **显式要导出**的端口 |
+| `aw-port-groups` | 可选：导出端口的**打印顺序与分组注释**提示（§4.1.1）；不改连接 |
 | `aw-templates` | 具名连接规则库（仅本 `aw-mod` 可见；**禁止**跨 `aw-mod` 引用） |
 | `aw-insts` | 例化列表；每个 `aw-inst` 下**只能**放 `aw-template`；`mod` 引用已有模块，**禁止**在此定义子模体 |
 
@@ -356,7 +358,7 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 | `aw-params` | 本模 parameter（宜 `value`） |
 | `aw-imports` | 自底向上汇总的 package 导入；dump 时写成 SV `import`，位于**模块最头部**，**必须去重** |
 | `aw-localparams` | 作者内部 localparam 落盘 + 例化 uniquify `Mod__Inst__Param`（[`rules.md`](./rules.md) §7） |
-| `aw-ports` | 导出端口（显式 ∪ 符合自动导出规则者） |
+| `aw-ports` | 导出端口（显式 ∪ 符合自动导出规则者）；有 `aw-port-groups` 时按组重排，组首端口带 `comment`（组名） |
 | `aw-signals` | 本层内部 net |
 | `aw-insts` | 具体实例；仅展开后的 `aw-param` / `aw-connect`（无 rewrite / template） |
 
@@ -366,6 +368,34 @@ visible(M) = { M 的直接子 aw-mod name }        # 结构拥有，始终可例
 - 无驱动（只连叶子 input）的 net 自动导出为 **input** 端口；只被叶子 output 驱动、本层无负载的 net 自动导出为 **output** 端口；含 inout 导出为 **inout**。
 - 作者显式 `aw-content`/`aw-ports` **优先**于自动导出——`aw-ports` 只写需要显式控制的端口，**一般不应**罗列全部 IO。
 - 导出端口顺序（render `aw-ports` 即打印顺序）：显式 `aw-ports` 按作者文档序在最前；自动导出的网按**实例文档序**分组，组内按**目标模块自身端口表顺序**（同一网归首次触碰它的实例组），模板里 connect 规则的书写顺序不影响导出顺序。
+
+#### 4.1.1 `aw-port-groups`：导出端口分组（弱规则）
+
+只影响 render `aw-ports` 的**顺序**和打印出来的**分组注释**，**不**改端口名、方向、位宽或任何连线。没写 `aw-port-groups` 时行为与上一条完全相同。
+
+```html
+<aw-port-groups>
+  <aw-port-group name="Clock / reset">
+    <aw-port-match match="^clk$"></aw-port-match>
+    <aw-port-match match="^rst_ni$"></aw-port-match>
+  </aw-port-group>
+  <aw-port-group name="JTAG" inst="u_tap"></aw-port-group>
+  <aw-port-group name="SPI flash">
+    <aw-port-match match="^flash_(csb|clk)$"></aw-port-match>
+    <aw-port-match match="^flash_"></aw-port-match>
+  </aw-port-group>
+  <aw-port-group name="Status / test" match="^(trap|test_)" order="name"></aw-port-group>
+</aw-port-groups>
+```
+
+- **选择器**：`match`（JS 正则，匹配导出端口名）与 `inst`（作者 `aw-inst@id`，指首次触碰该网的实例；显式 `aw-ports` 没有来源实例）。同一选择器上两者都写 = 同时满足。组自身的 `match` / `inst` 是第一个选择器，其下每个 `aw-port-match` 依次追加；一组里可以混用多种命名。
+- **归组**：每个端口进入**第一个**有选择器命中的组（组按文档序）；还命中后面的组 → `elaborate` 警告，仍归第一个。
+- **组内顺序**：先按命中的选择器序（第一个 `aw-port-match` 的端口在前），同一选择器内保持上一条的 §4.1 顺序；`order="name"` 改为按端口名排序。
+- **未归组**的端口按原顺序放在最后的 `Other` 组；全部归组时没有 `Other`。
+- 一个端口都没命中的组 → `elaborate` 警告，不报错，也不打印该组。
+- 每组第一个端口写 render `aw-port@comment`（= 组名），打印为端口上方的 `// 组名`。
+- `check` 报错：缺 `name`、组名重复、正则不合法、`inst` 不是本层 `aw-inst@id`、既无组选择器也无 `aw-port-match`、`aw-port-match` 两个属性都没写、`order` 不是 `name`、组下出现别的标签、`aw-tb-mod` 上写了 `aw-port-groups`。
+- 端口顺序改变后，`.autowire/connect/<id>.xml` 快照的端口顺序随之改变，父单元按子模块端口表排的自动导出顺序也跟着变（同一 HTML → 同一结果）。
 
 ### 4.2 dump 范围
 

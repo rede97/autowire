@@ -118,6 +118,7 @@ function parseMod(v: unknown, tag = "aw-mod"): RenderModule | null {
 	const portsEl = isObj(render["aw-ports"]) ? render["aw-ports"] : undefined;
 	for (const p of arr(portsEl?.["aw-port"])) {
 		if (!isObj(p)) continue;
+		const comment = str(p["@comment"]);
 		ports.push({
 			name: str(p["@name"]),
 			dir: str(p["@dir"]) || "input",
@@ -126,6 +127,7 @@ function parseMod(v: unknown, tag = "aw-mod"): RenderModule | null {
 			nettype: str(p["@nettype"]),
 			interface: str(p["@interface"]),
 			modport: str(p["@modport"]),
+			...(comment ? { comment } : {}),
 		});
 	}
 	const signals: RenderSignal[] = [];
