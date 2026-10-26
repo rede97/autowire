@@ -8,7 +8,7 @@ Start with `bun index.ts help agent`. Do not invent a command that `help status`
 
 ## Tools
 
-Three processes, never linked into one binary. Details: [`docs/dev/release.md`](docs/dev/release.md). The 0.9.1 release CI on `main` (`.github/workflows/release.yml`) publishes `hdxml` (Linux x64 glibc 2.17, macOS arm64/x64) and single-file `autowire.js`; obscura, the installer, and the compiled `out/autowire` are still parked.
+Three processes, never linked into one binary. Details: [`docs/dev/release.md`](docs/dev/release.md). The release workflow (`.github/workflows/release.yml`) runs only on a pushed `v*` tag and publishes `hdxml` (Linux x64 glibc 2.17, macOS arm64/x64) and single-file `autowire.js`; obscura, the installer, and the compiled `out/autowire` are still parked.
 
 | Tool | Owns | Does not | Help |
 |---|---|---|---|
