@@ -2,7 +2,7 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
-## [Unreleased]
+## [2.5.11] - 2026-10-26
 
 - **接口变更**：fabric（decoder / interconnect / crossbar）上 `SlaveRegfile` 的下游 slave 口 `{id}_i_wb_adr` 改为直接按叶子 `addrWidth` 声明，与 `<name>_regfile` 逐位对齐；其它 slave 与上游 master 口仍是 fabric `addrWidth`。窗内 offset 的截位 / 零扩展从 `<bus>_bus_cfg` 移进 fabric；有 `pipe` 时 `wb_cfg_pipe` 按窗口与叶子中较窄的宽度寄存。wrapper 内置叶子与 `external: true` 的上层叶子都直接同名连接，不再需要 ADR 适配；`-Wno-WIDTHEXPAND` 不再需要。直接例化 fabric 并自行接 regfile ADR 的用户需按新位宽改连接。
 - demo regfile 的 `addrWidth` 改为各自窗口转发的位数，不再统一写 32：demo/soc `sha256` / `smoke` = 6（0x40 窗），demo/hbm `aword` / `dword` = 8（0x100 窗）、`center` = 12（0x1000 窗）。`rtl/gen` 已重新生成；C / uvm_reg / sv_reg 地址图不变。
