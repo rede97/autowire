@@ -13,7 +13,7 @@ Three processes, never linked into one binary. Details: [`docs/dev/release.md`](
 | Tool | Owns | Does not | Help |
 |---|---|---|---|
 | autowire | Workspace CLI: analysis, connect, `plugin wishbone run`. `connect run` writes `.sv` with happy-dom, no browser. Tests use `bun index.ts`. Production is `out/autowire.js` (one Bun script: deps, page assets, zstd of `docs/` and the runnable demo sources — `demo/*/ip/` is trimmed to the filelist closure, patches pre-applied, sot imports rewritten to `.autowire/dsl/`) or `out/autowire` (that script plus the Bun runtime). Unpack with `docs unpack <dir>`. See [`docs/dev/release.md`](docs/dev/release.md) section 1.1 | RTL parse; a bundled browser; shipping `index.ts` or `node_modules` | Dev/CI: `bun index.ts help`, `help topics`, `help docs`. Production: `autowire help` or `bun autowire.js help`|
-| hdxml | Read-only RTL analysis to RtlIndex XML. No subcommands. `analysis run` maps `autowire.toml` onto its flags | Connect, print `.sv`, Wishbone | [`docs/hdxml/cli.md`](docs/hdxml/cli.md). Scoped rules: [`hdxml/AGENTS.md`](hdxml/AGENTS.md) |
+| hdxml | Read-only RTL analysis to RtlIndex XML. **Separate project** [`rede97/hdxml`](https://github.com/rede97/hdxml), its own version and release; this repo pins one version in `hdxml-version.txt` and `bun run fetch:hdxml` downloads it into `.cache/hdxml/<version>/` (no build) | Connect, print `.sv`, Wishbone | [`docs/hdxml/cli.md`](docs/hdxml/cli.md). Scoped rules: [hdxml `AGENTS.md`](https://github.com/rede97/hdxml/blob/main/AGENTS.md) |
 | Playwright + Chromium | Dev and CI page tests and debug (`test/e2e-web.test.ts`, `.mcp.json`) | Production package; writing `.sv` | Page contract: [`docs/workspace/web-ui.md`](docs/workspace/web-ui.md) |
 | obscura | Production debug browser only (`mcp`, `serve`; CDP, CentOS 7-compatible build). Same HTML as happy-dom | Dev/CI today; writing `.sv`. Do not switch `.mcp.json` to it until the package exists | [`docs/dev/release.md`](docs/dev/release.md) sections 1-2; CDP pattern: [`docs/skills/cdp-debug.md`](docs/skills/cdp-debug.md) |
 
@@ -60,7 +60,7 @@ Generated and MUST NOT be hand-edited: `out/web/aw.js`, `out/web/page.js` (`bun 
 - The page and its GET APIs MUST NOT write the workspace. Saving is a browser download or the driver storing `#aw-generated`.
 - Do not implement parked work: the installer and the production-browser (obscura) .mcp.json switch, HTML node-edit MCP, plugin type B, extra Wishbone policies in `docs/plugins/wishbone-bus.md` section 8, or a second `autowire.toml`. Dev and CI stay on Playwright Chromium. The two autowire artifacts in section 1.1 are already specified.
 
-`hdxml/` has its own [`AGENTS.md`](hdxml/AGENTS.md). Demo smoke details: [`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md). Run these from `demo/soc` after `plugin wishbone run` when the Wishbone SoT changed.
+hdxml is its own repo (`rede97/hdxml`, own `AGENTS.md`); this repo only pins `hdxml-version.txt`. Demo smoke details: [`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md). Run these from `demo/soc` after `plugin wishbone run` when the Wishbone SoT changed.
 
 Verilator (`sim/verilator/run.sh`; `verilator` on PATH; `--timing` needs a C++ compiler with `-fcoroutines`, GCC 10+):
 

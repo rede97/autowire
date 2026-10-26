@@ -25,7 +25,7 @@ analysis run: load toml (upward from CWD, or --workspace) and run hdxml with map
   [analysis] hdxml_bin → binary path only (not an hdxml arg; must exist if set)
 
 hdxml binary lookup: --hdxml > toml [analysis] hdxml_bin > $HDXML_BIN
-  > repo hdxml/target/{release,debug} > PATH
+  > repo .cache/hdxml/<version> > PATH
 hdxml never reads toml; autowire maps everything.
 Paths in toml are relative to the workspace root (toml location).
 No [analysis.rtl] sources configured → error.

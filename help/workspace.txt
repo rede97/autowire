@@ -5,7 +5,7 @@ Commands: autowire init | autowire analysis  (see help analysis)
 
 Shared by deps / web / cli for the RTL universe:
   [workspace] name="…"  workspace identity (C-identifier): names wishbone umbrella files + guards
-  [analysis] hdxml_bin="…"  hdxml binary path (unset: --hdxml > $HDXML_BIN > repo target > PATH)
+  [analysis] hdxml_bin="…"  hdxml binary path (unset: --hdxml > $HDXML_BIN > repo .cache/hdxml > PATH)
   [analysis.*]  .f / sources / walk / incdirs / defines / keep_raw / index dir
   Author SoT            one tree (demo: sot/): connect HTML under sot/connect/;
                         wishbone ts= as wb_reg_*.ts / wb_bus_*.ts;

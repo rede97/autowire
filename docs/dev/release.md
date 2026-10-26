@@ -1,6 +1,6 @@
 # 生产发布包
 
-> 状态：**hdxml 与单文件 `autowire.js` 自 0.9.1 起由主干 GitHub Actions 发布**。obscura、安装器、Linux aarch64 与编译版 `autowire` 仍不做。开发与 CI 继续用 Bun 跑 `index.ts`，调试浏览器仍是 Playwright Chromium。
+> 状态：**单文件 `autowire.js` 由本仓库 GitHub Actions 在 `v*` tag 上发布；`hdxml` 是独立项目**（[`rede97/hdxml`](https://github.com/rede97/hdxml)），在自己的 `v*` tag 上发布，本仓库按 `hdxml-version.txt` 下载对应产物随包分发，不编译。obscura、安装器、Linux aarch64 与编译版 `autowire` 仍不做。开发与 CI 继续用 Bun 跑 `index.ts`，调试浏览器仍是 Playwright Chromium。
 > 开发与 CI 仍按仓库现况：Bun、Playwright 及其 Chromium、`bun test`。本文只规定**发给用户的生产包里有什么**。
 > Windows 开发环境见 [windows-msys2.md](./windows-msys2.md)，不由本包覆盖。
 
@@ -67,9 +67,10 @@ obscura 自带协议服务，生产包不再附带 Chromium、Playwright 或 chr
 ## 5. 发布（0.9.1 起）
 
 - 触发：推送 `main` 不跑 CI。**只有推送 `v*` tag 才跑检查、构建和发布**；tag 由人创建并推送，CI 永不创建/移动/重建 tag，已存在的 release 直接拒发。
-- 版本与 Release 说明取 `CHANGELOG.md` 最上面一条 `## [x.y.z]`；`package.json` 的 `version` 必须一致（`scripts/check-version.ts` 把关），且 tag 名必须等于 `v<版本>` 否则发布失败。hdxml 用自己的版本（`hdxml/Cargo.toml`），不受 autowire 版本约束。
-- 产物：`autowire.js`（单文件 Bun 脚本，内嵌版本/提交/构建时间）、`hdxml-linux-x64.tar.xz`（Ubuntu 22.04 跑 `hdxml/dist.sh`，glibc 2.17）、`hdxml-macos-arm64.tar.xz`、`hdxml-macos-x64.tar.xz`、`hdxml-windows-x64.zip`。
-- 发布流程：改 `CHANGELOG.md` + `package.json` → 推 `main`（不触发 CI）→ 人工 `git tag v<x.y.z> && git push origin v<x.y.z>` → CI 检查、构建并发布。
+- 版本与 Release 说明取 `CHANGELOG.md` 最上面一条 `## [x.y.z]`；`package.json` 的 `version` 必须一致（`scripts/check-version.ts` 把关），且 tag 名必须等于 `v<版本>` 否则发布失败。
+- **hdxml 是独立项目**（[`rede97/hdxml`](https://github.com/rede97/hdxml)），自己的版本与 release。本仓库用 `hdxml-version.txt` 钉一个版本；`bun run fetch:hdxml` 下载该版本 release 二进制到 `.cache/hdxml/<version>/`（开发、CI 与发布都用它，**不**再编译 hdxml）。抬高版本 = 改 `hdxml-version.txt` + 重跑 `fetch:hdxml`，然后在 CHANGELOG 写清对应 hdxml 版本。
+- 产物：`autowire.js`（单文件 Bun 脚本，内嵌版本/提交/构建时间），加 **hdxml 对应版本 release 的原样二进制**：`hdxml-linux-x64.tar.xz`、`hdxml-macos-arm64.tar.xz`、`hdxml-macos-x64.tar.xz`、`hdxml-windows-x64.zip`。CI 从 `rede97/hdxml` 对应 tag 下载后直接挂到本次 release，不重新编译。
+- 发布流程：改 `CHANGELOG.md` + `package.json`（hdxml 版本变化时另改 `hdxml-version.txt`）→ 推 `main`（不触发 CI）→ 人工 `git tag v<x.y.z> && git push origin v<x.y.z>` → CI 检查、构建、下载 hdxml 产物并发布。
 - `doc-pack.generated.ts` 每次构建由 `scripts/pack-docs.ts` 重新生成，不入库；文档包含仓库根目录 `AGENTS.md`。
 
 ## 6. 暂时不做

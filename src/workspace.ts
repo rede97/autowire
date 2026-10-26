@@ -663,8 +663,8 @@ name = "${name}"
 
 [analysis]
 # hdxml binary path (relative to this file). Unset = default lookup:
-# --hdxml CLI > $HDXML_BIN > repo hdxml/target/{release,debug} > PATH
-# hdxml_bin = "hdxml/target/release/hdxml"
+# --hdxml CLI > $HDXML_BIN > repo .cache/hdxml/<version> > PATH
+# hdxml_bin = ".cache/hdxml/0.4.1/hdxml"
 # Macro define headers (same as hdxml --define-headers); raw macros:
 # keep_raw = ["WIDTH"]
 

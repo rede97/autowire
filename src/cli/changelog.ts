@@ -1,5 +1,5 @@
 // Top entry of CHANGELOG.md is the release version and the GitHub Release notes.
-// hdxml keeps its own version in hdxml/Cargo.toml; this file never touches it.
+// hdxml is its own project (rede97/hdxml); this file never touches its version.
 
 export type ChangelogEntry = {
 	version: string;

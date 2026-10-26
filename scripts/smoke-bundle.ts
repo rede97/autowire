@@ -2,7 +2,7 @@
 // Catches bundle-only breakage: pack reads, repo-root resolution, DSL
 // materialization — things unit tests against src/ never see.
 //
-// Usage: bun scripts/smoke-bundle.ts   (needs hdxml on PATH or repo target/)
+// Usage: bun scripts/smoke-bundle.ts   (needs hdxml on PATH, $HDXML_BIN, or .cache/hdxml/<version>/ via bun run fetch:hdxml)
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";

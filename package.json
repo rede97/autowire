@@ -1,6 +1,6 @@
 {
 	"name": "autowire",
-	"version": "2.5.12",
+	"version": "2.6.0",
 	"module": "index.ts",
 	"type": "module",
 	"private": true,
@@ -9,6 +9,7 @@
 	},
 	"scripts": {
 		"help": "bun index.ts help",
+		"fetch:hdxml": "bun scripts/fetch-hdxml.ts",
 		"lint": "bun scripts/ensure-doc-pack.ts && biome check . && tsc --noEmit -p tsconfig.json",
 		"test": "bun scripts/ensure-doc-pack.ts && bun test",
 		"build:web": "bun build src/core/aw.ts --target browser --format esm --minify --keep-names --outfile out/web/aw.js && bun build src/web/page.ts --target browser --format esm --minify --keep-names --outfile out/web/page.js --external /aw.js --external '*/aw.js'",

@@ -1,6 +1,12 @@
 # Changelog
 
-版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
+版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
+
+## [2.6.0] - 2026-10-26
+
+- **hdxml 成为独立项目**：[`rede97/hdxml`](https://github.com/rede97/hdxml)。本仓库删除 `hdxml/`，不再构建它（无 cargo 依赖）；用 `hdxml-version.txt` 钉版本（本次 0.4.1），`bun run fetch:hdxml` 把该版本 release 二进制下载到 `.cache/hdxml/<version>/`。查找顺序变为 `--hdxml` > `[analysis] hdxml_bin` > `$HDXML_BIN` > 仓库 `.cache/hdxml/<version>` > `PATH`；原先的 `hdxml/target/{release,debug}` 候选已删除。
+- autowire 发布改为**拉取** hdxml 对应 tag 的 release 产物（Linux x64 glibc 2.17、macOS arm64/x64、Windows x64）并原样挂到自己的 release，不再编译 hdxml；被钉版本缺失时发布失败。
+- hdxml 自己的仓库有独立 `v*` tag 发布（先 `cargo test`，再构建四个平台并发布），已存在的 release 拒绝覆盖。RtlIndex / CLI 契约文档仍留在本仓库 `docs/hdxml/`（随 `autowire.js` 打包），hdxml 仓库链接过来。
 
 ## [2.5.12] - 2026-10-26
 

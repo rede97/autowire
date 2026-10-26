@@ -1,5 +1,5 @@
 // Fail when package.json disagrees with CHANGELOG.md.
-// hdxml has its own version (hdxml/Cargo.toml) and is intentionally not checked.
+// hdxml is its own project (rede97/hdxml) and is intentionally not checked.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

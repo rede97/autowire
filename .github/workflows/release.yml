@@ -21,13 +21,12 @@ jobs:
         with:
           submodules: recursive
       - uses: oven-sh/setup-bun@v2
-      - uses: dtolnay/rust-toolchain@stable
       - run: bun install --frozen-lockfile
       - run: bun run build:web
       - run: bun scripts/check-version.ts
       - run: bun run lint
-      - run: cargo build
-        working-directory: hdxml
+      # hdxml is its own project (rede97/hdxml): no cargo here, just the pinned binary.
+      - run: bun scripts/fetch-hdxml.ts
       - run: bun ../../index.ts analysis run
         working-directory: demo/soc
       - run: bunx playwright install chromium --with-deps
@@ -41,14 +40,12 @@ jobs:
         with:
           submodules: recursive
       - uses: oven-sh/setup-bun@v2
-      - uses: dtolnay/rust-toolchain@stable
       - run: bun install --frozen-lockfile
       - run: bun run build:js
       - run: bun out/autowire.js --version
       # Drive the shipped bundle end to end (demo/soc via the packaged CLI);
       # catches bundle-only breakage unit tests against src/ never see.
-      - run: cargo build
-        working-directory: hdxml
+      - run: bun scripts/fetch-hdxml.ts
       - run: bun scripts/smoke-bundle.ts
       - uses: actions/upload-artifact@v4
         with:
@@ -56,80 +53,36 @@ jobs:
           path: out/autowire.js
           if-no-files-found: error
 
-  hdxml-linux:
+  hdxml-assets:
+    # hdxml is its own project (rede97/hdxml) with its own release cadence.
+    # Pin a version in hdxml-version.txt and copy that release's binaries.
     needs: check
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-zigbuild
-      - uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.14.0
-      - run: ./dist.sh
-        working-directory: hdxml
-      - run: |
-          tar -tJf hdxml/hdxml-linux-x64.tar.xz
+      - name: download the pinned hdxml release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(tr -d '[:space:]' < hdxml-version.txt)"
+          mkdir -p hdxml-assets
+          gh release download "v$VERSION" --repo rede97/hdxml \
+            --pattern 'hdxml-*' --dir hdxml-assets --clobber
+          ls -l hdxml-assets
           mkdir -p /tmp/hdxml-check
-          tar -xJf hdxml/hdxml-linux-x64.tar.xz -C /tmp/hdxml-check
+          tar -xJf hdxml-assets/hdxml-linux-x64.tar.xz -C /tmp/hdxml-check
           /tmp/hdxml-check/hdxml --version
       - uses: actions/upload-artifact@v4
         with:
-          name: hdxml-linux
-          path: hdxml/hdxml-linux-x64.tar.xz
-          if-no-files-found: error
-
-  hdxml-macos:
-    needs: check
-    runs-on: macos-14
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            suffix: macos-arm64
-          - target: x86_64-apple-darwin
-            suffix: macos-x64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin, x86_64-apple-darwin
-      - run: |
-          cargo build --release --locked --target "${{ matrix.target }}" --target-dir target/dist
-          tar -cJvf "hdxml-${{ matrix.suffix }}.tar.xz" -C "target/dist/${{ matrix.target }}/release" hdxml
-        working-directory: hdxml
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hdxml-${{ matrix.suffix }}
-          path: hdxml/hdxml-${{ matrix.suffix }}.tar.xz
-          if-no-files-found: error
-
-  hdxml-windows:
-    needs: check
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-      - run: |
-          cargo build --release --locked --target x86_64-pc-windows-msvc --target-dir target/dist
-          .\target\dist\x86_64-pc-windows-msvc\release\hdxml.exe --version
-          Compress-Archive -Path .\target\dist\x86_64-pc-windows-msvc\release\hdxml.exe -DestinationPath .\hdxml-windows-x64.zip
-        working-directory: hdxml
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hdxml-windows
-          path: hdxml/hdxml-windows-x64.zip
+          name: hdxml-assets
+          path: hdxml-assets/*
           if-no-files-found: error
 
   publish:
     # Only a tag push publishes — tags are created and pushed by the user,
     # never by CI (no moving or recreating tags, no republishing).
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [autowire-js, hdxml-linux, hdxml-macos, hdxml-windows]
+    needs: [autowire-js, hdxml-assets]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -146,10 +99,8 @@ jobs:
       - run: |
           ls -R artifacts
           cp artifacts/autowire-js/autowire.js .
-          cp artifacts/hdxml-linux/hdxml-linux-x64.tar.xz .
-          cp artifacts/hdxml-macos-arm64/hdxml-macos-arm64.tar.xz .
-          cp artifacts/hdxml-macos-x64/hdxml-macos-x64.tar.xz .
-          cp artifacts/hdxml-windows/hdxml-windows-x64.zip .
+          cp artifacts/hdxml-assets/*.tar.xz .
+          cp artifacts/hdxml-assets/*.zip .
       - name: verify pushed tag matches the changelog top
         env:
           TAG: ${{ steps.meta.outputs.tag }}
