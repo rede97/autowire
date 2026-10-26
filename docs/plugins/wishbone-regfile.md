@@ -76,7 +76,7 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 
 **Connect 引用（非 SoT）**
 
-- generate → `analysis` → RtlIndex 叶子后：未挂 bus 的叶子在 HTML **`<aw-inst mod="<name>_regfile">`**；`SlaveRegfile` **内置**挂接（缺省）的叶子只出现在 bus wrapper 内，HTML 不再声明。`SlaveRegfile(..., { external: true })` 把叶子留在 wrapper 之外：wrapper 只导出该挂接的 fabric WB 窗口口（`{id}_i_wb_*` / `{id}_o_wb_*`），HTML **照常** `<aw-inst mod="<name>_regfile">` 例化叶子，并把它的 WB 口连到 wrapper 导出的窗口口（旁路、clk/rst 同样在 HTML 连）。
+- generate → `analysis` → RtlIndex 叶子后：未挂 bus 的叶子在 HTML **`<aw-inst mod="<name>_regfile">`**；`SlaveRegfile` **内置**挂接（缺省）的叶子只出现在 bus wrapper 内，HTML 不再声明。`SlaveRegfile(..., { external: true })` 把叶子留在 wrapper 之外：wrapper 导出该挂接的 WB 口（`{id}_i_wb_*` / `{id}_o_wb_*`，ADR 已是叶子 `addrWidth`），HTML **照常** `<aw-inst mod="<name>_regfile">` 例化叶子，WB 口按名字直连（`{id}` 与表名不同时用一条成束 rewrite），旁路、clk/rst 同样在 HTML 连。
 - **禁止** HTML 寄存器描述桩 / `awx-reg-*` 字段树。
 
 **作者面 API**（[`docs/examples/regfile/regfile.ts`](../../examples/regfile/regfile.ts)；契约以该文件 + 本节为准）

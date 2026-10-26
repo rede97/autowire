@@ -3,14 +3,14 @@
 //------------------------------------------------------------------------------
 //  Module: center_regfile
 //  Desc:   HBM center CSR (fabric-global control)
-//  Addr width: 19
+//  Addr width: 12
 //  Cells: 3
 //  read_write_block: false
 //------------------------------------------------------------------------------
 //  Address map:
-//    0x00000  ID     — Fabric identity
-//    0x00004  CH_EN  — Per-channel enable
-//    0x00008  STATUS — Fabric status
+//    0x000  ID     — Fabric identity
+//    0x004  CH_EN  — Per-channel enable
+//    0x008  STATUS — Fabric status
 //------------------------------------------------------------------------------
 
 module center_regfile (
@@ -26,7 +26,7 @@ module center_regfile (
 	// Wishbone WE (1=write, 0=read)
 	input  logic        center_i_wb_we,
 	// Wishbone ADR (byte address; word decode uses [addr_width-1:2])
-	input  logic [18:0] center_i_wb_adr,
+	input  logic [11:0] center_i_wb_adr,
 	// Wishbone write data
 	input  logic [31:0] center_i_wb_dat,
 	// Wishbone byte select
@@ -64,17 +64,17 @@ module center_regfile (
 	//  2. Address decode / hit / wr_sel / rd_sel
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000  RegCell: ID     — Fabric identity
+	// Addr: 0x000  RegCell: ID     — Fabric identity
 	//   [15:0]   RC  magic        — Magic
 	//   [31:16]  RC  version      — Version
-	assign addr_hit_0 = (center_i_wb_adr[18:2] == 17'd0);
-	// Addr: 0x00004  RegCell: CH_EN  — Per-channel enable
+	assign addr_hit_0 = (center_i_wb_adr[11:2] == 10'd0);
+	// Addr: 0x004  RegCell: CH_EN  — Per-channel enable
 	//   [15:0]   RW  enable       — One bit per channel
-	assign addr_hit_4 = (center_i_wb_adr[18:2] == 17'd1);
-	// Addr: 0x00008  RegCell: STATUS — Fabric status
+	assign addr_hit_4 = (center_i_wb_adr[11:2] == 10'd1);
+	// Addr: 0x008  RegCell: STATUS — Fabric status
 	//   [0]      RO  all_cal_done — Every enabled channel calibrated
 	//   [11:8]   RO  err_ch       — First channel reporting an error
-	assign addr_hit_8 = (center_i_wb_adr[18:2] == 17'd2);
+	assign addr_hit_8 = (center_i_wb_adr[11:2] == 10'd2);
 	assign wr_fire = center_i_wb_cyc && center_i_wb_stb &&  center_i_wb_we;
 	assign rd_fire = center_i_wb_cyc && center_i_wb_stb && ~center_i_wb_we;
 
@@ -87,11 +87,11 @@ module center_regfile (
 	//  4. Field storage / sideband glue
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000  RegCell: ID     — Fabric identity
+	// Addr: 0x000  RegCell: ID     — Fabric identity
 	//   [15:0]   RC  magic        — Magic
 	//   [31:16]  RC  version      — Version
 
-	// Addr: 0x00004  RegCell: CH_EN  — Per-channel enable
+	// Addr: 0x004  RegCell: CH_EN  — Per-channel enable
 	//   [15:0]   RW  enable       — One bit per channel
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
@@ -107,7 +107,7 @@ module center_regfile (
 	end
 	assign rg_enable = rg_enable_q;
 
-	// Addr: 0x00008  RegCell: STATUS — Fabric status
+	// Addr: 0x008  RegCell: STATUS — Fabric status
 	//   [0]      RO  all_cal_done — Every enabled channel calibrated
 	//   [11:8]   RO  err_ch       — First channel reporting an error
 
@@ -119,19 +119,19 @@ module center_regfile (
 	always_comb begin
 		rd_data = 32'h0;
 		unique case (1'b1)
-			// ID @ 0x00000
+			// ID @ 0x000
 			rd_sel_0: begin
 				// RC [15:0]  magic        — Magic
 				rd_data[15:0] = 16'hc0de;
 				// RC [31:16] version      — Version
 				rd_data[31:16] = 16'h1;
 			end
-			// CH_EN @ 0x00004
+			// CH_EN @ 0x004
 			rd_sel_4: begin
 				// RW [15:0]  enable       — One bit per channel
 				rd_data[15:0] = rg_enable_q;
 			end
-			// STATUS @ 0x00008
+			// STATUS @ 0x008
 			rd_sel_8: begin
 				// RO [0]     all_cal_done — Every enabled channel calibrated
 				rd_data[0] = ro_all_cal_done;

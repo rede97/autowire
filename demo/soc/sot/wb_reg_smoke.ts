@@ -35,7 +35,7 @@ export const smoke = Regfile(
 	"smoke",
 	"SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)",
 	RegfileDefault.align(4)
-		.addrWidth(32)
+		.addrWidth(6) // 0x40 window on soc_wb
 		.readWriteBlock(true)
 		.shadows(bank),
 	[

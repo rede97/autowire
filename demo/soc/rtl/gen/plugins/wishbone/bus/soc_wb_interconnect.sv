@@ -116,7 +116,7 @@ module soc_wb_interconnect (
 	input  logic        ch1_o_wb_ack,
 	// Slave smoke — SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)
 	//   base=0x03006000  size=0x00000038  mask=0xffffffc0  pipe=3
-	output logic [31:0] smoke_i_wb_adr,
+	output logic [5:0]  smoke_i_wb_adr,
 	output logic [31:0] smoke_i_wb_dat,
 	output logic [3:0]  smoke_i_wb_sel,
 	output logic [1:0]  smoke_i_wb_tga_bank,
@@ -504,15 +504,17 @@ module soc_wb_interconnect (
 	//------------------------------------------------------------------------------
 	//  Slave smoke — wb_cfg_pipe PIPE=3 (posted write / blocking read)
 	//------------------------------------------------------------------------------
+	logic [31:0] smoke_win_adr;
+	assign smoke_win_adr = slot_sel[SLOT_SMOKE] ? g_adr_dec & ~32'hffffffc0 : 32'd0;
 	logic        smoke_pipe_ack;
 	logic [31:0] smoke_pipe_rdat;
-	wb_cfg_pipe #(.PIPE(3), .AW(32), .TW(2)) u_smoke_pipe (
+	wb_cfg_pipe #(.PIPE(3), .AW(6), .TW(2)) u_smoke_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_SMOKE] & g_cyc),
 		.m_stb(slot_sel[SLOT_SMOKE] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_SMOKE] ? g_adr_dec & ~32'hffffffc0 : 32'd0),
+		.m_adr(smoke_win_adr[5:0]),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_tga(g_tga_bank),
@@ -528,6 +530,10 @@ module soc_wb_interconnect (
 		.s_ack(smoke_o_wb_ack),
 		.s_rdat(smoke_o_wb_dat)
 	);
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_smoke_win_adr = &{1'b0, smoke_win_adr[31:6]};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	logic [31:0] rsp_dat;
 	logic        rsp_ack;

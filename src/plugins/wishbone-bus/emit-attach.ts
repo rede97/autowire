@@ -145,23 +145,6 @@ function wrapperPorts(def: BusDef): Array<{
 	return ports;
 }
 
-/**
- * Fabric ADR into the leaf ADR port. The fabric drives `adr & ~mask`, so
- * every bit above the window is 0: a narrower leaf takes the low bits, a
- * wider leaf is zero-filled. `Bus()` guarantees the window fits the leaf.
- */
-function leafAdr(
-	net: string,
-	fabricAw: number,
-	leafAw: number,
-): { net: string; part: string; type: string } {
-	if (fabricAw > leafAw) return { net, part: `${leafAw - 1}:0`, type: "" };
-	if (fabricAw < leafAw) {
-		return { net: `{${leafAw - fabricAw}'d0, ${net}}`, part: "", type: "raw" };
-	}
-	return { net, part: "", type: "" };
-}
-
 function leafPairs(
 	def: BusDef,
 	slave: WbSlave,
@@ -216,14 +199,7 @@ function leafPairs(
 					`wishbone-bus: wrapper ${slave.name} missing fabric port for ${p.name}`,
 				);
 			}
-			const adr = p.name === `${table}_i_wb_adr`;
-			pairs.push({
-				port: p.name,
-				...meta,
-				...(adr
-					? leafAdr(fabric.name, def.addr_width, rf.addr_width)
-					: { net: fabric.name }),
-			});
+			pairs.push({ port: p.name, ...meta, net: fabric.name });
 			continue;
 		}
 		pairs.push({

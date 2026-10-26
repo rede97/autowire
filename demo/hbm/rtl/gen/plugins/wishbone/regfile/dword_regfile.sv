@@ -3,16 +3,16 @@
 //------------------------------------------------------------------------------
 //  Module: dword_regfile
 //  Desc:   HBM dword CSR (data lane)
-//  Addr width: 32
+//  Addr width: 8
 //  Cells: 5
 //  read_write_block: false
 //------------------------------------------------------------------------------
 //  Address map:
-//    0x00000000  ID     — Lane identity
-//    0x00000004  STATUS — Lane status
-//    0x00000010  TRAIN  — Per-lane train pass (active low)
-//    0x00000008  VREF   — Per-pstate receiver reference  shadow=pstate
-//    0x0000000c  EQ     — Per-pstate equalisation  shadow=pstate
+//    0x00  ID     — Lane identity
+//    0x04  STATUS — Lane status
+//    0x10  TRAIN  — Per-lane train pass (active low)
+//    0x08  VREF   — Per-pstate receiver reference  shadow=pstate
+//    0x0c  EQ     — Per-pstate equalisation  shadow=pstate
 //------------------------------------------------------------------------------
 
 module dword_regfile (
@@ -28,7 +28,7 @@ module dword_regfile (
 	// Wishbone WE (1=write, 0=read)
 	input  logic        dword_i_wb_we,
 	// Wishbone ADR (byte address; word decode uses [addr_width-1:2])
-	input  logic [31:0] dword_i_wb_adr,
+	input  logic [7:0]  dword_i_wb_adr,
 	// Wishbone write data
 	input  logic [31:0] dword_i_wb_dat,
 	// Wishbone byte select
@@ -87,26 +87,26 @@ module dword_regfile (
 	//  2. Address decode / hit / wr_sel / rd_sel
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000000  RegCell: ID     — Lane identity
+	// Addr: 0x00  RegCell: ID     — Lane identity
 	//   [15:0]   RC  magic        — Magic
 	//   [31:16]  RC  version      — Version
-	assign addr_hit_0 = (dword_i_wb_adr[31:2] == 30'd0);
-	// Addr: 0x00000004  RegCell: STATUS — Lane status
+	assign addr_hit_0 = (dword_i_wb_adr[7:2] == 6'd0);
+	// Addr: 0x04  RegCell: STATUS — Lane status
 	//   [0]      RO  train_done   — Read training done
 	//   [15:8]   RO  eye_width    — Measured eye width
-	assign addr_hit_4 = (dword_i_wb_adr[31:2] == 30'd1);
-	// Addr: 0x00000010  RegCell: TRAIN  — Per-lane train pass (active low)
+	assign addr_hit_4 = (dword_i_wb_adr[7:2] == 6'd1);
+	// Addr: 0x10  RegCell: TRAIN  — Per-lane train pass (active low)
 	//   [0]      RO  train_pass_n — 0 = lane passed read training
-	assign addr_hit_10 = (dword_i_wb_adr[31:2] == 30'd4);
-	// Addr: 0x00000008  RegCell: VREF   — Per-pstate receiver reference
+	assign addr_hit_10 = (dword_i_wb_adr[7:2] == 6'd4);
+	// Addr: 0x08  RegCell: VREF   — Per-pstate receiver reference
 	//   shadow=pstate
 	//   [6:0]    RW  level        — VREF DAC code
-	assign addr_hit_8 = (dword_i_wb_adr[31:2] == 30'd2);
-	// Addr: 0x0000000c  RegCell: EQ     — Per-pstate equalisation
+	assign addr_hit_8 = (dword_i_wb_adr[7:2] == 6'd2);
+	// Addr: 0x0c  RegCell: EQ     — Per-pstate equalisation
 	//   shadow=pstate
 	//   [4:0]    RW  tap0         — DFE tap 0
 	//   [12:8]   RW  tap1         — DFE tap 1
-	assign addr_hit_c = (dword_i_wb_adr[31:2] == 30'd3);
+	assign addr_hit_c = (dword_i_wb_adr[7:2] == 6'd3);
 	assign wr_fire = dword_i_wb_cyc && dword_i_wb_stb &&  dword_i_wb_we;
 	assign rd_fire = dword_i_wb_cyc && dword_i_wb_stb && ~dword_i_wb_we;
 
@@ -140,18 +140,18 @@ module dword_regfile (
 	//  4. Field storage / sideband glue
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000000  RegCell: ID     — Lane identity
+	// Addr: 0x00  RegCell: ID     — Lane identity
 	//   [15:0]   RC  magic        — Magic
 	//   [31:16]  RC  version      — Version
 
-	// Addr: 0x00000004  RegCell: STATUS — Lane status
+	// Addr: 0x04  RegCell: STATUS — Lane status
 	//   [0]      RO  train_done   — Read training done
 	//   [15:8]   RO  eye_width    — Measured eye width
 
-	// Addr: 0x00000010  RegCell: TRAIN  — Per-lane train pass (active low)
+	// Addr: 0x10  RegCell: TRAIN  — Per-lane train pass (active low)
 	//   [0]      RO  train_pass_n — 0 = lane passed read training
 
-	// Addr: 0x00000008  RegCell: VREF   — Per-pstate receiver reference
+	// Addr: 0x08  RegCell: VREF   — Per-pstate receiver reference
 	//   shadow=pstate
 	//   [6:0]    RW  level        — VREF DAC code
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
@@ -179,7 +179,7 @@ module dword_regfile (
 	end
 	assign rg_level = rg_level_q[i_pstate_mux_sel];
 
-	// Addr: 0x0000000c  RegCell: EQ     — Per-pstate equalisation
+	// Addr: 0x0c  RegCell: EQ     — Per-pstate equalisation
 	//   shadow=pstate
 	//   [4:0]    RW  tap0         — DFE tap 0
 	//   [12:8]   RW  tap1         — DFE tap 1
@@ -235,31 +235,31 @@ module dword_regfile (
 	always_comb begin
 		rd_data = 32'h0;
 		unique case (1'b1)
-			// ID @ 0x00000000
+			// ID @ 0x00
 			rd_sel_0: begin
 				// RC [15:0]  magic        — Magic
 				rd_data[15:0] = 16'hd010;
 				// RC [31:16] version      — Version
 				rd_data[31:16] = 16'h1;
 			end
-			// STATUS @ 0x00000004
+			// STATUS @ 0x04
 			rd_sel_4: begin
 				// RO [0]     train_done   — Read training done
 				rd_data[0] = ro_train_done;
 				// RO [15:8]  eye_width    — Measured eye width
 				rd_data[15:8] = ro_eye_width;
 			end
-			// TRAIN @ 0x00000010
+			// TRAIN @ 0x10
 			rd_sel_10: begin
 				// RO [0]     train_pass_n — 0 = lane passed read training
 				rd_data[0] = ro_train_pass_n;
 			end
-			// VREF @ 0x00000008
+			// VREF @ 0x08
 			rd_sel_8: begin
 				// RW [6:0]   level        — VREF DAC code
 				rd_data[6:0] = (mask_pstate[0] ? rg_level_q[0] : 7'h0) | (mask_pstate[1] ? rg_level_q[1] : 7'h0) | (mask_pstate[2] ? rg_level_q[2] : 7'h0) | (mask_pstate[3] ? rg_level_q[3] : 7'h0);
 			end
-			// EQ @ 0x0000000c
+			// EQ @ 0x0c
 			rd_sel_c: begin
 				// RW [4:0]   tap0         — DFE tap 0
 				rd_data[4:0] = (mask_pstate[0] ? rg_tap0_q[0] : 5'h0) | (mask_pstate[1] ? rg_tap0_q[1] : 5'h0) | (mask_pstate[2] ? rg_tap0_q[2] : 5'h0) | (mask_pstate[3] ? rg_tap0_q[3] : 5'h0);

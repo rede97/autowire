@@ -223,7 +223,7 @@ module hbm_bus_cfg (
 	input logic [3:0] ro_err_ch
 );
 	// Internal WB: fabric slave center ↔ center_regfile
-	logic [18:0] center_i_wb_adr;
+	logic [11:0] center_i_wb_adr;
 	logic [31:0] center_i_wb_dat;
 	logic [3:0] center_i_wb_sel;
 	logic center_i_wb_cyc;

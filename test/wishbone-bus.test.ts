@@ -29,9 +29,32 @@ import {
 	emitBusMapPkg,
 	emitBusMapUvm,
 } from "../src/plugins/wishbone-bus/emit-map.ts";
-import { ShadowDomain } from "../src/plugins/wishbone-regfile/dsl.ts";
+import {
+	Access,
+	Cell,
+	CellDefault,
+	Field,
+	Regfile,
+	RegfileDefault,
+	ShadowDomain,
+} from "../src/plugins/wishbone-regfile/dsl.ts";
 import { loadWorkspace } from "../src/workspace.ts";
 import { smoke_rw } from "./fixtures/wb_reg_access.ts";
+
+/** Leaf ADR wider than the fabric window: the fabric zero-fills its port. */
+const smoke_adr32 = Regfile(
+	"smoke_adr32",
+	"Smoke: 32-bit leaf ADR behind a narrow fabric",
+	RegfileDefault.align(4).addrWidth(32),
+	[
+		Cell("CFG", "Config", CellDefault, [
+			Field("value", Access.RW, 16, "Value").reset(0x1234),
+		]),
+		Cell("STAT", "Status", CellDefault, [
+			Field("level", Access.RO, 8, "Level"),
+		]),
+	],
+);
 
 const ALIGNED: WrapperStyle = {
 	portAlign: true,
@@ -587,20 +610,23 @@ ts = "${ts.replaceAll("\\", "/")}"
 			masters: [Master("cfg", "config")],
 			slaves: [
 				SlaveRegfile(smoke_rw, 0x000, { id: "inline" }),
-				SlaveRegfile(sha256, 0x040, { external: true, pipe: 1 }),
+				SlaveRegfile(smoke_adr32, 0x040, { external: true, pipe: 1 }),
 			],
 		});
 		const wrap = emitBusSystemSv(mixed, ALIGNED) ?? "";
 		expect(wrap).toMatch(/smoke_rw_regfile\s+u_inline\s*\(/);
 		expect(wrap).toContain("inline_rg_enable");
-		expect(wrap).toMatch(/^\s*output\s+logic\s+\[11:0\]\s+sha256_i_wb_adr\b/m);
-		expect(wrap).toMatch(/^\s*input\s+logic\s+sha256_o_wb_ack\b/m);
-		expect(wrap).not.toMatch(/sha256_regfile\s+u_sha256\s*\(/);
-		expect(wrap).not.toMatch(/^\s*(?:input|output).*\bro_busy\b/m);
-		expect(wrap).not.toMatch(/^\s*(?:input|output).*\brg_soft_reset\b/m);
+		// The exported external port is already the leaf width (smoke_adr32 is 32-bit).
+		expect(wrap).toMatch(
+			/^\s*output\s+logic\s+\[31:0\]\s+smoke_adr32_i_wb_adr\b/m,
+		);
+		expect(wrap).toMatch(/^\s*input\s+logic\s+smoke_adr32_o_wb_ack\b/m);
+		expect(wrap).not.toMatch(/smoke_adr32_regfile\s+u_smoke_adr32\s*\(/);
+		expect(wrap).not.toMatch(/^\s*(?:input|output).*\bro_level\b/m);
+		expect(wrap).not.toMatch(/^\s*(?:input|output).*\brg_value\b/m);
 		expect(emitBusSv(mixed)).toContain("wb_cfg_pipe");
 		expect(emitBusMapC(mixed)).toContain(
-			"#define MIXED_CFG_SHA256_BASE 0x00000040u",
+			"#define MIXED_CFG_SMOKE_ADR32_BASE 0x00000040u",
 		);
 
 		const tagged = Bus("tagged_external", "external shadow leaf", {
@@ -680,7 +706,7 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(sv).not.toMatch(/^\s*(input|output).*\bi_wb_adr\b/m);
 	});
 
-	test("attached regfile ADR: slice a wider fabric, zero-fill a narrower one, reject aliasing windows", () => {
+	test("regfile slave port is the leaf ADR width; fabric slices or zero-fills, rejects aliasing windows", () => {
 		// Fabric ADR is window-relative (adr & ~mask), so the bits dropped or
 		// filled are always 0; a window wider than the leaf ADR would alias.
 		const wide = Bus("wide_fab", "16-bit fabric, 8-bit leaf", {
@@ -688,16 +714,32 @@ ts = "${ts.replaceAll("\\", "/")}"
 			masters: [Master("cfg", "config")],
 			slaves: [SlaveRegfile(smoke_rw, 0x100)],
 		});
+		const wideFab = emitBusSv(wide);
+		expect(wideFab).toMatch(
+			/^\s*output\s+logic\s+\[7:0\]\s+smoke_rw_i_wb_adr\b/m,
+		);
+		expect(wideFab).toContain(
+			"assign smoke_rw_i_wb_adr = smoke_rw_win_adr[7:0];",
+		);
 		expect(emitBusSystemSv(wide, ALIGNED) ?? "").toMatch(
-			/\.smoke_rw_i_wb_adr\s*\(\s*smoke_rw_i_wb_adr\[7:0\]\s*\)/,
+			/\.smoke_rw_i_wb_adr\s*\(\s*smoke_rw_i_wb_adr\s*\)/,
 		);
 		const narrow = Bus("narrow_fab", "12-bit fabric, 32-bit leaf", {
 			addrWidth: 12,
 			masters: [Master("cfg", "config")],
-			slaves: [SlaveRegfile(sha256, 0x40)],
+			slaves: [SlaveRegfile(smoke_adr32, 0x40, { pipe: 1 })],
 		});
+		const narrowFab = emitBusSv(narrow);
+		expect(narrowFab).toMatch(
+			/^\s*output\s+logic\s+\[31:0\]\s+smoke_adr32_i_wb_adr\b/m,
+		);
+		// The pipe stays at the 12-bit window width; the leaf width is zero-filled after it.
+		expect(narrowFab).toContain(".AW(12)");
+		expect(narrowFab).toContain(
+			"assign smoke_adr32_i_wb_adr = {20'd0, smoke_adr32_pipe_adr};",
+		);
 		expect(emitBusSystemSv(narrow, ALIGNED) ?? "").toMatch(
-			/\.sha256_i_wb_adr\s*\(\s*\{20'd0, sha256_i_wb_adr\}\s*\)/,
+			/\.smoke_adr32_i_wb_adr\s*\(\s*smoke_adr32_i_wb_adr\s*\)/,
 		);
 		Bus("fits", "256 B window = 8 forwarded bits", {
 			addrWidth: 16,

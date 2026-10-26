@@ -60,7 +60,7 @@ module sd_sha_interconnect (
 	input  logic        dma_o_wb_ack,
 	// Slave sha256 — SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane
 	//   base=0x00000040  size=0x00000024  mask=0x00000fc0  pipe=2
-	output logic [11:0] sha256_i_wb_adr,
+	output logic [5:0]  sha256_i_wb_adr,
 	output logic [31:0] sha256_i_wb_dat,
 	output logic [3:0]  sha256_i_wb_sel,
 	output logic        sha256_i_wb_cyc,
@@ -250,16 +250,18 @@ module sd_sha_interconnect (
 	//------------------------------------------------------------------------------
 	//  Slave sha256 — wb_cfg_pipe PIPE=2 (posted write / blocking read)
 	//------------------------------------------------------------------------------
+	logic [11:0] sha256_win_adr;
+	assign sha256_win_adr = slot_sel[SLOT_SHA256] ? g_adr & ~12'hfc0 : 12'd0;
 	logic        sha256_pipe_ack;
 	logic [31:0] sha256_pipe_rdat;
 	logic        u_sha256_pipe_tga_nc;
-	wb_cfg_pipe #(.PIPE(2), .AW(12), .TW(1)) u_sha256_pipe (
+	wb_cfg_pipe #(.PIPE(2), .AW(6), .TW(1)) u_sha256_pipe (
 		.clk(clk),
 		.rst_n(rst_n),
 		.m_cyc(slot_sel[SLOT_SHA256] & g_cyc),
 		.m_stb(slot_sel[SLOT_SHA256] & g_stb),
 		.m_we(g_we),
-		.m_adr(slot_sel[SLOT_SHA256] ? g_adr & ~12'hfc0 : 12'd0),
+		.m_adr(sha256_win_adr[5:0]),
 		.m_dat(g_wdata),
 		.m_sel(g_sel),
 		.m_tga(1'b0),
@@ -278,6 +280,10 @@ module sd_sha_interconnect (
 	// Protocol nets this topology declares but does not consume.
 	/* verilator lint_off UNUSEDSIGNAL */
 	wire _unused_u_sha256_pipe_tga_nc = &{1'b0, u_sha256_pipe_tga_nc};
+	/* verilator lint_on UNUSEDSIGNAL */
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_sha256_win_adr = &{1'b0, sha256_win_adr[11:6]};
 	/* verilator lint_on UNUSEDSIGNAL */
 
 	logic [31:0] rsp_dat;

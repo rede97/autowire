@@ -101,19 +101,14 @@ verilatorTest(
 			join(socBus, "wb_jtag_tdr.sv"),
 			join(soc, "regfile/smoke_regfile.sv"),
 		]);
-		// The leaf ADR port is the regfile's own addr_width. The fabric drives the
-		// window offset, which is narrower, so the stitch zero-extends.
-		const stitch = ["-Wno-WIDTHEXPAND"];
-		lint(
-			"sd_sha_bus_cfg",
-			[
-				join(socBus, "sd_sha_bus_cfg.sv"),
-				join(socBus, "sd_sha_interconnect.sv"),
-				pipe,
-				join(soc, "regfile/sha256_regfile.sv"),
-			],
-			stitch,
-		);
+		// Regfile slave ports are the leaf addr_width; the fabric fits the
+		// window offset itself, so the wrapper connects the leaf without a waiver.
+		lint("sd_sha_bus_cfg", [
+			join(socBus, "sd_sha_bus_cfg.sv"),
+			join(socBus, "sd_sha_interconnect.sv"),
+			pipe,
+			join(soc, "regfile/sha256_regfile.sv"),
+		]);
 		lint("hbm_bus_cfg", [
 			join(hbmBus, "hbm_bus_cfg.sv"),
 			join(hbmBus, "hbm_interconnect.sv"),
@@ -123,16 +118,12 @@ verilatorTest(
 			join(hbmBus, "wb_apb2wb.sv"),
 			join(hbm, "regfile/center_regfile.sv"),
 		]);
-		lint(
-			"hbm_ch_bus_cfg",
-			[
-				join(hbmBus, "hbm_ch_bus_cfg.sv"),
-				join(hbmBus, "hbm_ch_decoder.sv"),
-				join(hbm, "regfile/aword_regfile.sv"),
-				join(hbm, "regfile/dword_regfile.sv"),
-			],
-			stitch,
-		);
+		lint("hbm_ch_bus_cfg", [
+			join(hbmBus, "hbm_ch_bus_cfg.sv"),
+			join(hbmBus, "hbm_ch_decoder.sv"),
+			join(hbm, "regfile/aword_regfile.sv"),
+			join(hbm, "regfile/dword_regfile.sv"),
+		]);
 		lint("wb_cfg_pipe", [pipe]);
 		lint("wb_cdc", cdc);
 
@@ -220,7 +211,7 @@ verilatorTest(
 	input  logic [31:0] sha_ro_hash6,
 	input  logic [31:0] sha_ro_hash7
 );
-	logic [11:0] sha256_i_wb_adr;
+	logic [5:0]  sha256_i_wb_adr;
 	logic [31:0] sha256_i_wb_dat;
 	logic [3:0]  sha256_i_wb_sel;
 	logic        sha256_i_wb_cyc;
@@ -243,7 +234,7 @@ verilatorTest(
 	sha256_regfile u_sha (
 		.i_clk(clk), .i_rst_n(rst_n),
 		.sha256_i_wb_cyc(sha256_i_wb_cyc), .sha256_i_wb_stb(sha256_i_wb_stb),
-		.sha256_i_wb_we(sha256_i_wb_we), .sha256_i_wb_adr({20'd0, sha256_i_wb_adr}),
+		.sha256_i_wb_we(sha256_i_wb_we), .sha256_i_wb_adr(sha256_i_wb_adr),
 		.sha256_i_wb_dat(sha256_i_wb_dat), .sha256_i_wb_sel(sha256_i_wb_sel),
 		.sha256_o_wb_ack(sha256_o_wb_ack), .sha256_o_wb_dat(sha256_o_wb_dat),
 		.rg_soft_reset(sha_rg_soft_reset), .p_rg_done_clear(sha_p_rg_done_clear),
@@ -256,11 +247,7 @@ verilatorTest(
 endmodule
 `,
 			);
-			lint(
-				"ext_mix_top",
-				[top, wrapper, fabric, leaf, inlineLeaf, pipeOut],
-				["-Wno-WIDTHEXPAND"],
-			);
+			lint("ext_mix_top", [top, wrapper, fabric, leaf, inlineLeaf, pipeOut]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

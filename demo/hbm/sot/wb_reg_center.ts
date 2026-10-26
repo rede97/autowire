@@ -14,7 +14,7 @@ import {
 export const center = Regfile(
 	"center",
 	"HBM center CSR (fabric-global control)",
-	RegfileDefault.align(4).addrWidth(19).note(`
+	RegfileDefault.align(4).addrWidth(12).note(`
 			Shared by all 16 channels and all pstates: the center block sits in
 			front of channel 0 and is not replicated by the pstate TGA slice.
 		`),

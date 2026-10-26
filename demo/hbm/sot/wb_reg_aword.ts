@@ -17,7 +17,7 @@ export const aword = Regfile(
 	"aword",
 	"HBM aword CSR (command/address lane)",
 	RegfileDefault.align(4)
-		.addrWidth(32)
+		.addrWidth(8) // 0x100 window on hbm_ch
 		.shadows(pstate)
 		.note(`
 			Per-pstate cells are replicated 4x. The bank is selected by the fabric

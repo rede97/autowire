@@ -52,7 +52,7 @@ module hbm_interconnect (
 	output logic        host_i_wb_ack,
 	// Slave center — HBM center CSR (fabric-global control)
 	//   base=0x00000000  size=0x00001000  mask=0x0007f000
-	output logic [18:0] center_i_wb_adr,
+	output logic [11:0] center_i_wb_adr,
 	output logic [31:0] center_i_wb_dat,
 	output logic [3:0]  center_i_wb_sel,
 	output logic        center_i_wb_cyc,
@@ -508,12 +508,18 @@ module hbm_interconnect (
 	//------------------------------------------------------------------------------
 	//  Named slave drive (window offset ADR)
 	//------------------------------------------------------------------------------
-	assign center_i_wb_adr = slot_sel[SLOT_CENTER] ? g_adr_dec & ~19'h7f000 : 19'd0;
+	logic [18:0] center_win_adr;
+	assign center_win_adr = slot_sel[SLOT_CENTER] ? g_adr_dec & ~19'h7f000 : 19'd0;
+	assign center_i_wb_adr = center_win_adr[11:0];
 	assign center_i_wb_dat = g_wdata;
 	assign center_i_wb_sel = g_sel;
 	assign center_i_wb_cyc = slot_sel[SLOT_CENTER] & g_cyc;
 	assign center_i_wb_stb = slot_sel[SLOT_CENTER] & g_stb;
 	assign center_i_wb_we  = g_we;
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_center_win_adr = &{1'b0, center_win_adr[18:12]};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	assign ch0_i_wb_adr    = (slot_sel[SLOT_CH0] || broadcast_ch_all) ? (({19{slot_sel[SLOT_CH0]}} & g_adr_dec) | ({19{broadcast_ch_all}} & ch_all_off)) & ~19'h7f000 : 19'd0;
 	assign ch0_i_wb_dat    = g_wdata;

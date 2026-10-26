@@ -17,7 +17,7 @@ export const dword = Regfile(
 	"dword",
 	"HBM dword CSR (data lane)",
 	RegfileDefault.align(4)
-		.addrWidth(32)
+		.addrWidth(8) // 0x100 window on hbm_ch (dword0 / dword1)
 		.shadows(pstate)
 		.note(`
 			Hung twice per channel (dword0 / dword1) from one RegfileDef, so the

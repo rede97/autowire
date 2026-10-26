@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [Unreleased]
+
+- **接口变更**：fabric（decoder / interconnect / crossbar）上 `SlaveRegfile` 的下游 slave 口 `{id}_i_wb_adr` 改为直接按叶子 `addrWidth` 声明，与 `<name>_regfile` 逐位对齐；其它 slave 与上游 master 口仍是 fabric `addrWidth`。窗内 offset 的截位 / 零扩展从 `<bus>_bus_cfg` 移进 fabric；有 `pipe` 时 `wb_cfg_pipe` 按窗口与叶子中较窄的宽度寄存。wrapper 内置叶子与 `external: true` 的上层叶子都直接同名连接，不再需要 ADR 适配；`-Wno-WIDTHEXPAND` 不再需要。直接例化 fabric 并自行接 regfile ADR 的用户需按新位宽改连接。
+- demo regfile 的 `addrWidth` 改为各自窗口转发的位数，不再统一写 32：demo/soc `sha256` / `smoke` = 6（0x40 窗），demo/hbm `aword` / `dword` = 8（0x100 窗）、`center` = 12（0x1000 窗）。`rtl/gen` 已重新生成；C / uvm_reg / sv_reg 地址图不变。
+
 ## [2.5.10] - 2026-10-26
 
 - `SlaveRegfile(regfile, base, { external })` 新增分离模式（缺省 `false` = 内置，保持现状）。`external: true` 时 `<bus>_bus_cfg` 不再例化该叶子、不提升字段旁路，改为导出该挂接的 fabric WB 窗口口（`{id}_i_wb_*` / `{id}_o_wb_*`，含 shadow 的 `{id}_i_wb_tga_<domain>`），由上层自行例化 `<name>_regfile` 并连接。按挂接点选择，可内外混用；同一 `RegfileDef` 多挂时各挂接点独立。`<name>_regfile.sv` 与软件地址图（C / uvm_reg / Excel / sv_reg）两种模式完全一致。`TagFromReg` 必须引用内置叶子，引用外置挂接 → 构造期报错。契约见 `docs/plugins/wishbone-bus.md` §2.1 / §6、`docs/plugins/wishbone-regfile.md`。

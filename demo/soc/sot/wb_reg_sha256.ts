@@ -28,7 +28,7 @@ export const sha256 = Regfile(
 	"sha256",
 	"SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane",
 	RegfileDefault.align(4)
-		.addrWidth(32)
+		.addrWidth(6) // 0x40 window on sd_sha: 64 B, 9 cells
 		.note(`
 			CTRL is the only SW/HW handshake cell. Glue holds the core in reset
 			while soft_reset stays 1; software must write 0 before the next message.

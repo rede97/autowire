@@ -29,7 +29,7 @@ module hbm_ch_decoder (
 	output logic        cfg_i_wb_ack,
 	// Slave aword — HBM aword CSR (command/address lane)
 	//   base=0x00000000  size=0x00000100  mask=0x00000f00
-	output logic [11:0] aword_i_wb_adr,
+	output logic [7:0]  aword_i_wb_adr,
 	output logic [31:0] aword_i_wb_dat,
 	output logic [3:0]  aword_i_wb_sel,
 	output logic [1:0]  aword_i_wb_tga_pstate,
@@ -40,7 +40,7 @@ module hbm_ch_decoder (
 	input  logic        aword_o_wb_ack,
 	// Slave dword0 — HBM dword CSR (data lane)
 	//   base=0x00000100  size=0x00000100  mask=0x00000f00
-	output logic [11:0] dword0_i_wb_adr,
+	output logic [7:0]  dword0_i_wb_adr,
 	output logic [31:0] dword0_i_wb_dat,
 	output logic [3:0]  dword0_i_wb_sel,
 	output logic [1:0]  dword0_i_wb_tga_pstate,
@@ -51,7 +51,7 @@ module hbm_ch_decoder (
 	input  logic        dword0_o_wb_ack,
 	// Slave dword1 — HBM dword CSR (data lane)
 	//   base=0x00000200  size=0x00000100  mask=0x00000f00
-	output logic [11:0] dword1_i_wb_adr,
+	output logic [7:0]  dword1_i_wb_adr,
 	output logic [31:0] dword1_i_wb_dat,
 	output logic [3:0]  dword1_i_wb_sel,
 	output logic [1:0]  dword1_i_wb_tga_pstate,
@@ -141,29 +141,47 @@ module hbm_ch_decoder (
 	//------------------------------------------------------------------------------
 	//  Named slave drive (window offset ADR)
 	//------------------------------------------------------------------------------
-	assign aword_i_wb_adr  = slot_sel[SLOT_AWORD] ? g_adr & ~12'hf00 : 12'd0;
+	logic [11:0] aword_win_adr;
+	assign aword_win_adr = slot_sel[SLOT_AWORD] ? g_adr & ~12'hf00 : 12'd0;
+	assign aword_i_wb_adr  = aword_win_adr[7:0];
 	assign aword_i_wb_dat  = g_wdata;
 	assign aword_i_wb_sel  = g_sel;
 	assign aword_i_wb_tga_pstate = g_tga_pstate;
 	assign aword_i_wb_cyc  = slot_sel[SLOT_AWORD] & g_cyc;
 	assign aword_i_wb_stb  = slot_sel[SLOT_AWORD] & g_stb;
 	assign aword_i_wb_we   = g_we;
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_aword_win_adr = &{1'b0, aword_win_adr[11:8]};
+	/* verilator lint_on UNUSEDSIGNAL */
 
-	assign dword0_i_wb_adr = (slot_sel[SLOT_DWORD0] || broadcast_dword_all) ? (({12{slot_sel[SLOT_DWORD0]}} & g_adr) | ({12{broadcast_dword_all}} & dword_all_off)) & ~12'hf00 : 12'd0;
+	logic [11:0] dword0_win_adr;
+	assign dword0_win_adr = (slot_sel[SLOT_DWORD0] || broadcast_dword_all) ? (({12{slot_sel[SLOT_DWORD0]}} & g_adr) | ({12{broadcast_dword_all}} & dword_all_off)) & ~12'hf00 : 12'd0;
+	assign dword0_i_wb_adr = dword0_win_adr[7:0];
 	assign dword0_i_wb_dat = g_wdata;
 	assign dword0_i_wb_sel = g_sel;
 	assign dword0_i_wb_tga_pstate = g_tga_pstate;
 	assign dword0_i_wb_cyc = (slot_sel[SLOT_DWORD0] || broadcast_dword_all) & g_cyc;
 	assign dword0_i_wb_stb = (slot_sel[SLOT_DWORD0] || (broadcast_dword_all & !broadcast_dword_all_done[0])) & g_stb;
 	assign dword0_i_wb_we  = g_we;
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_dword0_win_adr = &{1'b0, dword0_win_adr[11:8]};
+	/* verilator lint_on UNUSEDSIGNAL */
 
-	assign dword1_i_wb_adr = (slot_sel[SLOT_DWORD1] || broadcast_dword_all) ? (({12{slot_sel[SLOT_DWORD1]}} & g_adr) | ({12{broadcast_dword_all}} & dword_all_off)) & ~12'hf00 : 12'd0;
+	logic [11:0] dword1_win_adr;
+	assign dword1_win_adr = (slot_sel[SLOT_DWORD1] || broadcast_dword_all) ? (({12{slot_sel[SLOT_DWORD1]}} & g_adr) | ({12{broadcast_dword_all}} & dword_all_off)) & ~12'hf00 : 12'd0;
+	assign dword1_i_wb_adr = dword1_win_adr[7:0];
 	assign dword1_i_wb_dat = g_wdata;
 	assign dword1_i_wb_sel = g_sel;
 	assign dword1_i_wb_tga_pstate = g_tga_pstate;
 	assign dword1_i_wb_cyc = (slot_sel[SLOT_DWORD1] || broadcast_dword_all) & g_cyc;
 	assign dword1_i_wb_stb = (slot_sel[SLOT_DWORD1] || (broadcast_dword_all & !broadcast_dword_all_done[1])) & g_stb;
 	assign dword1_i_wb_we  = g_we;
+	// Protocol nets this topology declares but does not consume.
+	/* verilator lint_off UNUSEDSIGNAL */
+	wire _unused_dword1_win_adr = &{1'b0, dword1_win_adr[11:8]};
+	/* verilator lint_on UNUSEDSIGNAL */
 
 	logic [31:0] rsp_dat;
 	logic        rsp_ack;

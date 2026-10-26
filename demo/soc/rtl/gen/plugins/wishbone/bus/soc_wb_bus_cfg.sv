@@ -162,7 +162,7 @@ module soc_wb_bus_cfg (
 	output logic [31:0] rg_key_2
 );
 	// Internal WB: fabric slave smoke ↔ smoke_regfile
-	logic [31:0] smoke_i_wb_adr;
+	logic [5:0]  smoke_i_wb_adr;
 	logic [31:0] smoke_i_wb_dat;
 	logic [3:0]  smoke_i_wb_sel;
 	logic [1:0]  smoke_i_wb_tga_bank;
@@ -321,7 +321,7 @@ module soc_wb_bus_cfg (
 		.ch1_i_wb_we        (ch1_i_wb_we        ), // o
 		.ch1_o_wb_dat       (ch1_o_wb_dat       ), // i [31:0]
 		.ch1_o_wb_ack       (ch1_o_wb_ack       ), // i
-		.smoke_i_wb_adr     (smoke_i_wb_adr     ), // o [31:0]
+		.smoke_i_wb_adr     (smoke_i_wb_adr     ), // o [5:0]
 		.smoke_i_wb_dat     (smoke_i_wb_dat     ), // o [31:0]
 		.smoke_i_wb_sel     (smoke_i_wb_sel     ), // o [3:0]
 		.smoke_i_wb_tga_bank(smoke_i_wb_tga_bank), // o [1:0]
@@ -337,7 +337,7 @@ module soc_wb_bus_cfg (
 		.smoke_i_wb_cyc     (smoke_i_wb_cyc     ), // i
 		.smoke_i_wb_stb     (smoke_i_wb_stb     ), // i
 		.smoke_i_wb_we      (smoke_i_wb_we      ), // i
-		.smoke_i_wb_adr     (smoke_i_wb_adr     ), // i [31:0]
+		.smoke_i_wb_adr     (smoke_i_wb_adr     ), // i [5:0]
 		.smoke_i_wb_dat     (smoke_i_wb_dat     ), // i [31:0]
 		.smoke_i_wb_sel     (smoke_i_wb_sel     ), // i [3:0]
 		.smoke_i_wb_tga_bank(smoke_i_wb_tga_bank), // i [1:0]

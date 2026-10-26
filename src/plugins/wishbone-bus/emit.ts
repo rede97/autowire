@@ -8,6 +8,7 @@ import { domainWidth, tagDomainsWidth } from "./dsl.ts";
 import {
 	type FabricPort,
 	masterEndpointPorts,
+	slaveAddrWidth,
 	slaveEndpointPorts,
 	type WbRole,
 	wbPortName,
@@ -118,6 +119,32 @@ function emitUnusedSink(id: string, terms: readonly string[]): string[] {
 		`\twire _unused_${id} = &{1'b0, ${terms.join(", ")}};`,
 		"\t/* verilator lint_on UNUSEDSIGNAL */",
 	];
+}
+
+/**
+ * Fit the window-relative ADR (`aw` bits, everything above the window is 0)
+ * to the slave port width. A regfile port is the leaf `addrWidth`: narrower
+ * slices off constant-zero high bits, wider zero-fills. `Bus()` rejects a
+ * window that forwards more bits than the leaf decodes, so neither loses data.
+ */
+function fitSlaveAdr(
+	s: WbSlave,
+	def: BusDef,
+	aw: number,
+	win: string,
+): { pre: string[]; expr: string; post: string[] } {
+	const lw = slaveAddrWidth(def, s);
+	if (lw === aw) return { pre: [], expr: win, post: [] };
+	if (lw > aw) return { pre: [], expr: `{${lw - aw}'d0, (${win})}`, post: [] };
+	const net = `${s.name}_win_adr`;
+	return {
+		pre: [
+			`\tlogic ${packedRange(aw).padEnd(7)}${net};`,
+			`\tassign ${net} = ${win};`,
+		],
+		expr: `${net}[${lw - 1}:0]`,
+		post: emitUnusedSink(net, [`${net}[${aw - 1}:${lw}]`]),
+	};
 }
 
 /** Flattened fabric ports (clk/rst first; then masters; then slaves). */
@@ -1143,8 +1170,15 @@ function emitSlaveCombo(
 					.filter((term) => term !== "")
 					.join(" | ");
 	const masked = bcast.length === 0 ? offset : ["(", offset, ")"].join("");
+	const fit = fitSlaveAdr(
+		s,
+		def,
+		aw,
+		`${hit} ? ${masked} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0`,
+	);
 	const out = [
-		`\tassign ${port("adr")} = ${hit} ? ${masked} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0;`,
+		...fit.pre,
+		`\tassign ${port("adr")} = ${fit.expr};`,
 		`\tassign ${port("wdat")} = ${gPrefix}wdata;`,
 		`\tassign ${port("sel")} = ${gPrefix}sel;`,
 	];
@@ -1157,6 +1191,7 @@ function emitSlaveCombo(
 		`\tassign ${port("cyc")} = ${hit} & ${gPrefix}cyc;`,
 		`\tassign ${port("stb")} = ${strobeHit} & ${gPrefix}stb;`,
 		`\tassign ${port("we")} = ${gPrefix}we;`,
+		...fit.post,
 	);
 	return out;
 }
@@ -1275,7 +1310,14 @@ function emitSlavePipe(
 					.filter((term) => term !== "")
 					.join(" | ");
 	const masked = bcast.length === 0 ? offset : ["(", offset, ")"].join("");
-	const winAdr = `${hit} ? ${masked} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0`;
+	const win = `${hit} ? ${masked} & ~${aw}'h${hex(s.mask, aw)} : ${aw}'d0`;
+	const lw = slaveAddrWidth(def, s);
+	// The pipe registers the narrower of window and leaf ADR: a narrower leaf
+	// is sliced before the pipe, a wider leaf is zero-filled after it.
+	const fit =
+		lw < aw ? fitSlaveAdr(s, def, aw, win) : { pre: [], expr: win, post: [] };
+	const paw = Math.min(lw, aw);
+	const pipeAdr = lw > aw ? `${n}_pipe_adr` : wbPortName("slave", n, "adr");
 	const ack = `${n}_pipe_ack`;
 	const rdat = `${n}_pipe_rdat`;
 	const nc = `u_${n}_pipe_tga_nc`;
@@ -1283,16 +1325,18 @@ function emitSlavePipe(
 		"\t//------------------------------------------------------------------------------",
 		`\t//  Slave ${n} — wb_cfg_pipe PIPE=${pipe} (posted write / blocking read)`,
 		"\t//------------------------------------------------------------------------------",
+		...fit.pre,
+		...(lw > aw ? [`\tlogic ${packedRange(aw).padEnd(7)}${pipeAdr};`] : []),
 		`\tlogic        ${ack};`,
 		`\tlogic [31:0] ${rdat};`,
 		...(st === 0 ? [`\tlogic        ${nc};`] : []),
-		`\twb_cfg_pipe #(.PIPE(${pipe}), .AW(${aw}), .TW(${st > 0 ? st : 1})) u_${n}_pipe (`,
+		`\twb_cfg_pipe #(.PIPE(${pipe}), .AW(${paw}), .TW(${st > 0 ? st : 1})) u_${n}_pipe (`,
 		"\t\t.clk(clk),",
 		"\t\t.rst_n(rst_n),",
 		`\t\t.m_cyc(${hit} & ${gPrefix}cyc),`,
 		`\t\t.m_stb(${strobeHit} & ${gPrefix}stb),`,
 		`\t\t.m_we(${gPrefix}we),`,
-		`\t\t.m_adr(${winAdr}),`,
+		`\t\t.m_adr(${fit.expr}),`,
 		`\t\t.m_dat(${gPrefix}wdata),`,
 		`\t\t.m_sel(${gPrefix}sel),`,
 	];
@@ -1310,7 +1354,7 @@ function emitSlavePipe(
 		`\t\t.s_cyc(${wbPortName("slave", n, "cyc")}),`,
 		`\t\t.s_stb(${wbPortName("slave", n, "stb")}),`,
 		`\t\t.s_we(${wbPortName("slave", n, "we")}),`,
-		`\t\t.s_adr(${wbPortName("slave", n, "adr")}),`,
+		`\t\t.s_adr(${pipeAdr}),`,
 		`\t\t.s_dat(${wbPortName("slave", n, "wdat")}),`,
 		`\t\t.s_sel(${wbPortName("slave", n, "sel")}),`,
 	);
@@ -1323,6 +1367,12 @@ function emitSlavePipe(
 		"\t);",
 	);
 	if (st === 0) out.push(...emitUnusedSink(nc, [nc]));
+	out.push(...fit.post);
+	if (lw > aw) {
+		out.push(
+			`\tassign ${wbPortName("slave", n, "adr")} = {${lw - aw}'d0, ${pipeAdr}};`,
+		);
+	}
 	return out;
 }
 

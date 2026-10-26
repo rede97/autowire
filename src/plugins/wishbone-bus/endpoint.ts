@@ -105,6 +105,14 @@ export function masterEndpointPorts(
 	);
 }
 
+/**
+ * A regfile slave port carries the leaf's own ADR width, so the downstream
+ * face plugs straight into `<name>_regfile`. Other slaves keep the fabric width.
+ */
+export function slaveAddrWidth(def: BusDef, s: WbSlave): number {
+	return s.regfile?.addr_width ?? def.addr_width;
+}
+
 export function slaveEndpointPorts(def: BusDef, s: WbSlave): WbEndpointPort[] {
 	const tags = s.regfile
 		? s.regfile.shadows.map((shadow) => ({
@@ -116,5 +124,5 @@ export function slaveEndpointPorts(def: BusDef, s: WbSlave): WbEndpointPort[] {
 			: (s.tag ?? 0) > 0
 				? [{ domain: "tag", width: s.tag as number }]
 				: [];
-	return wbEndpointPorts("slave", s.name, def.addr_width, tags);
+	return wbEndpointPorts("slave", s.name, slaveAddrWidth(def, s), tags);
 }

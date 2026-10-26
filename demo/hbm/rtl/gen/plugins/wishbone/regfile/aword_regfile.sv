@@ -3,15 +3,15 @@
 //------------------------------------------------------------------------------
 //  Module: aword_regfile
 //  Desc:   HBM aword CSR (command/address lane)
-//  Addr width: 32
+//  Addr width: 8
 //  Cells: 4
 //  read_write_block: false
 //------------------------------------------------------------------------------
 //  Address map:
-//    0x00000000  ID     — Lane identity
-//    0x00000004  STATUS — Lane status
-//    0x00000008  TIMING — Per-pstate command timing  shadow=pstate
-//    0x0000000c  DRIVE  — Per-pstate output drive  shadow=pstate
+//    0x00  ID     — Lane identity
+//    0x04  STATUS — Lane status
+//    0x08  TIMING — Per-pstate command timing  shadow=pstate
+//    0x0c  DRIVE  — Per-pstate output drive  shadow=pstate
 //------------------------------------------------------------------------------
 
 module aword_regfile (
@@ -27,7 +27,7 @@ module aword_regfile (
 	// Wishbone WE (1=write, 0=read)
 	input  logic        aword_i_wb_we,
 	// Wishbone ADR (byte address; word decode uses [addr_width-1:2])
-	input  logic [31:0] aword_i_wb_adr,
+	input  logic [7:0]  aword_i_wb_adr,
 	// Wishbone write data
 	input  logic [31:0] aword_i_wb_dat,
 	// Wishbone byte select
@@ -82,23 +82,23 @@ module aword_regfile (
 	//  2. Address decode / hit / wr_sel / rd_sel
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000000  RegCell: ID     — Lane identity
+	// Addr: 0x00  RegCell: ID     — Lane identity
 	//   [15:0]   RC  magic    — Magic
 	//   [31:16]  RC  version  — Version
-	assign addr_hit_0 = (aword_i_wb_adr[31:2] == 30'd0);
-	// Addr: 0x00000004  RegCell: STATUS — Lane status
+	assign addr_hit_0 = (aword_i_wb_adr[7:2] == 6'd0);
+	// Addr: 0x04  RegCell: STATUS — Lane status
 	//   [0]      RO  cal_done — Calibration done
 	//   [15:8]   RO  err_code — Last error code
-	assign addr_hit_4 = (aword_i_wb_adr[31:2] == 30'd1);
-	// Addr: 0x00000008  RegCell: TIMING — Per-pstate command timing
+	assign addr_hit_4 = (aword_i_wb_adr[7:2] == 6'd1);
+	// Addr: 0x08  RegCell: TIMING — Per-pstate command timing
 	//   shadow=pstate
 	//   [7:0]    RW  trcd     — RAS-to-CAS delay (clk)
 	//   [15:8]   RW  trp      — Row precharge (clk)
-	assign addr_hit_8 = (aword_i_wb_adr[31:2] == 30'd2);
-	// Addr: 0x0000000c  RegCell: DRIVE  — Per-pstate output drive
+	assign addr_hit_8 = (aword_i_wb_adr[7:2] == 6'd2);
+	// Addr: 0x0c  RegCell: DRIVE  — Per-pstate output drive
 	//   shadow=pstate
 	//   [3:0]    RW  ca_drive — CA driver strength
-	assign addr_hit_c = (aword_i_wb_adr[31:2] == 30'd3);
+	assign addr_hit_c = (aword_i_wb_adr[7:2] == 6'd3);
 	assign wr_fire = aword_i_wb_cyc && aword_i_wb_stb &&  aword_i_wb_we;
 	assign rd_fire = aword_i_wb_cyc && aword_i_wb_stb && ~aword_i_wb_we;
 
@@ -131,15 +131,15 @@ module aword_regfile (
 	//  4. Field storage / sideband glue
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000000  RegCell: ID     — Lane identity
+	// Addr: 0x00  RegCell: ID     — Lane identity
 	//   [15:0]   RC  magic    — Magic
 	//   [31:16]  RC  version  — Version
 
-	// Addr: 0x00000004  RegCell: STATUS — Lane status
+	// Addr: 0x04  RegCell: STATUS — Lane status
 	//   [0]      RO  cal_done — Calibration done
 	//   [15:8]   RO  err_code — Last error code
 
-	// Addr: 0x00000008  RegCell: TIMING — Per-pstate command timing
+	// Addr: 0x08  RegCell: TIMING — Per-pstate command timing
 	//   shadow=pstate
 	//   [7:0]    RW  trcd     — RAS-to-CAS delay (clk)
 	//   [15:8]   RW  trp      — Row precharge (clk)
@@ -187,7 +187,7 @@ module aword_regfile (
 	assign rg_trcd = rg_trcd_q[i_pstate_mux_sel];
 	assign rg_trp = rg_trp_q[i_pstate_mux_sel];
 
-	// Addr: 0x0000000c  RegCell: DRIVE  — Per-pstate output drive
+	// Addr: 0x0c  RegCell: DRIVE  — Per-pstate output drive
 	//   shadow=pstate
 	//   [3:0]    RW  ca_drive — CA driver strength
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
@@ -223,28 +223,28 @@ module aword_regfile (
 	always_comb begin
 		rd_data = 32'h0;
 		unique case (1'b1)
-			// ID @ 0x00000000
+			// ID @ 0x00
 			rd_sel_0: begin
 				// RC [15:0]  magic    — Magic
 				rd_data[15:0] = 16'ha570;
 				// RC [31:16] version  — Version
 				rd_data[31:16] = 16'h1;
 			end
-			// STATUS @ 0x00000004
+			// STATUS @ 0x04
 			rd_sel_4: begin
 				// RO [0]     cal_done — Calibration done
 				rd_data[0] = ro_cal_done;
 				// RO [15:8]  err_code — Last error code
 				rd_data[15:8] = ro_err_code;
 			end
-			// TIMING @ 0x00000008
+			// TIMING @ 0x08
 			rd_sel_8: begin
 				// RW [7:0]   trcd     — RAS-to-CAS delay (clk)
 				rd_data[7:0] = (mask_pstate[0] ? rg_trcd_q[0] : 8'h0) | (mask_pstate[1] ? rg_trcd_q[1] : 8'h0) | (mask_pstate[2] ? rg_trcd_q[2] : 8'h0) | (mask_pstate[3] ? rg_trcd_q[3] : 8'h0);
 				// RW [15:8]  trp      — Row precharge (clk)
 				rd_data[15:8] = (mask_pstate[0] ? rg_trp_q[0] : 8'h0) | (mask_pstate[1] ? rg_trp_q[1] : 8'h0) | (mask_pstate[2] ? rg_trp_q[2] : 8'h0) | (mask_pstate[3] ? rg_trp_q[3] : 8'h0);
 			end
-			// DRIVE @ 0x0000000c
+			// DRIVE @ 0x0c
 			rd_sel_c: begin
 				// RW [3:0]   ca_drive — CA driver strength
 				rd_data[3:0] = (mask_pstate[0] ? rg_ca_drive_q[0] : 4'h0) | (mask_pstate[1] ? rg_ca_drive_q[1] : 4'h0) | (mask_pstate[2] ? rg_ca_drive_q[2] : 4'h0) | (mask_pstate[3] ? rg_ca_drive_q[3] : 4'h0);

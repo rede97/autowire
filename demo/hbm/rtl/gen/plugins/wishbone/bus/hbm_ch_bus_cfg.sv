@@ -79,7 +79,7 @@ module hbm_ch_bus_cfg (
 	output logic [4:0] dword1_rg_tap1
 );
 	// Internal WB: fabric slave aword ↔ aword_regfile
-	logic [11:0] aword_i_wb_adr;
+	logic [7:0] aword_i_wb_adr;
 	logic [31:0] aword_i_wb_dat;
 	logic [3:0] aword_i_wb_sel;
 	logic [1:0] aword_i_wb_tga_pstate;
@@ -89,7 +89,7 @@ module hbm_ch_bus_cfg (
 	logic [31:0] aword_o_wb_dat;
 	logic aword_o_wb_ack;
 	// Internal WB: fabric slave dword0 ↔ dword_regfile
-	logic [11:0] dword0_i_wb_adr;
+	logic [7:0] dword0_i_wb_adr;
 	logic [31:0] dword0_i_wb_dat;
 	logic [3:0] dword0_i_wb_sel;
 	logic [1:0] dword0_i_wb_tga_pstate;
@@ -99,7 +99,7 @@ module hbm_ch_bus_cfg (
 	logic [31:0] dword0_o_wb_dat;
 	logic dword0_o_wb_ack;
 	// Internal WB: fabric slave dword1 ↔ dword_regfile
-	logic [11:0] dword1_i_wb_adr;
+	logic [7:0] dword1_i_wb_adr;
 	logic [31:0] dword1_i_wb_dat;
 	logic [3:0] dword1_i_wb_sel;
 	logic [1:0] dword1_i_wb_tga_pstate;
@@ -155,7 +155,7 @@ module hbm_ch_bus_cfg (
 		.aword_i_wb_cyc(aword_i_wb_cyc),
 		.aword_i_wb_stb(aword_i_wb_stb),
 		.aword_i_wb_we(aword_i_wb_we),
-		.aword_i_wb_adr({20'd0, aword_i_wb_adr}),
+		.aword_i_wb_adr(aword_i_wb_adr),
 		.aword_i_wb_dat(aword_i_wb_dat),
 		.aword_i_wb_sel(aword_i_wb_sel),
 		.aword_i_wb_tga_pstate(aword_i_wb_tga_pstate),
@@ -175,7 +175,7 @@ module hbm_ch_bus_cfg (
 		.dword_i_wb_cyc(dword0_i_wb_cyc),
 		.dword_i_wb_stb(dword0_i_wb_stb),
 		.dword_i_wb_we(dword0_i_wb_we),
-		.dword_i_wb_adr({20'd0, dword0_i_wb_adr}),
+		.dword_i_wb_adr(dword0_i_wb_adr),
 		.dword_i_wb_dat(dword0_i_wb_dat),
 		.dword_i_wb_sel(dword0_i_wb_sel),
 		.dword_i_wb_tga_pstate(dword0_i_wb_tga_pstate),
@@ -196,7 +196,7 @@ module hbm_ch_bus_cfg (
 		.dword_i_wb_cyc(dword1_i_wb_cyc),
 		.dword_i_wb_stb(dword1_i_wb_stb),
 		.dword_i_wb_we(dword1_i_wb_we),
-		.dword_i_wb_adr({20'd0, dword1_i_wb_adr}),
+		.dword_i_wb_adr(dword1_i_wb_adr),
 		.dword_i_wb_dat(dword1_i_wb_dat),
 		.dword_i_wb_sel(dword1_i_wb_sel),
 		.dword_i_wb_tga_pstate(dword1_i_wb_tga_pstate),

@@ -128,8 +128,9 @@ Parallel (does not block connect)
       a child addrWidth may not exceed its parent, nor the bits the parent
       window actually forwards; an attached regfile addrWidth may not be
       smaller than the bits its window forwards (wider is fine);
-      <bus>_bus_cfg slices (fabric wider) or zero-fills (fabric narrower)
-      the regfile ADR to the leaf addrWidth;
+      a SlaveRegfile slave port is the leaf addrWidth: the fabric slices
+      (fabric wider) or zero-fills (fabric narrower) the window offset, and the
+      wrapper / an external hang connects the leaf ADR directly;
       one TagFromAddr per decoder, sitting directly above the slave windows
       and not past addrWidth-1 (bits above the tag and inside addrWidth are
       discarded; decode keeps only the low bits; no hole, no re-pack);
@@ -189,7 +190,7 @@ Parallel (does not block connect)
     Type-A wrapper <bus>_bus_cfg instantiates fabric + inline *_regfile
     (sidebands promoted; WB internalized; HTML aw-inst soc_wb_bus_cfg / sd_sha_bus_cfg);
     SlaveRegfile external: true leaves the leaf above the wrapper instead:
-    the wrapper exports that hang's fabric WB window ({id}_i_wb_* / {id}_o_wb_*),
+    the wrapper exports that hang's leaf-width WB ports ({id}_i_wb_* / {id}_o_wb_*),
     no leaf inst, no promoted sidebands; the *_regfile.sv and the software map
     (C / uvm_reg / Excel / sv_reg) are identical either way; default is inline;
     TagFromReg must reference an inline leaf (an external hang's regbit errors);

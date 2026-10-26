@@ -3,20 +3,20 @@
 //------------------------------------------------------------------------------
 //  Module: sha256_regfile
 //  Desc:   SHA256 CSR (CTRL + HASH0..7); instantiate once per fabric lane
-//  Addr width: 32
+//  Addr width: 6
 //  Cells: 9
 //  read_write_block: false
 //------------------------------------------------------------------------------
 //  Address map:
-//    0x00000000  CTRL  — Control / status
-//    0x00000004  HASH0 — Digest word 0
-//    0x00000008  HASH1 — Digest word 1
-//    0x0000000c  HASH2 — Digest word 2
-//    0x00000010  HASH3 — Digest word 3
-//    0x00000014  HASH4 — Digest word 4
-//    0x00000018  HASH5 — Digest word 5
-//    0x0000001c  HASH6 — Digest word 6
-//    0x00000020  HASH7 — Digest word 7
+//    0x00  CTRL  — Control / status
+//    0x04  HASH0 — Digest word 0
+//    0x08  HASH1 — Digest word 1
+//    0x0c  HASH2 — Digest word 2
+//    0x10  HASH3 — Digest word 3
+//    0x14  HASH4 — Digest word 4
+//    0x18  HASH5 — Digest word 5
+//    0x1c  HASH6 — Digest word 6
+//    0x20  HASH7 — Digest word 7
 //------------------------------------------------------------------------------
 
 module sha256_regfile (
@@ -32,7 +32,7 @@ module sha256_regfile (
 	// Wishbone WE (1=write, 0=read)
 	input  logic        sha256_i_wb_we,
 	// Wishbone ADR (byte address; word decode uses [addr_width-1:2])
-	input  logic [31:0] sha256_i_wb_adr,
+	input  logic [5:0]  sha256_i_wb_adr,
 	// Wishbone write data
 	input  logic [31:0] sha256_i_wb_dat,
 	// Wishbone byte select
@@ -100,36 +100,36 @@ module sha256_regfile (
 	//  2. Address decode / hit / wr_sel / rd_sel
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000000  RegCell: CTRL  — Control / status
+	// Addr: 0x00  RegCell: CTRL  — Control / status
 	//   [0]     RW   soft_reset — Soft reset hash core
 	//   [1]     W1P  done_clear — Write 1 → pulse; glue clears sticky done
 	//   [8]     RO   busy       — Hash core busy
 	//   [9]     RO   done       — Sticky done (from glue)
-	assign addr_hit_0 = (sha256_i_wb_adr[31:2] == 30'd0);
-	// Addr: 0x00000004  RegCell: HASH0 — Digest word 0
+	assign addr_hit_0 = (sha256_i_wb_adr[5:2] == 4'd0);
+	// Addr: 0x04  RegCell: HASH0 — Digest word 0
 	//   [31:0]  RO   hash0      — hash0
-	assign addr_hit_4 = (sha256_i_wb_adr[31:2] == 30'd1);
-	// Addr: 0x00000008  RegCell: HASH1 — Digest word 1
+	assign addr_hit_4 = (sha256_i_wb_adr[5:2] == 4'd1);
+	// Addr: 0x08  RegCell: HASH1 — Digest word 1
 	//   [31:0]  RO   hash1      — hash1
-	assign addr_hit_8 = (sha256_i_wb_adr[31:2] == 30'd2);
-	// Addr: 0x0000000c  RegCell: HASH2 — Digest word 2
+	assign addr_hit_8 = (sha256_i_wb_adr[5:2] == 4'd2);
+	// Addr: 0x0c  RegCell: HASH2 — Digest word 2
 	//   [31:0]  RO   hash2      — hash2
-	assign addr_hit_c = (sha256_i_wb_adr[31:2] == 30'd3);
-	// Addr: 0x00000010  RegCell: HASH3 — Digest word 3
+	assign addr_hit_c = (sha256_i_wb_adr[5:2] == 4'd3);
+	// Addr: 0x10  RegCell: HASH3 — Digest word 3
 	//   [31:0]  RO   hash3      — hash3
-	assign addr_hit_10 = (sha256_i_wb_adr[31:2] == 30'd4);
-	// Addr: 0x00000014  RegCell: HASH4 — Digest word 4
+	assign addr_hit_10 = (sha256_i_wb_adr[5:2] == 4'd4);
+	// Addr: 0x14  RegCell: HASH4 — Digest word 4
 	//   [31:0]  RO   hash4      — hash4
-	assign addr_hit_14 = (sha256_i_wb_adr[31:2] == 30'd5);
-	// Addr: 0x00000018  RegCell: HASH5 — Digest word 5
+	assign addr_hit_14 = (sha256_i_wb_adr[5:2] == 4'd5);
+	// Addr: 0x18  RegCell: HASH5 — Digest word 5
 	//   [31:0]  RO   hash5      — hash5
-	assign addr_hit_18 = (sha256_i_wb_adr[31:2] == 30'd6);
-	// Addr: 0x0000001c  RegCell: HASH6 — Digest word 6
+	assign addr_hit_18 = (sha256_i_wb_adr[5:2] == 4'd6);
+	// Addr: 0x1c  RegCell: HASH6 — Digest word 6
 	//   [31:0]  RO   hash6      — hash6
-	assign addr_hit_1c = (sha256_i_wb_adr[31:2] == 30'd7);
-	// Addr: 0x00000020  RegCell: HASH7 — Digest word 7
+	assign addr_hit_1c = (sha256_i_wb_adr[5:2] == 4'd7);
+	// Addr: 0x20  RegCell: HASH7 — Digest word 7
 	//   [31:0]  RO   hash7      — hash7
-	assign addr_hit_20 = (sha256_i_wb_adr[31:2] == 30'd8);
+	assign addr_hit_20 = (sha256_i_wb_adr[5:2] == 4'd8);
 	assign wr_fire = sha256_i_wb_cyc && sha256_i_wb_stb &&  sha256_i_wb_we;
 	assign rd_fire = sha256_i_wb_cyc && sha256_i_wb_stb && ~sha256_i_wb_we;
 
@@ -148,7 +148,7 @@ module sha256_regfile (
 	//  4. Field storage / sideband glue
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000000  RegCell: CTRL  — Control / status
+	// Addr: 0x00  RegCell: CTRL  — Control / status
 	//   [0]     RW   soft_reset — Soft reset hash core
 	//   [1]     W1P  done_clear — Write 1 → pulse; glue clears sticky done
 	//   [8]     RO   busy       — Hash core busy
@@ -169,28 +169,28 @@ module sha256_regfile (
 	end
 	assign rg_soft_reset = rg_soft_reset_q;
 
-	// Addr: 0x00000004  RegCell: HASH0 — Digest word 0
+	// Addr: 0x04  RegCell: HASH0 — Digest word 0
 	//   [31:0]  RO   hash0      — hash0
 
-	// Addr: 0x00000008  RegCell: HASH1 — Digest word 1
+	// Addr: 0x08  RegCell: HASH1 — Digest word 1
 	//   [31:0]  RO   hash1      — hash1
 
-	// Addr: 0x0000000c  RegCell: HASH2 — Digest word 2
+	// Addr: 0x0c  RegCell: HASH2 — Digest word 2
 	//   [31:0]  RO   hash2      — hash2
 
-	// Addr: 0x00000010  RegCell: HASH3 — Digest word 3
+	// Addr: 0x10  RegCell: HASH3 — Digest word 3
 	//   [31:0]  RO   hash3      — hash3
 
-	// Addr: 0x00000014  RegCell: HASH4 — Digest word 4
+	// Addr: 0x14  RegCell: HASH4 — Digest word 4
 	//   [31:0]  RO   hash4      — hash4
 
-	// Addr: 0x00000018  RegCell: HASH5 — Digest word 5
+	// Addr: 0x18  RegCell: HASH5 — Digest word 5
 	//   [31:0]  RO   hash5      — hash5
 
-	// Addr: 0x0000001c  RegCell: HASH6 — Digest word 6
+	// Addr: 0x1c  RegCell: HASH6 — Digest word 6
 	//   [31:0]  RO   hash6      — hash6
 
-	// Addr: 0x00000020  RegCell: HASH7 — Digest word 7
+	// Addr: 0x20  RegCell: HASH7 — Digest word 7
 	//   [31:0]  RO   hash7      — hash7
 
 
@@ -201,7 +201,7 @@ module sha256_regfile (
 	always_comb begin
 		rd_data = 32'h0;
 		unique case (1'b1)
-			// CTRL @ 0x00000000
+			// CTRL @ 0x00
 			rd_sel_0: begin
 				// RW  [0]    soft_reset — Soft reset hash core
 				rd_data[0] = rg_soft_reset_q;
@@ -212,42 +212,42 @@ module sha256_regfile (
 				// RO  [9]    done       — Sticky done (from glue)
 				rd_data[9] = ro_done;
 			end
-			// HASH0 @ 0x00000004
+			// HASH0 @ 0x04
 			rd_sel_4: begin
 				// RO  [31:0] hash0      — hash0
 				rd_data[31:0] = ro_hash0;
 			end
-			// HASH1 @ 0x00000008
+			// HASH1 @ 0x08
 			rd_sel_8: begin
 				// RO  [31:0] hash1      — hash1
 				rd_data[31:0] = ro_hash1;
 			end
-			// HASH2 @ 0x0000000c
+			// HASH2 @ 0x0c
 			rd_sel_c: begin
 				// RO  [31:0] hash2      — hash2
 				rd_data[31:0] = ro_hash2;
 			end
-			// HASH3 @ 0x00000010
+			// HASH3 @ 0x10
 			rd_sel_10: begin
 				// RO  [31:0] hash3      — hash3
 				rd_data[31:0] = ro_hash3;
 			end
-			// HASH4 @ 0x00000014
+			// HASH4 @ 0x14
 			rd_sel_14: begin
 				// RO  [31:0] hash4      — hash4
 				rd_data[31:0] = ro_hash4;
 			end
-			// HASH5 @ 0x00000018
+			// HASH5 @ 0x18
 			rd_sel_18: begin
 				// RO  [31:0] hash5      — hash5
 				rd_data[31:0] = ro_hash5;
 			end
-			// HASH6 @ 0x0000001c
+			// HASH6 @ 0x1c
 			rd_sel_1c: begin
 				// RO  [31:0] hash6      — hash6
 				rd_data[31:0] = ro_hash6;
 			end
-			// HASH7 @ 0x00000020
+			// HASH7 @ 0x20
 			rd_sel_20: begin
 				// RO  [31:0] hash7      — hash7
 				rd_data[31:0] = ro_hash7;

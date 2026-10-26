@@ -3,25 +3,25 @@
 //------------------------------------------------------------------------------
 //  Module: smoke_regfile
 //  Desc:   SoC regfile smoke bank (RC/RO/RW/RWW/RWE/W1P/W1C/shadow/wide)
-//  Addr width: 32
+//  Addr width: 6
 //  Cells: 14
 //  read_write_block: true
 //------------------------------------------------------------------------------
 //  Address map:
-//    0x00000000  ID        — RC identity
-//    0x00000004  STATUS    — RO status
-//    0x00000008  CFG       — RW config
-//    0x0000000c  FEED      — RWW capture
-//    0x00000010  FIFO      — RWE window
-//    0x00000014  CMD       — W1P pulse
-//    0x00000018  IRQ       — W1C sticky
-//    0x0000001c  BANK      — Shadowed RW  shadow=bank
-//    0x0000002c  BANKSEL   — Saved working bank
-//    0x00000034  ACTIVE    — Muxed working cfg
-//    0x00000030  FABRIC    — Wishbone interconnect fabric controls
-//    0x00000020  key_key_0 — 96-bit key (key[31:0] of [95:0])
-//    0x00000024  key_key_1 — 96-bit key (key[63:32] of [95:0])
-//    0x00000028  key_key_2 — 96-bit key (key[95:64] of [95:0])
+//    0x00  ID        — RC identity
+//    0x04  STATUS    — RO status
+//    0x08  CFG       — RW config
+//    0x0c  FEED      — RWW capture
+//    0x10  FIFO      — RWE window
+//    0x14  CMD       — W1P pulse
+//    0x18  IRQ       — W1C sticky
+//    0x1c  BANK      — Shadowed RW  shadow=bank
+//    0x2c  BANKSEL   — Saved working bank
+//    0x34  ACTIVE    — Muxed working cfg
+//    0x30  FABRIC    — Wishbone interconnect fabric controls
+//    0x20  key_key_0 — 96-bit key (key[31:0] of [95:0])
+//    0x24  key_key_1 — 96-bit key (key[63:32] of [95:0])
+//    0x28  key_key_2 — 96-bit key (key[95:64] of [95:0])
 //------------------------------------------------------------------------------
 
 module smoke_regfile (
@@ -37,7 +37,7 @@ module smoke_regfile (
 	// Wishbone WE (1=write, 0=read)
 	input  logic        smoke_i_wb_we,
 	// Wishbone ADR (byte address; word decode uses [addr_width-1:2])
-	input  logic [31:0] smoke_i_wb_adr,
+	input  logic [5:0]  smoke_i_wb_adr,
 	// Wishbone write data
 	input  logic [31:0] smoke_i_wb_dat,
 	// Wishbone byte select
@@ -168,52 +168,52 @@ module smoke_regfile (
 	//  2. Address decode / hit / wr_sel / rd_sel
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000000  RegCell: ID        — RC identity
+	// Addr: 0x00  RegCell: ID        — RC identity
 	//   [15:0]   RC   magic       — Magic
 	//   [31:16]  RC   version     — Version
-	assign addr_hit_0 = (smoke_i_wb_adr[31:2] == 30'd0);
-	// Addr: 0x00000004  RegCell: STATUS    — RO status
+	assign addr_hit_0 = (smoke_i_wb_adr[5:2] == 4'd0);
+	// Addr: 0x04  RegCell: STATUS    — RO status
 	//   [0]      RO   busy        — Busy (tied in HTML)
 	//   [15:8]   RO   code        — Status code
-	assign addr_hit_4 = (smoke_i_wb_adr[31:2] == 30'd1);
-	// Addr: 0x00000008  RegCell: CFG       — RW config
+	assign addr_hit_4 = (smoke_i_wb_adr[5:2] == 4'd1);
+	// Addr: 0x08  RegCell: CFG       — RW config
 	//   [0]      RW   enable      — Enable
 	//   [10:8]   RW   mode        — Mode
-	assign addr_hit_8 = (smoke_i_wb_adr[31:2] == 30'd2);
-	// Addr: 0x0000000c  RegCell: FEED      — RWW capture
+	assign addr_hit_8 = (smoke_i_wb_adr[5:2] == 4'd2);
+	// Addr: 0x0c  RegCell: FEED      — RWW capture
 	//   [15:0]   RWW  capture     — Capture
-	assign addr_hit_c = (smoke_i_wb_adr[31:2] == 30'd3);
-	// Addr: 0x00000010  RegCell: FIFO      — RWE window
+	assign addr_hit_c = (smoke_i_wb_adr[5:2] == 4'd3);
+	// Addr: 0x10  RegCell: FIFO      — RWE window
 	//   [31:0]   RWE  data        — External data
-	assign addr_hit_10 = (smoke_i_wb_adr[31:2] == 30'd4);
-	// Addr: 0x00000014  RegCell: CMD       — W1P pulse
+	assign addr_hit_10 = (smoke_i_wb_adr[5:2] == 4'd4);
+	// Addr: 0x14  RegCell: CMD       — W1P pulse
 	//   [0]      W1P  go          — Go pulse
-	assign addr_hit_14 = (smoke_i_wb_adr[31:2] == 30'd5);
-	// Addr: 0x00000018  RegCell: IRQ       — W1C sticky
+	assign addr_hit_14 = (smoke_i_wb_adr[5:2] == 4'd5);
+	// Addr: 0x18  RegCell: IRQ       — W1C sticky
 	//   [0]      W1C  sticky      — Sticky IRQ
-	assign addr_hit_18 = (smoke_i_wb_adr[31:2] == 30'd6);
-	// Addr: 0x0000001c  RegCell: BANK      — Shadowed RW
+	assign addr_hit_18 = (smoke_i_wb_adr[5:2] == 4'd6);
+	// Addr: 0x1c  RegCell: BANK      — Shadowed RW
 	//   shadow=bank
 	//   [7:0]    RW   cfg         — Per-bank cfg
-	assign addr_hit_1c = (smoke_i_wb_adr[31:2] == 30'd7);
-	// Addr: 0x0000002c  RegCell: BANKSEL   — Saved working bank
+	assign addr_hit_1c = (smoke_i_wb_adr[5:2] == 4'd7);
+	// Addr: 0x2c  RegCell: BANKSEL   — Saved working bank
 	//   [1:0]    RW   bank_sel    — Working bank
-	assign addr_hit_2c = (smoke_i_wb_adr[31:2] == 30'd11);
-	// Addr: 0x00000034  RegCell: ACTIVE    — Muxed working cfg
+	assign addr_hit_2c = (smoke_i_wb_adr[5:2] == 4'd11);
+	// Addr: 0x34  RegCell: ACTIVE    — Muxed working cfg
 	//   [7:0]    RO   value       — Working copy of BANK.cfg
-	assign addr_hit_34 = (smoke_i_wb_adr[31:2] == 30'd13);
-	// Addr: 0x00000030  RegCell: FABRIC    — Wishbone interconnect fabric controls
+	assign addr_hit_34 = (smoke_i_wb_adr[5:2] == 4'd13);
+	// Addr: 0x30  RegCell: FABRIC    — Wishbone interconnect fabric controls
 	//   [0]      RW   rb_grant_en — Arbiter: 0=fixed prio, 1=round-robin
-	assign addr_hit_30 = (smoke_i_wb_adr[31:2] == 30'd12);
-	// Addr: 0x00000020  RegCell: key_key_0 — 96-bit key (key[31:0] of [95:0])
+	assign addr_hit_30 = (smoke_i_wb_adr[5:2] == 4'd12);
+	// Addr: 0x20  RegCell: key_key_0 — 96-bit key (key[31:0] of [95:0])
 	//   [31:0]   RW   key_0       — 96-bit key (key[31:0] of [95:0])
-	assign addr_hit_20 = (smoke_i_wb_adr[31:2] == 30'd8);
-	// Addr: 0x00000024  RegCell: key_key_1 — 96-bit key (key[63:32] of [95:0])
+	assign addr_hit_20 = (smoke_i_wb_adr[5:2] == 4'd8);
+	// Addr: 0x24  RegCell: key_key_1 — 96-bit key (key[63:32] of [95:0])
 	//   [31:0]   RW   key_1       — 96-bit key (key[63:32] of [95:0])
-	assign addr_hit_24 = (smoke_i_wb_adr[31:2] == 30'd9);
-	// Addr: 0x00000028  RegCell: key_key_2 — 96-bit key (key[95:64] of [95:0])
+	assign addr_hit_24 = (smoke_i_wb_adr[5:2] == 4'd9);
+	// Addr: 0x28  RegCell: key_key_2 — 96-bit key (key[95:64] of [95:0])
 	//   [31:0]   RW   key_2       — 96-bit key (key[95:64] of [95:0])
-	assign addr_hit_28 = (smoke_i_wb_adr[31:2] == 30'd10);
+	assign addr_hit_28 = (smoke_i_wb_adr[5:2] == 4'd10);
 
 	assign hit = |{
 		addr_hit_0,
@@ -282,15 +282,15 @@ module smoke_regfile (
 	//  4. Field storage / sideband glue
 	//------------------------------------------------------------------------------
 
-	// Addr: 0x00000000  RegCell: ID        — RC identity
+	// Addr: 0x00  RegCell: ID        — RC identity
 	//   [15:0]   RC   magic       — Magic
 	//   [31:16]  RC   version     — Version
 
-	// Addr: 0x00000004  RegCell: STATUS    — RO status
+	// Addr: 0x04  RegCell: STATUS    — RO status
 	//   [0]      RO   busy        — Busy (tied in HTML)
 	//   [15:8]   RO   code        — Status code
 
-	// Addr: 0x00000008  RegCell: CFG       — RW config
+	// Addr: 0x08  RegCell: CFG       — RW config
 	//   [0]      RW   enable      — Enable
 	//   [10:8]   RW   mode        — Mode
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
@@ -309,7 +309,7 @@ module smoke_regfile (
 	assign rg_enable = rg_enable_q;
 	assign rg_mode = rg_mode_q;
 
-	// Addr: 0x0000000c  RegCell: FEED      — RWW capture
+	// Addr: 0x0c  RegCell: FEED      — RWW capture
 	//   [15:0]   RWW  capture     — Capture
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
@@ -329,7 +329,7 @@ module smoke_regfile (
 	end
 	assign rg_capture = rg_capture_q;
 
-	// Addr: 0x00000010  RegCell: FIFO      — RWE window
+	// Addr: 0x10  RegCell: FIFO      — RWE window
 	//   [31:0]   RWE  data        — External data
 	// RWE [31:0]  data        — External data
 	assign ext_data_wdata = smoke_i_wb_dat[31:0];
@@ -340,7 +340,7 @@ module smoke_regfile (
 	// Stall ACK when this RWE window is selected and not ready
 	assign rwe_stall_ext_data = (wr_sel_10 || rd_sel_10) && !ext_data_ready;
 
-	// Addr: 0x00000014  RegCell: CMD       — W1P pulse
+	// Addr: 0x14  RegCell: CMD       — W1P pulse
 	//   [0]      W1P  go          — Go pulse
 	// W1P [0]     go          — Go pulse
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
@@ -348,7 +348,7 @@ module smoke_regfile (
 		else p_rg_go <= wr_sel_14 ? (smoke_i_wb_dat[0] & (smoke_i_wb_sel[0])) : 1'h0;
 	end
 
-	// Addr: 0x00000018  RegCell: IRQ       — W1C sticky
+	// Addr: 0x18  RegCell: IRQ       — W1C sticky
 	//   [0]      W1C  sticky      — Sticky IRQ
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
@@ -369,7 +369,7 @@ module smoke_regfile (
 	end
 	assign c_rg_sticky = c_rg_sticky_q;
 
-	// Addr: 0x0000001c  RegCell: BANK      — Shadowed RW
+	// Addr: 0x1c  RegCell: BANK      — Shadowed RW
 	//   shadow=bank
 	//   [7:0]    RW   cfg         — Per-bank cfg
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
@@ -397,7 +397,7 @@ module smoke_regfile (
 	end
 	assign rg_cfg = rg_cfg_q[i_bank_mux_sel];
 
-	// Addr: 0x0000002c  RegCell: BANKSEL   — Saved working bank
+	// Addr: 0x2c  RegCell: BANKSEL   — Saved working bank
 	//   [1:0]    RW   bank_sel    — Working bank
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
@@ -410,10 +410,10 @@ module smoke_regfile (
 	end
 	assign rg_bank_sel = rg_bank_sel_q;
 
-	// Addr: 0x00000034  RegCell: ACTIVE    — Muxed working cfg
+	// Addr: 0x34  RegCell: ACTIVE    — Muxed working cfg
 	//   [7:0]    RO   value       — Working copy of BANK.cfg
 
-	// Addr: 0x00000030  RegCell: FABRIC    — Wishbone interconnect fabric controls
+	// Addr: 0x30  RegCell: FABRIC    — Wishbone interconnect fabric controls
 	//   [0]      RW   rb_grant_en — Arbiter: 0=fixed prio, 1=round-robin
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
@@ -426,7 +426,7 @@ module smoke_regfile (
 	end
 	assign rg_rb_grant_en = rg_rb_grant_en_q;
 
-	// Addr: 0x00000020  RegCell: key_key_0 — 96-bit key (key[31:0] of [95:0])
+	// Addr: 0x20  RegCell: key_key_0 — 96-bit key (key[31:0] of [95:0])
 	//   [31:0]   RW   key_0       — 96-bit key (key[31:0] of [95:0])
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
@@ -448,7 +448,7 @@ module smoke_regfile (
 	end
 	assign rg_key_0 = rg_key_0_q;
 
-	// Addr: 0x00000024  RegCell: key_key_1 — 96-bit key (key[63:32] of [95:0])
+	// Addr: 0x24  RegCell: key_key_1 — 96-bit key (key[63:32] of [95:0])
 	//   [31:0]   RW   key_1       — 96-bit key (key[63:32] of [95:0])
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
@@ -470,7 +470,7 @@ module smoke_regfile (
 	end
 	assign rg_key_1 = rg_key_1_q;
 
-	// Addr: 0x00000028  RegCell: key_key_2 — 96-bit key (key[95:64] of [95:0])
+	// Addr: 0x28  RegCell: key_key_2 — 96-bit key (key[95:64] of [95:0])
 	//   [31:0]   RW   key_2       — 96-bit key (key[95:64] of [95:0])
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
@@ -500,78 +500,78 @@ module smoke_regfile (
 	always_comb begin
 		rd_data = 32'h0;
 		unique case (1'b1)
-			// ID @ 0x00000000
+			// ID @ 0x00
 			rd_sel_0: begin
 				// RC  [15:0]  magic       — Magic
 				rd_data[15:0] = 16'ha55a;
 				// RC  [31:16] version     — Version
 				rd_data[31:16] = 16'h1;
 			end
-			// STATUS @ 0x00000004
+			// STATUS @ 0x04
 			rd_sel_4: begin
 				// RO  [0]     busy        — Busy (tied in HTML)
 				rd_data[0] = ro_busy;
 				// RO  [15:8]  code        — Status code
 				rd_data[15:8] = ro_code;
 			end
-			// CFG @ 0x00000008
+			// CFG @ 0x08
 			rd_sel_8: begin
 				// RW  [0]     enable      — Enable
 				rd_data[0] = rg_enable_q;
 				// RW  [10:8]  mode        — Mode
 				rd_data[10:8] = rg_mode_q;
 			end
-			// FEED @ 0x0000000c
+			// FEED @ 0x0c
 			rd_sel_c: begin
 				// RWW [15:0]  capture     — Capture
 				rd_data[15:0] = rg_capture_q;
 			end
-			// FIFO @ 0x00000010
+			// FIFO @ 0x10
 			rd_sel_10: begin
 				// RWE [31:0]  data        — External data
 				rd_data[31:0] = ext_data;
 			end
-			// CMD @ 0x00000014
+			// CMD @ 0x14
 			rd_sel_14: begin
 				// W1P [0]     go          — Go pulse
 				rd_data[0] = 1'h0;
 			end
-			// IRQ @ 0x00000018
+			// IRQ @ 0x18
 			rd_sel_18: begin
 				// W1C [0]     sticky      — Sticky IRQ
 				rd_data[0] = c_rg_sticky_q;
 			end
-			// BANK @ 0x0000001c
+			// BANK @ 0x1c
 			rd_sel_1c: begin
 				// RW  [7:0]   cfg         — Per-bank cfg
 				rd_data[7:0] = (mask_bank[0] ? rg_cfg_q[0] : 8'h0) | (mask_bank[1] ? rg_cfg_q[1] : 8'h0) | (mask_bank[2] ? rg_cfg_q[2] : 8'h0) | (mask_bank[3] ? rg_cfg_q[3] : 8'h0);
 			end
-			// BANKSEL @ 0x0000002c
+			// BANKSEL @ 0x2c
 			rd_sel_2c: begin
 				// RW  [1:0]   bank_sel    — Working bank
 				rd_data[1:0] = rg_bank_sel_q;
 			end
-			// ACTIVE @ 0x00000034
+			// ACTIVE @ 0x34
 			rd_sel_34: begin
 				// RO  [7:0]   value       — Working copy of BANK.cfg
 				rd_data[7:0] = ro_value;
 			end
-			// FABRIC @ 0x00000030
+			// FABRIC @ 0x30
 			rd_sel_30: begin
 				// RW  [0]     rb_grant_en — Arbiter: 0=fixed prio, 1=round-robin
 				rd_data[0] = rg_rb_grant_en_q;
 			end
-			// key_key_0 @ 0x00000020
+			// key_key_0 @ 0x20
 			rd_sel_20: begin
 				// RW  [31:0]  key_0       — 96-bit key (key[31:0] of [95:0])
 				rd_data[31:0] = rg_key_0_q;
 			end
-			// key_key_1 @ 0x00000024
+			// key_key_1 @ 0x24
 			rd_sel_24: begin
 				// RW  [31:0]  key_1       — 96-bit key (key[63:32] of [95:0])
 				rd_data[31:0] = rg_key_1_q;
 			end
-			// key_key_2 @ 0x00000028
+			// key_key_2 @ 0x28
 			rd_sel_28: begin
 				// RW  [31:0]  key_2       — 96-bit key (key[95:64] of [95:0])
 				rd_data[31:0] = rg_key_2_q;
