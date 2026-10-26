@@ -3,6 +3,7 @@ import { hbm, hbm_ch } from "../demo/hbm/sot/wb_bus_hbm.ts";
 import { aword } from "../demo/hbm/sot/wb_reg_aword.ts";
 import { dword } from "../demo/hbm/sot/wb_reg_dword.ts";
 import { pstate } from "../demo/hbm/sot/wb_tag_pstate.ts";
+import { sha256 } from "../demo/soc/sot/wb_reg_sha256.ts";
 import {
 	Bus,
 	Master,
@@ -12,8 +13,10 @@ import {
 	SlaveRegion,
 	TagFromAddr,
 	TagFromPin,
+	TagFromReg,
 } from "../src/plugins/wishbone-bus/dsl.ts";
 import { emitBusSv } from "../src/plugins/wishbone-bus/emit.ts";
+import { emitBusSystemSv } from "../src/plugins/wishbone-bus/emit-attach.ts";
 import { tagPlan } from "../src/plugins/wishbone-bus/tag.ts";
 import { ShadowDomain } from "../src/plugins/wishbone-regfile/dsl.ts";
 
@@ -140,6 +143,30 @@ describe("wishbone tag domains", () => {
 		const sv = emitBusSv(pinned);
 		expect(sv).toMatch(/^\s*input\s+logic\s+\[1:0\]\s+pstate_tag_i\b/m);
 		expect(sv).not.toMatch(/^\s*input\s+.*\bcfg_o_wb_tga_pstate\b/m);
+	});
+
+	test("TagFromReg may use an inline leaf, but not an external one", () => {
+		const domain = ShadowDomain("mode", 2, 1);
+		const make = (name: string, external: boolean) =>
+			Bus(name, "tag from an attached regbit", {
+				addrWidth: 12,
+				tags: [TagFromReg(domain, "sha_rg_soft_reset")],
+				masters: [Master("cfg", "cfg")],
+				slaves: [
+					SlaveRegfile(sha256, 0, { id: "sha", external, size: Size(0x40) }),
+				],
+			});
+		const inline = emitBusSystemSv(make("tag_reg_inline", false), {
+			netType: "logic",
+		});
+		// The regbit is an RW output promoted from the leaf; the fabric consumes it.
+		expect(inline).toMatch(/^\s*output\s+logic\s+sha_rg_soft_reset\b/m);
+		expect(emitBusSv(make("tag_reg_inline2", false))).toContain(
+			"assign g_tga_mode = sha_rg_soft_reset;",
+		);
+		expect(() =>
+			emitBusSystemSv(make("tag_reg_external", true), { netType: "logic" }),
+		).toThrow(/external regfile hang "sha"/);
 	});
 
 	test("HBM region broadcast windows expose no data port", () => {

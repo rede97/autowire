@@ -401,7 +401,9 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(
 			soc_wb.slaves.find((s) => s.name === "sram")?.regfile,
 		).toBeUndefined();
-		expect(sd_sha.slaves.find((s) => s.name === "sha256")?.mask).toBe(0xfc0);
+		expect(sd_sha.slaves.find((s) => s.name === "sha256")?.external).toBe(
+			false,
+		);
 		expect(soc_wb.slaves.find((s) => s.name === "smoke")?.mask).toBe(
 			0xffff_ffc0,
 		);
@@ -422,9 +424,10 @@ ts = "${ts.replaceAll("\\", "/")}"
 			masters: [Master("cpu", "CPU")],
 			slaves: [
 				SlaveRegfile(sha256, 0x0, { id: "sha256_0" }),
-				SlaveRegfile(sha256, 0x40, { id: "sha256_1" }),
+				SlaveRegfile(sha256, 0x40, { id: "sha256_1", external: true }),
 			],
 		});
+		expect(twice.slaves.map((s) => s.external)).toEqual([false, true]);
 		expect(twice.slaves.map((s) => s.name)).toEqual(["sha256_0", "sha256_1"]);
 	});
 
@@ -576,6 +579,38 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(pkg).toContain("shadow bank");
 		// Field bit/mask stays in the regfile package, not the bus map.
 		expect(pkg).not.toContain("_MASK");
+	});
+
+	test("external regfile exports WB without leaf sidebands and keeps its address map", () => {
+		const mixed = Bus("mixed_cfg", "inline and external regfiles", {
+			addrWidth: 12,
+			masters: [Master("cfg", "config")],
+			slaves: [
+				SlaveRegfile(smoke_rw, 0x000, { id: "inline" }),
+				SlaveRegfile(sha256, 0x040, { external: true, pipe: 1 }),
+			],
+		});
+		const wrap = emitBusSystemSv(mixed, ALIGNED) ?? "";
+		expect(wrap).toMatch(/smoke_rw_regfile\s+u_inline\s*\(/);
+		expect(wrap).toContain("inline_rg_enable");
+		expect(wrap).toMatch(/^\s*output\s+logic\s+\[11:0\]\s+sha256_i_wb_adr\b/m);
+		expect(wrap).toMatch(/^\s*input\s+logic\s+sha256_o_wb_ack\b/m);
+		expect(wrap).not.toMatch(/sha256_regfile\s+u_sha256\s*\(/);
+		expect(wrap).not.toMatch(/^\s*(?:input|output).*\bro_busy\b/m);
+		expect(wrap).not.toMatch(/^\s*(?:input|output).*\brg_soft_reset\b/m);
+		expect(emitBusSv(mixed)).toContain("wb_cfg_pipe");
+		expect(emitBusMapC(mixed)).toContain(
+			"#define MIXED_CFG_SHA256_BASE 0x00000040u",
+		);
+
+		const tagged = Bus("tagged_external", "external shadow leaf", {
+			addrWidth: 16,
+			tags: [ShadowDomain("bank", 4, 2)],
+			slaves: [SlaveRegfile(smoke, 0, { external: true })],
+		});
+		expect(emitBusSystemSv(tagged, ALIGNED) ?? "").toMatch(
+			/^\s*output\s+logic\s+\[1:0\]\s+smoke_i_wb_tga_bank\b/m,
+		);
 	});
 
 	test("SlaveBus is Region sugar; one child RTL, N hangs; picks a cascade face", () => {

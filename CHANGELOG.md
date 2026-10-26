@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 用自己的版本（`hdxml/Cargo.toml`），不受本文件约束。
 
+## [2.5.10] - 2026-10-26
+
+- `SlaveRegfile(regfile, base, { external })` 新增分离模式（缺省 `false` = 内置，保持现状）。`external: true` 时 `<bus>_bus_cfg` 不再例化该叶子、不提升字段旁路，改为导出该挂接的 fabric WB 窗口口（`{id}_i_wb_*` / `{id}_o_wb_*`，含 shadow 的 `{id}_i_wb_tga_<domain>`），由上层自行例化 `<name>_regfile` 并连接。按挂接点选择，可内外混用；同一 `RegfileDef` 多挂时各挂接点独立。`<name>_regfile.sv` 与软件地址图（C / uvm_reg / Excel / sv_reg）两种模式完全一致。`TagFromReg` 必须引用内置叶子，引用外置挂接 → 构造期报错。契约见 `docs/plugins/wishbone-bus.md` §2.1 / §6、`docs/plugins/wishbone-regfile.md`。
+
 ## [2.5.9] - 2026-10-21
 
 - 修复 hdxml 0.4.1（issue #2）：保原文宏（`--define-headers` / `--keep-raw`）用作模块名时，内部哨兵不再出现在例化 `target` 和 hierarchy 节点。XML / JSON 导出还原为 `` `NAME ``，未展开的 cell 是黑盒叶子。

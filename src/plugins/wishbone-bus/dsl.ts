@@ -142,6 +142,8 @@ export type SlaveRegfileOpts = SlaveOpts & {
 	readonly size?: RegionSize;
 	/** Override `RegfileDef.desc` on this hang. */
 	readonly desc?: string;
+	/** Export the fabric WB port and instantiate the regfile above the wrapper. */
+	readonly external?: boolean;
 };
 
 /** Extra options when `SlaveBus` hangs a child fabric. */
@@ -170,6 +172,8 @@ export type WbSlave = {
 	readonly pipe: number;
 	/** Attached Type-A leaf (string slaves leave this unset). */
 	readonly regfile?: RegfileDef;
+	/** Attached leaf is instantiated above the wrapper; omitted/false = inline. */
+	readonly external?: boolean;
 	/** Child fabric hung via `SlaveBus` (generated once; instantiated per hang). */
 	readonly bus?: BusDef;
 	/** Child master that faces this parent window (`SlaveBus` only). */
@@ -570,7 +574,7 @@ function attachRegfile(
 		broadcast: opts.broadcast,
 		broadcastBy: opts.broadcastBy,
 	});
-	return { ...region, regfile };
+	return { ...region, regfile, external: opts.external ?? false };
 }
 
 export function Slave(

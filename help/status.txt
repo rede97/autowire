@@ -181,13 +181,18 @@ Parallel (does not block connect)
     Slave(name, desc, base, mask, ...) is a raw match mask: the base must lie
     inside the window, ignored bits are a contiguous low field, and the window
     is checked for overlap with every other slave;
-    SlaveRegfile is SlaveRegion sugar: Size(layout span) + leaf; optional size=;
+    SlaveRegfile is SlaveRegion sugar: Size(layout span) + leaf; optional size=, external=;
     SlaveBus is SlaveRegion sugar: Size(child span) + child BusDef; optional size=;
     child picks the cascade face with .uplink(name?) (sole master if omitted);
     Bus rejects overlapping windows, raw and region alike; addrWidth is 2..32;
     tag defaults to leaf tga_width; TGA must match; id defaults to RegfileDef.name;
-    Type-A wrapper <bus>_bus_cfg instantiates fabric + attached *_regfile
+    Type-A wrapper <bus>_bus_cfg instantiates fabric + inline *_regfile
     (sidebands promoted; WB internalized; HTML aw-inst soc_wb_bus_cfg / sd_sha_bus_cfg);
+    SlaveRegfile external: true leaves the leaf above the wrapper instead:
+    the wrapper exports that hang's fabric WB window ({id}_i_wb_* / {id}_o_wb_*),
+    no leaf inst, no promoted sidebands; the *_regfile.sv and the software map
+    (C / uvm_reg / Excel / sv_reg) are identical either way; default is inline;
+    TagFromReg must reference an inline leaf (an external hang's regbit errors);
     .uplink() only selects the cascade face; every topology keeps its named master ports;
     parent slave requests map to child master requests, responses map back explicitly;
     master faces (docs/plugins/wishbone-master.md): Master(name, desc, { apb | jtag | cdc });
