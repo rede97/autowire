@@ -88,8 +88,9 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 | Field | fluent：`.offset()`（cell 内 bit 起点）/ `.reset()`；`width` + 可选 bit `offset`；**禁止** `bits=` / `high:low`；**禁止** Field 级 `.shadow()` |
 | `.reset` | **`number`**（全 copy / 无 shadow 共用）或 **`Record<copyIndex, number>`**（按物理 shadow copy）；dict **未列 copy 默认 0**；RC **必须**用标量 `number` |
 | Cell / Block 地址 | 用可选 **`offset`**（相对 regfile / 父级）；**禁止**地址语义的 `addr` 字段名 |
-| 级联默认 | `CellDefault` / `BlockDefault` / `RegfileDefault`：`.align(...)` / `.byteAlign(...)` / `.offset(...)` / `.shadow(...)` / `.addrWidth(...)` / `.sheet(...)` / `.readWriteBlock(...)` / `.shadows(...)`（不可变） |
+| 级联默认 | `CellDefault` / `BlockDefault` / `RegfileDefault`：`.align(...)` / `.byteAlign(...)` / `.offset(...)` / `.shadow(...)` / `.resetDomain(...)` / `.addrWidth(...)` / `.sheet(...)` / `.readWriteBlock(...)` / `.shadows(...)` / `.resetDomains(...)` / `.defaultResetDomain(...)`（不可变） |
 | Shadow 配置 | **只在 Cell**（`CellDefault.shadow(...)`）；**Block**.`shadow(...)` 仅为下属 Cell 缺省。**禁止**同一 cell 内混不同 shadow；**拼车（同 cell 打包 field）必须同 shadow** |
+| 复位域 | `RegfileDefault.resetDomains("por_rst_n", ...)` **声明**额外异步低有效复位域（每个**被用**的域出一个 `i_<name>` input）；隐式域 **`"rst_n"` = `i_rst_n`**：**常驻、免声明、不可删**。`CellDefault.resetDomain(name)` 绑**整个 cell**（存储 DFF）；`BlockDefault.resetDomain(...)` 为下属 Cell 缺省；都省略 → `.defaultResetDomain(...)`（缺省 `"rst_n"`）。粒度**只到 Cell**，**禁止** Field 级；同 cell 同域（与 shadow 同级同构）。只支持**同 `i_clk`** 的异步复位；**RWE** field **禁止**挂非 `"rst_n"` 域（窗复位语义绑死总线复位，绑回需显式 `.resetDomain("rst_n")`）；W1P 脉冲寄存器与 RWE 窗 glue 恒走 `i_rst_n`。软件导出（Excel/C/uvm_reg）**不含**复位域 |
 | 宽 field | Block 下自动拆 cell；模块口 **旁路按分片导出**（`rg_<field>_0` 起，`i=0` 为 LSB），**不**拼成一条 `width` 向量；拆出的各 cell **继承**该 Block 的 shadow 缺省 |
 | `read_write_block` | Regfile opts：`.readWriteBlock(true\|false)`；**缺省 `false`**（非阻塞）；`true` 时命中 **RWE** 的 WB 事务可被外部窗（如 FIFO）挡住 ACK |
 | Shadow | `Shadow(name, copies, tagBits).remaps({ from: bitmask }).innerShadowMux(bool)`；**`tagBits` 强制**；**`innerShadowMux` 缺省 `true`**；**无** `ShadowBroadcast` |
@@ -126,6 +127,35 @@ export const sub_module_a = Regfile(
     ]),
   ],
 );
+```
+
+复位域用法（完整示例见同目录 `sub_module_rst`）：
+
+```ts
+export const sub_module_rst = Regfile(
+  "sub_module_rst",
+  "Power-domain reset cells",
+  RegfileDefault.align(4).addrWidth(8).resetDomains("por_rst_n"),
+  [
+    Block("por", "Power domain", BlockDefault.resetDomain("por_rst_n"), [
+      // 继承 Block 缺省 → 存储 DFF 由 i_por_rst_n 复位
+      Cell("POR_CFG", "Power config", CellDefault, [
+        Field("keep", Access.RW, 4, "Survives soft reset").reset(0xa),
+      ]),
+      // 显式覆盖，绑回总线复位 i_rst_n
+      Cell("SOFT_CFG", "Soft config", CellDefault.resetDomain("rst_n"), [
+        Field("mode", Access.RW, 2, "Mode").reset(0),
+      ]),
+    ]),
+    // 未指定 → 表缺省 "rst_n"（i_rst_n）
+    Cell("SOLO", "Independent cell", CellDefault, [
+      Field("flag", Access.RW, 1, "Solo flag").reset(0),
+    ]),
+  ],
+);
+// 生成：i_rst_n（常驻）+ i_por_rst_n；被用 cell 的 always_ff 挂在各自域上。
+// bus Type-A wrapper 把同名 i_por_rst_n 合并成一个 wrapper input 上提，
+// connect HTML 里对 wrapper aw-inst 接一次线即可。
 ```
 
 #### 地址与对齐（编译器式自动排布）
@@ -181,6 +211,7 @@ Block("wide", "Wide fields", BlockDefault.byteAlign(4), [
 7. Shadow 挂在 **Cell**（或 Block 缺省落到 Cell）；有效 bank = `wb_tga` 切片再经该 shadow 的 **`remaps`**（bitmask）。**禁止** Field 级 shadow；**禁止**同 cell 混 shadow。  
 8. **Shadow 缺省**：`BlockDefault.shadow(...)` → 未自带 shadow 的子 Cell；宽 field 自动拆出的 cell 同样吃 Block 缺省。  
 9. **Per-copy reset**：`.reset({ 0: a, 1: b, … })`；标量 = 各 copy 同值；**未列 copy 默认 0**（相对 **Cell** 的 shadow）。  
+9a. **复位域继承**：`Cell.resetDomain(...)` → 未自带的子 Cell 吃 `Block.resetDomain(...)` 缺省（宽 field 自动拆出的 cell 同样吃）→ 都吃 `RegfileDefault.defaultResetDomain(...)`（缺省 `"rst_n"`）。声明了的域若**无 cell 使用**则不出端口；`"rst_n"`（`i_rst_n`）不受此剪枝，**永远保留**。多份 regfile 可声明**同名**复位域：各叶子各出 `i_<name>` 口，bus Type-A wrapper **按名合并**成一个 wrapper input 统一上提（同名 = 同一信号）。
 10. Cell **可**在 block 内或独立于 regfile body；field **禁止** `bits`，用 `width` + 可选 bit `offset`；cell `bits_align` 缺省 8。  
 11. Block **可以**直接挂超长 Field，generate **自动拆** cell/field，口上 **自动拼齐**。  
 12. **Cell/Block `offset` 可省略**：默认按 `bytes_align` 自动拼地址；显式 `offset` 仅用于钉位。

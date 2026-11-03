@@ -1,13 +1,16 @@
 // Byte-address layout for wishbone-regfile (ADR=byte; cell=4 bytes).
 
 import {
+	Access,
 	BitsAlign as BA,
 	type BitsAlign,
+	DEFAULT_RESET_DOMAIN,
 	type RegBlock,
 	type RegCell,
 	type RegField,
 	type RegfileDef,
 	type RegShadow,
+	resetDomainPort,
 } from "./dsl.ts";
 
 const CELL_BYTES = 4;
@@ -27,6 +30,8 @@ export interface LaidCell {
 	readonly desc: string;
 	readonly byte_offset: number;
 	readonly shadow?: string;
+	/** Effective async reset domain (resolved: cell → block → table default → "rst_n"). */
+	readonly reset_domain: string;
 	readonly fields: readonly LaidField[];
 }
 
@@ -149,6 +154,7 @@ function layoutBlock(
 	block: RegBlock,
 	regAlign: number,
 	cursorIn: number,
+	defaultDomain: string,
 ): { cells: LaidCell[]; cursor: number } {
 	const align = block.bytes_align ?? regAlign;
 	let cursor = cursorIn;
@@ -190,6 +196,7 @@ function layoutBlock(
 			desc: cell.desc,
 			byte_offset: at,
 			...(cell.shadow !== undefined ? { shadow: cell.shadow } : {}),
+			reset_domain: cell.reset_domain ?? defaultDomain,
 			fields,
 		});
 		cursor = Math.max(cursor, at + CELL_BYTES);
@@ -219,6 +226,9 @@ function layoutBlock(
 				name: slices.length > 1 ? `${block.name}_${sl.name}` : sl.name,
 				desc: sl.fields[0]?.desc ?? f.desc,
 				...(block.shadow !== undefined ? { shadow: block.shadow } : {}),
+				...(block.reset_domain !== undefined
+					? { reset_domain: block.reset_domain }
+					: {}),
 				fields: sl.fields,
 			};
 			placeCell(
@@ -253,9 +263,49 @@ function assertShadowRefs(def: RegfileDef, cells: readonly LaidCell[]): void {
 	}
 }
 
+/** Declared-domain sanity, reference reachability, and the RWE restriction. */
+function assertResetDomains(
+	def: RegfileDef,
+	cells: readonly LaidCell[],
+	defaultDomain: string,
+): void {
+	const declared = new Set(def.reset_domains ?? []);
+	for (const d of declared) {
+		if (def.shadows.some((s) => `i_${d}` === `i_${s.name}_mux_sel`)) {
+			throw new Error(
+				`reset domain "${d}" collides with shadow mux-select port i_${d} (shadow "${def.shadows.find((s) => `i_${s.name}_mux_sel` === `i_${d}`)?.name}")`,
+			);
+		}
+	}
+	if (defaultDomain !== DEFAULT_RESET_DOMAIN && !declared.has(defaultDomain)) {
+		throw new Error(
+			`default reset domain "${defaultDomain}" not in table reset domains library`,
+		);
+	}
+	for (const c of cells) {
+		if (
+			c.reset_domain !== DEFAULT_RESET_DOMAIN &&
+			!declared.has(c.reset_domain)
+		) {
+			throw new Error(
+				`cell "${c.name}" reset domain "${c.reset_domain}" not in table reset domains library`,
+			);
+		}
+		if (
+			c.reset_domain !== DEFAULT_RESET_DOMAIN &&
+			c.fields.some((lf) => lf.field.access === Access.RWE)
+		) {
+			throw new Error(
+				`cell "${c.name}" has RWE field(s) on reset domain "${c.reset_domain}"; RWE windows are tied to ${DEFAULT_RESET_DOMAIN} (${resetDomainPort(DEFAULT_RESET_DOMAIN)}). Bind the cell explicitly: CellDefault.resetDomain("${DEFAULT_RESET_DOMAIN}")`,
+			);
+		}
+	}
+}
+
 /** Flatten body to laid cells (byte addresses). */
 export function layoutRegfile(def: RegfileDef): LaidRegfile {
 	const regAlign = def.bytes_align ?? 4;
+	const defaultDomain = def.default_reset_domain ?? DEFAULT_RESET_DOMAIN;
 	let cursor = 0;
 	const cells: LaidCell[] = [];
 	const occupied = new Set<number>();
@@ -278,7 +328,12 @@ export function layoutRegfile(def: RegfileDef): LaidRegfile {
 
 	for (const item of def.body) {
 		if ("children" in item) {
-			const { cells: bc, cursor: c2 } = layoutBlock(item, regAlign, cursor);
+			const { cells: bc, cursor: c2 } = layoutBlock(
+				item,
+				regAlign,
+				cursor,
+				defaultDomain,
+			);
 			merge(bc);
 			cursor = c2;
 		} else {
@@ -306,6 +361,7 @@ export function layoutRegfile(def: RegfileDef): LaidRegfile {
 					desc: cell.desc,
 					byte_offset: at,
 					...(cell.shadow !== undefined ? { shadow: cell.shadow } : {}),
+					reset_domain: cell.reset_domain ?? defaultDomain,
 					fields,
 				},
 			]);
@@ -314,6 +370,7 @@ export function layoutRegfile(def: RegfileDef): LaidRegfile {
 	}
 
 	assertShadowRefs(def, cells);
+	assertResetDomains(def, cells, defaultDomain);
 	return {
 		def,
 		cells,

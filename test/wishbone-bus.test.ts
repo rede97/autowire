@@ -604,6 +604,46 @@ ts = "${ts.replaceAll("\\", "/")}"
 		expect(pkg).not.toContain("_MASK");
 	});
 
+	test("wrapper exports reset domain ports and merges same-named domains", () => {
+		const porLeaf = (name: string, domain: string, extra?: string) =>
+			Regfile(
+				name,
+				`${name} table`,
+				RegfileDefault.addrWidth(8).resetDomains(
+					domain,
+					...(extra !== undefined ? [extra] : []),
+				),
+				[
+					Cell("cfg", "config", CellDefault.resetDomain(domain), [
+						Field(`keep_${name}`, Access.RW, 4, "keep").reset(0),
+					]),
+					...(extra !== undefined
+						? [
+								Cell("aux", "aux", CellDefault.resetDomain(extra), [
+									Field(`aux_${name}`, Access.RW, 1, "a").reset(0),
+								]),
+							]
+						: []),
+				],
+			);
+		const bus = Bus("por_cfg", "reset domain hangs", {
+			addrWidth: 12,
+			masters: [Master("cfg", "config")],
+			slaves: [
+				SlaveRegfile(porLeaf("leaf_a", "por_rst_n"), 0x000),
+				SlaveRegfile(porLeaf("leaf_b", "por_rst_n", "por2_rst_n"), 0x010),
+			],
+		});
+		const wrap = emitBusSystemSv(bus, ALIGNED) ?? "";
+		// One shared wrapper input feeds both leaves' i_por_rst_n.
+		expect(wrap).toMatch(/^\s*input\s+logic\s+i_por_rst_n\b/m);
+		expect(wrap.match(/\bi_por_rst_n\b/g)?.length).toBeGreaterThanOrEqual(3);
+		// The not-shared second domain exports under its own name.
+		expect(wrap).toMatch(/^\s*input\s+logic\s+i_por2_rst_n\b/m);
+		expect(wrap).toMatch(/\.i_por_rst_n\s+\(\s*i_por_rst_n\s*\)/);
+		expect(wrap).toMatch(/\.i_por2_rst_n\s+\(\s*i_por2_rst_n\s*\)/);
+	});
+
 	test("external regfile exports WB without leaf sidebands and keeps its address map", () => {
 		const mixed = Bus("mixed_cfg", "inline and external regfiles", {
 			addrWidth: 12,

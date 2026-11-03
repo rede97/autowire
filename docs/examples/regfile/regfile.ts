@@ -106,3 +106,28 @@ export const sub_module_b = Regfile(
 		]),
 	],
 );
+
+// Reset domains: cells bound off the fabric reset. "por_rst_n" is declared
+// once per table, binds whole cells (cell → block default → table default),
+// and exports as an i_por_rst_n input (merged by name at the bus wrapper).
+export const sub_module_rst = Regfile(
+	"sub_module_rst",
+	"Sub-module R — power-domain reset cells",
+	RegfileDefault.align(4).addrWidth(8).resetDomains("por_rst_n"),
+	[
+		Block("por", "Power domain", BlockDefault.resetDomain("por_rst_n"), [
+			// Inherits the block default: storage flops reset by i_por_rst_n.
+			Cell("POR_CFG", "Power config", CellDefault, [
+				Field("keep", Access.RW, 4, "Survives soft reset").reset(0xa),
+			]),
+			// Explicit beats the block default.
+			Cell("SOFT_CFG", "Soft config", CellDefault.resetDomain("rst_n"), [
+				Field("mode", Access.RW, 2, "Mode, reset by i_rst_n").reset(0),
+			]),
+		]),
+		// No .resetDomain(...) anywhere → i_rst_n (the implicit "rst_n" domain).
+		Cell("SOLO", "Independent cell", CellDefault, [
+			Field("flag", Access.RW, 1, "Solo flag").reset(0),
+		]),
+	],
+);

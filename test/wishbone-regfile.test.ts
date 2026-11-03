@@ -11,12 +11,15 @@ import {
 import { generateAll } from "../src/plugins/wishbone/generate.ts";
 import {
 	Access,
+	Block,
+	BlockDefault,
 	Cell,
 	CellDefault,
 	Field,
 	Regfile,
 	type RegfileDef,
 	RegfileDefault,
+	Shadow,
 } from "../src/plugins/wishbone-regfile/dsl.ts";
 import { emitRegfileSv } from "../src/plugins/wishbone-regfile/emit.ts";
 import { buildRegfileWorkbook } from "../src/plugins/wishbone-regfile/emit-excel.ts";
@@ -191,6 +194,228 @@ exports = ["sub_module_b"]
 		const paths = await generateAll(ws);
 		expect(paths).toHaveLength(1);
 		expect(paths[0]).toContain("sub_module_b_regfile.sv");
+	});
+});
+
+describe("wishbone-regfile reset domains", () => {
+	const porCell = (domain?: string) =>
+		Cell(
+			"por_cfg",
+			"power-domain config",
+			domain !== undefined ? CellDefault.resetDomain(domain) : CellDefault,
+			[Field("keep", Access.RW, 4, "Survives soft reset").reset(0xa)],
+		);
+	const softCell = Cell("soft_cfg", "soft config", CellDefault, [
+		Field("mode", Access.RW, 2, "Mode").reset(0),
+	]);
+	const domainRegfile = Regfile(
+		"rdom",
+		"reset domain table",
+		RegfileDefault.addrWidth(8).resetDomains("por_rst_n"),
+		[porCell("por_rst_n"), softCell],
+	);
+
+	test("layout resolves cell → block → table default → rst_n", () => {
+		const laid = layoutRegfile(domainRegfile);
+		const byName = new Map(laid.cells.map((c) => [c.name, c]));
+		expect(byName.get("por_cfg")?.reset_domain).toBe("por_rst_n");
+		expect(byName.get("soft_cfg")?.reset_domain).toBe("rst_n");
+	});
+
+	test("layout stamps block reset domain onto child cells and wide-field splits", () => {
+		const def = Regfile(
+			"rblk",
+			"block default domain",
+			RegfileDefault.addrWidth(8).resetDomains("por_rst_n"),
+			[
+				Block("grp", "group", BlockDefault.resetDomain("por_rst_n"), [
+					Cell("child", "child cell", CellDefault, [
+						Field("a", Access.RW, 1, "a").reset(0),
+					]),
+					Field("wide", Access.RW, 64, "wide auto-split").reset(0),
+				]),
+			],
+		);
+		const laid = layoutRegfile(def);
+		expect(laid.cells.map((c) => c.reset_domain)).toEqual([
+			"por_rst_n",
+			"por_rst_n",
+			"por_rst_n",
+		]);
+	});
+
+	test("layout honors defaultResetDomain for unspecified cells", () => {
+		const def = Regfile(
+			"rdef",
+			"moved default",
+			RegfileDefault.addrWidth(8)
+				.resetDomains("por_rst_n")
+				.defaultResetDomain("por_rst_n"),
+			[
+				Cell("plain", "no explicit domain", CellDefault, [
+					Field("a", Access.RW, 1, "a").reset(0),
+				]),
+				Cell(
+					"bus_bound",
+					"explicitly back on the fabric reset",
+					CellDefault.resetDomain("rst_n"),
+					[Field("b", Access.RW, 1, "b").reset(0)],
+				),
+			],
+		);
+		const laid = layoutRegfile(def);
+		const byName = new Map(laid.cells.map((c) => [c.name, c]));
+		expect(byName.get("plain")?.reset_domain).toBe("por_rst_n");
+		expect(byName.get("bus_bound")?.reset_domain).toBe("rst_n");
+	});
+
+	test("emit puts domain cells on their own async reset and keeps i_rst_n", () => {
+		const sv = emitRegfileSv(layoutRegfile(domainRegfile));
+		expect(sv).toMatch(/^\s*input\s+logic\s+i_por_rst_n\b/m);
+		expect(sv).toContain(
+			"\talways_ff @(posedge i_clk or negedge i_por_rst_n) begin",
+		);
+		expect(sv).toContain("\t\tif (!i_por_rst_n) begin");
+		// The fabric reset still drives the default-domain cell.
+		expect(sv).toContain(
+			"\talways_ff @(posedge i_clk or negedge i_rst_n) begin",
+		);
+		expect(sv).toMatch(
+			/^\/\/ {4}0x00 {2}por_cfg\s+— power-domain config {2}reset=por_rst_n/m,
+		);
+		expect(sv).not.toMatch(/^\/\/ {4}0x04.*reset=/m);
+	});
+
+	test("emit keeps i_rst_n even when no cell uses it", () => {
+		const def = Regfile(
+			"rall",
+			"all cells off the fabric reset",
+			RegfileDefault.addrWidth(8).resetDomains("por_rst_n"),
+			[porCell("por_rst_n")],
+		);
+		const sv = emitRegfileSv(layoutRegfile(def));
+		expect(sv).toMatch(/^\s*input\s+logic\s+i_rst_n\b/m);
+		expect(sv).not.toContain("or negedge i_rst_n");
+	});
+
+	test("emit prunes declared-but-unused domains", () => {
+		const def = Regfile(
+			"rprune",
+			"unused domain",
+			RegfileDefault.addrWidth(8).resetDomains("por_rst_n", "por2_rst_n"),
+			[porCell("por_rst_n")],
+		);
+		const sv = emitRegfileSv(layoutRegfile(def));
+		expect(sv).toContain("i_por_rst_n");
+		expect(sv).not.toContain("i_por2_rst_n");
+	});
+
+	test("W1P pulse reg and RWE glue stay on i_rst_n in a domain cell", () => {
+		const def = Regfile(
+			"rmix",
+			"mixed access cell",
+			RegfileDefault.addrWidth(8).resetDomains("por_rst_n"),
+			[
+				Cell("mix", "mixed", CellDefault.resetDomain("por_rst_n"), [
+					Field("go", Access.W1P, 1, "pulse").reset(0),
+					Field("lvl", Access.RW, 1, "level").reset(0),
+				]),
+			],
+		);
+		const sv = emitRegfileSv(layoutRegfile(def));
+		// pulse register: fabric reset; storage: domain reset
+		expect(sv).toContain(
+			"\talways_ff @(posedge i_clk or negedge i_rst_n) begin\n\t\tif (!i_rst_n) p_rg_go <= 1'h0;",
+		);
+		expect(sv).toContain("or negedge i_por_rst_n");
+	});
+
+	test("rejects bad domain declarations and references", () => {
+		expect(() => RegfileDefault.resetDomains("rst_n")).toThrow(/implicit/);
+		expect(() => RegfileDefault.resetDomains("por-rst")).toThrow(/must match/);
+		expect(() => RegfileDefault.resetDomains("a", "a")).toThrow(
+			/more than once/,
+		);
+		expect(() => layoutRegfile(domainRegfile)).not.toThrow();
+		// reference to an undeclared domain
+		expect(() =>
+			layoutRegfile(
+				Regfile("rbadref", "bad ref", RegfileDefault.addrWidth(8), [
+					porCell("por_rst_n"),
+				]),
+			),
+		).toThrow(/not in table reset domains library/);
+		// default domain not declared
+		expect(() =>
+			layoutRegfile(
+				Regfile(
+					"rbaddef",
+					"bad default",
+					RegfileDefault.addrWidth(8).defaultResetDomain("por_rst_n"),
+					[softCell],
+				),
+			),
+		).toThrow(/default reset domain/);
+		// block default referencing an undeclared domain
+		expect(() =>
+			layoutRegfile(
+				Regfile("rbadblk", "bad block default", RegfileDefault.addrWidth(8), [
+					Block("grp", "group", BlockDefault.resetDomain("por_rst_n"), [
+						porCell(),
+					]),
+				]),
+			),
+		).toThrow(/not in table reset domains library/);
+		// domain colliding with a shadow mux-select port
+		expect(() =>
+			layoutRegfile(
+				Regfile(
+					"rclash",
+					"domain/shadow port clash",
+					RegfileDefault.addrWidth(8)
+						.shadows(Shadow("bank", 2, "1:0"))
+						.resetDomains("bank_mux_sel"),
+					[porCell()],
+				),
+			),
+		).toThrow(/collides with shadow mux-select port/);
+	});
+
+	test("rejects RWE fields on a non-default reset domain", () => {
+		const rweCell = Cell(
+			"fifo_win",
+			"external FIFO window",
+			CellDefault.resetDomain("por_rst_n"),
+			[Field("ext_data", Access.RWE, 8, "window").reset(0)],
+		);
+		expect(() =>
+			layoutRegfile(
+				Regfile(
+					"rrwe",
+					"rwe off the fabric reset",
+					RegfileDefault.addrWidth(8).resetDomains("por_rst_n"),
+					[rweCell],
+				),
+			),
+		).toThrow(/RWE windows are tied to rst_n/);
+		// same cell explicitly bound back to the fabric reset is fine
+		expect(() =>
+			layoutRegfile(
+				Regfile(
+					"rrwe_ok",
+					"rwe on the fabric reset",
+					RegfileDefault.addrWidth(8).resetDomains("por_rst_n"),
+					[
+						Cell(
+							"fifo_win",
+							"external FIFO window",
+							CellDefault.resetDomain("rst_n"),
+							[Field("ext_data", Access.RWE, 8, "window").reset(0)],
+						),
+					],
+				),
+			),
+		).not.toThrow();
 	});
 });
 

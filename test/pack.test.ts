@@ -51,8 +51,11 @@ describe("docs pack", () => {
 			expect(await Bun.file(join(dest, "docs/cli.md")).text()).toContain(
 				"connect",
 			);
-			const runSh = statSync(join(dest, "demo/soc/sim/vcs/run.sh"));
-			expect(runSh.mode & 0o111).not.toBe(0);
+			// Exec bits are not preserved by Windows unpacks; POSIX-only check.
+			if (process.platform !== "win32") {
+				const runSh = statSync(join(dest, "demo/soc/sim/vcs/run.sh"));
+				expect(runSh.mode & 0o111).not.toBe(0);
+			}
 		} finally {
 			rmSync(dest, { recursive: true, force: true });
 		}

@@ -11,6 +11,10 @@
 // - Field: fluent .offset() / .reset() / .note() (no per-field shadow)
 // - .note() is Excel-only (cell comment, or NOTES sheet for the regfile); not RTL/C/uvm
 // - Field.reset: number | Record<copyIndex, number> (per-shadow-copy defaults)
+// - Reset domains: RegfileDefault.resetDomains(...) declares; Cell .resetDomain(name) binds a
+//   whole cell; Block.resetDomain(...) is the child-cell default (same pattern as shadow).
+//   Implicit domain "rst_n" = port i_rst_n: always present, never declared, cannot be removed.
+//   Cells that omit .resetDomain(...) follow defaultResetDomain(...) (default "rst_n").
 // - Shadow only on Cell (+ Block.shadow as default for child cells); one cell → one shadow
 // - Shadow(name, copies, tagBits).remaps({ from: bitmask }).innerShadowMux(bool); Access has RC, no W1S
 // - tagBits is required (always owns a wb_tga slice; width must match ceil(log2(copies)))
@@ -149,6 +153,48 @@ function requireFieldReset(value: FieldReset): FieldReset {
 	return out;
 }
 
+// ---------------------------------------------------------------------------
+// Reset domains
+// ---------------------------------------------------------------------------
+
+/**
+ * Implicit default reset domain: the fabric reset `i_rst_n`. The port is
+ * always emitted, never declared via .resetDomains(...), cannot be removed.
+ */
+export const DEFAULT_RESET_DOMAIN = "rst_n";
+
+const DOMAIN_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Declared domain name (.resetDomains): identifier, and not the implicit "rst_n". */
+function requireResetDomainDecl(name: string): string {
+	if (!DOMAIN_IDENT.test(name)) {
+		throw new Error(
+			`reset domain name "${name}" must match [A-Za-z_][A-Za-z0-9_]*`,
+		);
+	}
+	if (name === DEFAULT_RESET_DOMAIN) {
+		throw new Error(
+			`reset domain "${DEFAULT_RESET_DOMAIN}" is implicit (port i_rst_n); do not declare it`,
+		);
+	}
+	return name;
+}
+
+/** Domain reference (.defaultResetDomain / .resetDomain): identifier; "rst_n" allowed. */
+function requireResetDomainRef(name: string): string {
+	if (!DOMAIN_IDENT.test(name)) {
+		throw new Error(
+			`reset domain name "${name}" must match [A-Za-z_][A-Za-z0-9_]*`,
+		);
+	}
+	return name;
+}
+
+/** Leaf port of a resolved domain: i_rst_n for the implicit domain, else i_<name>. */
+export function resetDomainPort(domain: string): string {
+	return domain === DEFAULT_RESET_DOMAIN ? "i_rst_n" : `i_${domain}`;
+}
+
 /** Drop a blank template-literal frame and the shared indent. Empty → undefined. */
 export function normalizeNote(text: string): string | undefined {
 	const lines = text.replace(/\r\n/g, "\n").split("\n");
@@ -192,6 +238,12 @@ export interface RegCell {
 	 * mixing different shadows in one cell is forbidden.
 	 */
 	readonly shadow?: string;
+	/**
+	 * Async reset domain for this entire cell's storage flops.
+	 * Omit → Block default → table default (defaultResetDomain, else "rst_n").
+	 * Same clock (i_clk) always; RWE fields are not allowed off "rst_n".
+	 */
+	readonly reset_domain?: string;
 	readonly fields: readonly RegField[];
 }
 
@@ -203,6 +255,8 @@ export interface RegBlock {
 	readonly bytes_align?: BytesAlign;
 	/** Default shadow for child cells that omit CellDefault.shadow(...). */
 	readonly shadow?: string;
+	/** Default reset domain for child cells that omit CellDefault.resetDomain(...). */
+	readonly reset_domain?: string;
 	/** Cells and/or wide fields (width>32 → generate auto-splits into per-slice ports). */
 	readonly children: readonly (RegCell | RegField)[];
 }
@@ -279,6 +333,17 @@ export interface RegfileOpts {
 	readonly read_write_block?: boolean;
 	/** Table-level shadow library (omit when none). */
 	readonly shadows?: readonly RegShadow[];
+	/**
+	 * Extra async reset domains (omit when none). Each used domain emits an
+	 * `i_<name>` input port. The implicit domain "rst_n" (port i_rst_n) is
+	 * always present and must not be listed here.
+	 */
+	readonly reset_domains?: readonly string[];
+	/**
+	 * Default reset domain for cells/blocks that omit .resetDomain(...).
+	 * Must be declared in reset_domains. Omit = "rst_n" (i_rst_n).
+	 */
+	readonly default_reset_domain?: string;
 	/** Excel NOTES sheet only. Not emitted to RTL, C, or uvm_reg. */
 	readonly note?: string;
 }
@@ -291,6 +356,10 @@ export interface RegfileDef {
 	readonly bytes_align?: BytesAlign;
 	readonly read_write_block: boolean;
 	readonly shadows: readonly RegShadow[];
+	/** Extra async reset domains; each used one emits an `i_<name>` input. */
+	readonly reset_domains?: readonly string[];
+	/** Cells/blocks without .resetDomain(...) land here; omit = "rst_n" (i_rst_n). */
+	readonly default_reset_domain?: string;
 	/** Excel NOTES sheet only. Not emitted to RTL, C, or uvm_reg. */
 	readonly note?: string;
 	readonly body: readonly (RegBlock | RegCell)[];
@@ -336,15 +405,18 @@ export class CellOptsElem {
 	readonly #offset?: number;
 	readonly #bits_align?: BitsAlign;
 	readonly #shadow?: string;
+	readonly #reset_domain?: string;
 
 	private constructor(
 		offset?: number,
 		bits_align?: BitsAlign,
 		shadow?: string,
+		reset_domain?: string,
 	) {
 		this.#offset = offset;
 		this.#bits_align = bits_align;
 		this.#shadow = shadow;
+		this.#reset_domain = reset_domain;
 	}
 
 	static empty(): CellOptsElem {
@@ -352,12 +424,22 @@ export class CellOptsElem {
 	}
 
 	align(bits_align: BitsAlign): CellOptsElem {
-		return new CellOptsElem(this.#offset, bits_align, this.#shadow);
+		return new CellOptsElem(
+			this.#offset,
+			bits_align,
+			this.#shadow,
+			this.#reset_domain,
+		);
 	}
 
 	/** Address offset in the regfile. */
 	offset(offset: number): CellOptsElem {
-		return new CellOptsElem(offset, this.#bits_align, this.#shadow);
+		return new CellOptsElem(
+			offset,
+			this.#bits_align,
+			this.#shadow,
+			this.#reset_domain,
+		);
 	}
 
 	/** Shadow for this entire cell (all packed fields share it). */
@@ -366,6 +448,17 @@ export class CellOptsElem {
 			this.#offset,
 			this.#bits_align,
 			isShadowDomain(name) ? name.name : name,
+			this.#reset_domain,
+		);
+	}
+
+	/** Async reset domain for this entire cell's storage flops (default: table default). */
+	resetDomain(name: string): CellOptsElem {
+		return new CellOptsElem(
+			this.#offset,
+			this.#bits_align,
+			this.#shadow,
+			requireResetDomainRef(name),
 		);
 	}
 
@@ -373,6 +466,7 @@ export class CellOptsElem {
 		offset?: number;
 		bits_align?: BitsAlign;
 		shadow?: string;
+		reset_domain?: string;
 	} {
 		return {
 			...(this.#offset !== undefined ? { offset: this.#offset } : {}),
@@ -380,6 +474,9 @@ export class CellOptsElem {
 				? { bits_align: this.#bits_align }
 				: {}),
 			...(this.#shadow !== undefined ? { shadow: this.#shadow } : {}),
+			...(this.#reset_domain !== undefined
+				? { reset_domain: this.#reset_domain }
+				: {}),
 		};
 	}
 }
@@ -390,15 +487,18 @@ export class BlockOptsElem {
 	readonly #offset?: number;
 	readonly #bytes_align?: BytesAlign;
 	readonly #shadow?: string;
+	readonly #reset_domain?: string;
 
 	private constructor(
 		offset?: number,
 		bytes_align?: BytesAlign,
 		shadow?: string,
+		reset_domain?: string,
 	) {
 		this.#offset = offset;
 		this.#bytes_align = bytes_align;
 		this.#shadow = shadow;
+		this.#reset_domain = reset_domain;
 	}
 
 	static empty(): BlockOptsElem {
@@ -410,23 +510,45 @@ export class BlockOptsElem {
 			this.#offset,
 			requireBytesAlign(bytes_align),
 			this.#shadow,
+			this.#reset_domain,
 		);
 	}
 
 	/** Address offset relative to parent. */
 	offset(offset: number): BlockOptsElem {
-		return new BlockOptsElem(offset, this.#bytes_align, this.#shadow);
+		return new BlockOptsElem(
+			offset,
+			this.#bytes_align,
+			this.#shadow,
+			this.#reset_domain,
+		);
 	}
 
 	/** Default shadow for child cells that omit their own CellDefault.shadow(...). */
 	shadow(name: string): BlockOptsElem {
-		return new BlockOptsElem(this.#offset, this.#bytes_align, name);
+		return new BlockOptsElem(
+			this.#offset,
+			this.#bytes_align,
+			name,
+			this.#reset_domain,
+		);
+	}
+
+	/** Default reset domain for child cells that omit CellDefault.resetDomain(...). */
+	resetDomain(name: string): BlockOptsElem {
+		return new BlockOptsElem(
+			this.#offset,
+			this.#bytes_align,
+			this.#shadow,
+			requireResetDomainRef(name),
+		);
 	}
 
 	toOpts(): {
 		offset?: number;
 		bytes_align?: BytesAlign;
 		shadow?: string;
+		reset_domain?: string;
 	} {
 		return {
 			...(this.#offset !== undefined ? { offset: this.#offset } : {}),
@@ -434,6 +556,9 @@ export class BlockOptsElem {
 				? { bytes_align: this.#bytes_align }
 				: {}),
 			...(this.#shadow !== undefined ? { shadow: this.#shadow } : {}),
+			...(this.#reset_domain !== undefined
+				? { reset_domain: this.#reset_domain }
+				: {}),
 		};
 	}
 }
@@ -446,6 +571,8 @@ export class RegfileOptsElem {
 	readonly #bytes_align?: BytesAlign;
 	readonly #read_write_block?: boolean;
 	readonly #shadows?: readonly RegShadow[];
+	readonly #reset_domains?: readonly string[];
+	readonly #default_reset_domain?: string;
 	readonly #note?: string;
 
 	private constructor(
@@ -454,6 +581,8 @@ export class RegfileOptsElem {
 		bytes_align?: BytesAlign,
 		read_write_block?: boolean,
 		shadows?: readonly RegShadow[],
+		reset_domains?: readonly string[],
+		default_reset_domain?: string,
 		note?: string,
 	) {
 		this.#sheet = sheet;
@@ -461,11 +590,29 @@ export class RegfileOptsElem {
 		this.#bytes_align = bytes_align;
 		this.#read_write_block = read_write_block;
 		this.#shadows = shadows;
+		this.#reset_domains = reset_domains;
+		this.#default_reset_domain = default_reset_domain;
 		this.#note = note;
 	}
 
 	static empty(): RegfileOptsElem {
 		return new RegfileOptsElem();
+	}
+
+	private clone(
+		reset_domains: readonly string[] | undefined = this.#reset_domains,
+		default_reset_domain: string | undefined = this.#default_reset_domain,
+	): RegfileOptsElem {
+		return new RegfileOptsElem(
+			this.#sheet,
+			this.#addr_width,
+			this.#bytes_align,
+			this.#read_write_block,
+			this.#shadows,
+			reset_domains,
+			default_reset_domain,
+			this.#note,
+		);
 	}
 
 	align(bytes_align: number): RegfileOptsElem {
@@ -475,6 +622,8 @@ export class RegfileOptsElem {
 			requireBytesAlign(bytes_align),
 			this.#read_write_block,
 			this.#shadows,
+			this.#reset_domains,
+			this.#default_reset_domain,
 			this.#note,
 		);
 	}
@@ -486,6 +635,8 @@ export class RegfileOptsElem {
 			this.#bytes_align,
 			this.#read_write_block,
 			this.#shadows,
+			this.#reset_domains,
+			this.#default_reset_domain,
 			this.#note,
 		);
 	}
@@ -497,6 +648,8 @@ export class RegfileOptsElem {
 			this.#bytes_align,
 			this.#read_write_block,
 			this.#shadows,
+			this.#reset_domains,
+			this.#default_reset_domain,
 			this.#note,
 		);
 	}
@@ -512,6 +665,8 @@ export class RegfileOptsElem {
 			this.#bytes_align,
 			enabled,
 			this.#shadows,
+			this.#reset_domains,
+			this.#default_reset_domain,
 			this.#note,
 		);
 	}
@@ -524,6 +679,8 @@ export class RegfileOptsElem {
 			this.#bytes_align,
 			this.#read_write_block,
 			this.#shadows,
+			this.#reset_domains,
+			this.#default_reset_domain,
 			normalizeNote(text),
 		);
 	}
@@ -537,8 +694,33 @@ export class RegfileOptsElem {
 			shadows.map((s) =>
 				isShadowDomain(s) ? shadowOf(s).toShadow() : s.toShadow(),
 			),
+			this.#reset_domains,
+			this.#default_reset_domain,
 			this.#note,
 		);
+	}
+
+	/**
+	 * Declare extra async reset domains. Each used domain emits an `i_<name>`
+	 * input; a cell binds via CellDefault.resetDomain(name). The implicit
+	 * domain "rst_n" (port i_rst_n) is always present — do not declare it.
+	 */
+	resetDomains(...names: string[]): RegfileOptsElem {
+		const domains = names.map(requireResetDomainDecl);
+		const dup = domains.find((d, i) => domains.indexOf(d) !== i);
+		if (dup !== undefined) {
+			throw new Error(`reset domain "${dup}" declared more than once`);
+		}
+		return this.clone(domains);
+	}
+
+	/**
+	 * Default reset domain for cells/blocks that omit .resetDomain(...).
+	 * Must be declared in resetDomains(...). Omit = "rst_n" (i_rst_n),
+	 * which stays emitted regardless.
+	 */
+	defaultResetDomain(name: string): RegfileOptsElem {
+		return this.clone(this.#reset_domains, requireResetDomainRef(name));
 	}
 
 	toOpts(): RegfileOpts {
@@ -555,6 +737,12 @@ export class RegfileOptsElem {
 				? { read_write_block: this.#read_write_block }
 				: {}),
 			...(this.#shadows !== undefined ? { shadows: this.#shadows } : {}),
+			...(this.#reset_domains !== undefined
+				? { reset_domains: this.#reset_domains }
+				: {}),
+			...(this.#default_reset_domain !== undefined
+				? { default_reset_domain: this.#default_reset_domain }
+				: {}),
 			...(this.#note !== undefined ? { note: this.#note } : {}),
 		};
 	}
@@ -650,6 +838,7 @@ export function Cell(
 		...(o.offset !== undefined ? { offset: o.offset } : {}),
 		...(o.bits_align !== undefined ? { bits_align: o.bits_align } : {}),
 		...(o.shadow !== undefined ? { shadow: o.shadow } : {}),
+		...(o.reset_domain !== undefined ? { reset_domain: o.reset_domain } : {}),
 	};
 }
 
@@ -669,14 +858,17 @@ export function Block(
 				return x.toField();
 			}
 			const cellShadow = x.shadow ?? o.shadow;
+			const cellDomain = x.reset_domain ?? o.reset_domain;
 			return {
 				...x,
 				...(cellShadow !== undefined ? { shadow: cellShadow } : {}),
+				...(cellDomain !== undefined ? { reset_domain: cellDomain } : {}),
 			};
 		}),
 		...(o.offset !== undefined ? { offset: o.offset } : {}),
 		...(o.bytes_align !== undefined ? { bytes_align: o.bytes_align } : {}),
 		...(o.shadow !== undefined ? { shadow: o.shadow } : {}),
+		...(o.reset_domain !== undefined ? { reset_domain: o.reset_domain } : {}),
 	};
 }
 
@@ -858,6 +1050,12 @@ export function Regfile(
 		...(o.sheet !== undefined ? { sheet: o.sheet } : {}),
 		...(o.bytes_align !== undefined ? { bytes_align: o.bytes_align } : {}),
 		shadows: o.shadows ?? [],
+		...(o.reset_domains !== undefined
+			? { reset_domains: o.reset_domains }
+			: {}),
+		...(o.default_reset_domain !== undefined
+			? { default_reset_domain: o.default_reset_domain }
+			: {}),
 		body: define,
 	};
 }

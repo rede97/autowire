@@ -129,6 +129,18 @@ function wrapperPorts(def: BusDef): Array<{
 		let banner = false;
 		for (const p of sidebandPorts(s)) {
 			const name = promoteName(s.name, rf.name, p.name);
+			if (ports.some((x) => x.name === name)) {
+				// Same-named reset domain from another hang: one shared wrapper
+				// input feeds every leaf that declared it. Anything else
+				// colliding here is a bug, not a merge.
+				const isDomainPort =
+					p.name.startsWith("i_") &&
+					(rf.reset_domains ?? []).includes(p.name.slice(2));
+				if (isDomainPort) continue;
+				throw new Error(
+					`wishbone-bus: wrapper ${def.name} port collision on "${name}"`,
+				);
+			}
 			const comment = !banner
 				? `Regfile ${rf.name} hang ${s.name} sidebands\n${p.comment ?? p.name}`
 				: p.comment;

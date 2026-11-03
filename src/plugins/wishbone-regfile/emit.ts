@@ -4,8 +4,10 @@
 
 import {
 	Access,
+	DEFAULT_RESET_DOMAIN,
 	type FieldReset,
 	type RegShadow,
+	resetDomainPort,
 	sidebandStem,
 } from "./dsl.ts";
 import type { LaidCell, LaidField, LaidRegfile } from "./layout.ts";
@@ -330,6 +332,18 @@ export function collectPorts(laid: LaidRegfile): PortDecl[] {
 			comment: wbPortComment("i_wb_sel"),
 		},
 	];
+	// Extra reset domains: one input per *used* declared domain (declaration
+	// order). The implicit domain "rst_n" is the port above and is never pruned.
+	const usedDomains = new Set(cells.map((c) => c.reset_domain));
+	for (const d of def.reset_domains ?? []) {
+		if (!usedDomains.has(d)) continue;
+		ports.push({
+			dir: "input",
+			packed: "",
+			name: `i_${d}`,
+			comment: `Reset domain ${d} (async active-low cell reset)`,
+		});
+	}
 	if (shadows.length > 0) {
 		for (const s of shadows) {
 			ports.push({
@@ -615,8 +629,12 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	);
 	for (const c of cells) {
 		const sh = c.shadow ? `  shadow=${c.shadow}` : "";
+		const dom =
+			c.reset_domain !== DEFAULT_RESET_DOMAIN
+				? `  reset=${c.reset_domain}`
+				: "";
 		out.push(
-			`//    0x${hex(c.byte_offset, aw)}  ${c.name.padEnd(commentPads.cellName)} — ${c.desc}${sh}`,
+			`//    0x${hex(c.byte_offset, aw)}  ${c.name.padEnd(commentPads.cellName)} — ${c.desc}${sh}${dom}`,
 		);
 	}
 	out.push(
@@ -874,6 +892,8 @@ function chunkSel(ch: LaneChunk, width: number): string {
  * reset → ~wr (HW writes: RWW strb / W1C set) → wr (per-byte-lane SEL blocks).
  * A W1C HW set remains eligible when a SW write omits its byte lane.
  * Assign columns are aligned per branch.
+ * The reset branch is the cell's reset domain: i_rst_n unless .resetDomain(...)
+ * bound the cell elsewhere (W1P pulse regs and RWE window glue stay on i_rst_n).
  */
 function emitCellStorage(
 	out: string[],
@@ -1066,8 +1086,14 @@ function emitCellStorage(
 		if (rows.length > 0) lanes.push({ lane: k, rows, w1cFallbackRows });
 	}
 
-	out.push("\talways_ff @(posedge i_clk or negedge i_rst_n) begin");
-	out.push("\t\tif (!i_rst_n) begin");
+	// Storage flops follow the cell's reset domain; W1P pulse regs and RWE
+	// window glue above stay on the fabric reset i_rst_n.
+	const rstN = resetDomainPort(c.reset_domain);
+	if (rstN !== "i_rst_n") {
+		out.push(`\t// Storage reset domain: ${c.reset_domain} (${rstN})`);
+	}
+	out.push(`\talways_ff @(posedge i_clk or negedge ${rstN}) begin`);
+	out.push(`\t\tif (!${rstN}) begin`);
 	pushRows("\t\t\t", resets);
 	if (hw.length > 0) {
 		out.push(`\t\tend else if (~${wr}) begin`);

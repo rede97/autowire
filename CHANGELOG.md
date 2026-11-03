@@ -2,6 +2,12 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.7.0] - 2026-11-03
+
+- **regfile 新增复位域（reset domains）**：`RegfileDefault.resetDomains("por_rst_n", ...)` 声明额外异步低有效复位域；`CellDefault.resetDomain(name)` 把**整个 cell** 的存储 DFF 绑到该域，`BlockDefault.resetDomain(...)` 为下属 cell 缺省（宽 field 拆片同样继承），都省略时落 `defaultResetDomain(...)`（缺省隐式域 `"rst_n"`）。粒度只到 cell，禁止 field 级。隐式域 `"rst_n"` = `i_rst_n`：**常驻、免声明、不可删**；被用域各出一个 `i_<name>` input，声明未用的域不出端口。只支持同 `i_clk` 的异步复位；**RWE** field 禁止挂非 `"rst_n"` 域（报错并提示显式绑回），W1P 脉冲寄存器与 RWE 窗 glue 恒走 `i_rst_n`。多份 regfile 可声明**同名**复位域：bus Type-A wrapper 按名合并成一个 wrapper input 统一上提，connect HTML 对 wrapper `aw-inst` 接一次线。Excel / C / uvm_reg 导出不含复位域。契约见 `docs/plugins/wishbone-regfile.md`；可运行样例 `docs/examples/regfile/regfile.ts` 的 `sub_module_rst`。
+- wrapper 旁路口撞名从静默重复声明改为显式报错（reset domain 同名合并除外）。
+- `test/pack.test.ts` 的 run.sh 执行位断言在 Windows 上自动跳过。
+
 ## [2.6.0] - 2026-10-26
 
 - **hdxml 成为独立项目**：[`rede97/hdxml`](https://github.com/rede97/hdxml)。本仓库删除 `hdxml/`，不再构建它（无 cargo 依赖）；用 `hdxml-version.txt` 钉版本（本次 0.4.1），`bun run fetch:hdxml` 把该版本 release 二进制下载到 `.cache/hdxml/<version>/`。查找顺序变为 `--hdxml` > `[analysis] hdxml_bin` > `$HDXML_BIN` > 仓库 `.cache/hdxml/<version>` > `PATH`；原先的 `hdxml/target/{release,debug}` 候选已删除。
