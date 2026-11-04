@@ -53,6 +53,10 @@ Parallel (does not block connect)
     cell-level CellDefault.resetDomain(name) / BlockDefault child default; implicit
     "rst_n" = i_rst_n always emitted; used domains emit i_<name>, bus wrapper merges
     same-named domains into one wrapper input; RWE rejected off "rst_n"; RTL-only;
+    CellDefault.ready(name): cell-only read/write permission, input i_<name>;
+    no Regfile/Block defaults. Posted writes wait in pipe until leaf acceptance;
+    blocked software writes have no effects; RWW/W1C hardware updates continue.
+    Inline wrappers share same-named ready inputs across hang ids; see regfile docs.
     draft API + samples: docs/examples/regfile/regfile.ts;
     toml [wishbone.<source>] ts= (one file may export either or both; optional exports=);
     [plugins.wishbone] packed software (SoT exports only; no reverse to TS):

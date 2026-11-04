@@ -244,6 +244,8 @@ export interface RegCell {
 	 * Same clock (i_clk) always; RWE fields are not allowed off "rst_n".
 	 */
 	readonly reset_domain?: string;
+	/** External access permission; emits input i_<name>. Cell-only, no inherited default. */
+	readonly ready?: string;
 	readonly fields: readonly RegField[];
 }
 
@@ -406,17 +408,20 @@ export class CellOptsElem {
 	readonly #bits_align?: BitsAlign;
 	readonly #shadow?: string;
 	readonly #reset_domain?: string;
+	readonly #ready?: string;
 
 	private constructor(
 		offset?: number,
 		bits_align?: BitsAlign,
 		shadow?: string,
 		reset_domain?: string,
+		ready?: string,
 	) {
 		this.#offset = offset;
 		this.#bits_align = bits_align;
 		this.#shadow = shadow;
 		this.#reset_domain = reset_domain;
+		this.#ready = ready;
 	}
 
 	static empty(): CellOptsElem {
@@ -429,6 +434,7 @@ export class CellOptsElem {
 			bits_align,
 			this.#shadow,
 			this.#reset_domain,
+			this.#ready,
 		);
 	}
 
@@ -439,6 +445,7 @@ export class CellOptsElem {
 			this.#bits_align,
 			this.#shadow,
 			this.#reset_domain,
+			this.#ready,
 		);
 	}
 
@@ -449,6 +456,7 @@ export class CellOptsElem {
 			this.#bits_align,
 			isShadowDomain(name) ? name.name : name,
 			this.#reset_domain,
+			this.#ready,
 		);
 	}
 
@@ -459,6 +467,21 @@ export class CellOptsElem {
 			this.#bits_align,
 			this.#shadow,
 			requireResetDomainRef(name),
+			this.#ready,
+		);
+	}
+
+	/** Hold this cell's bus access until the named input is high. */
+	ready(name: string): CellOptsElem {
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+			throw new Error(`cell ready name "${name}" must be an identifier`);
+		}
+		return new CellOptsElem(
+			this.#offset,
+			this.#bits_align,
+			this.#shadow,
+			this.#reset_domain,
+			name,
 		);
 	}
 
@@ -467,6 +490,7 @@ export class CellOptsElem {
 		bits_align?: BitsAlign;
 		shadow?: string;
 		reset_domain?: string;
+		ready?: string;
 	} {
 		return {
 			...(this.#offset !== undefined ? { offset: this.#offset } : {}),
@@ -477,6 +501,7 @@ export class CellOptsElem {
 			...(this.#reset_domain !== undefined
 				? { reset_domain: this.#reset_domain }
 				: {}),
+			...(this.#ready !== undefined ? { ready: this.#ready } : {}),
 		};
 	}
 }
@@ -839,6 +864,7 @@ export function Cell(
 		...(o.bits_align !== undefined ? { bits_align: o.bits_align } : {}),
 		...(o.shadow !== undefined ? { shadow: o.shadow } : {}),
 		...(o.reset_domain !== undefined ? { reset_domain: o.reset_domain } : {}),
+		...(o.ready !== undefined ? { ready: o.ready } : {}),
 	};
 }
 

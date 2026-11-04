@@ -528,6 +528,29 @@ export function collectPorts(laid: LaidRegfile): PortDecl[] {
 			}
 		}
 	}
+	const nonReadyPorts = new Set(ports.map((p) => p.name));
+	// Declared reset domains retain their role even when their ports are pruned.
+	for (const domain of def.reset_domains ?? []) {
+		nonReadyPorts.add(`i_${domain}`);
+	}
+	const seenReady = new Set<string>();
+	for (const c of cells) {
+		if (c.ready === undefined) continue;
+		const name = `i_${c.ready}`;
+		if (nonReadyPorts.has(name)) {
+			throw new Error(
+				`Cell ${c.name}: ready input ${name} collides with a non-ready port`,
+			);
+		}
+		if (seenReady.has(name)) continue;
+		seenReady.add(name);
+		ports.push({
+			dir: "input",
+			packed: "",
+			name,
+			comment: `Cell acceptance ready: ${c.ready}`,
+		});
+	}
 	return ports;
 }
 
@@ -562,6 +585,7 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	const o_wb_dat = wb("o_wb_dat");
 
 	const writable = cells.filter(cellSwWrite);
+	const readyCells = cells.filter((c) => c.ready !== undefined);
 	type RweStall = { stem: string; byte_offset: number };
 	const rweStalls: RweStall[] = [];
 	if (def.read_write_block) {
@@ -582,6 +606,9 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 		...(writable.length > 0 ? [{ packed: "", name: "wr_fire" }] : []),
 		{ packed: "", name: "rd_fire" },
 	];
+	if (readyCells.length > 0) {
+		sigs.push({ packed: "", name: "cell_stall" });
+	}
 
 	for (const c of cells) {
 		sigs.push({ packed: "", name: `addr_hit_${hex(c.byte_offset)}` });
@@ -589,6 +616,12 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 			sigs.push({ packed: "", name: `wr_sel_${hex(c.byte_offset)}` });
 		}
 		sigs.push({ packed: "", name: `rd_sel_${hex(c.byte_offset)}` });
+		if (c.ready !== undefined) {
+			sigs.push({ packed: "", name: `cell_ready_${hex(c.byte_offset)}` });
+			if (cellSwWrite(c)) {
+				sigs.push({ packed: "", name: `wr_commit_${hex(c.byte_offset)}` });
+			}
+		}
 	}
 
 	for (const s of shadows) {
@@ -692,6 +725,28 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 		out.push(
 			`\tassign rd_sel_${hex(c.byte_offset)} = rd_fire && addr_hit_${hex(c.byte_offset)};`,
 		);
+		if (c.ready !== undefined) {
+			const ready = [
+				`i_${c.ready}`,
+				...(def.read_write_block
+					? c.fields
+							.filter((lf) => lf.field.access === Access.RWE)
+							.map((lf) => `${sidebandStem(lf.field)}_ready`)
+					: []),
+			].join(" && ");
+			out.push(`\tassign cell_ready_${hex(c.byte_offset)} = ${ready};`);
+			if (cellSwWrite(c)) {
+				out.push(
+					`\tassign wr_commit_${hex(c.byte_offset)} = wr_sel_${hex(c.byte_offset)} && cell_ready_${hex(c.byte_offset)};`,
+				);
+			}
+		}
+	}
+	if (readyCells.length > 0) {
+		out.push(
+			"\t// Address-qualified readiness stalls both reads and writes, never misses.",
+			`\tassign cell_stall = ${readyCells.map((c) => `(addr_hit_${hex(c.byte_offset)} && !cell_ready_${hex(c.byte_offset)})`).join(" | ")};`,
+		);
 	}
 
 	if (shadows.length > 0) {
@@ -769,8 +824,8 @@ export function emitRegfileSv(laid: LaidRegfile): string {
 	out.push("");
 
 	// A miss still ACKs (rd_data stays 0, wr_sel stays off) so a classic master
-	// waiting on ACK cannot hold the arbiter grant forever. An RWE hit may stall.
-	const ack = `\tassign ${o_wb_ack} = ${i_wb_cyc} && ${i_wb_stb}`;
+	// waiting on ACK cannot hold the arbiter grant forever. Ready hits may stall.
+	const ack = `\tassign ${o_wb_ack} = ${i_wb_cyc} && ${i_wb_stb}${readyCells.length > 0 ? " && !cell_stall" : ""}`;
 	if (rweStalls.length === 0) {
 		out.push(`${ack};`);
 	} else if (rweStalls.length === 1) {
@@ -889,7 +944,7 @@ function chunkSel(ch: LaneChunk, width: number): string {
 
 /**
  * One storage DFF block per cell (master regbit_block style):
- * reset → ~wr (HW writes: RWW strb / W1C set) → wr (per-byte-lane SEL blocks).
+ * reset → accepted SW write (per-byte-lane SEL blocks) → HW RWW strb / W1C set.
  * A W1C HW set remains eligible when a SW write omits its byte lane.
  * Assign columns are aligned per branch.
  * The reset branch is the cell's reset domain: i_rst_n unless .resetDomain(...)
@@ -904,8 +959,13 @@ function emitCellStorage(
 	i_wb_dat: string,
 	i_wb_sel: string,
 ): void {
-	const wr = `wr_sel_${hex(c.byte_offset)}`;
+	const wrRequest = `wr_sel_${hex(c.byte_offset)}`;
+	const wr =
+		c.ready !== undefined ? `wr_commit_${hex(c.byte_offset)}` : wrRequest;
 	const rd = `rd_sel_${hex(c.byte_offset)}`;
+	const blockingWindows = read_write_block
+		? c.fields.filter((lf) => lf.field.access === Access.RWE)
+		: [];
 	const muxed = Boolean(sh?.inner_shadow_mux);
 	const ncopy = sh ? sh.copies : 1;
 	const sw = Math.max(1, Math.ceil(Math.log2(ncopy)));
@@ -922,17 +982,39 @@ function emitCellStorage(
 			const sLo = Math.floor(lo / 8);
 			const sHi = Math.floor(hi / 8);
 			const nl = sHi - sLo + 1;
+			// Requests never depend on their own ready: an external FIFO may
+			// derive ready from wren/rden. Other windows must be ready first
+			// so request && own-ready is the same handshake as internal commit.
+			const requestGates =
+				c.ready === undefined
+					? []
+					: [
+							`i_${c.ready}`,
+							...blockingWindows
+								.filter((window) => window !== lf)
+								.map((window) => `${sidebandStem(window.field)}_ready`),
+						];
+			const requestSuffix =
+				requestGates.length > 0 ? ` && ${requestGates.join(" && ")}` : "";
+			const rweWr = `${wrRequest}${requestSuffix}`;
+			const rweRd = `${rd}${requestSuffix}`;
+			if (c.ready !== undefined && blockingWindows.length > 1) {
+				out.push(
+					"\t// Multiple blocking windows: ready must be independent of wren/rden",
+					"\t// to avoid circular readiness; each request waits for every other window.",
+				);
+			}
 			const selBits =
 				sHi === sLo ? `${i_wb_sel}[${sLo}]` : `${i_wb_sel}[${sHi}:${sLo}]`;
 			out.push(`\tassign ${stem}_wdata = ${i_wb_dat}${bitRange(hi, lo)};`);
-			out.push(`\tassign ${stem}_wstrb = {${nl}{${wr}}} & ${selBits};`);
-			out.push(`\tassign ${stem}_wren  = ${wr};`);
-			out.push(`\tassign ${stem}_rden  = ${rd};`);
+			out.push(`\tassign ${stem}_wstrb = {${nl}{${rweWr}}} & ${selBits};`);
+			out.push(`\tassign ${stem}_wren  = ${rweWr};`);
+			out.push(`\tassign ${stem}_rden  = ${rweRd};`);
 			out.push(`\tassign ${stem}_rst   = ~i_rst_n;`);
 			if (read_write_block) {
 				out.push(
 					`\t// Stall ACK when this RWE window is selected and not ready`,
-					`\tassign rwe_stall_${stem} = (${wr} || ${rd}) && !${stem}_ready;`,
+					`\tassign rwe_stall_${stem} = (${wrRequest} || ${rd}) && !${stem}_ready;`,
 				);
 			}
 			continue;
@@ -983,7 +1065,7 @@ function emitCellStorage(
 		}
 	}
 
-	// --- HW branch rows (~wr): RWW strb / W1C set ---
+	// --- HW branch rows (no accepted SW write): RWW strb / W1C set ---
 	const hw: Row[] = [];
 	for (const lf of dff) {
 		const f = lf.field;
@@ -1095,10 +1177,6 @@ function emitCellStorage(
 	out.push(`\talways_ff @(posedge i_clk or negedge ${rstN}) begin`);
 	out.push(`\t\tif (!${rstN}) begin`);
 	pushRows("\t\t\t", resets);
-	if (hw.length > 0) {
-		out.push(`\t\tend else if (~${wr}) begin`);
-		pushRows("\t\t\t", hw);
-	}
 	out.push(`\t\tend else if (${wr}) begin`);
 	for (const { lane, rows, w1cFallbackRows } of lanes) {
 		out.push(`\t\t\tif (${i_wb_sel}[${lane}]) begin`);
@@ -1108,6 +1186,10 @@ function emitCellStorage(
 			pushRows("\t\t\t\t", w1cFallbackRows);
 		}
 		out.push("\t\t\tend");
+	}
+	if (hw.length > 0) {
+		out.push("\t\tend else begin");
+		pushRows("\t\t\t", hw);
 	}
 	out.push("\t\tend");
 	out.push("\tend");

@@ -67,13 +67,34 @@ function leafWbFromFabric(
 	return `${table}_${suffix}`;
 }
 
+function readyNames(slave: WbSlave): Set<string> {
+	const rf = slave.regfile;
+	if (!rf) return new Set();
+	return new Set(
+		layoutRegfile(rf)
+			.cells.map((c) => c.ready)
+			.filter((name): name is string => name !== undefined)
+			.map((name) => `i_${name}`),
+	);
+}
+
+function readyPorts(slave: WbSlave): PortDecl[] {
+	const rf = slave.regfile;
+	if (!rf) return [];
+	const names = readyNames(slave);
+	return collectPorts(layoutRegfile(rf)).filter((p) => names.has(p.name));
+}
+
+// Ready roles are deliberately shared by exact i_<name>; unlike ordinary sidebands,
+// aliases never receive a promoted hang prefix.
 function sidebandPorts(slave: WbSlave): PortDecl[] {
 	const rf = slave.regfile;
 	if (!rf) return [];
 	const laid = layoutRegfile(rf);
 	const table = rf.name;
+	const ready = readyNames(slave);
 	return collectPorts(laid).filter(
-		(p) => !isLeafClk(p.name) && !isLeafWb(p.name, table),
+		(p) => !isLeafClk(p.name) && !isLeafWb(p.name, table) && !ready.has(p.name),
 	);
 }
 
@@ -123,6 +144,39 @@ function wrapperPorts(def: BusDef): Array<{
 		ports.push(p);
 	}
 	ports.push(...masterFacePorts(def));
+	const readyPortNames = new Set<string>();
+	for (const s of attached) {
+		for (const p of readyPorts(s)) {
+			if (ports.some((x) => x.name === p.name)) {
+				if (!readyPortNames.has(p.name)) {
+					throw new Error(
+						`wishbone-bus: wrapper ${def.name} port collision on ready input "${p.name}"`,
+					);
+				}
+				const prior = ports.find((x) => x.name === p.name);
+				if (prior?.packed !== p.packed || prior.unpacked !== p.unpacked) {
+					throw new Error(
+						`wishbone-bus: wrapper ${def.name} ready input collision on "${p.name}" has mismatched width`,
+					);
+				}
+				continue;
+			}
+			ports.push({ ...p, comment: `Regfile ready input ${p.name.slice(2)}` });
+			readyPortNames.add(p.name);
+		}
+	}
+	const resetPortNames = new Set<string>(["i_rst_n"]);
+	for (const s of attached) {
+		for (const name of s.regfile?.reset_domains ?? [])
+			resetPortNames.add(`i_${name}`);
+	}
+	for (const name of readyPortNames) {
+		if (resetPortNames.has(name))
+			throw new Error(
+				`wishbone-bus: wrapper ${def.name} ready input collides with reset domain "${name}"`,
+			);
+	}
+
 	for (const s of attached) {
 		const rf = s.regfile;
 		if (!rf) continue;
@@ -136,7 +190,7 @@ function wrapperPorts(def: BusDef): Array<{
 				const isDomainPort =
 					p.name.startsWith("i_") &&
 					(rf.reset_domains ?? []).includes(p.name.slice(2));
-				if (isDomainPort) continue;
+				if (isDomainPort && !readyPortNames.has(name)) continue;
 				throw new Error(
 					`wishbone-bus: wrapper ${def.name} port collision on "${name}"`,
 				);
@@ -174,6 +228,9 @@ function leafPairs(
 	const laid = layoutRegfile(rf);
 	const table = rf.name;
 	const ports = collectPorts(laid);
+	const ready = new Set(
+		laid.cells.flatMap((c) => (c.ready === undefined ? [] : [`i_${c.ready}`])),
+	);
 	const wbPorts = listFabricPorts(def).filter((p) =>
 		isSlaveWbPort(p.name, slave.name),
 	);
@@ -202,6 +259,11 @@ function leafPairs(
 			pairs.push({ port: p.name, net: "rst_n", ...meta });
 			continue;
 		}
+		if (ready.has(p.name)) {
+			pairs.push({ port: p.name, net: p.name, ...meta });
+			continue;
+		}
+
 		if (isLeafWb(p.name, table)) {
 			const fabric = wbPorts.find(
 				(f) => leafWbFromFabric(table, slave.name, f.name) === p.name,

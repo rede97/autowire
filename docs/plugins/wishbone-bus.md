@@ -49,7 +49,7 @@
 | `ADR` | in | 位宽 = 叶子必填 `addr_width`；**字节地址**（与 [`wishbone-regfile.md`](./wishbone-regfile.md) §5.6 **同裁：byte**） |
 | `DAT_O` | in | 写数据（master→slave）；**固定 32**；端口**最终名**随 regfile §5.4 前缀方案 |
 | `SEL` | in | 字节选通；**固定 4**（随 DAT=32） |
-| `ACK` | out | 完成；regfile 叶子 **同拍** ACK（[`wishbone-regfile.md`](./wishbone-regfile.md) §5.5）；fabric **pipe** 可整体推迟；RWE+`read_write_block` 可拖 ACK |
+| `ACK` | out | 完成；regfile 叶子通常同拍 ACK（[`wishbone-regfile.md`](./wishbone-regfile.md) §5.5）；fabric pipe 可整体推迟；RWE+`read_write_block` 或 Cell `.ready(name)` 可拖叶子 ACK |
 | `DAT_I` | out | 读数据；**固定 32**；与读 `ACK` 同拍有效 |
 | `ERR` | out | 可选；默认 0 |
 | `RTY` | — | **禁止**（本子集不实现） |
@@ -178,7 +178,7 @@ PIPE 读不可取消：发起后直到 ACK 必须保持 CYC/STB、WE、ADR、SEL
 
 范本审逻辑用 [`rtl/wb_cfg_pipe_template.sv`](./rtl/wb_cfg_pipe_template.sv)；generate 拷到 `plugins_dir`，decoder/IC **例化**该 module。
 
-**RWE + `read_write_block`**：见 regfile §；缺省 `false`；posted 下打开有锁死总线风险。
+**RWE / Cell ready 背压**：RWE `read_write_block` 缺省 false；Cell `.ready(name)` 独立启用整 Cell 读写阻塞。叶子 ACK=0 时 posted 写保留在 pipe，满后反压；master 已有的入队 ACK 不撤回。ready 不能依赖被该事务挡住的后续访问，否则形成队头死锁。pipe 协议和配置不变。
 
 ### 3.3 透明 register slice（备选，仅换时序）
 

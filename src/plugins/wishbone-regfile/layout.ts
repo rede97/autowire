@@ -32,6 +32,7 @@ export interface LaidCell {
 	readonly shadow?: string;
 	/** Effective async reset domain (resolved: cell → block → table default → "rst_n"). */
 	readonly reset_domain: string;
+	readonly ready?: string;
 	readonly fields: readonly LaidField[];
 }
 
@@ -197,6 +198,7 @@ function layoutBlock(
 			byte_offset: at,
 			...(cell.shadow !== undefined ? { shadow: cell.shadow } : {}),
 			reset_domain: cell.reset_domain ?? defaultDomain,
+			...(cell.ready !== undefined ? { ready: cell.ready } : {}),
 			fields,
 		});
 		cursor = Math.max(cursor, at + CELL_BYTES);
@@ -312,6 +314,11 @@ export function layoutRegfile(def: RegfileDef): LaidRegfile {
 
 	const merge = (laid: LaidCell[]) => {
 		for (const c of laid) {
+			if (c.ready !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(c.ready)) {
+				throw new Error(
+					`cell "${c.name}" ready name "${c.ready}" must be an identifier`,
+				);
+			}
 			for (let b = 0; b < CELL_BYTES; b++) {
 				const addr = c.byte_offset + b;
 				if (occupied.has(addr)) {
@@ -362,6 +369,7 @@ export function layoutRegfile(def: RegfileDef): LaidRegfile {
 					byte_offset: at,
 					...(cell.shadow !== undefined ? { shadow: cell.shadow } : {}),
 					reset_domain: cell.reset_domain ?? defaultDomain,
+					...(cell.ready !== undefined ? { ready: cell.ready } : {}),
 					fields,
 				},
 			]);

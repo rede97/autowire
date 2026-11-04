@@ -131,3 +131,29 @@ export const sub_module_rst = Regfile(
 		]),
 	],
 );
+
+// Cell-only permission: posted writes remain queued until i_ctrl_rdy is high.
+export const sub_module_ready = Regfile(
+	"sub_module_ready",
+	"Cell access permission without changing posted pipe semantics",
+	RegfileDefault.addrWidth(8),
+	[
+		Cell("CTRL", "Ready-gated control", CellDefault.ready("ctrl_rdy"), [
+			Field("capture", Access.RWW, 8, "Hardware updates while bus waits").reset(
+				0,
+			),
+			Field("events", Access.W1C, 8, "Sticky events while bus waits").reset(0),
+		]),
+		Cell(
+			"STATUS",
+			"Status sharing the permission",
+			CellDefault.ready("ctrl_rdy"),
+			[Field("status", Access.RO, 8, "Live status sampled at ACK")],
+		),
+		Cell("ID", "Ungated identity", CellDefault, [
+			Field("identity", Access.RC, 8, "Readable while CTRL is blocked").reset(
+				1,
+			),
+		]),
+	],
+);

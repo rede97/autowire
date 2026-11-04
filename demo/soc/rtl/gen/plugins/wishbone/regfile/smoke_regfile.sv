@@ -314,16 +314,16 @@ module smoke_regfile (
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			rg_capture_q <= 16'h0;
-		end else if (~wr_sel_c) begin
-			if (rg_capture_strb) begin
-				rg_capture_q <= rg_capture_hwdata;
-			end
 		end else if (wr_sel_c) begin
 			if (smoke_i_wb_sel[0]) begin
 				rg_capture_q[7:0] <= smoke_i_wb_dat[7:0];
 			end
 			if (smoke_i_wb_sel[1]) begin
 				rg_capture_q[15:8] <= smoke_i_wb_dat[15:8];
+			end
+		end else begin
+			if (rg_capture_strb) begin
+				rg_capture_q <= rg_capture_hwdata;
 			end
 		end
 	end
@@ -353,10 +353,6 @@ module smoke_regfile (
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			c_rg_sticky_q <= 1'h0;
-		end else if (~wr_sel_18) begin
-			if (|c_rg_sticky_set) begin
-				c_rg_sticky_q <= c_rg_sticky_q | c_rg_sticky_set;
-			end
 		end else if (wr_sel_18) begin
 			if (smoke_i_wb_sel[0]) begin
 				c_rg_sticky_q <= (c_rg_sticky_q & ~smoke_i_wb_dat[0]) | c_rg_sticky_set;
@@ -364,6 +360,10 @@ module smoke_regfile (
 				if (|(c_rg_sticky_set)) begin
 					c_rg_sticky_q <= c_rg_sticky_q | c_rg_sticky_set;
 				end
+			end
+		end else begin
+			if (|c_rg_sticky_set) begin
+				c_rg_sticky_q <= c_rg_sticky_q | c_rg_sticky_set;
 			end
 		end
 	end

@@ -2,6 +2,13 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.7.1] - 2026-11-04
+
+- **Cell 级访问阻塞**：新增 `CellDefault.ready(name)`，导出 `i_<name>`，同时控制该 Cell 的读写接受。仅 Cell 可配置，没有 Regfile / Block 默认。ready=0 时叶子不 ACK，不提前更新软件可写状态或触发 W1P；RWW 硬件更新与 W1C 硬件置位继续。posted pipe 保持入队 ACK，未接受的写滞留 pipe，队列满后自然反压，不增加非 posted 模式。
+- bus cfg wrapper 正确上提 ready 输入，跨挂接 id 的同名 ready 合并；与时钟、复位、shadow 或其他端口撞名时报错。带 Cell ready 的 RWE 窗口与内部字段共同接受，单窗口支持 ready 依赖请求；同 Cell 多个阻塞窗口的 ready 必须独立于请求，避免循环等待与部分消费。
+- **RWW 分支顺序更直观**：生成存储逻辑按复位 → 已接受的软件写 → 硬件更新排列，不再先判断 `~wr_sel`。保持 RWW 软件写优先、W1C set-over-clear 与未选字节 lane 的硬件置位语义。
+- 增加直连与两级 posted pipe 的 RTL 回归，覆盖阻塞、队列反压、写顺序、硬件更新和 RWE 联合接受。契约及用法见 `docs/plugins/wishbone-regfile.md`，可运行示例为 `docs/examples/regfile/regfile.ts` 的 `sub_module_ready`。
+
 ## [2.7.0] - 2026-11-03
 
 - **regfile 新增复位域（reset domains）**：`RegfileDefault.resetDomains("por_rst_n", ...)` 声明额外异步低有效复位域；`CellDefault.resetDomain(name)` 把**整个 cell** 的存储 DFF 绑到该域，`BlockDefault.resetDomain(...)` 为下属 cell 缺省（宽 field 拆片同样继承），都省略时落 `defaultResetDomain(...)`（缺省隐式域 `"rst_n"`）。粒度只到 cell，禁止 field 级。隐式域 `"rst_n"` = `i_rst_n`：**常驻、免声明、不可删**；被用域各出一个 `i_<name>` input，声明未用的域不出端口。只支持同 `i_clk` 的异步复位；**RWE** field 禁止挂非 `"rst_n"` 域（报错并提示显式绑回），W1P 脉冲寄存器与 RWE 窗 glue 恒走 `i_rst_n`。多份 regfile 可声明**同名**复位域：bus Type-A wrapper 按名合并成一个 wrapper input 统一上提，connect HTML 对 wrapper `aw-inst` 接一次线。Excel / C / uvm_reg 导出不含复位域。契约见 `docs/plugins/wishbone-regfile.md`；可运行样例 `docs/examples/regfile/regfile.ts` 的 `sub_module_rst`。

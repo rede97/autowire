@@ -286,12 +286,29 @@ generate：TS RegfileDef export
 - **禁止**用 `read_write_block` 去挡 RO/RW/RC/W1*。  
 - 典型：外挂 FIFO 且希望总线自然 stall → 开 `true`；普通窗保持缺省 `false`。
 
+**Cell 访问许可：`CellDefault.ready(name)`**
+
+仅 Cell 可配置；没有 Regfile 声明、Block 缺省或 Field 级配置。导出标量输入 `i_<name>`，同名 Cell 共享输入。未配置保持原行为。
+
+```ts
+Cell("CTRL", "Control", CellDefault.ready("ctrl_rdy"), [
+  Field("capture", Access.RWW, 8, "Hardware capture").reset(0),
+  Field("event", Access.W1C, 8, "Sticky event").reset(0),
+]);
+```
+
+- 同时控制该 Cell 的读、写；ready=0 时 ACK=0，内部软件写及 W1P 脉冲不发生。读数据可组合变化，仅 ACK 时有效。其它 Cell 和未映射地址不受影响。
+- ready 必须同步于 `i_clk`，不能依赖排在该事务后面的总线操作才能拉高。没有自动超时或丢弃；复位仍按原协议清除状态。
+- RWW/W1C 硬件更新在等待期间继续。存储分支按 **reset → 已接受的软件写 → else 硬件更新** 输出；RWW 在实际接受软件写的拍优先，W1C 同位硬件 set 仍胜过软件 clear，SEL 未选 lane 的 set 仍保留。
+- 带 `.ready()` 的 Cell 若含阻塞 RWE，内部提交和 ACK 要等 Cell ready 与全部窗口 ready。每个窗口的 `_wren/_rden` 保持请求语义，受 Cell ready 及其它窗口 ready 门控，**不受自己的 ready 门控**；外部在 request AND own-ready 时消费。单个窗口允许 ready 依赖自身请求；多个阻塞窗口的 ready 必须独立于这些请求，否则会循环等待。各窗口与内部存储同拍接受，禁止部分消费。
+- 内置叶子的 ready 经 bus cfg wrapper 上提为同名 `i_<name>`，跨挂接 id 同名合并；只允许 ready-ready 合并，撞时钟、复位、shadow 或普通端口时报错。外置叶子由上层直接接线。配置后必须连接，不隐式 tie-high。
+- 不改变地址图、复位值或软件导出。可运行示例：[`regfile.ts`](../examples/regfile/regfile.ts) 的 `sub_module_ready`。
+
 **与 fabric「写 posted / 读阻塞」联用时（主干 cfg 加速模型）**
 
 - 写 ACK 常在 **arb/入口** 给出（表示进队/获 grant），**不是**窗外 FIFO 已接收。  
-- **`read_write_block` 必须默认保持 `false`，打开前要谨慎**：若写 ACK 已提前给出，再用 `ext_*_ready=0` 拖叶子 ACK，**无法**再挡住 master，易造成协议死锁或「以为 stall 住了其实写已 accepted」。  
-- 需要反压时：优先窗外自备缓冲 / 满标志 + 软件 fence；或该地址 **退出 posted 写通道**；**不要**指望 `read_write_block=true` 在 posted fabric 上锁总线。  
-- 写后依赖 RWE 副作用：先 **读做屏障** 或显式排空写 pipe。
+- posted pipe 保持：叶子 ready=0 时当前写滞留 pipe，地址、数据、SEL、tag 保持；后续事务可填空级，满后自然反压，不能越过当前事务。无复位时不丢弃或重复执行。
+- master 入队 ACK 不等于叶子执行完成；ready 不能撤回已发出的 ACK。读等待叶子响应；需观察某笔写完成时使用同一路径的有序读，不将其当成其他路径的全局 fence。
 
 ### 5.2 必须替换的外壳（相对主干）
 
@@ -372,7 +389,7 @@ rd_fire = CYC & STB & ~WE & hit
 | **打拍** | **regfile 叶子不负责**为时序打拍；长线 / Fmax 交给 [`wishbone-bus.md`](./wishbone-bus.md) **pipe** |
 | ~~+1 拍 ACK~~ | **不做**（勿把主干 `rddata_vld` 节奏搬进叶子） |
 
-`read_write_block=true` 且对应 RWE 的 **`ext_<field>_ready` 为 0** 时：**可以**在命中该 RWE 的拍上**推迟** `ACK`（仍无 vld 口）。未命中的地址仍然同拍 ACK。**非 RWE** **禁止**因此拖 ACK。
+`read_write_block=true` 且对应 RWE 的 `ext_<field>_ready=0`，或命中配置了 `.ready(name)` 的 Cell 且许可未满足时，推迟 ACK（无额外 vld 口）。`.ready()` 可作用于所有 Access；未配置者保持原行为。未命中的地址仍然同拍 ACK。
 
 ### 5.6 地址与 `SEL`（已裁定：**byte**）
 
