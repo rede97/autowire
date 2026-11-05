@@ -45,6 +45,7 @@ function accessSwWrite(access: Access): boolean {
 		access === Access.RW ||
 		access === Access.RWW ||
 		access === Access.W1C ||
+		access === Access.W1CC ||
 		access === Access.RWE ||
 		access === Access.W1P
 	);
@@ -62,6 +63,7 @@ function cellUsesClk(c: LaidCell): boolean {
 			a === Access.RW ||
 			a === Access.RWW ||
 			a === Access.W1C ||
+			a === Access.W1CC ||
 			a === Access.W1P
 		);
 	});
@@ -417,16 +419,30 @@ export function collectPorts(laid: LaidRegfile): PortDecl[] {
 					arr(stem, "output", "write-1 pulse out");
 					break;
 				case Access.W1C:
+				case Access.W1CC:
 					arr(stem, "output", "write-1 clear sticky out");
 					ports.push({
 						dir: "input",
 						packed: pk,
 						name: `${stem}_set`,
 						comment: banner(
-							"sticky set in (hardware set; set wins over clear)",
+							f.access === Access.W1CC
+								? "state-conditional sticky set in (q=1: clear wins; q=0: set wins)"
+								: "sticky set in (hardware set; set wins over clear)",
 						),
 						...(copies > 1 ? { unpacked: `[${copies}]` } : {}),
 					});
+					if (f.access === Access.W1CC) {
+						ports.push({
+							dir: "input",
+							packed: pk,
+							name: `${stem}_clr`,
+							comment: banner(
+								"state-conditional sticky clear in (q=1: clear wins; q=0: set wins)",
+							),
+							...(copies > 1 ? { unpacked: `[${copies}]` } : {}),
+						});
+					}
 					break;
 				case Access.RWW:
 					arr(stem, "output", "register out");
@@ -893,11 +909,22 @@ function collectFieldStorageSigs(
 		return;
 	}
 	const stem = sidebandStem(f);
+	if (f.access === Access.W1C || f.access === Access.W1CC) {
+		sigs.push({ packed: packedRange(f.width), name: `${stem}_sw_clr` });
+		for (const suffix of ["set_eff", "clr_eff"]) {
+			sigs.push({
+				packed: packedRange(f.width),
+				name: `${stem}_${suffix}`,
+				...(sh ? { unpacked: `[${sh.copies}]` } : {}),
+			});
+		}
+	}
 	if (
 		sh &&
 		(f.access === Access.RW ||
 			f.access === Access.RWW ||
-			f.access === Access.W1C)
+			f.access === Access.W1C ||
+			f.access === Access.W1CC)
 	) {
 		sigs.push({
 			packed: packedRange(f.width),
@@ -909,7 +936,8 @@ function collectFieldStorageSigs(
 	if (
 		f.access === Access.RW ||
 		f.access === Access.RWW ||
-		f.access === Access.W1C
+		f.access === Access.W1C ||
+		f.access === Access.W1CC
 	) {
 		sigs.push({ packed: packedRange(f.width), name: `${stem}_q` });
 	}
@@ -943,9 +971,9 @@ function chunkSel(ch: LaneChunk, width: number): string {
 }
 
 /**
- * One storage DFF block per cell (master regbit_block style):
- * reset → accepted SW write (per-byte-lane SEL blocks) → HW RWW strb / W1C set.
- * A W1C HW set remains eligible when a SW write omits its byte lane.
+ * RW/RWW storage uses reset → accepted SW write → HW updates.
+ * W1C and W1CC each use a reset/update block with combinational masks.
+ * Hardware sticky updates remain eligible on unselected byte lanes.
  * Assign columns are aligned per branch.
  * The reset branch is the cell's reset domain: i_rst_n unless .resetDomain(...)
  * bound the cell elsewhere (W1P pulse regs and RWE window glue stay on i_rst_n).
@@ -1029,8 +1057,88 @@ function emitCellStorage(
 		out.push("\tend");
 	}
 
+	// Sticky arbitration is combinational; each access gets its own storage block.
+	for (const access of [Access.W1C, Access.W1CC]) {
+		const sticky = c.fields.filter((lf) => lf.field.access === access);
+		for (const lf of sticky) {
+			const f = lf.field;
+			const stem = sidebandStem(f);
+			const hi = lf.bit_offset + f.width - 1;
+			const lo = lf.bit_offset;
+			out.push(
+				`\tassign ${stem}_sw_clr = ${wr} ? (${i_wb_dat}${bitRange(hi, lo)} & (${selMask(hi, lo, i_wb_sel)})) : ${f.width}'h0;`,
+			);
+			for (let i = 0; i < ncopy; i++) {
+				const suffix = sh ? `[${i}]` : "";
+				const q = `${stem}_q${suffix}`;
+				const hwSuffix = sh && !muxed ? suffix : "";
+				const hwGate =
+					sh && muxed ? `i_${sh.name}_mux_sel == ${sw}'d${i}` : null;
+				const hwSet = hwGate
+					? `(${hwGate} ? ${stem}_set : ${f.width}'h0)`
+					: `${stem}_set${hwSuffix}`;
+				const hwClr =
+					access === Access.W1CC
+						? hwGate
+							? `(${hwGate} ? ${stem}_clr : ${f.width}'h0)`
+							: `${stem}_clr${hwSuffix}`
+						: null;
+				const swClr = sh
+					? `(mask_${sh.name}[${i}] ? ${stem}_sw_clr : ${f.width}'h0)`
+					: `${stem}_sw_clr`;
+				if (access === Access.W1CC) {
+					out.push(
+						`\tassign ${stem}_set_eff${suffix} = ~${q} & ${hwSet};`,
+						`\tassign ${stem}_clr_eff${suffix} = ${q} & (${swClr} | ${hwClr});`,
+					);
+				} else {
+					// Preserve W1C's existing shadow eligibility during a software write.
+					const set = sh
+						? `(!${wr} || mask_${sh.name}[${i}]) ? ${hwSet} : ${f.width}'h0`
+						: hwSet;
+					out.push(
+						`\tassign ${stem}_set_eff${suffix} = ${set};`,
+						`\tassign ${stem}_clr_eff${suffix} = ${swClr};`,
+					);
+				}
+			}
+		}
+		if (sticky.length > 0) {
+			const rstN = resetDomainPort(c.reset_domain);
+			out.push(`\talways_ff @(posedge i_clk or negedge ${rstN}) begin`);
+			out.push(`\t\tif (!${rstN}) begin`);
+			for (const lf of sticky) {
+				const f = lf.field;
+				const stem = sidebandStem(f);
+				for (let i = 0; i < ncopy; i++) {
+					const suffix = sh ? `[${i}]` : "";
+					out.push(
+						`\t\t\t${stem}_q${suffix} <= ${f.width}'h${hex(resetVal(f.reset, i))};`,
+					);
+				}
+			}
+			out.push("\t\tend else begin");
+			for (const lf of sticky) {
+				const stem = sidebandStem(lf.field);
+				for (let i = 0; i < ncopy; i++) {
+					const suffix = sh ? `[${i}]` : "";
+					out.push(
+						`\t\t\t${stem}_q${suffix} <= (${stem}_q${suffix} & ~${stem}_clr_eff${suffix}) | ${stem}_set_eff${suffix};`,
+					);
+				}
+			}
+			out.push("\t\tend", "\tend");
+			for (const lf of sticky) {
+				const stem = sidebandStem(lf.field);
+				out.push(
+					`\tassign ${stem} = ${stem}_q${sh && muxed ? `[i_${sh.name}_mux_sel]` : ""};`,
+				);
+			}
+		}
+	}
+
 	const dff = c.fields.filter((lf) =>
-		[Access.RW, Access.RWW, Access.W1C].includes(lf.field.access),
+		[Access.RW, Access.RWW].includes(lf.field.access),
 	);
 	if (dff.length === 0) return;
 
@@ -1065,7 +1173,7 @@ function emitCellStorage(
 		}
 	}
 
-	// --- HW branch rows (no accepted SW write): RWW strb / W1C set ---
+	// --- HW branch rows (no accepted SW write): RWW strb ---
 	const hw: Row[] = [];
 	for (const lf of dff) {
 		const f = lf.field;
@@ -1087,85 +1195,30 @@ function emitCellStorage(
 				});
 			}
 		}
-		if (f.access === Access.W1C) {
-			if (sh && !muxed) {
-				for (let i = 0; i < ncopy; i++) {
-					hw.push({
-						guard: `|${stem}_set[${i}]`,
-						lhs: lhsAt(lf, i),
-						rhs: `${lhsAt(lf, i)} | ${stem}_set[${i}]`,
-					});
-				}
-			} else {
-				const lhs = sh ? `${lhsBase(lf)}[${iMux}]` : lhsAt(lf, null);
-				hw.push({
-					guard: `|${stem}_set`,
-					lhs,
-					rhs: `${lhs} | ${stem}_set`,
-				});
-			}
-		}
 	}
 
 	// --- SW branch: per-byte-lane blocks ---
-	const lanes: { lane: number; rows: Row[]; w1cFallbackRows: Row[] }[] = [];
+	const lanes: { lane: number; rows: Row[] }[] = [];
 	for (let k = 0; k < 4; k++) {
 		const rows: Row[] = [];
-		const w1cFallbackRows: Row[] = [];
 		for (const lf of dff) {
 			const f = lf.field;
-			const stem = sidebandStem(f);
 			const hi = lf.bit_offset + f.width - 1;
 			for (const ch of fieldLaneChunks(hi, lf.bit_offset)) {
 				if (ch.lane !== k) continue;
 				const sel = chunkSel(ch, f.width);
 				const dat = `${i_wb_dat}${bitRange(ch.gHi, ch.gLo)}`;
-				const w = ch.fHi - ch.fLo + 1;
-				if (f.access === Access.W1C) {
-					const w1cSetExpr = (copy: number | null): string =>
-						copy === null
-							? `${stem}_set${sel}`
-							: muxed
-								? `((${iMux} == ${sw}'d${copy}) ? ${stem}_set${sel} : ${w}'h0)`
-								: `${stem}_set[${copy}]${sel}`;
-					const w1c = (copy: number | null): Row => {
-						const lhs = `${lhsAt(lf, copy)}${sel}`;
-						const setExpr = w1cSetExpr(copy);
-						return {
-							guard: sh ? `mask_${sh?.name ?? ""}[${copy ?? 0}]` : null,
-							lhs,
-							rhs: `(${lhs} & ~${dat}) | ${setExpr}`,
-						};
-					};
-					const w1cFallback = (copy: number | null): Row => {
-						const lhs = `${lhsAt(lf, copy)}${sel}`;
-						const setExpr = w1cSetExpr(copy);
-						const hasSet = `|(${setExpr})`;
-						return {
-							guard: sh
-								? `mask_${sh?.name ?? ""}[${copy ?? 0}] && ${hasSet}`
-								: hasSet,
-							lhs,
-							rhs: `${lhs} | ${setExpr}`,
-						};
-					};
-					for (let i = 0; i < (sh ? ncopy : 1); i++) {
-						rows.push(w1c(sh ? i : null));
-						w1cFallbackRows.push(w1cFallback(sh ? i : null));
-					}
-				} else {
-					const rw = (copy: number | null): Row => ({
-						guard: sh ? `mask_${sh?.name ?? ""}[${copy ?? 0}]` : null,
-						lhs: `${lhsAt(lf, copy)}${sel}`,
-						rhs: dat,
-					});
-					for (let i = 0; i < (sh ? ncopy : 1); i++) {
-						rows.push(rw(sh ? i : null));
-					}
+				const rw = (copy: number | null): Row => ({
+					guard: sh ? `mask_${sh?.name ?? ""}[${copy ?? 0}]` : null,
+					lhs: `${lhsAt(lf, copy)}${sel}`,
+					rhs: dat,
+				});
+				for (let i = 0; i < (sh ? ncopy : 1); i++) {
+					rows.push(rw(sh ? i : null));
 				}
 			}
 		}
-		if (rows.length > 0) lanes.push({ lane: k, rows, w1cFallbackRows });
+		if (rows.length > 0) lanes.push({ lane: k, rows });
 	}
 
 	// Storage flops follow the cell's reset domain; W1P pulse regs and RWE
@@ -1178,13 +1231,9 @@ function emitCellStorage(
 	out.push(`\t\tif (!${rstN}) begin`);
 	pushRows("\t\t\t", resets);
 	out.push(`\t\tend else if (${wr}) begin`);
-	for (const { lane, rows, w1cFallbackRows } of lanes) {
+	for (const { lane, rows } of lanes) {
 		out.push(`\t\t\tif (${i_wb_sel}[${lane}]) begin`);
 		pushRows("\t\t\t\t", rows);
-		if (w1cFallbackRows.length > 0) {
-			out.push("\t\t\tend else begin");
-			pushRows("\t\t\t\t", w1cFallbackRows);
-		}
 		out.push("\t\t\tend");
 	}
 	if (hw.length > 0) {

@@ -154,6 +154,9 @@ module smoke_regfile (
 	logic        rg_enable_q;
 	logic [2:0]  rg_mode_q;
 	logic [15:0] rg_capture_q;
+	logic        c_rg_sticky_sw_clr;
+	logic        c_rg_sticky_set_eff;
+	logic        c_rg_sticky_clr_eff;
 	logic        c_rg_sticky_q;
 	logic [7:0]  rg_cfg_q [4];
 	logic [1:0]  rg_bank_sel_q;
@@ -350,21 +353,14 @@ module smoke_regfile (
 
 	// Addr: 0x18  RegCell: IRQ       — W1C sticky
 	//   [0]      W1C  sticky      — Sticky IRQ
+	assign c_rg_sticky_sw_clr = wr_sel_18 ? (smoke_i_wb_dat[0] & (smoke_i_wb_sel[0])) : 1'h0;
+	assign c_rg_sticky_set_eff = c_rg_sticky_set;
+	assign c_rg_sticky_clr_eff = c_rg_sticky_sw_clr;
 	always_ff @(posedge i_clk or negedge i_rst_n) begin
 		if (!i_rst_n) begin
 			c_rg_sticky_q <= 1'h0;
-		end else if (wr_sel_18) begin
-			if (smoke_i_wb_sel[0]) begin
-				c_rg_sticky_q <= (c_rg_sticky_q & ~smoke_i_wb_dat[0]) | c_rg_sticky_set;
-			end else begin
-				if (|(c_rg_sticky_set)) begin
-					c_rg_sticky_q <= c_rg_sticky_q | c_rg_sticky_set;
-				end
-			end
 		end else begin
-			if (|c_rg_sticky_set) begin
-				c_rg_sticky_q <= c_rg_sticky_q | c_rg_sticky_set;
-			end
+			c_rg_sticky_q <= (c_rg_sticky_q & ~c_rg_sticky_clr_eff) | c_rg_sticky_set_eff;
 		end
 	end
 	assign c_rg_sticky = c_rg_sticky_q;

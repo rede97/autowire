@@ -2,6 +2,13 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.7.2] - 2026-11-05
+
+- **新增独立 Access.W1CC**：软件写 1 清除，硬件导出等宽 `_set` / `_clr` mask，逐 bit 按旧状态仲裁：旧 0 接受 set，旧 1 接受 clear；两输入持续同时为 1 时每拍翻转。支持 SEL、ready、shadow broadcast / 硬件 mux / per-copy 数组和独立复位域；硬件更新不受软件选择或 ready 阻塞影响。
+- Excel 保留独立 `W1CC` 类型，C / SV package / UVM 注释说明硬件语义；UVM 使用标准软件 `W1C` 策略。文档与可运行示例同步更新。
+- **寄存器存储块分组**：每个 Cell 内 RW/RWW、W1C、W1CC 分别生成时序块，同组字段及 shadow copies 共享。W1C/W1CC 将软件清除与有效 set/clear 提取为组合信号，时序块只复位和更新，不增加延迟；W1C 保持 set-wins 和原有 shadow 更新条件。W1P 仍按字段独立生成脉冲块。
+- 增加 RTL 回归覆盖逐 bit 真值表、混合向量、持续翻转、字节使能、ready 阻塞、shadow、复位域，以及同 Cell 混合 RW/RWW/W1C/W1CC 的独立仲裁；重新生成 SoC smoke 寄存器 RTL。
+
 ## [2.7.1] - 2026-11-04
 
 - **Cell 级访问阻塞**：新增 `CellDefault.ready(name)`，导出 `i_<name>`，同时控制该 Cell 的读写接受。仅 Cell 可配置，没有 Regfile / Block 默认。ready=0 时叶子不 ACK，不提前更新软件可写状态或触发 W1P；RWW 硬件更新与 W1C 硬件置位继续。posted pipe 保持入队 ACK，未接受的写滞留 pipe，队列满后自然反压，不增加非 posted 模式。

@@ -157,3 +157,28 @@ export const sub_module_ready = Regfile(
 		]),
 	],
 );
+
+// W1CC is distinct from W1C in Excel and has both hardware masks.
+export const sub_module_w1cc = Regfile(
+	"sub_module_w1cc",
+	"State-conditional set and clear events",
+	RegfileDefault.addrWidth(8),
+	[
+		Cell(
+			"EVENTS",
+			"Events with hardware clear",
+			CellDefault.ready("events_rdy"),
+			[
+				Field("conditional", Access.W1CC, 8, "Old 1: clear; old 0: set").reset(
+					0x55,
+				),
+				Field(
+					"sticky",
+					Access.W1C,
+					8,
+					"Ordinary sticky: set wins software clear",
+				).reset(0),
+			],
+		),
+	],
+);

@@ -13,6 +13,9 @@ import type { LaidCell, LaidRegfile } from "./layout.ts";
 
 const CELL_BITS = 32;
 
+export const W1CC_DESCRIPTION =
+	"W1CC: software writes of 1 clear selected bits. Hardware _set and _clr inputs have the same width and shadow shape. Per bit, using old q: q_next = (q & ~(sw_clear | hw_clr)) | (~q & hw_set). Thus old 0 accepts _set and ignores clears; old 1 accepts software clear or _clr and ignores _set. Holding _set and _clr high toggles each cycle. Software clear requires an accepted write, an enabled SEL byte, write data 1, and the selected shadow copy. Hardware _set/_clr are independent of software selection, SEL, and ready, and target the hardware-mux-selected copy or each per-copy array element.";
+
 export type PackedBit = {
 	name: string;
 	width: number;
@@ -166,6 +169,7 @@ export function emitRegfileC(laid: LaidRegfile): string {
 		for (const b of bits) {
 			const fn = cFieldName(b.name, b.bit_offset).padEnd(namePad);
 			const w = String(b.width).padStart(2);
+			if (b.access === Access.W1CC) lines.push(`\t/* ${W1CC_DESCRIPTION} */`);
 			lines.push(
 				`\tvolatile uint32_t ${fn} : ${w}; /* ${bitRange(b.bit_offset, b.width)} ${b.desc} */`,
 			);
@@ -207,6 +211,7 @@ export function emitRegfileUvm(laid: LaidRegfile): string {
 		for (const b of bits) {
 			const fn = svFieldName(b.name, b.bit_offset);
 			const rand = accessRalRand(b.access) ? "rand " : "     ";
+			if (b.access === Access.W1CC) lines.push(`\t// ${W1CC_DESCRIPTION}`);
 			lines.push(
 				`\t${rand}uvm_reg_field ${fn.padEnd(namePad)}; // ${bitRange(b.bit_offset, b.width)}`,
 			);
@@ -310,6 +315,8 @@ export function emitRegfilePkg(laid: LaidRegfile): string {
 			const stem = `${cellUp}_${svFieldName(f.field.name, f.bit_offset).toUpperCase()}`;
 			const mask = fieldMask(f.bit_offset, f.field.width);
 			const reset = resetCopy0(f.field.reset);
+			if (f.field.access === Access.W1CC)
+				lines.push(`\t// ${W1CC_DESCRIPTION}`);
 			lines.push(
 				`\tlocalparam int unsigned ${stem}_LSB   = ${f.bit_offset};`,
 				`\tlocalparam int unsigned ${stem}_WIDTH = ${f.field.width};`,

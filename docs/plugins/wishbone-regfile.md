@@ -84,7 +84,7 @@ WB slave  ←──  (协议见 wishbone-bus.md §2)
 | 项 | 裁定 / 草案 |
 |---|---|
 | 工厂 | `Regfile` / `Block` / `Cell` / `Field` / `Shadow` |
-| Access | **RC** / RO / RW / RWW / RWE / W1P / W1C；**无 W1S**（置位用 RW） |
+| Access | **RC** / RO / RW / RWW / RWE / W1P / W1C / W1CC；**无 W1S**（置位用 RW） |
 | Field | fluent：`.offset()`（cell 内 bit 起点）/ `.reset()`；`width` + 可选 bit `offset`；**禁止** `bits=` / `high:low`；**禁止** Field 级 `.shadow()` |
 | `.reset` | **`number`**（全 copy / 无 shadow 共用）或 **`Record<copyIndex, number>`**（按物理 shadow copy）；dict **未列 copy 默认 0**；RC **必须**用标量 `number` |
 | Cell / Block 地址 | 用可选 **`offset`**（相对 regfile / 父级）；**禁止**地址语义的 `addr` 字段名 |
@@ -263,7 +263,31 @@ generate：TS RegfileDef export
 | RWE | 外部寄存器窗 | `ext_<field>` in + `ext_<field>_{wdata,wstrb,wren,rden,rst}` out；shadow → **`o_<shadow>_sel`**；表级 `read_write_block` → **`ext_<field>_ready`** 可拖 ACK |
 | W1P | 写 1 → 单拍脉冲 | `p_rg_<field>` out |
 | W1C | 写 1 → 清 sticky | `c_rg_<field>` out + **`c_rg_<field>_set`** in（硬件置位；同周期 set **优先于** W1C 清） |
+| W1CC | 软件写 1 清除；硬件按旧状态仲裁 | `c_rg_<field>` out + `_set` / `_clr` in；逐 bit：旧 q=1 时 clear 生效，旧 q=0 时 set 生效 |
 | ~~W1S~~ | **不做**；置位用 **RW** | — |
+
+**存储块分组**：每个 Cell 内，RW/RWW 共用一个 `always_ff`，W1C、W1CC 各自使用独立块；同组的多个字段和 shadow copies 共享该块，不跨 Cell 合并。W1C/W1CC 将软件清除和有效 set/clear 提取为组合信号，时序块只复位或执行 `q <= (q & ~clr_eff) | set_eff`，不增加延迟。W1C 的 `set_eff` 不受 `~q` 限制，保持 set-wins；原有 shadow 写期间硬件 set 的 copy 资格也保持不变。
+
+**W1CC：状态相关的硬件置位/清除**
+
+`Field("events", Access.W1CC, 8, "State-conditional events").reset(0)`。这是独立 Access，不是 W1C 的可选属性；Excel 的 R/W Property 显示 `W1CC`，描述追加硬件行为并保留作者 note。完整可运行示例见 [`regfile.ts`](../examples/regfile/regfile.ts) 的 `sub_module_w1cc`。
+
+逐 bit 使用时钟沿前的旧值；`clear = hw_clr | sw_clear`，其中 `sw_clear` 仅在接受软件写、SEL 选中对应字节且 shadow mask 选中 copy 时取该数据 bit：
+
+| 旧 q | set | clear | 新 q |
+|---|---|---|---|
+| 0 | 0 | 任意 | 0 |
+| 0 | 1 | 任意 | 1 |
+| 1 | 任意 | 0 | 1 |
+| 1 | 任意 | 1 | 0 |
+
+向量公式：`q_next = (q & ~(sw_clear | hw_clr)) | (~q & hw_set)`。不能用整个向量 `q ? ... : ...` 代替逐 bit 仲裁。`set=clr=1` 持续时每拍翻转；不做边沿检测或事件排队。旧 q=1 时软件清与 set 同拍会清零，与普通 W1C 的 set-wins 不同。
+
+`_set/_clr` 均为与字段等宽的同步高有效 mask，不受总线 SEL、Cell ready、软件 shadow 选择限制；硬件 mux 只更新选中的 copy，非内选模式逐 copy 输入数组。同拍软件访问其他 copy 不得吞掉硬件 set/clear；软件 broadcast 对 mask 选中的 copy 分别清除。复位域和 per-copy reset 仍按 Cell 原有规则。
+
+生成 RTL 将仲裁提取为组合信号：`<stem>_sw_clr` 合并已接受的软件写、SEL 和写数据；`<stem>_set_eff = ~q & hw_set`、`<stem>_clr_eff = q & (sw_clear | hw_clr)`，shadow 的有效信号按 copy 展开并分别加入软件 mask / 硬件 mux 选择。W1CC 独立的 `always_ff` 只做复位或 `q <= (q & ~clr_eff) | set_eff`；不增加寄存器、流水拍或延迟。
+
+C/UVM/SV package 注释保留 `W1CC` 及硬件语义；UVM 使用标准软件访问策略 `W1C`，不自动预测硬件事件，验证环境需要监测并更新镜像。旧 W1C 的端口及 set-over-clear 语义不变。
 
 **RC 细则（草案）**
 
@@ -299,7 +323,7 @@ Cell("CTRL", "Control", CellDefault.ready("ctrl_rdy"), [
 
 - 同时控制该 Cell 的读、写；ready=0 时 ACK=0，内部软件写及 W1P 脉冲不发生。读数据可组合变化，仅 ACK 时有效。其它 Cell 和未映射地址不受影响。
 - ready 必须同步于 `i_clk`，不能依赖排在该事务后面的总线操作才能拉高。没有自动超时或丢弃；复位仍按原协议清除状态。
-- RWW/W1C 硬件更新在等待期间继续。存储分支按 **reset → 已接受的软件写 → else 硬件更新** 输出；RWW 在实际接受软件写的拍优先，W1C 同位硬件 set 仍胜过软件 clear，SEL 未选 lane 的 set 仍保留。
+- RWW/W1C/W1CC 硬件更新在等待期间继续。RW/RWW 存储分支按 **reset → 已接受的软件写 → else 硬件更新** 输出；RWW 在实际接受软件写的拍优先。W1C/W1CC 各自通过组合 mask 和独立的复位/更新块实现：W1C 同位硬件 set 仍胜过软件 clear；W1CC 按旧 bit 的状态仲裁，硬件两输入均不受 SEL 限制。
 - 带 `.ready()` 的 Cell 若含阻塞 RWE，内部提交和 ACK 要等 Cell ready 与全部窗口 ready。每个窗口的 `_wren/_rden` 保持请求语义，受 Cell ready 及其它窗口 ready 门控，**不受自己的 ready 门控**；外部在 request AND own-ready 时消费。单个窗口允许 ready 依赖自身请求；多个阻塞窗口的 ready 必须独立于这些请求，否则会循环等待。各窗口与内部存储同拍接受，禁止部分消费。
 - 内置叶子的 ready 经 bus cfg wrapper 上提为同名 `i_<name>`，跨挂接 id 同名合并；只允许 ready-ready 合并，撞时钟、复位、shadow 或普通端口时报错。外置叶子由上层直接接线。配置后必须连接，不隐式 tie-high。
 - 不改变地址图、复位值或软件导出。可运行示例：[`regfile.ts`](../examples/regfile/regfile.ts) 的 `sub_module_ready`。
@@ -351,7 +375,7 @@ rd_fire = CYC & STB & ~WE & hit
 → wr_sel_* / rd_sel_* = (addr decode) & wr_fire / rd_fire
 ```
 
-只有含软件可写字段（RW / RWW / W1C / RWE / W1P）的 cell 才生成 `wr_sel_*`。纯 RC / RO 的 cell 不生成，也不生成没人读的 `wr_fire`。字地址低 2 位和没被写字段覆盖的 `DAT` / `SEL` 位收进 `_unused_bus`，让叶子过 Verilator `-Wall`。
+只有含软件可写字段（RW / RWW / W1C / W1CC / RWE / W1P）的 cell 才生成 `wr_sel_*`。纯 RC / RO 的 cell 不生成，也不生成没人读的 `wr_fire`。字地址低 2 位和没被写字段覆盖的 `DAT` / `SEL` 位收进 `_unused_bus`，让叶子过 Verilator `-Wall`。
 
 ### 5.4 命名与样式（已裁定）
 
@@ -374,6 +398,7 @@ rd_fire = CYC & STB & ~WE & hit
 | **RWE** | `ext_` | `ext_<field>` in + `ext_<field>_{wdata,wstrb,wren,rden,rst}` out；**无**总线 vld |
 | **W1P** | `p_rg_` | `p_rg_<field>` out（单拍脉冲） |
 | **W1C** | `c_rg_` | `c_rg_<field>` out + `c_rg_<field>_set` in（shadow 非内选 → `_set` 按 copy 数组） |
+| **W1CC** | `c_rg_` | `c_rg_<field>` out + `c_rg_<field>_set` / `c_rg_<field>_clr` in（shadow 非内选 → 两输入均按 copy 数组） |
 | RWE + shadow 译码 sel | — | **`o_<shadow>_sel`**（该 shadow 一份；非 Access 前缀） |
 | `read_write_block` + RWE ready | — | **`ext_<field>_ready`**（仅表级 `read_write_block=true` 且该 field 为 RWE） |
 
@@ -409,6 +434,7 @@ rd_fire = CYC & STB & ~WE & hit
 |---|---|
 | RW / RWW（SW 写） | 按 lane 屏蔽的 read-modify-write（未选 lane 保持） |
 | W1C | 写数据先按 `SEL` 屏蔽再清（未选 lane 的 1 **不**清）；硬件 `_set` 不受 `SEL` 限制，和同拍软件清除相比 **set 优先** |
+| W1CC | 软件清除受 SEL 限制；硬件 set/clr 不受 SEL 限制。每 bit 根据旧 q 仲裁，即使软件未选当前 shadow copy，硬件旁路仍更新 |
 | W1P | 脉冲数据按 `SEL` 屏蔽（未选 lane 不出脉冲位） |
 | RWE | 叶子导出 **`ext_<field>_wstrb`**（`_wren` 限定；位宽 = 字段覆盖的字节 lane 数）；外部窗 **必须** 按 wstrb 做部分写 |
 | RO / RC | 无写路径，不受影响 |
@@ -483,7 +509,7 @@ RegfileDefault.addrWidth(8).shadows(
 
 | Access | 与 shadow / `inner_shadow_mux` |
 |---|---|
-| **RW / W1P / W1C** | 适用：`true` 内选一套旁路；`false` 按 copy 数组导出 |
+| **RW / W1P / W1C / W1CC** | 适用：`true` 内选一套旁路；`false` 按 copy 数组导出；W1CC 的 `_set/_clr` 形状一致 |
 | **RWW** | 适用：**`true`** → `_strb`/`_hwdata` 打**当前**选中 copy；**`false`** → `_strb`/`_hwdata` **导出成数组**，下标对应各物理 shadow copy |
 | **RO** | **支持 shadow**；功能 in **恒 per-copy 数组**；读数据 = 译码 bitmask 选中各 copy **按位或**（单 bit 即选那一份）；**`inner_shadow_mux` 无意义** |
 | **RWE** | **支持 shadow**；`inner_shadow_mux` **不**改数据旁路口形；译码后 sel **原样**给外部窗 |
@@ -670,7 +696,7 @@ field sheet 的黄/灰配色 **不变**（对照主干 `gen_excel_doc.py`）。�
 - ~~Shadow~~ → 表级库 + **仅 Cell 配置**（Block 为 Cell 缺省）；**禁止** Field 级 / 同 cell 混 shadow；**拼车必须同 shadow**；`remaps` bitmask；`inner_shadow_mux`（RO 不吃）；RWE 译码 sel 原样旁路。  
 - ~~Access **RC**~~ → **ReadConst**：读回 `.reset(n)` 标量常数；无功能旁路 in；与 RO 区分。  
 - ~~Field `.reset`~~ → `number | Record<copyIndex, number>`；dict **缺口默认 0**；RC 仅标量。  
-- ~~Access **无 W1S**~~ → 只保留 **W1P** / **W1C**；置位用 **RW**。  
+- ~~Access **无 W1S**~~ → **W1P** / **W1C** / **W1CC**；软件置位用 **RW**。
 - ~~`read_write_block`~~ → 表级；缺省 **false**（非阻塞）；**true** 时仅 **RWE** 命中可挡 WB `ACK`（如 FIFO）。  
 - ~~`tagBits` 强制~~ → `Shadow(name, copies, tagBits)`；必占 `wb_tga` 切片；**禁止**省略。  
 - ~~Shadow 索引~~ → **仅 `wb_tga`**；**禁止** `takeover` / `local_sel`（takeover 语义恒 0）。  
@@ -685,7 +711,7 @@ field sheet 的黄/灰配色 **不变**（对照主干 `gen_excel_doc.py`）。�
 - ~~ACK~~ → **同拍**；regfile **不**为时序打拍；长线交给 bus **pipe**；**禁止** +1 ACK / 叶子 `rddata_vld`。  
 - ~~§5.4 命名~~ → WB **`{name}_i_wb_*`/`{name}_o_wb_*`**；clk/rst **`i_clk`/`i_rst_n`**；旁路 **Access 前缀**（`ro_`/`rg_`/`ext_`/`p_rg_`/`c_rg_`）；默认 **`logic`**；模块 **`<table>_regfile`**。  
 - ~~RWE 口形~~ → `ext_<field>` + `ext_<field>_{wdata,wstrb,wren,rden,rst}`；shadow **`o_<shadow>_sel`**；`read_write_block` → **`ext_<field>_ready`**（缺省表级 false=非阻塞）。
-- ~~`SEL` 部分写语义~~ → 按 lane 屏蔽 RMW（RW/RWW）；W1C/W1P 屏蔽写数据；RWE 导出 **`ext_<field>_wstrb`**（§5.6 表）；HW `_strb` 写不吃 `SEL`。
+- ~~`SEL` 部分写语义~~ → 按 lane 屏蔽 RMW（RW/RWW）；W1C/W1CC/W1P 屏蔽软件写数据；RWE 导出 **`ext_<field>_wstrb`**（§5.6 表）；硬件更新不吃 SEL。
 - ~~W1C 置位通路~~ → **`c_rg_<field>_set`** 硬件置位 in；同周期 **set 优先**于 W1C 清；仍 **无 W1S**。
 - ~~RWW 同周期优先级~~ → **SW 写优先**于 HW `_strb`（HW 写被吞）。
 - ~~scalar shadow sel~~ → 多 bit mask 时 `o_<shadow>_sel` / 内选旁路取 **最低置位 copy**；读仍按位或。

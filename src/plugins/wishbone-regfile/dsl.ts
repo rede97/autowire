@@ -30,11 +30,13 @@ export enum Access {
 	RWE = "RWE",
 	W1P = "W1P",
 	W1C = "W1C",
+	/** W1C with state-conditional hardware set/clear arbitration. */
+	W1CC = "W1CC",
 }
 
 /**
  * Master-branch AccessType.prefix (RG_NAME_PREFIX on):
- * RO→ro, RW/RWW→rg, RWE→ext, W1P→p_rg, W1C→c_rg. RC has no sideband.
+ * RO→ro, RW/RWW→rg, RWE→ext, W1P→p_rg, W1C/W1CC→c_rg. RC has no sideband.
  */
 export function accessPortPrefix(access: Access): string | null {
 	switch (access) {
@@ -48,6 +50,7 @@ export function accessPortPrefix(access: Access): string | null {
 		case Access.W1P:
 			return "p_rg";
 		case Access.W1C:
+		case Access.W1CC:
 			return "c_rg";
 		case Access.RC:
 			return null;
@@ -63,6 +66,7 @@ export function accessRalName(access: Access): string {
 			return "RW";
 		case Access.W1P:
 		case Access.W1C:
+		case Access.W1CC:
 			return "W1C";
 		case Access.RO:
 		case Access.RC:

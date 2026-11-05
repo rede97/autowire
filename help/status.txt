@@ -57,6 +57,14 @@ Parallel (does not block connect)
     no Regfile/Block defaults. Posted writes wait in pipe until leaf acceptance;
     blocked software writes have no effects; RWW/W1C hardware updates continue.
     Inline wrappers share same-named ready inputs across hang ids; see regfile docs.
+    Access.W1CC: distinct Excel access with c_rg_<field>_set/_clr inputs;
+    each old bit chooses clear when 1, set when 0; both held high toggle each cycle.
+    Software clear is accepted-write/SEL qualified; hardware updates continue while
+    Cell ready blocks. UVM uses W1C software policy with W1CC hardware comments.
+    Per cell, RW/RWW, W1C, and W1CC use separate clocked storage blocks; fields and
+    shadow copies within each group share a block. W1C/W1CC factor software clear
+    and effective set/clear into combinational signals, with no extra latency.
+    W1C keeps set-wins arbitration and its existing shadow update eligibility.
     draft API + samples: docs/examples/regfile/regfile.ts;
     toml [wishbone.<source>] ts= (one file may export either or both; optional exports=);
     [plugins.wishbone] packed software (SoT exports only; no reverse to TS):

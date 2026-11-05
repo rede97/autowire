@@ -10,8 +10,8 @@ import { dirname } from "node:path";
 import type ExcelJS from "exceljs";
 import type { BusDef, WbSlave, WbTagSource } from "../wishbone-bus/dsl.ts";
 import { windowBytes } from "../wishbone-bus/dsl.ts";
-import { effectiveSheet } from "./dsl.ts";
-import { fieldsWithReserved } from "./emit-sw.ts";
+import { Access, effectiveSheet } from "./dsl.ts";
+import { fieldsWithReserved, W1CC_DESCRIPTION } from "./emit-sw.ts";
 import type { LaidCell, LaidRegfile } from "./layout.ts";
 
 const CELL_BITS = 32;
@@ -162,8 +162,11 @@ function appendCellBlock(
 			bit.reserved
 				? bit.name.toUpperCase()
 				: descWithNote(
-						bit.desc,
-						cell.fields.find((f) => f.field.name === bit.name)?.field.note,
+						descWithNote(
+							bit.desc,
+							cell.fields.find((f) => f.field.name === bit.name)?.field.note,
+						),
+						bit.access === Access.W1CC ? W1CC_DESCRIPTION : undefined,
 					),
 			bit.reset,
 			{ formula: `LOWER(DEC2HEX((${i}${r})))` },
