@@ -1,6 +1,6 @@
 // Workspace loading: find <project>/dt/config/dtsim.config.ts, materialize the
 // DSL copy, import the TypeScript sources, merge cases, and compute compile
-// fingerprints.
+// keys.
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -220,15 +220,18 @@ export function mergeCase(
 	};
 }
 
-export function compileFingerprint(c: MergedCase, toolId: string): string {
-	return JSON.stringify({
+/** Compile identity of a case; equal keys share one build. The generic key
+ *  keeps compileArgs in order: "-CFLAGS a -LDFLAGS b" and "-CFLAGS b
+ *  -LDFLAGS a" are different builds. The backend may extend or replace it. */
+export function compileKey(c: MergedCase, toolId: string): string {
+	const base = JSON.stringify({
 		tool: toolId,
 		defines: [...c.defines].sort(),
-		compileArgs: [...c.compileArgs].sort(),
+		compileArgs: c.compileArgs,
 		env: compileEnvEntries(c.env),
 		filelist: c.filelist ?? "",
-		extra: [...(getTool(toolId).fingerprint?.(c) ?? [])].sort(),
 	});
+	return getTool(toolId).compileKey?.(c, base) ?? base;
 }
 
 export function resolveGroup(ws: ResolvedWorkspace, group: string): string[] {

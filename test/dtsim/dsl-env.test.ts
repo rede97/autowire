@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
-	compileFingerprint,
+	compileKey,
 	loadWorkspace,
 	mergeCase,
 	resolveGroup,
@@ -55,19 +55,24 @@ describe("dsl merge", () => {
 		expect(() => resolveGroup(ws, "nope")).toThrow("unknown group");
 	});
 
-	test("fingerprint ignores sim-only env and sim args", async () => {
+	test("compile key ignores sim-only env and sim args", async () => {
 		const ws = await loadWorkspace({ config: (await makeWorkspace()).config });
 		const bare = mergeCase(ws, "test_hello_world");
 		const same = mergeCase(ws, "test_hello_world");
 		same.simArgs.push("+OTHER=1");
 		same.env.SIM_TRACE = { value: "9", scope: "sim" };
-		expect(compileFingerprint(same, ws.toolId)).toBe(
-			compileFingerprint(bare, ws.toolId),
-		);
+		expect(compileKey(same, ws.toolId)).toBe(compileKey(bare, ws.toolId));
 		same.env.OTHER = "1";
-		expect(compileFingerprint(same, ws.toolId)).not.toBe(
-			compileFingerprint(bare, ws.toolId),
-		);
+		expect(compileKey(same, ws.toolId)).not.toBe(compileKey(bare, ws.toolId));
+	});
+
+	test("compile key keeps compileArgs order", async () => {
+		const ws = await loadWorkspace({ config: (await makeWorkspace()).config });
+		const a = mergeCase(ws, "test_hello_world");
+		const b = mergeCase(ws, "test_hello_world");
+		a.compileArgs = ["-CFLAGS", "-O2", "-LDFLAGS", "-pthread"];
+		b.compileArgs = ["-CFLAGS", "-pthread", "-LDFLAGS", "-O2"];
+		expect(compileKey(a, ws.toolId)).not.toBe(compileKey(b, ws.toolId));
 	});
 
 	test("regression groups split on compile env, keep group order", async () => {
@@ -75,6 +80,27 @@ describe("dsl merge", () => {
 		const groups = planGroups(ws, "cosim");
 		expect(groups.length).toBe(2);
 		for (const g of groups) expect(g.cases.length).toBe(1);
+	});
+
+	test("a backend compileKey decides which cases share a build", async () => {
+		// This backend compiles nothing from defines or env: one build for all.
+		const body = CASES_TS.replace(
+			'import { Case, Group, Subcase, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
+			`import { Case, Group, Subcase, WaiveRule, Workspace, defineTool } from "./.dtsim/dsl/index.ts";
+const shared = defineTool({
+	kind: "dtsim-tool", id: "shared-sim", passthrough: [], interactive: false,
+	compileErrors: [], simErrors: [],
+	compileKey: (c) => JSON.stringify(c.toolOptions),
+	compile: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/c.log", logMode: "tee" }),
+	simulate: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/s.log", logMode: "tee" }),
+});`,
+		).replace('tool: "vcs"', 'tool: "shared-sim", tools: [shared]');
+		const ws = await makeWorkspace(body);
+		const vcsPlan = await runDtsim(await makeWorkspace(), ["plan", "base"]);
+		expect(vcsPlan.stdout).toContain("Compile groups : 3");
+		const plan = await runDtsim(ws, ["plan", "base"]);
+		expect(plan.code).toBe(0);
+		expect(plan.stdout).toContain("Compile groups : 1");
 	});
 
 	test("deny list rejects a case assignment at load time", async () => {

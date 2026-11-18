@@ -187,6 +187,18 @@ export type ToolContext = {
 	resolvePath: (text: string) => string;
 };
 
+/** The merged case options a compile key is computed from (placeholders intact). */
+export type CompileKeyInput = {
+	id: string;
+	defines: readonly string[];
+	compileArgs: readonly string[];
+	simArgs: readonly string[];
+	env: Readonly<Record<string, EnvValue>>;
+	uvm?: UvmCfg;
+	toolOptions: Record<string, unknown>;
+	filelist?: string;
+};
+
 export type SimTool = {
 	kind: "dtsim-tool";
 	id: string;
@@ -194,12 +206,14 @@ export type SimTool = {
 	passthrough: readonly string[];
 	/** true: first Ctrl+C is forwarded to the child (UCLI-style). */
 	interactive: boolean;
-	/** Extra compile-fingerprint strings, e.g. top module. */
-	fingerprint?: (c: {
-		defines: readonly string[];
-		compileArgs: readonly string[];
-		toolOptions: Record<string, unknown>;
-	}) => readonly string[];
+	/**
+	 * Compile identity: cases whose keys are equal share one build in a
+	 * regression. `base` is dtsim's generic key (tool, defines as a set,
+	 * compileArgs in order, compile-scope env, filelist). Return it, extend it
+	 * (`${base}|top=x`), or replace it with what this simulator actually
+	 * compiles from. Default: `base`.
+	 */
+	compileKey?: (c: CompileKeyInput, base: string) => string;
 	/** Write tool-specific helper files (dump.tcl, run_verdi, ...). */
 	writeAux?: (ctx: ToolContext) => void;
 	compile: (ctx: ToolContext) => Prepared;

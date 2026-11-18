@@ -115,11 +115,13 @@ export const vcsTool: SimTool = {
 	compileErrors: [/Error-\[/, /^Error:/, /^\*E,/],
 	simErrors: [/UVM_ERROR/, /UVM_FATAL/, /Error-\[/, /^Error:/],
 
-	fingerprint(c) {
-		return [
-			`ntb_opts=${ntbOpts(c.toolOptions)}`,
-			`flags=${compileFlags(c.toolOptions).join(" ")}`,
-		];
+	// simv depends on the -ntb_opts library and the compile flag set too.
+	compileKey(c, base) {
+		return JSON.stringify([
+			base,
+			ntbOpts(c.toolOptions),
+			compileFlags(c.toolOptions),
+		]);
 	},
 
 	writeAux(ctx) {

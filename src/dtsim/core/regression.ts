@@ -1,9 +1,9 @@
-// Regression: group cases by compile fingerprint, share one compile per
-// group, and pipeline compile -> sim behind a shared slot pool.
+// Regression: group cases by compile key (SimTool.compileKey), share one
+// compile per group, and pipeline compile -> sim behind a shared slot pool.
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-	compileFingerprint,
+	compileKey,
 	type MergedCase,
 	mergeCase,
 	type ResolvedWorkspace,
@@ -46,7 +46,7 @@ export function planGroups(
 	const members = resolveGroup(ws, group).map((id) => mergeCase(ws, id));
 	const byFp = new Map<string, MergedCase[]>();
 	for (const c of members) {
-		const fp = compileFingerprint(c, ws.toolId);
+		const fp = compileKey(c, ws.toolId);
 		const list = byFp.get(fp) ?? [];
 		list.push(c);
 		byFp.set(fp, list);

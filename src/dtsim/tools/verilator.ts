@@ -39,9 +39,10 @@ export const verilatorTool: SimTool = {
 	compileErrors: [/%Error/, /%Fatal/],
 	simErrors: [/%Error/, /%Fatal/],
 
-	fingerprint(c) {
+	// The binary also depends on its top, -Mdir and --binary vs C++ harness.
+	compileKey(c, base) {
 		const { top, mdir, main } = verilatorOpts(c.toolOptions);
-		return [`top=${top}`, `mdir=${mdir}`, `main=${main}`];
+		return JSON.stringify([base, top, mdir, main]);
 	},
 
 	compile(ctx) {

@@ -53,7 +53,7 @@ function rawOf(v: EnvValue): string {
 	return typeof v === "string" ? v : v.value;
 }
 
-/** Case env entries that take part in compilation and its fingerprint. */
+/** Case env entries that take part in compilation and its compile key. */
 export function compileEnvEntries(
 	caseEnv: Record<string, EnvValue>,
 ): Array<[string, string]> {

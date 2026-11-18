@@ -162,9 +162,25 @@ Built-in `toolOptions`:
 | vcs | `flags` | built-in list | replaces the built-in compile flags (`-xlrm nettype_array -lca -kdb ...`, written for a newer VCS); `-f`, `-l`, defines and `compileArgs` still follow |
 
 The engine owns scheduling, grading, and environment assembly. A backend only
-supplies argv, log locations, excerpt regexes, and optional helper files
-(`writeAux`), fingerprint extras, and per-tool `toolOptions`. Backend ids must
+supplies argv, log locations, excerpt regexes, optional helper files
+(`writeAux`), its `compileKey`, and per-tool `toolOptions`. Backend ids must
 not shadow built-ins.
+
+### Which cases share a build
+
+In a regression, cases with equal compile keys share one compile directory.
+dtsim computes a generic key (tool id, defines as a set, `compileArgs` in
+order, compile-scope `env`, case `filelist`) and hands it to the backend's
+`compileKey(c, base)`, which returns the final key: `base` unchanged, `base`
+plus what else its build depends on, or a key of its own when the simulator
+knows better (for example a backend whose defines are runtime parameters can
+leave them out). `sim`-scoped env, `simArgs`, `uvm` and seeds never split a
+build unless the backend puts them in the key. `dtsim plan` prints the groups.
+
+| Backend | Key |
+|---|---|
+| `vcs` | base + `ntbOpts` + compile `flags` |
+| `verilator` | base + `top` + `mdir` + `main` |
 
 ## Launchers (plugins)
 
@@ -209,7 +225,7 @@ Children do not inherit the parent shell. A variable reaches the simulator
 only when the backend's `passthrough` list or the workspace's
 `env.passthrough` names it (trailing `*` allowed). `env.deny` wins over both.
 Case `env` entries are explicit assignments; `{ value, scope: "sim" }` skips
-compilation and the compile fingerprint. `output_dir`, `verify`, `WORKSPACE`,
+compilation and the compile key. `output_dir`, `verify`, `WORKSPACE`,
 `DTSIM_*` are injected per phase. `dtsim env --case ...` shows the result.
 
 ## Logs, grading, errors
