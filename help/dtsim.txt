@@ -29,7 +29,9 @@ Rules
   patches: [(ctx) => ...] TypeScript callbacks run before each compile.
   Cases: Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) derives
   <id>.<suffix> at any depth; export only top-level cases. Function opts run
-  only when that case is used.
+  only when that case is used. c.descendants() lists the subtree.
+  Group(name, [caseObj, "id", "base.*.cosim", "base.**"]): * = one segment,
+  ** = any depth.
   Grading reads sim.log keywords, not the exit code.
   Children get only passthrough-listed env vars.
   Built-in backends: vcs (toolOptions.ntbOpts, flags), verilator (top, mdir,

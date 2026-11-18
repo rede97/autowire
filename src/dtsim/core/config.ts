@@ -13,6 +13,7 @@ import {
 	type EnvValue,
 	type GradeSpec,
 	type GroupDef,
+	type GroupMember,
 	type HookPhase,
 	type HookSpec,
 	isCase,
@@ -69,7 +70,7 @@ export type ResolvedWorkspace = {
 	waive: WaiveRuleDef[];
 	patches: Patch[];
 	hooks: Partial<Record<HookPhase, HookSpec>>;
-	groups: Map<string, string[]>;
+	groups: Map<string, GroupMember[]>;
 	/** Top-level cases by name; derived cases hang off `children`. */
 	cases: Map<string, CaseDef>;
 	/** Lazily merged options per case id (functions evaluated once). */
@@ -189,17 +190,16 @@ type CaseSource = Pick<
 	"cases" | "resolved" | "bareDefaults" | "deny"
 >;
 
-/** Find a case node by id: root name, then one child per `.suffix`. */
+/** Case node by id: root name, then one child per `.suffix`. */
 export function findCase(
 	ws: Pick<ResolvedWorkspace, "cases">,
 	id: string,
-): CaseDef {
+): CaseDef | undefined {
 	const [rootName, ...suffixes] = id.split(".");
 	let node = ws.cases.get(rootName ?? "");
 	for (const suffix of suffixes) {
 		node = node?.children.find((c) => c.name === suffix);
 	}
-	if (!node) throw new Error(`dtsim: testcase "${id}" not found`);
 	return node;
 }
 
@@ -221,6 +221,7 @@ function treeOpts(ws: CaseSource, node: CaseDef): CaseOpts {
 
 export function mergeCase(ws: CaseSource, id: string): MergedCase {
 	const node = findCase(ws, id);
+	if (!node) throw new Error(`dtsim: testcase "${id}" not found`);
 	let opts = treeOpts(ws, node);
 	// A bare top-level case gets bareDefaults; derived cases do not.
 	if (!node.parent && ws.bareDefaults) opts = mergeOpts(opts, ws.bareDefaults);
@@ -261,6 +262,31 @@ export function compileKey(c: MergedCase, toolId: string): string {
 	return getTool(toolId).compileKey?.(c, base) ?? base;
 }
 
+/** Every case id in tree order: each top-level case, then its descendants. */
+function allIds(ws: Pick<ResolvedWorkspace, "cases">): string[] {
+	return [...ws.cases.values()].flatMap((root) => [
+		root.id,
+		...root.descendants().map((c) => c.id),
+	]);
+}
+
+/** `*` stays inside one id segment, `**` crosses segments. */
+function idPattern(pattern: string): RegExp {
+	const body = pattern
+		.split("**")
+		.map((part) =>
+			part
+				.split("*")
+				.map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+				.join("[^.]*"),
+		)
+		.join(".*");
+	return new RegExp(`^${body}$`);
+}
+
+/** Member ids of a group, in member order, duplicates dropped. Patterns and
+ *  case objects are expanded against the loaded trees without evaluating any
+ *  options; the members themselves are then merged so bad ids fail early. */
 export function resolveGroup(ws: ResolvedWorkspace, group: string): string[] {
 	if (group === "all") return [...ws.cases.keys()].sort();
 	const members = ws.groups.get(group);
@@ -268,8 +294,31 @@ export function resolveGroup(ws: ResolvedWorkspace, group: string): string[] {
 		const known = ["all", ...ws.groups.keys()].sort().join(", ");
 		throw new Error(`dtsim: unknown group "${group}" (groups: ${known})`);
 	}
-	for (const id of members) mergeCase(ws, id); // fail early on unknown ids
-	return [...members];
+	const ids: string[] = [];
+	for (const m of members) {
+		if (typeof m !== "string") {
+			if (findCase(ws, m.id) !== m) {
+				throw new Error(
+					`dtsim: group "${group}": case ${m.id} is not part of an exported case tree`,
+				);
+			}
+			ids.push(m.id);
+		} else if (m.includes("*")) {
+			const re = idPattern(m);
+			const hits = allIds(ws).filter((id) => re.test(id));
+			if (hits.length === 0) {
+				throw new Error(
+					`dtsim: group "${group}": pattern "${m}" matches no case`,
+				);
+			}
+			ids.push(...hits);
+		} else {
+			ids.push(m);
+		}
+	}
+	const unique = [...new Set(ids)];
+	for (const id of unique) mergeCase(ws, id); // fail early on unknown ids
+	return unique;
 }
 
 /** Re-materialize the DSL next to the config so user files can import it. */
@@ -357,7 +406,7 @@ export async function loadWorkspace(opts: {
 		registerExports(await importModule(path), path);
 	}
 
-	const groups = new Map<string, string[]>();
+	const groups = new Map<string, GroupMember[]>();
 	for (const g of (o.groups ?? []) as GroupDef[])
 		groups.set(g.name, [...g.members]);
 

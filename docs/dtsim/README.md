@@ -104,7 +104,31 @@ hello.SubCase("timing", { grade: { error: ["re:ERROR:.*timing violation"] } });
   assignment fails the case that has it, not the whole load.
 - A suffix may not contain `.` or `/`, may not be `default`, and must be
   unique under its parent (checked when `SubCase` is called).
-- `group "all"` is the top-level cases; name derived ids in a `Group`.
+- `case.descendants()` returns every derived case below it, depth-first in
+  declaration order, without evaluating options.
+- `group "all"` is the top-level cases. `Group(name, members)` takes, in any
+  mix: case objects (`Group("cosim", [aCosim, bCosim])`), exact ids, and id
+  patterns where `*` stays inside one id segment and `**` crosses segments
+  (`"hello_world_base.*.cosim"`, `"hello_world_base.**"`). Members keep their
+  order, patterns expand in tree order, duplicates are dropped. A pattern
+  matching nothing, an unknown id, or a case object that is not in an
+  exported tree fails when the group is used.
+
+A family of small cases that share modifiers is plain TypeScript:
+
+```ts
+const withCosim = (c: CaseDef) => {
+	const co = c.SubCase("cosim", { compileArgs: ["-ad=${verify}/abc"], env: { INPUT: { value: "input.spf", scope: "sim" } } });
+	for (const k of ["ss", "ff"]) co.SubCase(k, { env: { INPUT: { value: `input_${k}.spf`, scope: "sim" } } });
+};
+export const base = Case("hello_world_base", { defines: ["NUM=1"] });
+for (const [name, opts] of Object.entries({ a: { simArgs: ["+A"] }, b: { simArgs: ["+B"] } }))
+	withCosim(base.SubCase(name, opts));
+export default Workspace({ tool: "vcs", groups: [Group("cosim_all", ["hello_world_base.*.cosim"])] });
+```
+
+Keep sim-only inputs (`INPUT` above) at `scope: "sim"` so corners share the
+parent's build.
 
 ### Placeholders and paths
 

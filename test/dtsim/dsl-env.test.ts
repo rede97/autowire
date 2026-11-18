@@ -154,6 +154,60 @@ export default Workspace({ tool: "vcs" });
 		expect(() => mergeCase(ws, "t.ss")).toThrow("not found");
 	});
 
+	test("descendants walks the tree without evaluating options", async () => {
+		globalThis.dtsimTreeCalls = [];
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(TREE)).config,
+		});
+		const top = ws.cases.get("t");
+		expect(top?.descendants().map((c) => c.id)).toEqual([
+			"t.fast",
+			"t.fast.ss",
+			"t.slow",
+		]);
+		expect(globalThis.dtsimTreeCalls).toEqual([]);
+	});
+
+	test("groups take case objects and id patterns, in member order", async () => {
+		const body = TREE.replace(
+			'import { Case, Workspace } from "./.dtsim/dsl/index.ts";',
+			'import { Case, Group, Workspace } from "./.dtsim/dsl/index.ts";',
+		)
+			.replace(
+				'throw new Error("slow opts should never be evaluated");',
+				"return {};",
+			)
+			.replace(
+				'export default Workspace({ tool: "vcs" });',
+				`const extra = top.SubCase("extra");
+export default Workspace({ tool: "vcs", groups: [
+	Group("objs", [extra, fast]),
+	Group("one", ["t.*"]),
+	Group("deep", ["t.**", "t.fast"]),
+	Group("none", ["t.*.nope"]),
+	Group("stray", [Case("not_exported")]),
+] });`,
+			);
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(body)).config,
+		});
+		expect(resolveGroup(ws, "objs")).toEqual(["t.extra", "t.fast"]);
+		// `*` stays inside one segment, `**` crosses; tree order, no duplicates.
+		expect(resolveGroup(ws, "one")).toEqual(["t.fast", "t.slow", "t.extra"]);
+		expect(resolveGroup(ws, "deep")).toEqual([
+			"t.fast",
+			"t.fast.ss",
+			"t.slow",
+			"t.extra",
+		]);
+		expect(() => resolveGroup(ws, "none")).toThrow(
+			'pattern "t.*.nope" matches no case',
+		);
+		expect(() => resolveGroup(ws, "stray")).toThrow(
+			"not part of an exported case tree",
+		);
+	});
+
 	test("function options run only for the case being used, once", async () => {
 		globalThis.dtsimTreeCalls = [];
 		const ws = await loadWorkspace({

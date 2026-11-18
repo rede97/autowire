@@ -55,12 +55,20 @@ export type CaseDef = {
 	/** Derive `<id>.<suffix>`: lists append, maps merge, scalars override the
 	 *  parent (which is this case, itself possibly derived). */
 	SubCase(suffix: string, opts?: CaseOptsInput): CaseDef;
+	/** Every derived case below this one, depth-first in declaration order
+	 *  (not this case itself). Walks the tree only; options are not evaluated. */
+	descendants(): CaseDef[];
 };
+
+/** A group member: a case object, an exact id, or an id pattern where `*`
+ *  matches within one id segment and `**` across segments
+ *  (`hello_world_base.*.cosim`, `hello_world_base.**`). */
+export type GroupMember = string | CaseDef;
 
 export type GroupDef = {
 	kind: "dtsim-group";
 	name: string;
-	members: readonly string[];
+	members: readonly GroupMember[];
 };
 
 export type WaiveRuleDef = {
@@ -370,6 +378,9 @@ function caseNode(
 			children.push(child);
 			return child;
 		},
+		descendants(): CaseDef[] {
+			return children.flatMap((c) => [c, ...c.descendants()]);
+		},
 	};
 	return node;
 }
@@ -384,10 +395,17 @@ export function Case(name: string, opts: CaseOpts = {}): CaseDef {
 	return caseNode(name, name, opts, undefined);
 }
 
-export function Group(name: string, members: readonly string[]): GroupDef {
+export function Group(name: string, members: readonly GroupMember[]): GroupDef {
 	needString("group name", name);
 	if (!Array.isArray(members)) {
 		throw new Error(`dtsim: group ${name} members must be an array`);
+	}
+	for (const m of members) {
+		if (typeof m !== "string" && !isCase(m)) {
+			throw new Error(
+				`dtsim: group ${name} members must be case ids, id patterns or Case objects`,
+			);
+		}
 	}
 	return { kind: "dtsim-group", name, members };
 }
