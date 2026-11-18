@@ -101,12 +101,18 @@ export async function runSingle(
 	const seeds = seedsFor(c, await readSeeds(opts));
 	const compileDir = caseOutputDir(ws, c.id, opts.label);
 	const tool = ws.tool;
-	// --verbose streams logs and --interactive owns the terminal: no panel.
+	// -v on a TTY prints the running log above the live panel (the monitor
+	// follows the log file, so the child's own stream stays quiet); -v
+	// elsewhere streams the child directly. --interactive owns the terminal.
+	const tty = !opts.plain && Boolean(process.stderr.isTTY);
+	const follow = opts.verbose && tty;
 	const monitor =
-		opts.verbose || opts.interactive
+		opts.interactive || (opts.verbose && !tty)
 			? undefined
-			: new CaseMonitor(c.id, opts.plain);
-	const engine: EngineOptions = monitor ? { ...opts, monitor } : opts;
+			: new CaseMonitor(c.id, opts.plain, follow);
+	const engine: EngineOptions = monitor
+		? { ...opts, verbose: opts.verbose && !follow, monitor }
+		: opts;
 
 	printBlock("Run", [
 		["WORKSPACE", ws.root],

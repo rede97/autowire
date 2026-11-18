@@ -4,9 +4,10 @@
 // line for every step (colored status, elapsed time, log size). In between, a
 // spinner shows the running step, its elapsed time and, per log seen so far,
 // the size and last line; "-" means the log is not on disk yet (or NFS has
-// not caught up). Not a TTY (--plain, pipes, LSF logs): the same start / end
-// lines without the spinner.
-import { statSync } from "node:fs";
+// not caught up). Follow mode (`run -v` on a TTY) also prints the running
+// step's new log lines above the panel. Not a TTY (--plain, pipes, LSF
+// logs): the same start / end lines without the spinner.
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
@@ -66,10 +67,20 @@ export class CaseMonitor implements PhaseObserver {
 	private frame = 0;
 	private timers: Timer[] = [];
 	private readonly live?: typeof logUpdate;
+	/** Follow mode: the running step's log, read up to `offset` so far. */
+	private followed?: {
+		path: string;
+		offset: number;
+		rest: string;
+		decoder: TextDecoder;
+	};
 
+	/** `follow` (TTY only): print the running step's log lines above the
+	 *  panel as they land, like `tail -f`. */
 	constructor(
 		private readonly label: string,
 		plain: boolean,
+		private readonly follow = false,
 	) {
 		if (!plain && process.stderr.isTTY) {
 			this.live = createLogUpdate(process.stderr, { showCursor: true });
@@ -94,6 +105,14 @@ export class CaseMonitor implements PhaseObserver {
 		if (info.log) {
 			this.logs.set(phase, info.log);
 			this.tails.delete(phase);
+			if (this.follow && this.live) {
+				this.followed = {
+					path: info.log,
+					offset: 0,
+					rest: "",
+					decoder: new TextDecoder(),
+				};
+			}
 			this.line(
 				`${chalk.cyan("▶")} ${this.title(this.current)}  ${chalk.dim("log")} ${info.log}`,
 			);
@@ -130,6 +149,7 @@ export class CaseMonitor implements PhaseObserver {
 	}
 
 	private close(result: string): void {
+		this.drain(true);
 		const c = this.current;
 		this.current = undefined;
 		if (!c) return;
@@ -145,6 +165,38 @@ export class CaseMonitor implements PhaseObserver {
 	private async refresh(): Promise<void> {
 		for (const [phase, log] of this.logs)
 			this.tails.set(phase, await tail(log));
+		this.drain(false);
+	}
+
+	/** Follow mode: print what the log gained since the last call, 1 MB at a
+	 *  time; `final` reads to the end and prints a trailing partial line. */
+	private drain(final: boolean): void {
+		const f = this.followed;
+		if (!f || !this.live) return;
+		for (;;) {
+			const size = sizeOf(f.path);
+			if (size === undefined || size <= f.offset) break;
+			const n = Math.min(size - f.offset, 1024 * 1024);
+			const buf = Buffer.alloc(n);
+			const fd = openSync(f.path, "r");
+			let got = 0;
+			try {
+				got = readSync(fd, buf, 0, n, f.offset);
+			} finally {
+				closeSync(fd);
+			}
+			if (got === 0) break;
+			f.offset += got;
+			const text = f.decoder.decode(buf.subarray(0, got), { stream: true });
+			const lines = (f.rest + text).split(/\r?\n/);
+			f.rest = lines.pop() ?? "";
+			if (lines.length > 0) this.live.persist(lines.join("\n"));
+			if (!final) break;
+		}
+		if (final) {
+			if (f.rest) this.live.persist(f.rest);
+			this.followed = undefined;
+		}
 	}
 
 	private render(): void {

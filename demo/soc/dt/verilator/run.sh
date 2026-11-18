@@ -7,22 +7,22 @@
 #   ./dt/verilator/run.sh --tb-mod     # tb_mod: aw-tb-mod dump top rtl/gen/sim/tb_soc.sv
 #   ./dt/verilator/run.sh --sv-reg     # sv_reg_smoke: sv_reg packages only
 # The harness cases also run the external JTAG smoke (jtag_host.h) with the
-# firmware. Outputs: dt/simout/<case>/. DTSIM overrides the dtsim command.
+# firmware. Other arguments go to `dtsim run` (e.g. -v to print the logs
+# under the live status, --plain for one line per step). Outputs:
+# dt/simout/<case>/. DTSIM overrides the dtsim command.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
 
 CASE=basic_smoke
+EXTRA=()
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 	--regfile) CASE=regfile_smoke ;;
 	--sd) CASE=sd_sha256 ;;
 	--tb-mod) CASE=tb_mod ;;
 	--sv-reg) CASE=sv_reg_smoke ;;
-	*)
-		echo "unknown arg: $1" >&2
-		exit 2
-		;;
+	*) EXTRA+=("$1") ;;
 	esac
 	shift
 done
@@ -34,4 +34,4 @@ elif [[ -f ../../index.ts ]]; then
 else
 	CMD=(dtsim)
 fi
-exec "${CMD[@]}" run "$CASE" --plain
+exec "${CMD[@]}" run "$CASE" "${EXTRA[@]}"

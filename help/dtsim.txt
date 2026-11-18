@@ -24,7 +24,8 @@ Commands
           run: start line with the log path and the submitted command,
           spinner with step + elapsed + log size and the last line of the
           compile and sim logs ("-" until a log is on disk), and an end line
-          per step with colored status and elapsed time
+          per step with colored status and elapsed time. run -v on a TTY
+          also prints the running log's new lines above the panel
 
 Rules
   Filelist entries are relative to the project root (nested -f too); dtsim

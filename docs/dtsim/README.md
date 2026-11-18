@@ -84,8 +84,12 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 - 每个步骤结束打印一行 `✓ / ✗ <case> <步骤>  <带颜色的状态>  <耗时>  <日志> <大小>`。
   sim 的状态是退出码（`OK` 或 `exit N`），判定看 grade 那一行。
 
-`--plain` 或 stderr 不是终端时只打印上面的开始 / 结束行，没有 spinner。`-v`
-（日志直接输出到终端）与 `--interactive` 不显示这些。
+`-v` 在终端上同时显示状态和日志：正在运行的 compile / sim 日志新写入的行实时打印在
+面板上方（像 `tail -f`，直接读日志文件，所以 VCS `-l` 这种工具自己写的日志也能
+跟），面板留在最下面。`--plain` 或 stderr 不是终端时只打印上面的开始 / 结束行，
+没有 spinner；此时 `-v` 照旧把子进程输出直接写到终端。`--interactive` 不显示这些。
+demo 的 `dt/*/run.sh` 不再强制 `--plain`，多余参数原样交给 `dtsim run`（如
+`./dt/verilator/run.sh -v`）。
 
 每个回归根目录里生成的 `dresults` 只是转发：用生成它的那个 dtsim（`bun <entry>
 dtsim` 或编译版 `autowire dtsim`）执行 `results --dir <该目录>`，参数原样传递

@@ -69,7 +69,11 @@ function addCommon(cmd: Command): Command {
 		.option("--seed-file <file>", "one seed per line")
 		.option("--num-seeds <n>", "generate N seeds", (v) => Number(v))
 		.option("-d, --label <label>", "output label under dt/simout/")
-		.option("-v, --verbose", "stream child logs to the terminal", false)
+		.option(
+			"-v, --verbose",
+			"show child logs (on a TTY: printed above the live status)",
+			false,
+		)
 		.option("--plain", "no dashboard; one line per task", false)
 		.option("--cov", "collect coverage", false)
 		.option(
