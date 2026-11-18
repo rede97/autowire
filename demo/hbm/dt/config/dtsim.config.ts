@@ -7,6 +7,15 @@
 // finished run and any UVM_ERROR / UVM_FATAL message fails it.
 import { Case, Workspace } from "../../../../src/dtsim/dsl/index.ts";
 
+// VCS O-2018.09 compiles its UVM DPI (uvm_dpi.cc) with the g++ on PATH.
+// g++ >= 10 rejects the curly quotes in a skipped `#error` of
+// uvm_hdl_vcs.c, so the build fails there with or without dtsim.
+// VCS_GCC_DIR (e.g. /usr/bin with gcc-9) points VCS at an older toolchain.
+const gccDir = process.env.VCS_GCC_DIR;
+const toolchain = gccDir
+	? ["-cc", `${gccDir}/gcc`, "-cpp", `${gccDir}/g++`, "-ld", `${gccDir}/g++`]
+	: [];
+
 const uvmTest = (name: string) =>
 	Case(name, {
 		owner: "hbm",
@@ -35,6 +44,7 @@ export default Workspace({
 		compileArgs: [
 			"-LDFLAGS",
 			"-Wl,--no-as-needed -Wl,--allow-shlib-undefined",
+			...toolchain,
 		],
 	},
 	task: { type: "local", maxSlots: 4, maxCompiles: 1 },

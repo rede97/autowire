@@ -428,6 +428,11 @@ the child, and `run_sim` exports `PATH` in MSYS form.
 Both VCS configs set `toolOptions.flags` to the flags of the old `run.sh`
 scripts: VCS O-2018.09 reads `-xlrm nettype_array` as a source file.
 
+`demo/hbm` needs a g++ older than 10 for VCS O-2018.09: its UVM DPI source
+has curly quotes in a skipped `#error`, which newer g++ rejects (the
+pre-dtsim `run.sh` fails the same way). `VCS_GCC_DIR=/usr/bin dt/vcs/run.sh`
+passes `-cc` / `-cpp` / `-ld` from that directory.
+
 The wrappers call `bun ../../index.ts dtsim` inside the repository and
 `dtsim` on `PATH` elsewhere; `DTSIM="..."` overrides both. Each soc case
 builds its firmware in the `preSim` hook; the `preCompile` hook applies the
