@@ -1,9 +1,14 @@
-// Launchers decide HOW a command runs (local / bsub / srun), never when.
-// The scheduler owns slots. DTSIM_TASK_TYPE overrides only the launcher id;
-// slot limits always come from the workspace config.
-import type { TaskSpec } from "../dsl/index.ts";
+// Launch wiring. Launchers (src/dtsim/launchers/, or Workspace.launchers)
+// decide HOW a command runs; the scheduler owns slots. DTSIM_TASK_TYPE /
+// DTSIM_TASK_QUEUE override only the launcher id and queue; slot limits and
+// options always come from the workspace config.
+import type { LaunchContext, TaskSpec } from "../dsl/index.ts";
+import { getLauncher } from "./registry.ts";
 
-export type ResolvedTask = TaskSpec & { queue: string };
+export type ResolvedTask = TaskSpec & {
+	queue: string;
+	options: Record<string, unknown>;
+};
 
 export function resolveTask(task: TaskSpec): ResolvedTask {
 	return {
@@ -15,36 +20,19 @@ export function resolveTask(task: TaskSpec): ResolvedTask {
 			process.env.DSIM_TASK_QUEUE ??
 			task.queue ??
 			"",
+		options: { ...task.options },
 	};
 }
 
+/** argv as the selected launcher runs it. */
 export function wrapCommand(
-	argv: string[],
+	argv: readonly string[],
 	task: ResolvedTask,
-	jobName: string,
+	ctx: Omit<LaunchContext, "queue" | "options">,
 ): string[] {
-	if (task.type === "lsf") {
-		return [
-			"bsub",
-			"-I",
-			"-J",
-			jobName,
-			...(task.queue ? ["-q", task.queue] : []),
-			...argv,
-		];
-	}
-	if (task.type === "slurm") {
-		return [
-			"srun",
-			"--pty",
-			...(task.queue ? ["--qos", task.queue] : []),
-			"--job-name",
-			jobName,
-			...argv,
-		];
-	}
-	if (task.type !== "local") {
-		throw new Error(`dtsim: unknown task type "${task.type}"`);
-	}
-	return argv;
+	return getLauncher(task.type).wrap(argv, {
+		...ctx,
+		queue: task.queue,
+		options: task.options,
+	});
 }

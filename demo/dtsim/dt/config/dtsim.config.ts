@@ -15,11 +15,14 @@ export default Workspace({
 		passthrough: ["PROJ_CFG", "DTSIM_MOCK_*"],
 		deny: ["LD_PRELOAD"],
 	},
+	// Launcher "lsf" wraps every compile / sim in `bsub -I -J <job> -q normal
+	// <options.args> <cmd>`; DTSIM_TASK_TYPE=slurm|local switches launcher.
 	task: {
 		type: "lsf",
 		queue: "normal",
 		maxSlots: 8,
 		maxCompiles: 4,
+		options: { args: ["-R", "rusage[mem=4000]"] },
 	},
 	waive: [
 		WaiveRule("timing_rl_rdwin", "re:tRL_I \\+ tRDWIN_I .*timing violation"),

@@ -1,16 +1,14 @@
 #!/bin/bash
-# Mock srun: strips SLURM flags and runs the wrapped command.
-args=()
-skip_next=false
-for arg in "$@"; do
-  if $skip_next; then skip_next=false; continue; fi
-  case "$arg" in
-    --pty) ;;
-    --qos|--job-name|--mem|--gres|--partition|--account|--time) skip_next=true ;;
-    --*) skip_next=true ;;
-    -*) skip_next=true ;;
-    *) args+=("$arg") ;;
+# Mock srun: strips SLURM flags up to the command, logs the full argv to
+# $DTSIM_MOCK_LAUNCH_LOG when set, and runs the wrapped command.
+if [ -n "${DTSIM_MOCK_LAUNCH_LOG:-}" ]; then echo "srun $*" >> "$DTSIM_MOCK_LAUNCH_LOG"; fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --pty) shift ;;
+    --*=*) shift ;;
+    -*) shift 2 ;;
+    *) break ;;
   esac
 done
-if [ ${#args[@]} -eq 0 ]; then echo "mock srun: nothing to run" >&2; exit 1; fi
-exec "${args[@]}"
+if [ $# -eq 0 ]; then echo "mock srun: nothing to run" >&2; exit 1; fi
+exec "$@"

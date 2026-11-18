@@ -77,10 +77,13 @@ export type HookPhase =
 	| "onResult";
 
 export type TaskSpec = {
+	/** Launcher id: built-in "local" / "lsf" / "slurm", or a Workspace.launchers entry. */
 	type: string;
 	queue?: string;
 	maxSlots: number;
 	maxCompiles: number;
+	/** Free-form launcher options, interpreted by the selected Launcher only. */
+	options?: Record<string, unknown>;
 };
 
 export type PatchSpec = { from: string; to: string };
@@ -89,6 +92,7 @@ export type WorkspaceOpts = {
 	tool: string;
 	filelist?: string;
 	tools?: readonly SimTool[];
+	launchers?: readonly Launcher[];
 	toolOptions?: Record<string, unknown>;
 	bareDefaults?: CaseOpts;
 	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
@@ -168,6 +172,36 @@ export type SimTool = {
 	simErrors: readonly RegExp[];
 };
 
+// --- Launcher plugin contract ------------------------------------------------
+
+export type LaunchContext = {
+	phase: "compile" | "sim";
+	/** compile_<base> or <case>_<seed>. */
+	jobName: string;
+	caseId: string;
+	seed?: string;
+	/** Directory the wrapped command runs in. */
+	cwd: string;
+	/** task.queue after DTSIM_TASK_QUEUE; "" when unset. */
+	queue: string;
+	/** true only for `run --interactive`: the terminal is attached. */
+	interactive: boolean;
+	/** task.options, unresolved. */
+	options: Record<string, unknown>;
+};
+
+/** Decides HOW a command runs (local, bsub, srun, ...). The scheduler owns
+ *  WHEN: slots and compile limits never reach the launcher. */
+export type Launcher = {
+	kind: "dtsim-launcher";
+	id: string;
+	/** Parent-environment names the launcher needs (LSF_*, SLURM_*);
+	 *  copied like a SimTool's passthrough. */
+	passthrough: readonly string[];
+	/** Return the argv that runs `argv` (already tool-resolved) under this launcher. */
+	wrap: (argv: readonly string[], ctx: LaunchContext) => string[];
+};
+
 // --- constructors ------------------------------------------------------------
 
 function needString(what: string, v: unknown): string {
@@ -234,6 +268,14 @@ export function isWorkspace(v: unknown): v is WorkspaceDef {
 export function isTool(v: unknown): v is SimTool {
 	return (
 		typeof v === "object" && v !== null && (v as SimTool).kind === "dtsim-tool"
+	);
+}
+
+export function isLauncher(v: unknown): v is Launcher {
+	return (
+		typeof v === "object" &&
+		v !== null &&
+		(v as Launcher).kind === "dtsim-launcher"
 	);
 }
 
@@ -311,12 +353,28 @@ export function defineTool(tool: SimTool): SimTool {
 	return tool;
 }
 
+/** Validate a user launcher (cluster or wrapper backend). */
+export function defineLauncher(launcher: Launcher): Launcher {
+	if (!isLauncher(launcher)) {
+		throw new Error('dtsim: a launcher must have kind: "dtsim-launcher"');
+	}
+	needString("launcher id", launcher.id);
+	if (typeof launcher.wrap !== "function") {
+		throw new Error(`dtsim: launcher ${launcher.id} needs wrap()`);
+	}
+	if (!Array.isArray(launcher.passthrough)) {
+		throw new Error(`dtsim: launcher ${launcher.id} needs a passthrough array`);
+	}
+	return launcher;
+}
+
 export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 	if (typeof opts !== "object" || opts === null) {
 		throw new Error("dtsim: Workspace options must be an object");
 	}
 	needString("workspace tool", opts.tool);
 	for (const t of opts.tools ?? []) defineTool(t);
+	for (const l of opts.launchers ?? []) defineLauncher(l);
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);
 	return { kind: "dtsim-workspace", opts };
 }

@@ -80,6 +80,8 @@ export function assertNoDeniedAssignments(
 export function buildChildEnv(args: {
 	phase: "compile" | "sim";
 	tool: SimTool;
+	/** The selected launcher's passthrough (LSF_*, SLURM_*); counted as plugin. */
+	launcherPassthrough?: readonly string[];
 	passthrough: readonly string[];
 	deny: readonly string[];
 	caseEnv: Record<string, EnvValue>;
@@ -114,7 +116,9 @@ export function buildChildEnv(args: {
 			sources.set(key, "plugin");
 		}
 	}
-	const pluginCount = copy(args.tool.passthrough, "plugin");
+	const pluginCount =
+		copy(args.tool.passthrough, "plugin") +
+		copy(args.launcherPassthrough ?? [], "plugin");
 	const userCount = copy(args.passthrough, "user");
 
 	let denied = 0;

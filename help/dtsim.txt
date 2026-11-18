@@ -27,6 +27,9 @@ Rules
   Children get only passthrough-listed env vars.
   Built-in backends: vcs (toolOptions.ntbOpts, flags), verilator (top, mdir,
   main=false for a C++ harness). Custom backends: defineTool + Workspace({ tools }).
+  Launchers (task.type): local, lsf (bsub -I), slurm (srun --pty); task.options.args
+  adds flags. Custom launchers: defineLauncher + Workspace({ launchers }).
+  DTSIM_TASK_TYPE / DTSIM_TASK_QUEUE override id and queue.
 
 Demos
   demo/dtsim/run.sh <args>          fake tools in demo/dtsim/dt/bin

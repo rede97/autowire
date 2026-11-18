@@ -22,7 +22,7 @@ import {
 } from "./grade.ts";
 import { runHook } from "./hooks.ts";
 import { resolveTask, wrapCommand } from "./launch.ts";
-import { getTool } from "./registry.ts";
+import { getLauncher, getTool } from "./registry.ts";
 import { runProcess } from "./run.ts";
 import { writeGitRev, writeResultMarker, writeRunSim } from "./scripts.ts";
 
@@ -119,6 +119,7 @@ export function childEnv(
 	return buildChildEnv({
 		phase,
 		tool: getTool(ws.toolId),
+		launcherPassthrough: getLauncher(resolveTask(ws.task).type).passthrough,
 		passthrough: ws.passthrough,
 		deny: ws.deny,
 		caseEnv: c.env,
@@ -231,7 +232,13 @@ export async function executeCompile(
 		hookFailed = true;
 	} else {
 		const task = resolveTask(ws.task);
-		const argv = wrapCommand(prepared.argv, task, `compile_${c.base}`);
+		const argv = wrapCommand(prepared.argv, task, {
+			phase: "compile",
+			jobName: `compile_${c.base}`,
+			caseId: c.id,
+			cwd: prepared.cwd,
+			interactive: false,
+		});
 		code = await runProcess({
 			argv,
 			cwd: prepared.cwd,
@@ -371,7 +378,14 @@ export async function executeSim(
 	}
 
 	const task = resolveTask(ws.task);
-	const argv = wrapCommand(["bash", runSim], task, `${c.id}_${seed}`);
+	const argv = wrapCommand(["bash", runSim], task, {
+		phase: "sim",
+		jobName: `${c.id}_${seed}`,
+		caseId: c.id,
+		seed,
+		cwd: seedDir,
+		interactive: opts.interactive,
+	});
 	const code = await runProcess({
 		argv,
 		cwd: seedDir,

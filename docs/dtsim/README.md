@@ -66,7 +66,7 @@ is always the parent of the config file's `dt/` directory. User configs are
 loaded at runtime; the DSL is written to `dt/config/.dtsim/dsl/index.ts` on
 every run and config files import it from there.
 
-- `Workspace({ tool, filelist, tools, toolOptions, bareDefaults, env, task, waive, patches, hooks, groups, cases })`
+- `Workspace({ tool, filelist, tools, launchers, toolOptions, bareDefaults, env, task, waive, patches, hooks, groups, cases })`
 - `Case(name, opts)` / `Subcase(base, suffix, opts)` / `Group(name, ids)` / `Hook(path, opts)`
 - List fields (`defines`, `compileArgs`, `simArgs`, `grade.*`) append.
   `env` maps merge per key. Bare names get `bareDefaults`; explicit subcases do not.
@@ -119,8 +119,44 @@ Built-in `toolOptions`:
 The engine owns scheduling, grading, and environment assembly. A backend only
 supplies argv, log locations, excerpt regexes, and optional helper files
 (`writeAux`), fingerprint extras, and per-tool `toolOptions`. Backend ids must
-not shadow built-ins. `local` / `lsf` / `slurm` launchers wrap the argv;
-`DTSIM_TASK_TYPE` / `DTSIM_TASK_QUEUE` override type and queue only.
+not shadow built-ins.
+
+## Launchers (plugins)
+
+A launcher decides how a compile or sim command runs; the scheduler decides
+when (`task.maxSlots`, `task.maxCompiles` never reach the launcher). Same
+shape as a simulator backend: `local`, `lsf` and `slurm` are built in, a
+workspace registers more with `defineLauncher` + `Workspace({ launchers })`,
+and `task.type` picks one by id.
+
+```ts
+// A site submit wrapper that blocks until the job ends and returns its exit code.
+const grid = defineLauncher({
+	kind: "dtsim-launcher",
+	id: "grid",
+	passthrough: ["GRID_*"],
+	wrap: (argv, ctx) => ["grid_run", "--name", ctx.jobName, ...(ctx.queue ? ["--pool", ctx.queue] : []), "--", ...argv],
+});
+export default Workspace({ tool: "vcs", launchers: [grid], task: { type: "grid", queue: "eda", maxSlots: 16, maxCompiles: 4 }, ... });
+```
+
+`wrap(argv, ctx)` receives the already-built tool argv (`bash <seed dir>/run_sim`
+for a sim) and returns the argv to spawn; the wrapped command must exit with
+the job's exit code (interactive / blocking submission). `ctx` carries
+`phase`, `jobName` (`compile_<base>` or `<case>_<seed>`), `caseId`, `seed`,
+`cwd`, `queue`, `interactive` (`run --interactive`) and `options`
+(`task.options`, free-form). The launcher's `passthrough` names are copied into
+the child environment like a backend's.
+
+| Launcher | Wraps as | `passthrough` | `task.options` |
+|---|---|---|---|
+| `local` | the command itself | none | ignored |
+| `lsf` | `bsub -I -J <job> [-q <queue>] <args> <cmd>` | `LSF_*`, `LSB_*` | `args: string[]`, e.g. `["-R", "rusage[mem=8000]"]` |
+| `slurm` | `srun --pty [--qos <queue>] --job-name <job> <args> <cmd>` | `SLURM_*` | `args: string[]`, e.g. `["--partition", "eda"]` |
+
+`DTSIM_TASK_TYPE` / `DTSIM_TASK_QUEUE` override the launcher id and queue
+only. An unknown id, from the config or the override, fails before any output
+directory is created. Launcher ids must not shadow built-ins.
 
 ## Environment isolation
 

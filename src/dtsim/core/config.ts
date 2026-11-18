@@ -25,7 +25,13 @@ import {
 	type WorkspaceDef,
 } from "../dsl/index.ts";
 import { assertNoDeniedAssignments, compileEnvEntries } from "./env.ts";
-import { getTool, registerTool } from "./registry.ts";
+import { resolveTask } from "./launch.ts";
+import {
+	getLauncher,
+	getTool,
+	registerLauncher,
+	registerTool,
+} from "./registry.ts";
 
 export type MergedCase = {
 	id: string;
@@ -234,6 +240,7 @@ export async function loadWorkspace(opts: {
 	}
 	const o = wsDef.opts;
 	for (const tool of o.tools ?? []) registerTool(tool);
+	for (const launcher of o.launchers ?? []) registerLauncher(launcher);
 	getTool(o.tool); // unknown tool fails before any output dir is created
 
 	const cases = new Map<string, CaseDef>();
@@ -289,6 +296,15 @@ export async function loadWorkspace(opts: {
 	for (const id of [...cases.keys(), ...subcases.keys()]) {
 		assertNoDeniedAssignments(id, mergeCase(partial, id).env, deny);
 	}
+	const task: TaskSpec = {
+		type: o.task?.type ?? "local",
+		...(o.task?.queue === undefined ? {} : { queue: o.task.queue }),
+		maxSlots: o.task?.maxSlots ?? 8,
+		maxCompiles: o.task?.maxCompiles ?? 4,
+		...(o.task?.options === undefined ? {} : { options: o.task.options }),
+	};
+	// Unknown launcher (config or DTSIM_TASK_TYPE) fails before any output dir.
+	getLauncher(resolveTask(task).type);
 
 	return {
 		configPath,
@@ -301,12 +317,7 @@ export async function loadWorkspace(opts: {
 		...partial,
 		passthrough: [...(o.env?.passthrough ?? [])],
 		deny,
-		task: {
-			type: o.task?.type ?? "local",
-			...(o.task?.queue === undefined ? {} : { queue: o.task.queue }),
-			maxSlots: o.task?.maxSlots ?? 8,
-			maxCompiles: o.task?.maxCompiles ?? 4,
-		},
+		task,
 		waive: [...(o.waive ?? [])],
 		patches: [...(o.patches ?? [])],
 		hooks: { ...o.hooks },
