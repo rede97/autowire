@@ -11,7 +11,10 @@ const withHooks = (decl: string, hooks: string) =>
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 ${decl}`,
-	).replace("waive: [", `hooks: { ${hooks} },\n\twaive: [`);
+	).replace(
+		"groups: [base, cosim],",
+		`hooks: { ${hooks} },\n\tgroups: [base, cosim],`,
+	);
 
 describe("hooks", () => {
 	test("every stage runs in order with one context shape", async () => {
@@ -114,32 +117,32 @@ describe("hooks", () => {
 });
 
 describe("graders", () => {
-	// lenient: seed 32 passes with a note, other seeds keep the keyword
-	// verdict. broken: always throws; test_bar_basic selects it per case.
+	// lenient: seed 32 passes with a note, other seeds keep helloGrader's
+	// verdict. broken: always throws; test_bar_basic uses it.
 	const GRADERS = CASES_TS.replace(
-		'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
-		`import { Case, Group, WaiveRule, Workspace, defineGrader } from "./.dtsim/dsl/index.ts";
+		'import { DefaultGrader } from "./.dtsim/dsl/index.ts";',
+		'import { DefaultGrader, defineGrader } from "./.dtsim/dsl/index.ts";',
+	)
+		.replace(
+			"\n// Only top-level cases",
+			`
 const lenient = defineGrader({
-	kind: "dtsim-grader",
-	id: "lenient",
+	name: "lenient",
 	grade: (ctx) =>
-		ctx.seed === "32" ? { status: "PASS", note: "seed 32 waived" } : ctx.keywords(),
+		ctx.seed === "32" ? { status: "PASS", note: "seed 32 waived" } : helloGrader.grade(ctx),
 });
 const broken = defineGrader({
-	kind: "dtsim-grader",
-	id: "broken",
+	name: "broken",
 	grade: () => {
 		throw new Error("no report");
 	},
-});`,
-	)
-		.replace('owner: "bob",', 'owner: "bob",\n\tgrader: "broken",')
-		.replace(
-			"waive: [",
-			'graders: [lenient, broken],\n\tgrader: "lenient",\n\twaive: [',
-		);
+});
+// Only top-level cases`,
+		)
+		.replace("grader: helloGrader,", "grader: lenient,")
+		.replace('owner: "bob",', 'owner: "bob",\n\tgrader: broken,');
 
-	test("workspace default, case override, keywords() and --recheck", async () => {
+	test("case grader, composition, inheritance and --recheck", async () => {
 		const ws = await makeWorkspace(GRADERS);
 		const failing = { DTSIM_MOCK_SIMV_FAIL: "1" };
 		const waived = await runDtsim(
@@ -178,12 +181,12 @@ const broken = defineGrader({
 		);
 	});
 
-	test("an unknown grader id fails when the case is used", async () => {
+	test("a grader option that is not a grader fails at load", async () => {
 		const ws = await makeWorkspace(
 			CASES_TS.replace('owner: "dave",', 'owner: "dave",\n\tgrader: "nope",'),
 		);
 		const result = await runDtsim(ws, ["run", "test_quick_smoke"]);
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain('unknown grader "nope"');
+		expect(result.stderr).toContain("must be a grader");
 	});
 });

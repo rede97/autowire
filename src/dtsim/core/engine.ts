@@ -21,15 +21,10 @@ import {
 import { buildChildEnv, envStatsLine } from "./env.ts";
 import { formatExcerpt } from "./excerpt.ts";
 import { toolPath, writeFlatFilelist } from "./filelist.ts";
-import {
-	type GradeDetails,
-	type Graded,
-	runGrader,
-	waiveRuleMap,
-} from "./grade.ts";
+import { type Graded, runGrader } from "./grade.ts";
 import { type HookBase, runHooks } from "./hooks.ts";
 import { resolveTask, wrapCommand } from "./launch.ts";
-import { getGrader, getLauncher, getTool } from "./registry.ts";
+import { getLauncher, getTool } from "./registry.ts";
 import { runProcess } from "./run.ts";
 import { writeGitRev, writeResultMarker, writeRunSim } from "./scripts.ts";
 
@@ -50,7 +45,8 @@ export type SeedResult = {
 	log: string;
 	status: Status;
 	code: number;
-	details?: GradeDetails;
+	/** Grader report rows (run summary, error.txt). */
+	details?: ReadonlyArray<readonly [string, string]>;
 	note?: string;
 };
 
@@ -215,12 +211,9 @@ export function gradeSeed(
 	seed: string,
 ): Promise<Graded> {
 	const env = childEnv(ws, c, "sim", dir, seed).env;
-	return runGrader(getGrader(c.grader), {
+	return runGrader(c.grader, {
 		...caseContext(ws, c, dir, log, env, seed),
 		seed,
-		grader: c.grader,
-		grade: c.grade,
-		waive: waiveRuleMap(ws.waive),
 	});
 }
 
@@ -233,7 +226,7 @@ async function hookStage(
 	if (!failure) return undefined;
 	await writeFile(
 		join(base.dir, "error.txt"),
-		formatExcerpt({
+		await formatExcerpt({
 			status: "FAIL",
 			phase: "hook",
 			tool: ws.toolId,
@@ -313,12 +306,9 @@ export async function executeCompile(
 	}
 	const ok = code === 0;
 	if (!ok && !hookFailed) {
-		const logText = existsSync(prepared.log)
-			? (await Bun.file(prepared.log).text()).split("\n")
-			: [];
 		await writeFile(
 			join(compileDir, "error.txt"),
-			formatExcerpt({
+			await formatExcerpt({
 				status: "FAIL",
 				phase: "compile",
 				exitCode: code,
@@ -326,16 +316,6 @@ export async function executeCompile(
 				caseId: c.id,
 				log: prepared.log,
 				toolErrors: tool.compileErrors,
-				details: {
-					status: "FAIL",
-					errorCounts: {},
-					missingExpect: [],
-					waived: 0,
-					unclosed: false,
-					unknown: [],
-					lines: logText,
-					kept: logText,
-				},
 			}),
 		);
 	}
@@ -422,7 +402,6 @@ export async function executeSim(
 
 	await waitForLog(prepared.log);
 	const graded = await gradeSeed(ws, c, seedDir, prepared.log, seed);
-	const details: GradeDetails | undefined = graded.details;
 	let status: Status = graded.status;
 	if (opts.abort?.aborted) status = "ABORTED";
 	writeResultMarker(seedDir, status);
@@ -430,7 +409,7 @@ export async function executeSim(
 	if (status !== "PASS") {
 		await writeFile(
 			join(seedDir, "error.txt"),
-			formatExcerpt({
+			await formatExcerpt({
 				status,
 				phase: "sim",
 				exitCode: code,
@@ -438,7 +417,10 @@ export async function executeSim(
 				caseId: c.id,
 				seed,
 				log: prepared.log,
-				...(details === undefined ? {} : { details }),
+				...(graded.details === undefined ? {} : { details: graded.details }),
+				...(graded.highlight === undefined
+					? {}
+					: { highlight: graded.highlight }),
 				toolErrors: tool.simErrors,
 			}),
 		);
@@ -450,6 +432,6 @@ export async function executeSim(
 		status,
 		code,
 		...(graded.note === undefined ? {} : { note: graded.note }),
-		...(details === undefined ? {} : { details }),
+		...(graded.details === undefined ? {} : { details: graded.details }),
 	};
 }

@@ -39,10 +39,12 @@ Rules
   Hook stages: preCompile postCompile preSim postSim onResult;
   demo/dtsim shows all five, demo/soc preCompile + preSim.
   Graders decide each seed's status from sim.log, never the exit code.
-  Built-in "keywords" (grade pass/error/expect + waive) is the default;
-  defineGrader + Workspace({ graders, grader }), case grader: "id" overrides.
-  grade(ctx) returns a Status or { status, note }; ctx.keywords() is the
-  built-in verdict. results --recheck reuses the grader. demo/hbm: uvm-summary.
+  Graders are values: Workspace({ grader }) (default DefaultGrader()), case
+  grader overrides and is inherited. DefaultGrader({ pass, error, expect,
+  waive: [WaiveRule(...)], uvm }) checks keywords and the UVM report;
+  g.extend({...}) appends. Custom: defineGrader({ name, grade(ctx) }) returns
+  a Status or { status, note, details, highlight }. Logs stream in a worker
+  (scanLog / streamLines). results --recheck reuses the grader.
   Children get only passthrough-listed env vars.
   Built-in backends: vcs (toolOptions.ntbOpts, flags), verilator (top, mdir,
   main=false for a C++ harness). Custom backends: defineTool + Workspace({ tools }).

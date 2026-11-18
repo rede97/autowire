@@ -1,120 +1,176 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { excerptLines } from "../../src/dtsim/core/excerpt.ts";
 import {
-	applyWaiveRegions,
+	DefaultGrader,
+	type GradeContext,
 	gradeLines,
-	kwMatchLine,
-} from "../../src/dtsim/core/grade.ts";
+	WaiveRule,
+} from "../../src/dtsim/dsl/index.ts";
 
-const SPEC = {
-	pass: ["TEST PASSED"],
-	error: ["Error:"],
-	expect: ["Keyword"],
-};
+const KW = { pass: ["TEST PASSED"], error: ["Error:"], expect: ["Keyword"] };
 
-describe("keyword matching", () => {
-	test("substring, regex, and invalid regex fallback", () => {
-		expect(kwMatchLine("Error:", "Error: boom")).toBe(true);
-		expect(kwMatchLine("re:ERROR:.*timing", "ERROR: x timing violation")).toBe(
-			true,
-		);
-		expect(kwMatchLine("re:ERROR:.*timing", "all good")).toBe(false);
-		expect(kwMatchLine("re:[unclosed", "literal [unclosed text")).toBe(true);
-	});
-});
-
-describe("waive regions", () => {
-	test("region waives only matching lines; markers never kept", () => {
-		const lines = [
-			"DSIM_WAIVE_BEGIN re:tRL_I",
-			"Error: tRL_I violation",
-			"Error: unrelated",
-			"DSIM_WAIVE_END",
-			"Error: outside",
-		];
-		const out = applyWaiveRegions(lines, {});
-		expect(out.waived).toBe(1);
-		expect(out.kept).toEqual(["Error: unrelated", "Error: outside"]);
-	});
-
-	test("empty pattern waives everything; unclosed extends to EOF", () => {
-		const out = applyWaiveRegions(
-			["DSIM_WAIVE_BEGIN", "Error: a", "Error: b"],
-			{},
-		);
-		expect(out.waived).toBe(2);
-		expect(out.kept).toEqual([]);
-		expect(out.unclosed).toBe(true);
-	});
-
-	test("named rules switch on and off, unknown names collected", () => {
-		const rules = { boot: "Error: timeout" };
-		const out = applyWaiveRegions(
-			[
-				"DSIM_WAIVE_ON boot ghost",
-				"Error: timeout in boot phase",
-				"DSIM_WAIVE_OFF",
-				"Error: timeout in boot phase",
-			],
-			rules,
-		);
-		expect(out.waived).toBe(1);
-		expect(out.kept).toEqual(["Error: timeout in boot phase"]);
-		expect(out.unknown).toEqual(["ghost"]);
-	});
-});
-
-describe("grading", () => {
+describe("keywords", () => {
 	test("clean pass", () => {
-		const r = gradeLines(["Keyword", "TEST PASSED"], SPEC, {});
-		expect(r.status).toBe("PASS");
+		expect(gradeLines(["Keyword", "TEST PASSED"], KW).status).toBe("PASS");
 	});
 
-	test("error keyword means PASS WITH ERRORS, exit status stays passing", () => {
-		const r = gradeLines(["Keyword", "Error: x", "TEST PASSED"], SPEC, {});
+	test("error keyword means PASS WITH ERRORS", () => {
+		const r = gradeLines(["Keyword", "Error: x", "TEST PASSED"], KW);
 		expect(r.status).toBe("PASS WITH ERRORS");
 		expect(r.errorCounts["Error:"]).toBe(1);
 	});
 
 	test("missing expect keyword means PASS WITH ERRORS", () => {
-		const r = gradeLines(["TEST PASSED"], SPEC, {});
+		const r = gradeLines(["TEST PASSED"], KW);
 		expect(r.status).toBe("PASS WITH ERRORS");
 		expect(r.missingExpect).toEqual(["Keyword"]);
 	});
 
 	test("no pass marker means FAIL", () => {
-		const r = gradeLines(["UVM_FATAL @ 1ns"], SPEC, {});
-		expect(r.status).toBe("FAIL");
+		expect(gradeLines(["simulation ended"], KW).status).toBe("FAIL");
 	});
 
-	test("waived-only errors still PASS but are counted", () => {
+	test("regex keywords; an invalid regex is a substring", () => {
+		const r = gradeLines(
+			["ERROR: x timing violation", "literal [unclosed text", "TEST PASSED"],
+			{ error: ["re:ERROR:.*timing", "re:[unclosed"] },
+		);
+		expect(r.errorCounts).toEqual({
+			"re:ERROR:.*timing": 1,
+			"re:[unclosed": 1,
+		});
+	});
+});
+
+describe("waive", () => {
+	test("region waives only matching lines; markers never count", () => {
 		const r = gradeLines(
 			[
-				"DSIM_WAIVE_BEGIN",
-				"Error: benign",
+				"DSIM_WAIVE_BEGIN re:tRL_I",
+				"Error: tRL_I violation",
+				"Error: unrelated",
 				"DSIM_WAIVE_END",
-				"Keyword",
+				"Error: outside",
 				"TEST PASSED",
 			],
-			SPEC,
-			{},
+			{ error: ["Error:"] },
 		);
+		expect(r.waived).toBe(1);
+		expect(r.hits).toEqual(["Error: unrelated", "Error: outside"]);
+	});
+
+	test("empty pattern waives everything; unclosed extends to EOF", () => {
+		const r = gradeLines(["TEST PASSED", "DSIM_WAIVE_BEGIN", "Error: a"], {
+			error: ["Error:"],
+		});
 		expect(r.status).toBe("PASS");
 		expect(r.waived).toBe(1);
+		expect(r.unclosed).toBe(true);
+	});
+
+	test("named rules switch on and off, unknown names collected", () => {
+		const r = gradeLines(
+			[
+				"DSIM_WAIVE_ON boot ghost",
+				"Error: timeout in boot phase",
+				"DSIM_WAIVE_OFF",
+				"Error: timeout in boot phase",
+				"TEST PASSED",
+			],
+			{ error: ["Error:"], waive: [WaiveRule("boot", "Error: timeout")] },
+		);
+		expect(r.waived).toBe(1);
+		expect(r.errorCounts["Error:"]).toBe(1);
+		expect(r.unknown).toEqual(["ghost"]);
+	});
+});
+
+describe("uvm", () => {
+	const summary = [
+		"--- UVM Report Summary ---",
+		"UVM_INFO :   12",
+		"UVM_ERROR :    0",
+		"UVM_FATAL :    0",
+	];
+
+	test("a clean report summary passes without a pass keyword", () => {
+		expect(gradeLines(summary, {}).status).toBe("PASS");
+	});
+
+	test("an error message fails; summary count lines are not messages", () => {
+		const r = gradeLines(
+			["UVM_ERROR tb.sv(12) @ 10ns: [CHK] mismatch", ...summary],
+			{},
+		);
+		expect(r.status).toBe("FAIL");
+		expect(r.uvmErrors).toBe(1);
+		expect(r.uvmFatals).toBe(0);
+	});
+
+	test("a waived UVM_ERROR does not fail; uvm: false ignores UVM", () => {
+		const waived = [
+			"DSIM_WAIVE_BEGIN",
+			"UVM_ERROR tb.sv(12) @ 10ns: known",
+			"DSIM_WAIVE_END",
+			...summary,
+		];
+		expect(gradeLines(waived, {}).status).toBe("PASS");
+		const fatal = ["UVM_FATAL @ 1ns: boom", "TEST PASSED"];
+		expect(gradeLines(fatal, {}).status).toBe("FAIL");
+		expect(gradeLines(fatal, { uvm: false }).status).toBe("PASS");
+	});
+});
+
+describe("DefaultGrader", () => {
+	test("extend appends lists and waive rules", () => {
+		const base = DefaultGrader({
+			error: ["Error:"],
+			waive: [WaiveRule("a", "x")],
+		});
+		const derived = base.extend({
+			error: ["FAIL:"],
+			pass: ["DONE"],
+			waive: [WaiveRule("b", "y")],
+		});
+		expect(derived.opts.error).toEqual(["Error:", "FAIL:"]);
+		expect(derived.opts.pass).toEqual(["DONE"]);
+		expect(derived.opts.waive?.map((r) => r.name)).toEqual(["a", "b"]);
+		expect(base.opts.error).toEqual(["Error:"]);
+	});
+
+	test("grades a large log in a worker with bounded highlights", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "dtsim-grade-"));
+		const log = join(dir, "sim.log");
+		const noise = "x".repeat(100);
+		const lines = Array.from({ length: 200_000 }, (_, i) =>
+			i % 1000 === 0 ? `Error: e${i}` : noise,
+		);
+		await writeFile(log, `${lines.join("\n")}\nTEST PASSED\n`);
+		const out = await DefaultGrader({ error: ["Error:"] }).grade({
+			log,
+		} as GradeContext);
+		expect(typeof out === "object" && out.status).toBe("PASS WITH ERRORS");
+		if (typeof out !== "object") return;
+		expect(out.details).toContainEqual(["Error kws", "Error: (200)"]);
+		expect(out.highlight?.length).toBe(40);
 	});
 });
 
 describe("error excerpts", () => {
-	test("tool error lines come first, tail fills up, cap is 40 lines", () => {
+	test("tool errors and highlights in log order, tail fills a short one", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "dtsim-excerpt-"));
+		const log = join(dir, "sim.log");
 		const lines = Array.from({ length: 200 }, (_, i) => `noise ${i}`);
 		lines[120] = "UVM_FATAL @ 1200ns: boom";
-		const out = excerptLines({
-			lines,
-			kept: lines,
-			toolErrors: [/UVM_FATAL/],
-			errorKeywords: [],
-		});
-		expect(out[0]).toContain("UVM_FATAL");
-		expect(out.length).toBeLessThanOrEqual(41);
+		lines[50] = "Error: picked by the grader";
+		await writeFile(log, lines.join("\n"));
+		const out = await excerptLines(log, [/UVM_FATAL/], [lines[50] as string]);
+		expect(out[0]).toBe("Error: picked by the grader");
+		expect(out[1]).toContain("UVM_FATAL");
+		expect(out.at(-1)).toBe("noise 199");
+		expect(out.length).toBe(17);
 	});
 });

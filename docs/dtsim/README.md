@@ -89,10 +89,11 @@ wishbone SoT), so DSL edits reach them without a regenerate step; `docs unpack`
 rewrites those imports to the `.dtsim/dsl` copy. No symlink is used: Windows
 symlinks need extra privileges and Bun does not follow MSYS ones.
 
-- `Workspace({ tool, filelist, output, tools, launchers, graders, grader, toolOptions, bareDefaults, env, task, waive, hooks, groups, cases })`
+- `Workspace({ tool, filelist, output, tools, launchers, grader, toolOptions, bareDefaults, env, task, hooks, groups, cases })`
 - `Case(name, opts)` / `case.SubCase(suffix, opts)` / `Group(name, ids)`
-- List fields (`defines`, `compileArgs`, `simArgs`, `grade.*`) append.
-  `env` maps merge per key. Bare top-level cases get `bareDefaults`; derived cases do not.
+- List fields (`defines`, `compileArgs`, `simArgs`) append.
+  `env` maps merge per key; `grader` is replaced (use `.extend()` to append keywords).
+  Bare top-level cases get `bareDefaults`; derived cases do not.
 - `filelist` (workspace or case) is a path relative to `dt/config/`. A case
   filelist replaces the workspace one and splits the compile group.
 - `output` moves the output root (default `<project>/dt/simout`), e.g.
@@ -108,7 +109,7 @@ derivation nests to any depth, and the id is the dotted path:
 export const hello = Case("test_hello_world", { defines: ["NUM=1"] });
 const cosim = hello.SubCase("cosim", { compileArgs: ["-debug_access+all"], env: { INPUT: "input.spf" } });
 cosim.SubCase("ss", (parent) => ({ env: { INPUT: String(parent.env?.INPUT).replace(".spf", "_ss.spf") } }));
-hello.SubCase("timing", { grade: { error: ["re:ERROR:.*timing violation"] } });
+hello.SubCase("timing", { grader: helloGrader.extend({ error: ["re:ERROR:.*timing violation"] }) });
 // ids: test_hello_world, test_hello_world.cosim, test_hello_world.cosim.ss, test_hello_world.timing
 ```
 
@@ -278,49 +279,81 @@ compilation and the compile key. `output_dir`, `verify`, `WORKSPACE`,
 
 Logs stay in files by default. Grading reads `sim.log`, not the exit code:
 `PASS`, `PASS WITH ERRORS` (exit 0), `FAIL`, `NO SIM LOG`, `ABORTED`.
-Waive markers keep their dsim spelling (`DSIM_WAIVE_BEGIN/END/ON/OFF`).
 Every seed directory has `run_sim`, `.result`, `git_rev` (revision of the
-repo holding `dt/config`), and, for any non-clean result, `error.txt` with a
-bounded excerpt. Re-grading is `dtsim results --dir <dir> --recheck` (or
-`dresults --recheck`); no per-seed checker script is written. A tool that
-cannot be started at all reports `dtsim: cannot start <tool>` on stderr.
+repo holding `dt/config`), and, for any non-clean result, `error.txt` with
+the grader's report rows and a bounded excerpt (tool error lines, the lines
+the grader highlights, the last lines when few). Re-grading is
+`dtsim results --dir <dir> --recheck` (or `dresults --recheck`); no per-seed
+checker script is written. A tool that cannot be started at all reports
+`dtsim: cannot start <tool>` on stderr.
 
-## Graders (plugins)
+Logs are never read whole: grading and excerpts stream the file in a worker
+thread (`scanLog`), so a log of several hundred MB costs one chunk of memory
+and does not stall the progress display or other seeds (308 MB: about 1.7 s,
+no growth in dtsim's own memory).
 
-A grader decides the status of one seed after `postSim`. Same shape as
-backends and launchers: the built-in `keywords` grader (case `grade.pass` /
-`error` / `expect` keywords plus waive regions) is the default; a workspace
-registers more with `defineGrader` + `Workspace({ graders })`, picks the
-default with `Workspace({ grader })`, and a case overrides it with
-`grader: "<id>"` (derived cases inherit it). `results --recheck` runs the
-same grader.
+## Graders
+
+A grader decides the status of one seed after `postSim`, and `results
+--recheck` runs the same one. Graders are values: `Workspace({ grader })` sets
+the default (omitted: `DefaultGrader()`), a case sets `grader` and its derived
+cases inherit it, unless a derived case sets its own. A bare top-level case
+without one takes `bareDefaults.grader`, then the workspace's.
+
+`DefaultGrader(opts)` is the built-in:
+
+| Option | Meaning |
+|---|---|
+| `pass` | a line containing one of these marks a finished run; default `["TEST PASSED"]` |
+| `error` | a kept (not waived) line matching one: `PASS WITH ERRORS` |
+| `expect` | each must match somewhere, else `PASS WITH ERRORS` |
+| `waive` | `WaiveRule(name, pattern)` entries, switched on by `DSIM_WAIVE_ON <names>` |
+| `uvm` | default `true`: a `UVM Report Summary` also marks a finished run, and any kept `UVM_ERROR` / `UVM_FATAL` message (not the summary's count lines) is `FAIL` |
+
+Keywords are substrings, or `re:` regexes (an invalid regex is a substring).
+No finished marker is `FAIL`. Waive markers keep their dsim spelling:
+`DSIM_WAIVE_BEGIN [pattern]` .. `DSIM_WAIVE_END` waives matching lines (all
+lines without a pattern; unclosed runs to EOF), `DSIM_WAIVE_ON` /
+`DSIM_WAIVE_OFF` switch named rules; marker lines never count. Waived UVM
+messages do not fail. `grader.extend(opts)` returns a new grader with the
+lists and waive rules appended and `uvm` overridden:
 
 ```ts
-const uvmSummary = defineGrader({
-	kind: "dtsim-grader",
-	id: "uvm-summary",
-	grade: async (ctx) => {
-		const log = await readFile(ctx.log, "utf8");
-		if (/UVM_(ERROR|FATAL) :\s+[1-9]/.test(log)) return { status: "FAIL", note: "UVM errors" };
-		return ctx.keywords(); // keep the keyword verdict otherwise
-	},
-});
-export default Workspace({ ..., graders: [uvmSummary], grader: "uvm-summary" });
+const grader = DefaultGrader({ waive: [WaiveRule("boot", "Error: timeout in boot phase")] });
+const helloGrader = grader.extend({ error: ["Error:"], expect: ["Keyword"] });
+export const hello = Case("test_hello_world", { grader: helloGrader });
+export default Workspace({ ..., grader });
 ```
 
-`grade(ctx)` returns a status (`Status.Pass`, `Status.PassWithErrors`,
-`Status.Fail`, `Status.NoSimLog`, or the same plain strings) or
-`{ status, note? }`; the note is shown next to the status in `run` and
-`regr` results. `ctx` has the `HookContext` fields below except `stage` /
-`status`, plus `seed`, `grader` (its id), `grade` (merged keywords), `waive`
-(rules by name) and `keywords()`, the built-in verdict on `ctx.log`. When the
-keyword verdict was computed, `error.txt` lists the keyword counts as for
-the built-in grader. A missing log is `NO SIM LOG` before any grader runs. A
-throw or an unknown status grades `FAIL` with the reason in
+A custom grader is `defineGrader({ name, grade(ctx) })`. `grade` returns a
+status (`Status.Pass`, `Status.PassWithErrors`, `Status.Fail`,
+`Status.NoSimLog`, or the same strings) or `{ status, note?, details?,
+highlight? }`: `note` is shown next to the status in `run` and `regr`,
+`details` (`[label, value]` rows) in the `run` summary and `error.txt`,
+`highlight` (log lines) in the `error.txt` excerpt. `ctx` has the
+`HookContext` fields below except `stage` / `status`, plus `seed`. Compose by
+calling another grader:
+
+```ts
+const signoff = defineGrader({
+	name: "signoff",
+	grade: async (ctx) => {
+		const report = await scanLog(ctx.log, (pattern) => {
+			let hits = 0;
+			return { push: (line) => { if (line.includes(pattern)) hits += 1; }, finish: () => hits };
+		}, "SCOREBOARD MISMATCH");
+		return report > 0 ? { status: "FAIL", note: `${report} mismatches` } : helloGrader.grade(ctx);
+	},
+});
+```
+
+For large logs use `scanLog(path, makeScanner, arg)` (runs `makeScanner(arg)`
+over the lines in a worker; `makeScanner` is sent as source, so it may use
+only its own body, `arg` and globals) or `streamLines(path)` (an async line
+iterator in the dtsim thread). A missing log is `NO SIM LOG` before any
+grader runs. A throw or an unknown status grades `FAIL` with the reason in
 `<seed dir>/grade.log`, which also receives `ctx.sh` output
-(`DTSIM_GRADER=<id>` is set). An unknown grader id fails at load (workspace
-default) or when the case is used (case option). Grader ids must not shadow
-built-ins.
+(`DTSIM_GRADER=<name>` is set).
 
 ## Hooks
 
@@ -362,7 +395,7 @@ Every stage gets the same `HookContext`:
 A throw (or rejected promise) fails that compile or seed: the stack is
 appended to `hook-<stage>.log` and `error.txt` says `phase: hook`. The rest
 of that stage's list is skipped, except `onResult`, whose errors are only
-logged. The result verdict is not a hook stage; see [Graders](#graders-plugins). Hooks run in the
+logged. The result verdict is not a hook stage; see [Graders](#graders). Hooks run in the
 dtsim process, so `process.env` is dtsim's own environment; `ctx.env` is what
 the tool sees. In a regression, compile stages run once per compile group
 and `ctx` describes the group's first case.
@@ -390,7 +423,7 @@ the child, and `run_sim` exports `PATH` in MSYS form.
 |---|---|---|---|
 | `demo/dtsim` | `dt/config/dtsim.config.ts` (VCS + LSF, cases, groups, waive, hooks for every stage in `hooks.ts`) | `demo/dtsim/run.sh <dtsim args>` | fake `vcs` / `simv` / `urg` / `verdi` / `verilator` / `bsub` / `srun` in `dt/bin/` |
 | `demo/soc` | `dt/config/dtsim.config.ts` (Verilator: `basic_smoke`, `regfile_smoke`, `sd_sha256`, `tb_mod`, `sv_reg_smoke`; groups `smoke`, `sd`) and `dt/config/vcs.config.ts` (VCS: `basic_smoke`, `regfile_smoke`) | `dt/verilator/run.sh [--regfile\|--sd\|--tb-mod\|--sv-reg]`, `dt/vcs/run.sh [case]` | Verilator 5 + RISC-V GCC; VCS |
-| `demo/hbm` | `dt/config/dtsim.config.ts` (VCS + UVM-1.2, six `hbm_*_test` cases, `uvm-summary` grader on the UVM report) | `dt/vcs/run.sh [test ...]` | VCS |
+| `demo/hbm` | `dt/config/dtsim.config.ts` (VCS + UVM-1.2, six `hbm_*_test` cases, graded by the default grader's UVM report check) | `dt/vcs/run.sh [test ...]` | VCS |
 
 Both VCS configs set `toolOptions.flags` to the flags of the old `run.sh`
 scripts: VCS O-2018.09 reads `-xlrm nettype_array` as a source file.

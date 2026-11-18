@@ -3,32 +3,9 @@
 //   bun ../../index.ts dtsim regr --no-wave        (or ./dt/vcs/run.sh)
 //   bun ../../index.ts dtsim run hbm_rw_test --no-wave
 // All cases share one compile group; each test is a +UVM_TESTNAME.
-import { readFile } from "node:fs/promises";
-import {
-	Case,
-	defineGrader,
-	Workspace,
-} from "../../../../src/dtsim/dsl/index.ts";
-
-// The UVM report summary decides (zero UVM_ERROR and UVM_FATAL) instead of
-// pass/error keywords. `results --recheck` runs it again.
-const uvmSummary = defineGrader({
-	kind: "dtsim-grader",
-	id: "uvm-summary",
-	grade: async (ctx) => {
-		const log = await readFile(ctx.log, "utf8");
-		const count = (sev: string) =>
-			Number(log.match(new RegExp(`${sev} :\\s+(\\d+)`))?.[1] ?? Number.NaN);
-		const errors = count("UVM_ERROR");
-		const fatals = count("UVM_FATAL");
-		if (Number.isNaN(errors) || Number.isNaN(fatals)) {
-			return { status: "FAIL", note: "no UVM report summary" };
-		}
-		return errors === 0 && fatals === 0
-			? "PASS"
-			: { status: "FAIL", note: `UVM_ERROR ${errors}, UVM_FATAL ${fatals}` };
-	},
-});
+// Grading is the built-in DefaultGrader: the UVM Report Summary marks a
+// finished run and any UVM_ERROR / UVM_FATAL message fails it.
+import { Case, Workspace } from "../../../../src/dtsim/dsl/index.ts";
 
 const uvmTest = (name: string) =>
 	Case(name, {
@@ -61,6 +38,4 @@ export default Workspace({
 		],
 	},
 	task: { type: "local", maxSlots: 4, maxCompiles: 1 },
-	graders: [uvmSummary],
-	grader: "uvm-summary",
 });

@@ -6,6 +6,13 @@
 //       test_hello_world.cosim.ff
 //     test_hello_world.timing
 import { Case } from "../../../../../src/dtsim/dsl/index.ts";
+import { grader } from "../grader.ts";
+
+const helloGrader = grader.extend({
+	pass: ["TEST PASSED"],
+	error: ["Error:"],
+	expect: ["Keyword"],
+});
 
 const cosim = {
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time
@@ -18,11 +25,7 @@ export const hello = Case("test_hello_world", {
 	random: false,
 	defines: ["NUM=1"],
 	simArgs: ["+TEST_OPT=1"],
-	grade: {
-		pass: ["TEST PASSED"],
-		error: ["Error:"],
-		expect: ["Keyword"],
-	},
+	grader: helloGrader,
 	uvm: {
 		test: "top_test",
 		verbosity: "UVM_HIGH",
@@ -47,7 +50,7 @@ for (const corner of ["ss", "ff"]) {
 	});
 }
 
-// grade.error appends: the base "Error:" keyword is still active here.
+// extend appends: the base "Error:" keyword is still active here.
 hello.SubCase("timing", {
-	grade: { error: ["re:ERROR:.*timing violation"] },
+	grader: helloGrader.extend({ error: ["re:ERROR:.*timing violation"] }),
 });

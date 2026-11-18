@@ -10,6 +10,7 @@ import { buildChildEnv } from "../../src/dtsim/core/env.ts";
 import { registerTool } from "../../src/dtsim/core/registry.ts";
 import { planGroups } from "../../src/dtsim/core/regression.ts";
 import { DSL_SOURCE } from "../../src/dtsim/dsl/embedded.generated.ts";
+import type { DefaultGraderDef } from "../../src/dtsim/dsl/index.ts";
 import { vcsTool } from "../../src/dtsim/tools/vcs.ts";
 import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 
@@ -31,13 +32,14 @@ describe("dsl merge", () => {
 		expect(cosim.env.INPUT).toBe("input.spf");
 	});
 
-	test("grade keywords append across base and subcase", async () => {
+	test("a derived case's extended grader keeps the base keywords", async () => {
 		const ws = await loadWorkspace({ config: (await makeWorkspace()).config });
 		const timing = mergeCase(ws, "test_hello_world.timing");
-		expect(timing.grade.error).toEqual([
-			"Error:",
-			"re:ERROR:.*timing violation",
-		]);
+		const opts = (timing.grader as DefaultGraderDef).opts;
+		expect(opts.error).toEqual(["Error:", "re:ERROR:.*timing violation"]);
+		expect(opts.waive?.length).toBe(2);
+		// Bare cases without their own grader get the workspace one.
+		expect(mergeCase(ws, "test_quick_smoke").grader).toBe(ws.grader);
 	});
 
 	test("subcase env merges with base env, sim scope kept", async () => {

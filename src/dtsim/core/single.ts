@@ -177,28 +177,8 @@ export async function runSingle(
 			["Log", `${result.log} (${Bun.file(result.log).size} bytes)`],
 			["Elapsed", fmtElapsed((Date.now() - started) / 1000)],
 		];
-		const details = result.details;
-		if (details) {
-			const hits = Object.entries(details.errorCounts)
-				.map(([kw, n]) => `${kw} (${n})`)
-				.join(", ");
-			if (hits) rows.push(["Error kws", hits]);
-			if (details.missingExpect.length > 0) {
-				rows.push([
-					"Expect kws",
-					`missing: ${details.missingExpect.join(", ")}`,
-				]);
-			}
-			if (details.waived > 0)
-				rows.push(["Waived errs", String(details.waived)]);
-			if (details.unclosed) rows.push(["Warning", "unclosed waive region"]);
-			if (details.unknown.length > 0) {
-				rows.push([
-					"Warning",
-					`unknown waive rule: ${details.unknown.join(", ")}`,
-				]);
-			}
-		}
+		for (const [label, value] of result.details ?? [])
+			rows.push([label, value]);
 		if (result.status !== "PASS") {
 			rows.push(["Error", join(seedDir, "error.txt")]);
 		}

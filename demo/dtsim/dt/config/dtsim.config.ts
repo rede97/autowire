@@ -2,7 +2,8 @@
 // The tools are fakes from ../bin (run.sh puts them first on PATH; the LSF
 // launcher goes through the fake bsub). Repo demos import the DSL source;
 // `docs unpack` rewrites the import to the .dtsim/dsl copy dtsim writes.
-import { WaiveRule, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import { Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import { grader } from "./grader.ts";
 import { base, cosim, regrPlanA } from "./groups.ts";
 import {
 	metrics,
@@ -32,12 +33,8 @@ export default Workspace({
 		maxCompiles: 4,
 		options: { args: ["-R", "rusage[mem=4000]"] },
 	},
-	waive: [
-		WaiveRule("timing_rl_rdwin", "re:tRL_I \\+ tRDWIN_I .*timing violation"),
-		WaiveRule("boot_timeout", "Error: timeout in boot phase"),
-	],
-	// One TypeScript function (or a list) per stage; see hooks.ts. A custom
-	// grader (the result verdict) is shown in demo/hbm.
+	grader,
+	// One TypeScript function (or a list) per stage; see hooks.ts.
 	hooks: {
 		preCompile: [spiceDeck, stampHeader],
 		postCompile: warningBudget,

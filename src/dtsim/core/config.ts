@@ -10,8 +10,9 @@ import {
 	type CaseDef,
 	type CaseOpts,
 	checkCaseOpts,
+	DefaultGrader,
 	type EnvValue,
-	type GradeSpec,
+	type Grader,
 	type GroupDef,
 	type GroupMember,
 	type Hooks,
@@ -19,16 +20,13 @@ import {
 	isWorkspace,
 	type TaskSpec,
 	type UvmCfg,
-	type WaiveRuleDef,
 	type WorkspaceDef,
 } from "../dsl/index.ts";
 import { assertNoDeniedAssignments, compileEnvEntries } from "./env.ts";
 import { resolveTask } from "./launch.ts";
 import {
-	getGrader,
 	getLauncher,
 	getTool,
-	registerGrader,
 	registerLauncher,
 	registerTool,
 } from "./registry.ts";
@@ -45,13 +43,12 @@ export type MergedCase = {
 	compileArgs: string[];
 	simArgs: string[];
 	env: Record<string, EnvValue>;
-	grade: GradeSpec;
 	uvm?: UvmCfg;
 	toolOptions: Record<string, unknown>;
 	/** Case filelist override, relative to the config dir (default: workspace filelist). */
 	filelist?: string;
-	/** Grader id (case option, else the workspace default). */
-	grader: string;
+	/** Case grader, else bareDefaults' (bare top-level cases), else the workspace's. */
+	grader: Grader;
 };
 
 export type ResolvedWorkspace = {
@@ -69,10 +66,9 @@ export type ResolvedWorkspace = {
 	passthrough: string[];
 	deny: string[];
 	task: TaskSpec;
-	waive: WaiveRuleDef[];
 	hooks: Hooks;
-	/** Default grader id. */
-	grader: string;
+	/** Default grader. */
+	grader: Grader;
 	groups: Map<string, GroupMember[]>;
 	/** Top-level cases by name; derived cases hang off `children`. */
 	cases: Map<string, CaseDef>;
@@ -171,13 +167,6 @@ function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
 		}
 	}
 	if (base.env || overlay.env) out.env = { ...base.env, ...overlay.env };
-	if (base.grade || overlay.grade) {
-		out.grade = {
-			pass: [...(base.grade?.pass ?? []), ...(overlay.grade?.pass ?? [])],
-			error: [...(base.grade?.error ?? []), ...(overlay.grade?.error ?? [])],
-			expect: [...(base.grade?.expect ?? []), ...(overlay.grade?.expect ?? [])],
-		};
-	}
 	if (base.uvm || overlay.uvm) out.uvm = { ...base.uvm, ...overlay.uvm };
 	if (base.toolOptions || overlay.toolOptions) {
 		out.toolOptions = { ...base.toolOptions, ...overlay.toolOptions };
@@ -226,9 +215,13 @@ function treeOpts(ws: CaseSource, node: CaseDef): CaseOpts {
 export function mergeCase(ws: CaseSource, id: string): MergedCase {
 	const node = findCase(ws, id);
 	if (!node) throw new Error(`dtsim: testcase "${id}" not found`);
-	let opts = treeOpts(ws, node);
-	// A bare top-level case gets bareDefaults; derived cases do not.
-	if (!node.parent && ws.bareDefaults) opts = mergeOpts(opts, ws.bareDefaults);
+	const tree = treeOpts(ws, node);
+	// A bare top-level case gets bareDefaults; derived cases do not. Its own
+	// grader still beats bareDefaults' (which would win as a plain scalar).
+	const bare = !node.parent && ws.bareDefaults !== undefined;
+	const opts = bare ? mergeOpts(tree, ws.bareDefaults ?? {}) : tree;
+	const grader =
+		tree.grader ?? (bare ? ws.bareDefaults?.grader : undefined) ?? ws.grader;
 	const baseName = id.split(".")[0] as string;
 	const suffix = node.parent ? node.name : undefined;
 	return {
@@ -241,15 +234,10 @@ export function mergeCase(ws: CaseSource, id: string): MergedCase {
 		compileArgs: [...(opts.compileArgs ?? [])],
 		simArgs: [...(opts.simArgs ?? [])],
 		env: { ...opts.env },
-		grade: {
-			pass: opts.grade?.pass ?? ["TEST PASSED"],
-			error: opts.grade?.error ?? [],
-			expect: opts.grade?.expect ?? [],
-		},
 		...(opts.uvm === undefined ? {} : { uvm: { ...opts.uvm } }),
 		toolOptions: { ...opts.toolOptions },
 		...(opts.filelist === undefined ? {} : { filelist: opts.filelist }),
-		grader: getGrader(opts.grader ?? ws.grader).id,
+		grader,
 	};
 }
 
@@ -385,9 +373,7 @@ export async function loadWorkspace(opts: {
 	const o = wsDef.opts;
 	for (const tool of o.tools ?? []) registerTool(tool);
 	for (const launcher of o.launchers ?? []) registerLauncher(launcher);
-	for (const grader of o.graders ?? []) registerGrader(grader);
 	getTool(o.tool); // unknown tool fails before any output dir is created
-	const grader = getGrader(o.grader ?? "keywords").id;
 
 	// Only top-level cases need exporting. A derived case exported as well
 	// registers its root; the same root object exported twice is fine.
@@ -447,9 +433,8 @@ export async function loadWorkspace(opts: {
 		passthrough: [...(o.env?.passthrough ?? [])],
 		deny,
 		task,
-		waive: [...(o.waive ?? [])],
 		hooks: { ...o.hooks },
-		grader,
+		grader: o.grader ?? DefaultGrader(),
 		groups,
 	};
 }

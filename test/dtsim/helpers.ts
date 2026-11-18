@@ -22,6 +22,16 @@ export type TestWorkspace = {
 
 export const CASES_TS = `
 import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
+import { DefaultGrader } from "./.dtsim/dsl/index.ts";
+
+// Waive rules belong to the grader; cases extend it with their keywords.
+const grader = DefaultGrader({
+	waive: [
+		WaiveRule("boot_timeout", "Error: timeout in boot phase"),
+		WaiveRule("timing_rl_rdwin", "re:tRL_I \\\\+ tRDWIN_I .*timing violation"),
+	],
+});
+const helloGrader = grader.extend({ pass: ["TEST PASSED"], error: ["Error:"], expect: ["Keyword"] });
 
 // Only top-level cases are exported; derived cases hang off them.
 export const hello = Case("test_hello_world", {
@@ -29,7 +39,7 @@ export const hello = Case("test_hello_world", {
 	random: false,
 	defines: ["NUM=1"],
 	simArgs: ["+TEST_OPT=1"],
-	grade: { pass: ["TEST PASSED"], error: ["Error:"], expect: ["Keyword"] },
+	grader: helloGrader,
 	uvm: { test: "top_test", seq: "test_hello_world_seq", timeout: "1000ps" },
 });
 
@@ -40,7 +50,7 @@ hello.SubCase("cosim", {
 });
 
 hello.SubCase("timing", {
-	grade: { error: ["re:ERROR:.*timing violation"] },
+	grader: helloGrader.extend({ error: ["re:ERROR:.*timing violation"] }),
 });
 
 export const bar = Case("test_bar_basic", {
@@ -68,10 +78,7 @@ export default Workspace({
 	bareDefaults: { compileArgs: ["+nospecify", "+notimingcheck"] },
 	env: { passthrough: ["DTSIM_MOCK_*"], deny: ["LD_PRELOAD"] },
 	task: { type: "local", maxSlots: 4, maxCompiles: 2 },
-	waive: [
-		WaiveRule("boot_timeout", "Error: timeout in boot phase"),
-		WaiveRule("timing_rl_rdwin", "re:tRL_I \\\\+ tRDWIN_I .*timing violation"),
-	],
+	grader,
 	groups: [base, cosim],
 });
 `;

@@ -1,177 +1,15 @@
-// Result grading. Status comes from the log content, never from the
-// simulator exit code. The verdict comes from the case's grader; the
-// built-in "keywords" grader is gradeLog() below.
-import { appendFileSync, existsSync, readFileSync, rmSync } from "node:fs";
+// Running a grader. Status comes from the log content, never from the
+// simulator exit code; the verdict belongs to the case's grader
+// (DefaultGrader unless the config sets another).
+import { appendFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type {
 	GradeContext,
+	GradeOutcome,
 	Grader,
-	GradeSpec,
 	GradeStatus,
-	WaiveRuleDef,
 } from "../dsl/index.ts";
 import { errorText, shellFor } from "./hooks.ts";
-
-export type WaiveOutcome = {
-	kept: string[];
-	waived: number;
-	unclosed: boolean;
-	unknown: string[];
-};
-
-/** Substring by default; "re:" prefix for regex; invalid regex = substring. */
-export function kwMatchLine(kw: string, line: string): boolean {
-	if (kw.startsWith("re:")) {
-		const pat = kw.slice(3);
-		try {
-			return new RegExp(pat).test(line);
-		} catch {
-			return line.includes(pat);
-		}
-	}
-	return line.includes(kw);
-}
-
-/**
- * Drop lines waived by DSIM_WAIVE_* markers. Marker lines are never kept:
- * their own text usually contains the error pattern. Named rules switch on
- * DSIM_WAIVE_ON (replace set) and off with DSIM_WAIVE_OFF; inline regions
- * run from DSIM_WAIVE_BEGIN [pattern] to DSIM_WAIVE_END, and an unclosed
- * region extends to EOF.
- */
-export function applyWaiveRegions(
-	lines: string[],
-	rules: Record<string, string>,
-): WaiveOutcome {
-	const kept: string[] = [];
-	let waived = 0;
-	let inRegion = false;
-	let regionPat = "";
-	let active = new Set<string>();
-	const unknown = new Set<string>();
-	for (const line of lines) {
-		if (line.includes("DSIM_WAIVE_ON")) {
-			const names =
-				line.split("DSIM_WAIVE_ON", 2)[1]?.trim().split(/\s+/) ?? [];
-			active = new Set(names.filter((n) => n.length > 0));
-			for (const n of active) {
-				if (rules[n] === undefined) unknown.add(n);
-			}
-			continue;
-		}
-		if (line.includes("DSIM_WAIVE_OFF")) {
-			active = new Set();
-			continue;
-		}
-		if (line.includes("DSIM_WAIVE_BEGIN")) {
-			inRegion = true;
-			const idx = line.indexOf("DSIM_WAIVE_BEGIN") + "DSIM_WAIVE_BEGIN".length;
-			regionPat = line.slice(idx).trim();
-			continue;
-		}
-		if (line.includes("DSIM_WAIVE_END")) {
-			inRegion = false;
-			regionPat = "";
-			continue;
-		}
-		if (inRegion && (regionPat.length === 0 || kwMatchLine(regionPat, line))) {
-			waived += 1;
-			continue;
-		}
-		let ruleHit = false;
-		for (const name of active) {
-			const pattern = rules[name];
-			if (pattern !== undefined && kwMatchLine(pattern, line)) {
-				ruleHit = true;
-				break;
-			}
-		}
-		if (ruleHit) {
-			waived += 1;
-			continue;
-		}
-		kept.push(line);
-	}
-	return { kept, waived, unclosed: inRegion, unknown: [...unknown].sort() };
-}
-
-export type GradeDetails = {
-	status: GradeStatus;
-	errorCounts: Record<string, number>;
-	missingExpect: string[];
-	waived: number;
-	unclosed: boolean;
-	unknown: string[];
-	lines: string[];
-	kept: string[];
-};
-
-export function gradeLines(
-	lines: string[],
-	spec: GradeSpec,
-	rules: Record<string, string>,
-): GradeDetails {
-	const { kept, waived, unclosed, unknown } = applyWaiveRegions(lines, rules);
-	const errorCounts: Record<string, number> = {};
-	for (const kw of spec.error) {
-		if (kw.length === 0) continue;
-		const n = kept.filter((line) => kwMatchLine(kw, line)).length;
-		if (n > 0) errorCounts[kw] = n;
-	}
-	const missingExpect = spec.expect.filter(
-		(kw) => kw.length > 0 && !lines.some((line) => kwMatchLine(kw, line)),
-	);
-	const passed = spec.pass.some((kw) =>
-		lines.some((line) => line.includes(kw)),
-	);
-	let status: GradeStatus = "PASS";
-	if (!passed) status = "FAIL";
-	else if (Object.keys(errorCounts).length > 0 || missingExpect.length > 0) {
-		status = "PASS WITH ERRORS";
-	}
-	return {
-		status,
-		errorCounts,
-		missingExpect,
-		waived,
-		unclosed,
-		unknown,
-		lines,
-		kept,
-	};
-}
-
-export function waiveRuleMap(
-	rules: readonly WaiveRuleDef[],
-): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const r of rules) out[r.name] = r.pattern;
-	return out;
-}
-
-/** Grade an existing sim.log on disk. Missing file = NO SIM LOG. */
-export function gradeLog(
-	logPath: string,
-	spec: GradeSpec,
-	rules: Record<string, string>,
-): GradeDetails {
-	let text: string;
-	try {
-		text = readFileSync(logPath, "utf8");
-	} catch {
-		return {
-			status: "NO SIM LOG",
-			errorCounts: {},
-			missingExpect: [],
-			waived: 0,
-			unclosed: false,
-			unknown: [],
-			lines: [],
-			kept: [],
-		};
-	}
-	return gradeLines(text.split("\n"), spec, rules);
-}
 
 const GRADE_STATUSES: readonly string[] = [
 	"PASS",
@@ -183,49 +21,54 @@ const GRADE_STATUSES: readonly string[] = [
 export type Graded = {
 	status: GradeStatus;
 	note?: string;
-	/** Keyword details when the grader called `ctx.keywords()` (error.txt). */
-	details?: GradeDetails;
+	/** Report rows for the `run` summary and error.txt. */
+	details?: ReadonlyArray<readonly [string, string]>;
+	/** Log lines error.txt should show. */
+	highlight?: readonly string[];
 };
+
+function normalize(value: unknown): Graded | undefined {
+	const out: Partial<GradeOutcome> | undefined =
+		typeof value === "string"
+			? { status: value as GradeStatus }
+			: typeof value === "object" && value !== null
+				? (value as GradeOutcome)
+				: undefined;
+	if (!out?.status || !GRADE_STATUSES.includes(out.status)) return undefined;
+	return {
+		status: out.status,
+		...(typeof out.note === "string" && out.note ? { note: out.note } : {}),
+		...(Array.isArray(out.details) ? { details: out.details } : {}),
+		...(Array.isArray(out.highlight) ? { highlight: out.highlight } : {}),
+	};
+}
 
 /** Run `grader` on one seed. A missing log is NO SIM LOG without calling it;
  *  a throw or an unknown status grades FAIL with the reason in grade.log. */
 export async function runGrader(
 	grader: Grader,
-	base: Omit<GradeContext, "sh" | "keywords">,
+	base: Omit<GradeContext, "sh">,
 ): Promise<Graded> {
-	if (!existsSync(base.log)) {
-		return {
-			status: "NO SIM LOG",
-			details: gradeLog(base.log, base.grade, base.waive),
-		};
-	}
+	if (!existsSync(base.log)) return { status: "NO SIM LOG" };
 	const log = join(base.dir, "grade.log");
 	rmSync(log, { force: true }); // created on first write only
-	let details: GradeDetails | undefined;
 	const ctx: GradeContext = {
 		...base,
-		sh: shellFor(base, log, { DTSIM_GRADER: grader.id }),
-		keywords: () => {
-			details ??= gradeLog(base.log, base.grade, base.waive);
-			return details.status;
-		},
+		sh: shellFor(base, log, { DTSIM_GRADER: grader.name }),
 	};
 	try {
 		const value = await grader.grade(ctx);
-		const out = typeof value === "string" ? { status: value } : value;
-		if (GRADE_STATUSES.includes(out?.status)) {
-			return {
-				status: out.status,
-				...(typeof out.note === "string" && out.note ? { note: out.note } : {}),
-				...(details === undefined ? {} : { details }),
-			};
-		}
+		const graded = normalize(value);
+		if (graded) return graded;
 		appendFileSync(
 			log,
-			`grader ${grader.id} returned ${JSON.stringify(value)}; graded FAIL\n`,
+			`grader ${grader.name} returned ${JSON.stringify(value)}; graded FAIL\n`,
 		);
 	} catch (error) {
-		appendFileSync(log, `grader ${grader.id} threw:\n${errorText(error)}\n`);
+		appendFileSync(log, `grader ${grader.name} threw:\n${errorText(error)}\n`);
 	}
-	return { status: "FAIL", note: `grader ${grader.id} failed, see grade.log` };
+	return {
+		status: "FAIL",
+		note: `grader ${grader.name} failed, see grade.log`,
+	};
 }

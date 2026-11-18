@@ -5,12 +5,6 @@
 export type EnvScope = "both" | "compile" | "sim";
 export type EnvValue = string | { value: string; scope?: EnvScope };
 
-export type GradeSpec = {
-	pass: string[];
-	error: string[];
-	expect: string[];
-};
-
 export type UvmCfg = {
 	test?: string;
 	verbosity?: string;
@@ -27,14 +21,13 @@ export type CaseOpts = {
 	compileArgs?: readonly string[];
 	simArgs?: readonly string[];
 	env?: Record<string, EnvValue>;
-	grade?: Partial<GradeSpec>;
 	uvm?: UvmCfg;
 	/** Free-form per-tool options, interpreted by the selected SimTool only. */
 	toolOptions?: Record<string, unknown>;
 	/** Filelist for this case instead of the workspace one (relative to dt/config). */
 	filelist?: string;
-	/** Grader id for this case and its derived cases (default: Workspace.grader). */
-	grader?: string;
+	/** Grader for this case and its derived cases (default: Workspace.grader). */
+	grader?: Grader;
 };
 
 /** Case options, or a function computing them from the parent's merged
@@ -181,28 +174,25 @@ const HOOK_STAGES: readonly string[] = [
 // --- Grader plugin contract --------------------------------------------------
 
 /** What a grader sees for one seed after the simulation (and postSim). */
-export type GradeContext = CaseContext & {
-	seed: string;
-	/** Id of the grader being run. */
-	grader: string;
-	/** Merged case keywords (`grade` option). */
-	grade: Readonly<GradeSpec>;
-	/** Workspace waive rules by name. */
-	waive: Readonly<Record<string, string>>;
-	/** The built-in "keywords" verdict on `log`; a grader may refine it. */
-	keywords: () => GradeStatus;
+export type GradeContext = CaseContext & { seed: string };
+
+/** A verdict with optional report. `details` rows go to the `run` summary
+ *  and error.txt; `highlight` names log lines error.txt should show. */
+export type GradeOutcome = {
+	status: GradeStatus;
+	/** Short text shown next to the status in results. */
+	note?: string;
+	details?: ReadonlyArray<readonly [string, string]>;
+	highlight?: readonly string[];
 };
 
-/** A verdict, optionally with a short note shown next to it in results. */
-export type GradeOutcome = { status: GradeStatus; note?: string };
-
-/** Decides the status of one seed. Built-in: "keywords" (pass / error /
- *  expect keywords plus waive regions). dtsim reports NO SIM LOG itself when
- *  the log is missing; a throw or an unknown status grades FAIL. Also used
- *  by `results --recheck`. */
+/** Decides the status of one seed; also used by `results --recheck`.
+ *  Built-in: DefaultGrader. dtsim reports NO SIM LOG itself when the log
+ *  is missing; a throw or an unknown status grades FAIL. */
 export type Grader = {
 	kind: "dtsim-grader";
-	id: string;
+	/** Shown in grade.log and as $DTSIM_GRADER for ctx.sh. */
+	name: string;
 	grade: (
 		ctx: GradeContext,
 	) => GradeStatus | GradeOutcome | Promise<GradeStatus | GradeOutcome>;
@@ -216,14 +206,12 @@ export type WorkspaceOpts = {
 	output?: string;
 	tools?: readonly SimTool[];
 	launchers?: readonly Launcher[];
-	graders?: readonly Grader[];
-	/** Default grader id. Default "keywords". */
-	grader?: string;
+	/** Default grader. Default `DefaultGrader()`. */
+	grader?: Grader;
 	toolOptions?: Record<string, unknown>;
 	bareDefaults?: CaseOpts;
 	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
 	task?: Partial<TaskSpec>;
-	waive?: readonly WaiveRuleDef[];
 	hooks?: Hooks;
 	groups?: readonly GroupDef[];
 	cases?: readonly string[];
@@ -369,7 +357,7 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 	}
 	if (opts.filelist !== undefined)
 		needString(`${what}.filelist`, opts.filelist);
-	if (opts.grader !== undefined) needString(`${what}.grader`, opts.grader);
+	if (opts.grader !== undefined) needGrader(`${what}.grader`, opts.grader);
 	if (opts.env) {
 		for (const [k, v] of Object.entries(opts.env)) {
 			const bad =
@@ -531,16 +519,22 @@ export function defineLauncher(launcher: Launcher): Launcher {
 	return launcher;
 }
 
-/** Validate a user grader (result verdict for one seed). */
-export function defineGrader(grader: Grader): Grader {
-	if (!isGrader(grader)) {
-		throw new Error('dtsim: a grader must have kind: "dtsim-grader"');
+function needGrader(what: string, v: unknown): Grader {
+	if (!isGrader(v)) {
+		throw new Error(
+			`dtsim: ${what} must be a grader (DefaultGrader(...) or defineGrader(...))`,
+		);
 	}
-	needString("grader id", grader.id);
-	if (typeof grader.grade !== "function") {
-		throw new Error(`dtsim: grader ${grader.id} needs grade()`);
+	return v;
+}
+
+/** A user grader: `name` plus `grade(ctx)`. */
+export function defineGrader(spec: Omit<Grader, "kind">): Grader {
+	needString("grader name", spec.name);
+	if (typeof spec.grade !== "function") {
+		throw new Error(`dtsim: grader ${spec.name} needs grade()`);
 	}
-	return grader;
+	return { kind: "dtsim-grader", name: spec.name, grade: spec.grade };
 }
 
 export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
@@ -550,8 +544,7 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 	needString("workspace tool", opts.tool);
 	for (const t of opts.tools ?? []) defineTool(t);
 	for (const l of opts.launchers ?? []) defineLauncher(l);
-	for (const g of opts.graders ?? []) defineGrader(g);
-	if (opts.grader !== undefined) needString("workspace grader", opts.grader);
+	if (opts.grader !== undefined) needGrader("workspace grader", opts.grader);
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);
 	for (const [stage, value] of Object.entries(opts.hooks ?? {})) {
 		if (!HOOK_STAGES.includes(stage)) {
@@ -567,4 +560,309 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 		}
 	}
 	return { kind: "dtsim-workspace", opts };
+}
+
+// --- DefaultGrader -----------------------------------------------------------
+
+export type DefaultGraderOpts = {
+	/** A line containing any of these marks a finished run. Default ["TEST PASSED"]. */
+	pass?: readonly string[];
+	/** Kept (not waived) lines matching any of these: PASS WITH ERRORS.
+	 *  Substring, or "re:" for a regex. */
+	error?: readonly string[];
+	/** Each must match somewhere in the log, else PASS WITH ERRORS. */
+	expect?: readonly string[];
+	/** Named rules switched on by DSIM_WAIVE_ON in the log. */
+	waive?: readonly WaiveRuleDef[];
+	/** A UVM Report Summary also marks a finished run, and any kept
+	 *  UVM_ERROR / UVM_FATAL message fails the seed. Default true. */
+	uvm?: boolean;
+};
+
+export type DefaultGraderDef = Grader & {
+	readonly opts: Readonly<DefaultGraderOpts>;
+	/** A new grader: lists and waive rules appended, `uvm` overridden. */
+	extend(more: DefaultGraderOpts): DefaultGraderDef;
+};
+
+// --- Log scanning --------------------------------------------------------------
+
+/** Lines of a (possibly huge) log, streamed: memory stays at one chunk. */
+export async function* streamLines(path: string): AsyncGenerator<string> {
+	const decoder = new TextDecoder();
+	let rest = "";
+	const reader = Bun.file(path).stream().getReader();
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		rest += decoder.decode(value, { stream: true });
+		const parts = rest.split("\n");
+		rest = parts.pop() ?? "";
+		yield* parts;
+	}
+	rest += decoder.decode();
+	if (rest.length > 0) yield rest;
+}
+
+/** Sees every line once, then reports. */
+export type LineScanner<T> = { push(line: string): void; finish(): T };
+
+/**
+ * Run `makeScanner(arg)` over the lines of `path` in a worker thread: the
+ * log is streamed there and only `finish()`'s result comes back, so a
+ * multi-hundred-MB log neither fills memory nor blocks dtsim. `makeScanner`
+ * is sent as source text: a function declaration or arrow that uses only its
+ * own body, `arg` and globals. `arg` and the result must be
+ * structured-cloneable.
+ */
+export async function scanLog<A, T>(
+	path: string,
+	makeScanner: (arg: A) => LineScanner<T>,
+	arg: A,
+): Promise<T> {
+	const src = [
+		`const makeScanner = (${makeScanner.toString()});`,
+		`const streamLines = (${streamLines.toString()});`,
+		"self.onmessage = async ({ data }) => {",
+		"  try {",
+		"    const scanner = makeScanner(data.arg);",
+		"    for await (const line of streamLines(data.path)) scanner.push(line);",
+		"    postMessage({ ok: true, value: scanner.finish() });",
+		"  } catch (e) {",
+		"    postMessage({ ok: false, error: String((e && e.stack) || e) });",
+		"  }",
+		"};",
+	].join("\n");
+	const url = URL.createObjectURL(
+		new Blob([src], { type: "application/javascript" }),
+	);
+	const worker = new Worker(url);
+	const { promise, resolve, reject } = Promise.withResolvers<T>();
+	worker.onmessage = ({ data }) =>
+		data.ok ? resolve(data.value as T) : reject(new Error(data.error));
+	worker.onerror = (e) => reject(new Error(e.message));
+	worker.postMessage({ path, arg });
+	try {
+		return await promise;
+	} finally {
+		worker.terminate();
+		URL.revokeObjectURL(url);
+	}
+}
+
+export type GradeReport = {
+	status: GradeStatus;
+	errorCounts: Record<string, number>;
+	missingExpect: string[];
+	uvmErrors: number;
+	uvmFatals: number;
+	waived: number;
+	unclosed: boolean;
+	unknown: string[];
+	/** First kept lines that hit an error keyword or a UVM error / fatal. */
+	hits: string[];
+};
+
+/**
+ * DefaultGrader's line scanner. Self-contained (it runs in a worker).
+ * Waive: marker lines are never kept (their text usually contains the error
+ * pattern); DSIM_WAIVE_ON <rules> replaces the active named rules,
+ * DSIM_WAIVE_OFF clears them; DSIM_WAIVE_BEGIN [pattern] .. DSIM_WAIVE_END
+ * waives matching lines (all lines without a pattern), unclosed = to EOF.
+ * Keywords: substring, or "re:" for a regex (an invalid one is a substring).
+ */
+export function defaultScanner(
+	opts: DefaultGraderOpts & { maxHits?: number },
+): LineScanner<GradeReport> {
+	const match = (kw: string, line: string): boolean => {
+		if (!kw.startsWith("re:")) return line.includes(kw);
+		try {
+			return new RegExp(kw.slice(3)).test(line);
+		} catch {
+			return line.includes(kw.slice(3));
+		}
+	};
+	const rules: Record<string, string> = {};
+	for (const r of opts.waive ?? []) rules[r.name] = r.pattern;
+	const uvm = opts.uvm !== false;
+	// A UVM message ("UVM_ERROR file.sv(12) @ 10ns: ..."), not the report
+	// summary's count line ("UVM_ERROR :    0").
+	const uvmMessage = /^\W*UVM_(ERROR|FATAL)\b(?!\s*:)/;
+	const pass = opts.pass ?? ["TEST PASSED"];
+	const errors = (opts.error ?? []).filter((kw) => kw.length > 0);
+	const expects = (opts.expect ?? []).filter((kw) => kw.length > 0);
+	const maxHits = opts.maxHits ?? 40;
+	const seen = new Set<string>();
+	const errorCounts: Record<string, number> = {};
+	const hits: string[] = [];
+	const unknown = new Set<string>();
+	let active = new Set<string>();
+	let finished = false;
+	let inRegion = false;
+	let regionPat = "";
+	let waived = 0;
+	let uvmErrors = 0;
+	let uvmFatals = 0;
+	const waivedLine = (line: string): boolean => {
+		if (inRegion && (regionPat.length === 0 || match(regionPat, line)))
+			return true;
+		for (const name of active) {
+			const pattern = rules[name];
+			if (pattern !== undefined && match(pattern, line)) return true;
+		}
+		return false;
+	};
+	return {
+		push(line) {
+			if (
+				!finished &&
+				(pass.some((kw) => line.includes(kw)) ||
+					(uvm && line.includes("UVM Report Summary")))
+			) {
+				finished = true;
+			}
+			for (const kw of expects)
+				if (!seen.has(kw) && match(kw, line)) seen.add(kw);
+			if (line.includes("DSIM_WAIVE_ON")) {
+				const names =
+					line.split("DSIM_WAIVE_ON", 2)[1]?.trim().split(/\s+/) ?? [];
+				active = new Set(names.filter((n) => n.length > 0));
+				for (const n of active) if (rules[n] === undefined) unknown.add(n);
+				return;
+			}
+			if (line.includes("DSIM_WAIVE_OFF")) {
+				active = new Set();
+				return;
+			}
+			if (line.includes("DSIM_WAIVE_BEGIN")) {
+				inRegion = true;
+				regionPat = line.slice(line.indexOf("DSIM_WAIVE_BEGIN") + 16).trim();
+				return;
+			}
+			if (line.includes("DSIM_WAIVE_END")) {
+				inRegion = false;
+				regionPat = "";
+				return;
+			}
+			if (waivedLine(line)) {
+				waived += 1;
+				return;
+			}
+			let hit = false;
+			for (const kw of errors) {
+				if (match(kw, line)) {
+					errorCounts[kw] = (errorCounts[kw] ?? 0) + 1;
+					hit = true;
+				}
+			}
+			const msg = uvm ? uvmMessage.exec(line) : null;
+			if (msg?.[1] === "ERROR") uvmErrors += 1;
+			if (msg?.[1] === "FATAL") uvmFatals += 1;
+			if ((hit || msg) && hits.length < maxHits) hits.push(line);
+		},
+		finish() {
+			const missingExpect = expects.filter((kw) => !seen.has(kw));
+			let status: GradeStatus = "PASS";
+			if (!finished || uvmErrors + uvmFatals > 0) status = "FAIL";
+			else if (Object.keys(errorCounts).length > 0 || missingExpect.length > 0)
+				status = "PASS WITH ERRORS";
+			return {
+				status,
+				errorCounts,
+				missingExpect,
+				uvmErrors,
+				uvmFatals,
+				waived,
+				unclosed: inRegion,
+				unknown: [...unknown].sort(),
+				hits,
+			};
+		},
+	};
+}
+
+/** DefaultGrader's verdict on lines already in memory (tests, small logs). */
+export function gradeLines(
+	lines: Iterable<string>,
+	opts: DefaultGraderOpts,
+): GradeReport {
+	const scanner = defaultScanner(opts);
+	for (const line of lines) scanner.push(line);
+	return scanner.finish();
+}
+
+function reportOutcome(r: GradeReport): GradeOutcome {
+	const details: Array<[string, string]> = [];
+	const kws = Object.entries(r.errorCounts)
+		.map(([kw, n]) => `${kw} (${n})`)
+		.join(", ");
+	if (kws) details.push(["Error kws", kws]);
+	if (r.missingExpect.length > 0) {
+		details.push(["Expect kws", `missing: ${r.missingExpect.join(", ")}`]);
+	}
+	const uvm = `UVM_ERROR ${r.uvmErrors}, UVM_FATAL ${r.uvmFatals}`;
+	if (r.uvmErrors + r.uvmFatals > 0) details.push(["UVM", uvm]);
+	if (r.waived > 0) details.push(["Waived errs", String(r.waived)]);
+	if (r.unclosed) details.push(["Warning", "unclosed waive region"]);
+	if (r.unknown.length > 0) {
+		details.push(["Warning", `unknown waive rule: ${r.unknown.join(", ")}`]);
+	}
+	return {
+		status: r.status,
+		...(r.uvmErrors + r.uvmFatals > 0 ? { note: uvm } : {}),
+		details,
+		highlight: r.hits,
+	};
+}
+
+function needList(what: string, v: unknown): void {
+	if (v === undefined) return;
+	if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) {
+		throw new Error(`dtsim: ${what} must be an array of strings`);
+	}
+}
+
+/** The built-in grader (also the default when Workspace.grader is unset):
+ *  pass / error / expect keywords, waive rules, and UVM report checks. */
+export function DefaultGrader(opts: DefaultGraderOpts = {}): DefaultGraderDef {
+	for (const key of ["pass", "error", "expect"] as const) {
+		needList(`DefaultGrader.${key}`, opts[key]);
+	}
+	if (
+		opts.waive !== undefined &&
+		(!Array.isArray(opts.waive) ||
+			opts.waive.some((r) => r?.kind !== "dtsim-waive"))
+	) {
+		throw new Error(
+			"dtsim: DefaultGrader.waive must be WaiveRule(...) entries",
+		);
+	}
+	if (opts.uvm !== undefined && typeof opts.uvm !== "boolean") {
+		throw new Error("dtsim: DefaultGrader.uvm must be a boolean");
+	}
+	return {
+		kind: "dtsim-grader",
+		name: "default",
+		opts,
+		grade: async (ctx) => {
+			if (!(await Bun.file(ctx.log).exists())) return Status.NoSimLog;
+			return reportOutcome(await scanLog(ctx.log, defaultScanner, opts));
+		},
+		extend: (more) => {
+			const join = <T>(a?: readonly T[], b?: readonly T[]) =>
+				a === undefined && b === undefined
+					? undefined
+					: [...(a ?? []), ...(b ?? [])];
+			const merged: DefaultGraderOpts = {};
+			for (const key of ["pass", "error", "expect"] as const) {
+				const list = join(opts[key], more[key]);
+				if (list !== undefined) merged[key] = list;
+			}
+			const waive = join(opts.waive, more.waive);
+			if (waive !== undefined) merged.waive = waive;
+			const uvm = more.uvm ?? opts.uvm;
+			if (uvm !== undefined) merged.uvm = uvm;
+			return DefaultGrader(merged);
+		},
+	};
 }

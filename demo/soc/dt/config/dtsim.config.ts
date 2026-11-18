@@ -4,8 +4,17 @@
 // VCS: dt/config/vcs.config.ts (./dt/vcs/run.sh).
 // Filelists are relative to the project root (demo/soc); dtsim flattens them
 // into each compile dir. Outputs: dt/simout/<case>/.
-import { Case, Group, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import {
+	Case,
+	DefaultGrader,
+	Group,
+	Workspace,
+} from "../../../../src/dtsim/dsl/index.ts";
 import { applyIpPatch, buildFirmware } from "./hooks.ts";
+
+// Every case: firmware "FAIL:" lines and Verilator %Error are errors; each
+// case adds its own pass line.
+const smoke = DefaultGrader({ error: ["FAIL:", "%Error"] });
 
 const VL_WARN = [
 	"-Wno-fatal",
@@ -38,7 +47,7 @@ function harness(sd: boolean) {
 			...(sd ? [`${SDSPISIM}/sdspisim.cpp`] : []),
 		],
 		// "JTAG SMOKE PASS" alone is not a pass: tb_main prints this last.
-		grade: { pass: ["SMOKE PASS: verilator soc"] },
+		grader: smoke.extend({ pass: ["SMOKE PASS: verilator soc"] }),
 	};
 }
 
@@ -71,7 +80,7 @@ export const tbMod = Case("tb_mod", {
 	owner: "soc",
 	filelist: "tb_mod.f",
 	toolOptions: { top: "tb_soc" },
-	grade: { pass: ["SMOKE PASS: tb_soc"] },
+	grader: smoke.extend({ pass: ["SMOKE PASS: tb_soc"] }),
 	compileArgs: ["-CFLAGS", "-O2 -std=c++17", "-LDFLAGS", "-pthread"],
 	env: { FW: { value: "basic_smoke", scope: "sim" } },
 	simArgs: [firmware("basic_smoke")],
@@ -83,7 +92,7 @@ export const svRegSmoke = Case("sv_reg_smoke", {
 	filelist: "sv_reg.f",
 	toolOptions: { top: "sv_reg_smoke" },
 	compileArgs: ["--timescale", "1ns/1ps", "-Wno-lint", "-Wno-style"],
-	grade: { pass: ["SV_REG SMOKE PASS"] },
+	grader: smoke.extend({ pass: ["SV_REG SMOKE PASS"] }),
 });
 
 export default Workspace({
@@ -92,7 +101,6 @@ export default Workspace({
 	bareDefaults: {
 		random: false,
 		compileArgs: ["-j", "0", ...VL_WARN],
-		grade: { error: ["FAIL:", "%Error"] },
 	},
 	// MAKE / MAKEFLAGS reach verilator --build and the firmware hook (e.g.
 	// MAKEFLAGS=OPT_FAST=-O2); CROSS picks the RISC-V toolchain prefix.

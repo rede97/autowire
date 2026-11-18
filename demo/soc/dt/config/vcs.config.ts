@@ -3,7 +3,11 @@
 //   bun ../../index.ts dtsim run basic_smoke --config dt/config/vcs.config.ts --no-wave -d vcs
 //   ./dt/vcs/run.sh [basic_smoke|regfile_smoke]
 // The SD card-image case stays Verilator-only (sdspisim is a C++ model).
-import { Case, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import {
+	Case,
+	DefaultGrader,
+	Workspace,
+} from "../../../../src/dtsim/dsl/index.ts";
 import { applyIpPatch, buildFirmware } from "./hooks.ts";
 
 const firmware = (fw: string) =>
@@ -34,8 +38,8 @@ export default Workspace({
 		random: false,
 		// --no-as-needed: VCS O-2018.09 on binutils >= 2.34 drops its own shared libs.
 		compileArgs: ["-top", "tb_soc", "-LDFLAGS", "-Wl,--no-as-needed"],
-		grade: { pass: ["SMOKE PASS: tb_soc"], error: ["FAIL:"] },
 	},
+	grader: DefaultGrader({ pass: ["SMOKE PASS: tb_soc"], error: ["FAIL:"] }),
 	env: { passthrough: ["MAKE", "CROSS"] },
 	task: { type: "local", maxSlots: 2, maxCompiles: 1 },
 	hooks: { preCompile: applyIpPatch, preSim: buildFirmware },
