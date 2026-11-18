@@ -193,9 +193,12 @@ describe("single case", () => {
 
 describe("verilator backend", () => {
 	test("compile produces an executable, sim grades its stdout log", async () => {
-		const body = CASES_TS.replace('tool: "vcs"', 'tool: "verilator"').replace(
-			'filelist: "file.lst",',
-			'filelist: "file.lst", toolOptions: { top: "tb_top" },',
+		const body = CASES_TS.replace(
+			"tool: VcsTool(),",
+			'tool: VerilatorTool({ top: "tb_top" }),',
+		).replace(
+			'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
+			'import { DefaultGrader, VerilatorTool } from "./.dtsim/dsl/index.ts";',
 		);
 		const ws = await makeWorkspace(body);
 		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "11"]);
@@ -220,10 +223,8 @@ describe("user-registered backend", () => {
 			'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
 			`import { Case, Group, WaiveRule, Workspace, defineTool } from "./.dtsim/dsl/index.ts";
 const echoTool = defineTool({
-	kind: "dtsim-tool",
-	id: "echo-sim",
+	name: "echo-sim",
 	passthrough: ["PATH"],
-	interactive: false,
 	compileErrors: [/Error/],
 	simErrors: [/Error/],
 	compile(ctx) {
@@ -233,7 +234,7 @@ const echoTool = defineTool({
 		return { argv: ["bash", "-c", "echo TEST PASSED"], cwd: ctx.dir, log: ctx.dir + "/sim.log", logMode: "tee" };
 	},
 });`,
-		).replace('tool: "vcs"', 'tool: "echo-sim", tools: [echoTool]');
+		).replace("tool: VcsTool(),", "tool: echoTool,");
 		const ws = await makeWorkspace(body);
 		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "21"]);
 		expect(result.code).toBe(0);

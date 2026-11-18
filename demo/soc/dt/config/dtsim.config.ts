@@ -8,6 +8,7 @@ import {
 	Case,
 	DefaultGrader,
 	Group,
+	VerilatorTool,
 	Workspace,
 } from "../../../../src/dtsim/dsl/index.ts";
 import { applyIpPatch, buildFirmware } from "./hooks.ts";
@@ -96,7 +97,7 @@ export const svRegSmoke = Case("sv_reg_smoke", {
 });
 
 export default Workspace({
-	tool: "verilator",
+	tool: VerilatorTool(),
 	filelist: "harness.f",
 	bareDefaults: {
 		random: false,
@@ -105,7 +106,7 @@ export default Workspace({
 	// MAKE / MAKEFLAGS reach verilator --build and the firmware hook (e.g.
 	// MAKEFLAGS=OPT_FAST=-O2); CROSS picks the RISC-V toolchain prefix.
 	env: { passthrough: ["MAKE", "MAKEFLAGS", "CROSS", "MSYSTEM"] },
-	task: { type: "local", maxSlots: 4, maxCompiles: 2 },
+	task: { maxSlots: 4, maxCompiles: 2 },
 	hooks: { preCompile: applyIpPatch, preSim: buildFirmware },
 	groups: [
 		Group("smoke", ["basic_smoke", "regfile_smoke", "tb_mod", "sv_reg_smoke"]),

@@ -120,8 +120,8 @@ describe("graders", () => {
 	// lenient: seed 32 passes with a note, other seeds keep helloGrader's
 	// verdict. broken: always throws; test_bar_basic uses it.
 	const GRADERS = CASES_TS.replace(
-		'import { DefaultGrader } from "./.dtsim/dsl/index.ts";',
-		'import { DefaultGrader, defineGrader } from "./.dtsim/dsl/index.ts";',
+		'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
+		'import { DefaultGrader, VcsTool, defineGrader } from "./.dtsim/dsl/index.ts";',
 	)
 		.replace(
 			"\n// Only top-level cases",

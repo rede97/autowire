@@ -7,15 +7,18 @@ import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 // to $DTSIM_MOCK_LAUNCH_LOG and then exec the wrapped command.
 const withTask = (task: string) =>
 	CASES_TS.replace(
-		'task: { type: "local", maxSlots: 4, maxCompiles: 2 },',
+		"task: { maxSlots: 4, maxCompiles: 2 },",
 		`task: ${task},`,
+	).replace(
+		'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
+		'import { DefaultGrader, VcsTool, LsfLauncher, defineLauncher } from "./.dtsim/dsl/index.ts";',
 	);
 
 describe("launchers", () => {
-	test("lsf wraps compile and sim in bsub with queue and options.args", async () => {
+	test("lsf wraps compile and sim in bsub with queue and args", async () => {
 		const ws = await makeWorkspace(
 			withTask(
-				'{ type: "lsf", queue: "normal", maxSlots: 2, maxCompiles: 1, options: { args: ["-R", "rusage[mem=4000]"] } }',
+				'{ launcher: LsfLauncher({ queue: "normal", args: ["-R", "rusage[mem=4000]"] }), maxSlots: 2, maxCompiles: 1 }',
 			),
 		);
 		const log = join(ws.dir, "launch.log");
@@ -36,7 +39,9 @@ describe("launchers", () => {
 
 	test("DTSIM_TASK_TYPE switches to slurm; DTSIM_TASK_QUEUE overrides the queue", async () => {
 		const ws = await makeWorkspace(
-			withTask('{ type: "lsf", queue: "normal", maxSlots: 2, maxCompiles: 1 }'),
+			withTask(
+				'{ launcher: LsfLauncher({ queue: "normal" }), maxSlots: 2, maxCompiles: 1 }',
+			),
 		);
 		const log = join(ws.dir, "launch.log");
 		const result = await runDtsim(ws, ["regr", "base", "--plain"], {
@@ -56,24 +61,23 @@ describe("launchers", () => {
 
 	test("a workspace can ship its own launcher; its passthrough reaches the child", async () => {
 		const body = withTask(
-			'{ type: "tagged", maxSlots: 1, maxCompiles: 1, options: { tag: "T42" } }',
-		)
-			.replace(
-				'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
-				`import { Case, Group, WaiveRule, Workspace, defineLauncher } from "./.dtsim/dsl/index.ts";
+			"{ launcher: tagged, maxSlots: 1, maxCompiles: 1 }",
+		).replace(
+			"\n// Only top-level cases",
+			`
+const tag = "T42";
 const tagged = defineLauncher({
-	kind: "dtsim-launcher",
-	id: "tagged",
+	name: "tagged",
 	passthrough: ["SITE_GRID_*"],
 	wrap: (argv, ctx) => [
 		"bash", "-c",
 		'echo "$0 $SITE_GRID_TOKEN" >> "$DTSIM_MOCK_LAUNCH_LOG"; shift; exec "$@"',
-		ctx.phase + ":" + ctx.jobName + ":" + ctx.options.tag,
+		ctx.phase + ":" + ctx.jobName + ":" + tag,
 		"_", ...argv,
 	],
-});`,
-			)
-			.replace('tool: "vcs"', 'tool: "vcs", launchers: [tagged]');
+});
+// Only top-level cases`,
+		);
 		const ws = await makeWorkspace(body);
 		const log = join(ws.dir, "launch.log");
 		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "7"], {

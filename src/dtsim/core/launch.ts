@@ -1,38 +1,41 @@
-// Launch wiring. Launchers (src/dtsim/launchers/, or Workspace.launchers)
-// decide HOW a command runs; the scheduler owns slots. DTSIM_TASK_TYPE /
-// DTSIM_TASK_QUEUE override only the launcher id and queue; slot limits and
-// options always come from the workspace config.
-import type { LaunchContext, TaskSpec } from "../dsl/index.ts";
-import { getLauncher } from "./registry.ts";
+// Launch wiring. The workspace's launcher (task.launcher) decides HOW a
+// command runs; the scheduler owns slots. DTSIM_TASK_TYPE swaps in a built-in
+// launcher by name (local / lsf / slurm) unless it names the configured one;
+// DTSIM_TASK_QUEUE reaches the launcher as ctx.queue.
+import {
+	type LaunchContext,
+	type Launcher,
+	LocalLauncher,
+	LsfLauncher,
+	SlurmLauncher,
+} from "../dsl/index.ts";
 
-export type ResolvedTask = TaskSpec & {
-	queue: string;
-	options: Record<string, unknown>;
+const BUILTIN: Record<string, () => Launcher> = {
+	local: () => LocalLauncher(),
+	lsf: () => LsfLauncher(),
+	slurm: () => SlurmLauncher(),
 };
 
-export function resolveTask(task: TaskSpec): ResolvedTask {
-	return {
-		...task,
-		type:
-			process.env.DTSIM_TASK_TYPE ?? process.env.DSIM_TASK_TYPE ?? task.type,
-		queue:
-			process.env.DTSIM_TASK_QUEUE ??
-			process.env.DSIM_TASK_QUEUE ??
-			task.queue ??
-			"",
-		options: { ...task.options },
-	};
+/** The configured launcher after the DTSIM_TASK_TYPE override. */
+export function resolveLauncher(configured: Launcher): Launcher {
+	const name = process.env.DTSIM_TASK_TYPE ?? process.env.DSIM_TASK_TYPE;
+	if (!name || name === configured.name) return configured;
+	const make = BUILTIN[name];
+	if (!make) {
+		throw new Error(
+			`dtsim: unknown task type "${name}" (built-in: ${Object.keys(BUILTIN).join(", ")}; configured: ${configured.name})`,
+		);
+	}
+	return make();
 }
 
-/** argv as the selected launcher runs it. */
+/** argv as `launcher` runs it. */
 export function wrapCommand(
 	argv: readonly string[],
-	task: ResolvedTask,
-	ctx: Omit<LaunchContext, "queue" | "options">,
+	launcher: Launcher,
+	ctx: Omit<LaunchContext, "queue">,
 ): string[] {
-	return getLauncher(task.type).wrap(argv, {
-		...ctx,
-		queue: task.queue,
-		options: task.options,
-	});
+	const queue =
+		process.env.DTSIM_TASK_QUEUE ?? process.env.DSIM_TASK_QUEUE ?? "";
+	return launcher.wrap(argv, { ...ctx, queue });
 }

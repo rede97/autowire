@@ -18,7 +18,6 @@ import {
 	toolContext,
 } from "./engine.ts";
 import { envStatsLine } from "./env.ts";
-import { getTool } from "./registry.ts";
 import { elapsedLine, fmtElapsed } from "./scripts.ts";
 import { block, status, table } from "./ui.ts";
 
@@ -98,12 +97,12 @@ export async function runSingle(
 	const c = mergeCase(ws, caseId);
 	const seeds = seedsFor(c, await readSeeds(opts));
 	const compileDir = caseOutputDir(ws, c.id, opts.label);
-	const tool = getTool(ws.toolId);
+	const tool = ws.tool;
 
 	printBlock("Run", [
 		["WORKSPACE", ws.root],
 		["Verify", ws.verify],
-		["Tool", ws.toolId],
+		["Tool", tool.name],
 		["Test Name", c.id],
 		["Test Seq", c.uvm?.seq ?? ""],
 		["Seeds", seeds.join(",") + (c.random ? "" : " (no-random)")],

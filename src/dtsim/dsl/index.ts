@@ -2,6 +2,15 @@
 // objects tagged with `kind`. Never use instanceof: the bundle and the
 // materialized .dtsim/dsl copy may both be loaded in one process.
 
+export {
+	type ClusterOpts,
+	LocalLauncher,
+	LsfLauncher,
+	SlurmLauncher,
+} from "./launchers.ts";
+export { type VcsOpts, VcsTool } from "./tools/vcs.ts";
+export { type VerilatorOpts, VerilatorTool } from "./tools/verilator.ts";
+
 export type EnvScope = "both" | "compile" | "sim";
 export type EnvValue = string | { value: string; scope?: EnvScope };
 
@@ -22,7 +31,8 @@ export type CaseOpts = {
 	simArgs?: readonly string[];
 	env?: Record<string, EnvValue>;
 	uvm?: UvmCfg;
-	/** Free-form per-tool options, interpreted by the selected SimTool only. */
+	/** Per-case options the tool reads on top of its factory options
+	 *  (e.g. VerilatorTool `top`, VcsTool `flags`); objects merge per key. */
 	toolOptions?: Record<string, unknown>;
 	/** Filelist for this case instead of the workspace one (relative to dt/config). */
 	filelist?: string;
@@ -95,13 +105,10 @@ export type Status = (typeof Status)[keyof typeof Status];
 export type GradeStatus = Exclude<Status, typeof Status.Aborted>;
 
 export type TaskSpec = {
-	/** Launcher id: built-in "local" / "lsf" / "slurm", or a Workspace.launchers entry. */
-	type: string;
-	queue?: string;
+	/** How commands run. Default `LocalLauncher()`. */
+	launcher: Launcher;
 	maxSlots: number;
 	maxCompiles: number;
-	/** Free-form launcher options, interpreted by the selected Launcher only. */
-	options?: Record<string, unknown>;
 };
 
 /** What hooks and graders see for one case directory. */
@@ -199,16 +206,14 @@ export type Grader = {
 };
 
 export type WorkspaceOpts = {
-	tool: string;
+	/** Simulator backend: VcsTool(...), VerilatorTool(...) or defineTool(...). */
+	tool: SimTool;
 	/** Filelist path (`${...}` allowed; relative to dt/config). Default "file.lst". */
 	filelist?: string;
 	/** Output root (`${...}` allowed; relative to dt/config). Default "${workspace}/dt/simout". */
 	output?: string;
-	tools?: readonly SimTool[];
-	launchers?: readonly Launcher[];
 	/** Default grader. Default `DefaultGrader()`. */
 	grader?: Grader;
-	toolOptions?: Record<string, unknown>;
 	bareDefaults?: CaseOpts;
 	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
 	task?: Partial<TaskSpec>;
@@ -280,7 +285,8 @@ export type CompileKeyInput = {
 
 export type SimTool = {
 	kind: "dtsim-tool";
-	id: string;
+	/** `${tool}`, $DTSIM_TOOL and part of the compile key. */
+	name: string;
 	/** Parent-environment names this tool needs; copied only when present. */
 	passthrough: readonly string[];
 	/** true: first Ctrl+C is forwarded to the child (UCLI-style). */
@@ -312,19 +318,18 @@ export type LaunchContext = {
 	seed?: string;
 	/** Directory the wrapped command runs in. */
 	cwd: string;
-	/** task.queue after DTSIM_TASK_QUEUE; "" when unset. */
+	/** $DTSIM_TASK_QUEUE; "" when unset (a launcher's own queue applies). */
 	queue: string;
 	/** true only for `run --interactive`: the terminal is attached. */
 	interactive: boolean;
-	/** task.options, unresolved. */
-	options: Record<string, unknown>;
 };
 
 /** Decides HOW a command runs (local, bsub, srun, ...). The scheduler owns
  *  WHEN: slots and compile limits never reach the launcher. */
 export type Launcher = {
 	kind: "dtsim-launcher";
-	id: string;
+	/** Shown in logs; $DTSIM_TASK_TYPE picks a built-in by this name. */
+	name: string;
 	/** Parent-environment names the launcher needs (LSF_*, SLURM_*);
 	 *  copied like a SimTool's passthrough. */
 	passthrough: readonly string[];
@@ -486,37 +491,55 @@ export function WaiveRule(name: string, pattern: string): WaiveRuleDef {
 	return { kind: "dtsim-waive", name, pattern };
 }
 
-/** Validate and register a user simulator backend. */
-export function defineTool(tool: SimTool): SimTool {
-	if (!isTool(tool)) {
-		throw new Error('dtsim: a tool must have kind: "dtsim-tool"');
+function needTool(what: string, v: unknown): SimTool {
+	if (!isTool(v)) {
+		throw new Error(
+			`dtsim: ${what} must be a tool (VcsTool(...), VerilatorTool(...) or defineTool(...))`,
+		);
 	}
-	needString("tool id", tool.id);
-	if (
-		typeof tool.compile !== "function" ||
-		typeof tool.simulate !== "function"
-	) {
-		throw new Error(`dtsim: tool ${tool.id} needs compile() and simulate()`);
-	}
-	if (!Array.isArray(tool.passthrough)) {
-		throw new Error(`dtsim: tool ${tool.id} needs a passthrough array`);
-	}
-	return tool;
+	return v;
 }
 
-/** Validate a user launcher (cluster or wrapper backend). */
-export function defineLauncher(launcher: Launcher): Launcher {
-	if (!isLauncher(launcher)) {
-		throw new Error('dtsim: a launcher must have kind: "dtsim-launcher"');
+function needLauncher(what: string, v: unknown): Launcher {
+	if (!isLauncher(v)) {
+		throw new Error(
+			`dtsim: ${what} must be a launcher (LocalLauncher(), LsfLauncher(...), SlurmLauncher(...) or defineLauncher(...))`,
+		);
 	}
-	needString("launcher id", launcher.id);
-	if (typeof launcher.wrap !== "function") {
-		throw new Error(`dtsim: launcher ${launcher.id} needs wrap()`);
+	return v;
+}
+
+/** A user simulator backend; `interactive` defaults to false. */
+export function defineTool(
+	spec: Omit<SimTool, "kind" | "interactive"> & { interactive?: boolean },
+): SimTool {
+	needString("tool name", spec.name);
+	if (
+		typeof spec.compile !== "function" ||
+		typeof spec.simulate !== "function"
+	) {
+		throw new Error(`dtsim: tool ${spec.name} needs compile() and simulate()`);
 	}
-	if (!Array.isArray(launcher.passthrough)) {
-		throw new Error(`dtsim: launcher ${launcher.id} needs a passthrough array`);
+	if (!Array.isArray(spec.passthrough)) {
+		throw new Error(`dtsim: tool ${spec.name} needs a passthrough array`);
 	}
-	return launcher;
+	return {
+		...spec,
+		kind: "dtsim-tool",
+		interactive: spec.interactive ?? false,
+	};
+}
+
+/** A user launcher (cluster or wrapper backend). */
+export function defineLauncher(spec: Omit<Launcher, "kind">): Launcher {
+	needString("launcher name", spec.name);
+	if (typeof spec.wrap !== "function") {
+		throw new Error(`dtsim: launcher ${spec.name} needs wrap()`);
+	}
+	if (!Array.isArray(spec.passthrough)) {
+		throw new Error(`dtsim: launcher ${spec.name} needs a passthrough array`);
+	}
+	return { ...spec, kind: "dtsim-launcher" };
 }
 
 function needGrader(what: string, v: unknown): Grader {
@@ -541,9 +564,10 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 	if (typeof opts !== "object" || opts === null) {
 		throw new Error("dtsim: Workspace options must be an object");
 	}
-	needString("workspace tool", opts.tool);
-	for (const t of opts.tools ?? []) defineTool(t);
-	for (const l of opts.launchers ?? []) defineLauncher(l);
+	needTool("workspace tool", opts.tool);
+	if (opts.task?.launcher !== undefined) {
+		needLauncher("task.launcher", opts.task.launcher);
+	}
 	if (opts.grader !== undefined) needGrader("workspace grader", opts.grader);
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);
 	for (const [stage, value] of Object.entries(opts.hooks ?? {})) {

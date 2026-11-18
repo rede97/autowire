@@ -7,11 +7,10 @@ import {
 	resolveGroup,
 } from "../../src/dtsim/core/config.ts";
 import { buildChildEnv } from "../../src/dtsim/core/env.ts";
-import { registerTool } from "../../src/dtsim/core/registry.ts";
 import { planGroups } from "../../src/dtsim/core/regression.ts";
-import { DSL_SOURCE } from "../../src/dtsim/dsl/embedded.generated.ts";
+import { DSL_FILES } from "../../src/dtsim/dsl/embedded.generated.ts";
 import type { DefaultGraderDef } from "../../src/dtsim/dsl/index.ts";
-import { vcsTool } from "../../src/dtsim/tools/vcs.ts";
+import { VcsTool } from "../../src/dtsim/dsl/index.ts";
 import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 
 describe("dsl merge", () => {
@@ -63,9 +62,9 @@ describe("dsl merge", () => {
 		const same = mergeCase(ws, "test_hello_world");
 		same.simArgs.push("+OTHER=1");
 		same.env.SIM_TRACE = { value: "9", scope: "sim" };
-		expect(compileKey(same, ws.toolId)).toBe(compileKey(bare, ws.toolId));
+		expect(compileKey(same, ws.tool)).toBe(compileKey(bare, ws.tool));
 		same.env.OTHER = "1";
-		expect(compileKey(same, ws.toolId)).not.toBe(compileKey(bare, ws.toolId));
+		expect(compileKey(same, ws.tool)).not.toBe(compileKey(bare, ws.tool));
 	});
 
 	test("compile key keeps compileArgs order", async () => {
@@ -74,7 +73,7 @@ describe("dsl merge", () => {
 		const b = mergeCase(ws, "test_hello_world");
 		a.compileArgs = ["-CFLAGS", "-O2", "-LDFLAGS", "-pthread"];
 		b.compileArgs = ["-CFLAGS", "-pthread", "-LDFLAGS", "-O2"];
-		expect(compileKey(a, ws.toolId)).not.toBe(compileKey(b, ws.toolId));
+		expect(compileKey(a, ws.tool)).not.toBe(compileKey(b, ws.tool));
 	});
 
 	test("regression groups split on compile env, keep group order", async () => {
@@ -90,13 +89,13 @@ describe("dsl merge", () => {
 			'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
 			`import { Case, Group, WaiveRule, Workspace, defineTool } from "./.dtsim/dsl/index.ts";
 const shared = defineTool({
-	kind: "dtsim-tool", id: "shared-sim", passthrough: [], interactive: false,
+	name: "shared-sim", passthrough: [],
 	compileErrors: [], simErrors: [],
 	compileKey: (c) => JSON.stringify(c.toolOptions),
 	compile: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/c.log", logMode: "tee" }),
 	simulate: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/s.log", logMode: "tee" }),
 });`,
-		).replace('tool: "vcs"', 'tool: "shared-sim", tools: [shared]');
+		).replace("tool: VcsTool(),", "tool: shared,");
 		const ws = await makeWorkspace(body);
 		const vcsPlan = await runDtsim(await makeWorkspace(), ["plan", "base"]);
 		expect(vcsPlan.stdout).toContain("in 3 compile groups");
@@ -127,7 +126,7 @@ declare global {
 
 describe("case tree", () => {
 	const TREE = `
-import { Case, Workspace } from "./.dtsim/dsl/index.ts";
+import { Case, VcsTool, Workspace } from "./.dtsim/dsl/index.ts";
 const calls = (globalThis.dtsimTreeCalls ??= []);
 export const top = Case("t", { defines: ["A"], simArgs: ["+a"], env: { X: "1" } });
 const fast = top.SubCase("fast", { defines: ["FAST"], env: { Y: "2" } });
@@ -139,7 +138,7 @@ top.SubCase("slow", () => {
 	calls.push("slow");
 	throw new Error("slow opts should never be evaluated");
 });
-export default Workspace({ tool: "vcs" });
+export default Workspace({ tool: VcsTool() });
 `;
 
 	test("multi-level SubCase merges every level; only the root is exported", async () => {
@@ -172,17 +171,17 @@ export default Workspace({ tool: "vcs" });
 
 	test("groups take case objects and id patterns, in member order", async () => {
 		const body = TREE.replace(
-			'import { Case, Workspace } from "./.dtsim/dsl/index.ts";',
-			'import { Case, Group, Workspace } from "./.dtsim/dsl/index.ts";',
+			'import { Case, VcsTool, Workspace } from "./.dtsim/dsl/index.ts";',
+			'import { Case, Group, VcsTool, Workspace } from "./.dtsim/dsl/index.ts";',
 		)
 			.replace(
 				'throw new Error("slow opts should never be evaluated");',
 				"return {};",
 			)
 			.replace(
-				'export default Workspace({ tool: "vcs" });',
+				"export default Workspace({ tool: VcsTool() });",
 				`const extra = top.SubCase("extra");
-export default Workspace({ tool: "vcs", groups: [
+export default Workspace({ tool: VcsTool(), groups: [
 	Group("objs", [extra, fast]),
 	Group("one", ["t.*"]),
 	Group("deep", ["t.**", "t.fast"]),
@@ -245,16 +244,12 @@ export default Workspace({ tool: "vcs", groups: [
 		]);
 	});
 
-	test("unknown tool id fails before any run", async () => {
-		const body = CASES_TS.replace('tool: "vcs"', 'tool: "xcelium"');
+	test("a tool option that is not a tool fails at load", async () => {
+		const body = CASES_TS.replace("tool: VcsTool(),", 'tool: "xcelium",');
 		const ws = await makeWorkspace(body);
 		await expect(loadWorkspace({ config: ws.config })).rejects.toThrow(
-			"unknown tool",
+			"must be a tool",
 		);
-	});
-
-	test("user tools cannot shadow a built-in id", () => {
-		expect(() => registerTool(vcsTool)).toThrow("already registered");
 	});
 });
 
@@ -264,7 +259,7 @@ describe("environment isolation", () => {
 		const c = mergeCase(ws, "test_bar_basic.cosim");
 		const built = buildChildEnv({
 			phase: "sim",
-			tool: vcsTool,
+			tool: VcsTool(),
 			passthrough: ws.passthrough,
 			deny: ws.deny,
 			caseEnv: c.env,
@@ -293,7 +288,7 @@ describe("environment isolation", () => {
 		const c = mergeCase(ws, "test_bar_basic");
 		const built = buildChildEnv({
 			phase: "compile",
-			tool: vcsTool,
+			tool: VcsTool(),
 			passthrough: [],
 			deny: [],
 			caseEnv: c.env,
@@ -330,10 +325,15 @@ describe("materialized dsl", () => {
 		expect(c.kind).toBe("dtsim-case");
 	});
 
-	test("embedded dsl matches the source file", async () => {
-		const source = await Bun.file(
-			join(import.meta.dir, "..", "..", "src", "dtsim", "dsl", "index.ts"),
-		).text();
-		expect(DSL_SOURCE).toBe(source);
+	test("embedded dsl matches the source files", async () => {
+		const dir = join(import.meta.dir, "..", "..", "src", "dtsim", "dsl");
+		const sources: Record<string, string> = {};
+		for (const rel of new Bun.Glob("**/*.ts").scanSync(dir)) {
+			const path = rel.replaceAll("\\", "/");
+			if (path !== "embedded.generated.ts") {
+				sources[path] = await Bun.file(join(dir, rel)).text();
+			}
+		}
+		expect(DSL_FILES).toEqual(sources);
 	});
 });

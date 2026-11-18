@@ -82,14 +82,17 @@ dtsim` 或编译版 `autowire dtsim`）执行 `results --dir <该目录>`，参�
 Default config: `<project>/dt/config/dtsim.config.ts`, searched upward from the
 CWD (stops at a `.git` directory). `--config` selects another file; the project
 is always the parent of the config file's `dt/` directory. User configs are
-loaded at runtime; the DSL is written to `dt/config/.dtsim/dsl/index.ts` on
-every run and config files import it from there. Inside this repository the
-demo configs import `src/dtsim/dsl/index.ts` directly (same convention as the
-wishbone SoT), so DSL edits reach them without a regenerate step; `docs unpack`
+loaded at runtime; the DSL (`index.ts` plus the built-in tools and launchers
+it re-exports) is written to `dt/config/.dtsim/dsl/` on every run and config
+files import `.dtsim/dsl/index.ts`. Inside this repository the demo configs
+import `src/dtsim/dsl/index.ts` directly (same convention as the wishbone
+SoT), so DSL edits reach them without a regenerate step; `docs unpack`
 rewrites those imports to the `.dtsim/dsl` copy. No symlink is used: Windows
 symlinks need extra privileges and Bun does not follow MSYS ones.
 
-- `Workspace({ tool, filelist, output, tools, launchers, grader, toolOptions, bareDefaults, env, task, hooks, groups, cases })`
+- `Workspace({ tool, filelist, output, grader, bareDefaults, env, task, hooks, groups, cases })`.
+  `tool`, `task.launcher` and `grader` are values (`VcsTool(...)`, `LsfLauncher(...)`,
+  `DefaultGrader(...)`), not ids.
 - `Case(name, opts)` / `case.SubCase(suffix, opts)` / `Group(name, ids)`
 - List fields (`defines`, `compileArgs`, `simArgs`) append.
   `env` maps merge per key; `grader` is replaced (use `.extend()` to append keywords).
@@ -144,7 +147,7 @@ const withCosim = (c: CaseDef) => {
 export const base = Case("hello_world_base", { defines: ["NUM=1"] });
 for (const [name, opts] of Object.entries({ a: { simArgs: ["+A"] }, b: { simArgs: ["+B"] } }))
 	withCosim(base.SubCase(name, opts));
-export default Workspace({ tool: "vcs", groups: [Group("cosim_all", ["hello_world_base.*.cosim"])] });
+export default Workspace({ tool: VcsTool(), groups: [Group("cosim_all", ["hello_world_base.*.cosim"])] });
 ```
 
 Keep sim-only inputs (`INPUT` above) at `scope: "sim"` so corners share the
@@ -179,44 +182,45 @@ kept as written, `$VAR` entries left for the tool. A missing nested filelist
 or a cycle fails the run before the tool starts. Backends receive this flat
 file as `ctx.filelist`.
 
-## Simulator backends (plugins)
+## Simulator backends
 
-`vcs` and `verilator` are built in and registered at startup. A workspace can
-register its own backend instead of editing the engine:
+`tool` is a backend value. Built in: `VcsTool(opts)` and
+`VerilatorTool(opts)`. A case's `toolOptions` overrides the factory options
+for that case (for example a different Verilator `top`), merged per key. A
+custom backend is `defineTool(...)`:
 
 ```ts
-const myTool = defineTool({
-	kind: "dtsim-tool",
-	id: "xcelium",
+const xcelium = defineTool({
+	name: "xcelium",
 	passthrough: ["PATH", "XCELIUM_HOME"],
-	interactive: false,
 	compileErrors: [/Error/],
 	simErrors: [/UVM_ERROR/],
 	compile: (ctx) => ({ argv: [...], cwd: ctx.dir, log: `${ctx.dir}/compile.log`, logMode: "tee" }),
 	simulate: (ctx) => ({ argv: [...], cwd: ctx.dir, log: `${ctx.dir}/sim.log`, logMode: "tee" }),
 });
-export default Workspace({ tool: "xcelium", tools: [myTool], ... });
+export default Workspace({ tool: xcelium, ... });
 ```
 
-Built-in `toolOptions`:
+Built-in options (factory argument, or case `toolOptions`):
 
 | Backend | Option | Default | Meaning |
 |---|---|---|---|
-| verilator | `top` | `top` | `--top-module`; executable `V<top>` |
-| verilator | `mdir` | `obj_dir` | `-Mdir` inside the compile dir |
-| verilator | `main` | `true` | `true`: `--binary`. `false`: `--cc --exe --build` for a C++ harness; the `.cpp` files and `--timing` go in `compileArgs` |
-| vcs | `ntbOpts` | `uvm` | `-ntb_opts` value, e.g. `uvm-1.2`; `""` leaves `-ntb_opts` out |
-| vcs | `flags` | built-in list | replaces the built-in compile flags (`-xlrm nettype_array -lca -kdb ...`, written for a newer VCS); `-f`, `-l`, defines and `compileArgs` still follow |
+| `VerilatorTool` | `top` | `top` | `--top-module`; executable `V<top>` |
+| `VerilatorTool` | `mdir` | `obj_dir` | `-Mdir` inside the compile dir |
+| `VerilatorTool` | `main` | `true` | `true`: `--binary`. `false`: `--cc --exe --build` for a C++ harness; the `.cpp` files and `--timing` go in `compileArgs` |
+| `VcsTool` | `ntbOpts` | `uvm` | `-ntb_opts` value, e.g. `uvm-1.2`; `""` leaves `-ntb_opts` out |
+| `VcsTool` | `flags` | built-in list | replaces the built-in compile flags (`-xlrm nettype_array -lca -kdb ...`, written for a newer VCS); `-f`, `-l`, defines and `compileArgs` still follow |
 
 The engine owns scheduling, grading, and environment assembly. A backend only
 supplies argv, log locations, excerpt regexes, optional helper files
-(`writeAux`), its `compileKey`, and per-tool `toolOptions`. Backend ids must
-not shadow built-ins.
+(`writeAux`), its `compileKey`, and how it reads `toolOptions`. `name` is
+`${tool}`, `$DTSIM_TOOL` and part of the compile key; `interactive` (default
+`false`) forwards the first Ctrl+C of `run --interactive` to the child.
 
 ### Which cases share a build
 
 In a regression, cases with equal compile keys share one compile directory.
-dtsim computes a generic key (tool id, defines as a set, `compileArgs` in
+dtsim computes a generic key (tool name, defines as a set, `compileArgs` in
 order, compile-scope `env`, case `filelist`) and hands it to the backend's
 `compileKey(c, base)`, which returns the final key: `base` unchanged, `base`
 plus what else its build depends on, or a key of its own when the simulator
@@ -226,45 +230,46 @@ build unless the backend puts them in the key. `dtsim plan` prints the groups.
 
 | Backend | Key |
 |---|---|
-| `vcs` | base + `ntbOpts` + compile `flags` |
-| `verilator` | base + `top` + `mdir` + `main` |
+| `VcsTool` | base + `ntbOpts` + compile `flags` |
+| `VerilatorTool` | base + `top` + `mdir` + `main` |
 
-## Launchers (plugins)
+## Launchers
 
 A launcher decides how a compile or sim command runs; the scheduler decides
-when (`task.maxSlots`, `task.maxCompiles` never reach the launcher). Same
-shape as a simulator backend: `local`, `lsf` and `slurm` are built in, a
-workspace registers more with `defineLauncher` + `Workspace({ launchers })`,
-and `task.type` picks one by id.
+when (`task.maxSlots`, `task.maxCompiles` never reach the launcher).
+`task.launcher` is a launcher value, default `LocalLauncher()`. Built in:
+
+| Launcher | Wraps as | `passthrough` |
+|---|---|---|
+| `LocalLauncher()` | the command itself | none |
+| `LsfLauncher({ queue, args })` | `bsub -I -J <job> [-q <queue>] <args> <cmd>` | `LSF_*`, `LSB_*` |
+| `SlurmLauncher({ queue, args })` | `srun --pty [--qos <queue>] --job-name <job> <args> <cmd>` | `SLURM_*` |
+
+`args` is a string array, e.g. `["-R", "rusage[mem=8000]"]` or
+`["--partition", "eda"]`. A site wrapper is `defineLauncher(...)`:
 
 ```ts
-// A site submit wrapper that blocks until the job ends and returns its exit code.
+// Blocks until the job ends and returns its exit code.
 const grid = defineLauncher({
-	kind: "dtsim-launcher",
-	id: "grid",
+	name: "grid",
 	passthrough: ["GRID_*"],
-	wrap: (argv, ctx) => ["grid_run", "--name", ctx.jobName, ...(ctx.queue ? ["--pool", ctx.queue] : []), "--", ...argv],
+	wrap: (argv, ctx) => ["grid_run", "--name", ctx.jobName, "--pool", ctx.queue || "eda", "--", ...argv],
 });
-export default Workspace({ tool: "vcs", launchers: [grid], task: { type: "grid", queue: "eda", maxSlots: 16, maxCompiles: 4 }, ... });
+export default Workspace({ tool: VcsTool(), task: { launcher: grid, maxSlots: 16, maxCompiles: 4 }, ... });
 ```
 
 `wrap(argv, ctx)` receives the already-built tool argv (`bash <seed dir>/run_sim`
 for a sim) and returns the argv to spawn; the wrapped command must exit with
 the job's exit code (interactive / blocking submission). `ctx` carries
 `phase`, `jobName` (`compile_<base>` or `<case>_<seed>`), `caseId`, `seed`,
-`cwd`, `queue`, `interactive` (`run --interactive`) and `options`
-(`task.options`, free-form). The launcher's `passthrough` names are copied into
-the child environment like a backend's.
+`cwd`, `queue` and `interactive` (`run --interactive`). The launcher's
+`passthrough` names are copied into the child environment like a backend's.
 
-| Launcher | Wraps as | `passthrough` | `task.options` |
-|---|---|---|---|
-| `local` | the command itself | none | ignored |
-| `lsf` | `bsub -I -J <job> [-q <queue>] <args> <cmd>` | `LSF_*`, `LSB_*` | `args: string[]`, e.g. `["-R", "rusage[mem=8000]"]` |
-| `slurm` | `srun --pty [--qos <queue>] --job-name <job> <args> <cmd>` | `SLURM_*` | `args: string[]`, e.g. `["--partition", "eda"]` |
-
-`DTSIM_TASK_TYPE` / `DTSIM_TASK_QUEUE` override the launcher id and queue
-only. An unknown id, from the config or the override, fails before any output
-directory is created. Launcher ids must not shadow built-ins.
+`DTSIM_TASK_TYPE=local|lsf|slurm` replaces the configured launcher with that
+built-in (default options) unless it equals the configured launcher's name,
+which keeps it; any other value fails before an output directory is created.
+`DTSIM_TASK_QUEUE` reaches the launcher as `ctx.queue` and wins over the
+built-ins' own `queue`; it is `""` when unset.
 
 ## Environment isolation
 
@@ -425,7 +430,7 @@ the child, and `run_sim` exports `PATH` in MSYS form.
 | `demo/soc` | `dt/config/dtsim.config.ts` (Verilator: `basic_smoke`, `regfile_smoke`, `sd_sha256`, `tb_mod`, `sv_reg_smoke`; groups `smoke`, `sd`) and `dt/config/vcs.config.ts` (VCS: `basic_smoke`, `regfile_smoke`) | `dt/verilator/run.sh [--regfile\|--sd\|--tb-mod\|--sv-reg]`, `dt/vcs/run.sh [case]` | Verilator 5 + RISC-V GCC; VCS |
 | `demo/hbm` | `dt/config/dtsim.config.ts` (VCS + UVM-1.2, six `hbm_*_test` cases, graded by the default grader's UVM report check) | `dt/vcs/run.sh [test ...]` | VCS |
 
-Both VCS configs set `toolOptions.flags` to the flags of the old `run.sh`
+Both VCS configs pass `VcsTool({ flags })` with the flags of the old `run.sh`
 scripts: VCS O-2018.09 reads `-xlrm nettype_array` as a source file.
 
 `demo/hbm` needs a g++ older than 10 for VCS O-2018.09: its UVM DPI source

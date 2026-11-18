@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DSL_SOURCE } from "../dsl/embedded.generated.ts";
+import { DSL_FILES } from "../dsl/embedded.generated.ts";
 import {
 	type CaseDef,
 	type CaseOpts,
@@ -18,18 +18,14 @@ import {
 	type Hooks,
 	isCase,
 	isWorkspace,
+	LocalLauncher,
+	type SimTool,
 	type TaskSpec,
 	type UvmCfg,
 	type WorkspaceDef,
 } from "../dsl/index.ts";
 import { assertNoDeniedAssignments, compileEnvEntries } from "./env.ts";
-import { resolveTask } from "./launch.ts";
-import {
-	getLauncher,
-	getTool,
-	registerLauncher,
-	registerTool,
-} from "./registry.ts";
+import { resolveLauncher } from "./launch.ts";
 
 export type MergedCase = {
 	id: string;
@@ -59,12 +55,12 @@ export type ResolvedWorkspace = {
 	verify: string;
 	/** Output root: <project>/dt/simout. */
 	out: string;
-	toolId: string;
+	tool: SimTool;
 	filelist: string;
-	toolOptions: Record<string, unknown>;
 	bareDefaults?: CaseOpts;
 	passthrough: string[];
 	deny: string[];
+	/** Launcher after the DTSIM_TASK_TYPE override, plus slot limits. */
 	task: TaskSpec;
 	hooks: Hooks;
 	/** Default grader. */
@@ -244,15 +240,15 @@ export function mergeCase(ws: CaseSource, id: string): MergedCase {
 /** Compile identity of a case; equal keys share one build. The generic key
  *  keeps compileArgs in order: "-CFLAGS a -LDFLAGS b" and "-CFLAGS b
  *  -LDFLAGS a" are different builds. The backend may extend or replace it. */
-export function compileKey(c: MergedCase, toolId: string): string {
+export function compileKey(c: MergedCase, tool: SimTool): string {
 	const base = JSON.stringify({
-		tool: toolId,
+		tool: tool.name,
 		defines: [...c.defines].sort(),
 		compileArgs: c.compileArgs,
 		env: compileEnvEntries(c.env),
 		filelist: c.filelist ?? "",
 	});
-	return getTool(toolId).compileKey?.(c, base) ?? base;
+	return tool.compileKey?.(c, base) ?? base;
 }
 
 /** Every case id in tree order: each top-level case, then its descendants. */
@@ -317,10 +313,12 @@ export function resolveGroup(ws: ResolvedWorkspace, group: string): string[] {
 /** Re-materialize the DSL next to the config so user files can import it. */
 export async function ensureDsl(configDir: string): Promise<string> {
 	const dir = join(configDir, ".dtsim", "dsl");
-	await mkdir(dir, { recursive: true });
-	const target = join(dir, "index.ts");
-	await writeFile(target, DSL_SOURCE);
-	return target;
+	for (const [rel, text] of Object.entries(DSL_FILES)) {
+		const target = join(dir, rel);
+		await mkdir(dirname(target), { recursive: true });
+		await writeFile(target, text);
+	}
+	return join(dir, "index.ts");
 }
 
 /** Config location inside a project: <project>/dt/config/dtsim.config.ts. */
@@ -371,10 +369,6 @@ export async function loadWorkspace(opts: {
 		throw new Error(`dtsim: ${configPath} must default-export Workspace(...)`);
 	}
 	const o = wsDef.opts;
-	for (const tool of o.tools ?? []) registerTool(tool);
-	for (const launcher of o.launchers ?? []) registerLauncher(launcher);
-	getTool(o.tool); // unknown tool fails before any output dir is created
-
 	// Only top-level cases need exporting. A derived case exported as well
 	// registers its root; the same root object exported twice is fine.
 	const cases = new Map<string, CaseDef>();
@@ -406,15 +400,12 @@ export async function loadWorkspace(opts: {
 	// Case options (and deny checks on them) are evaluated per case on first
 	// use, not here: a load touches only the cases a command runs.
 	const deny = [...(o.env?.deny ?? [])];
+	// An unknown DTSIM_TASK_TYPE fails here, before any output dir exists.
 	const task: TaskSpec = {
-		type: o.task?.type ?? "local",
-		...(o.task?.queue === undefined ? {} : { queue: o.task.queue }),
+		launcher: resolveLauncher(o.task?.launcher ?? LocalLauncher()),
 		maxSlots: o.task?.maxSlots ?? 8,
 		maxCompiles: o.task?.maxCompiles ?? 4,
-		...(o.task?.options === undefined ? {} : { options: o.task.options }),
 	};
-	// Unknown launcher (config or DTSIM_TASK_TYPE) fails before any output dir.
-	getLauncher(resolveTask(task).type);
 
 	return {
 		configPath,
@@ -424,9 +415,8 @@ export async function loadWorkspace(opts: {
 			o.output === undefined
 				? join(dt, "simout")
 				: resolvePath(o.output, paths),
-		toolId: o.tool,
+		tool: o.tool,
 		filelist: resolvePath(o.filelist ?? "file.lst", paths),
-		toolOptions: { ...o.toolOptions },
 		cases,
 		resolved: new Map(),
 		...(o.bareDefaults === undefined ? {} : { bareDefaults: o.bareDefaults }),

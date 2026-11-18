@@ -22,7 +22,7 @@ export type TestWorkspace = {
 
 export const CASES_TS = `
 import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
-import { DefaultGrader } from "./.dtsim/dsl/index.ts";
+import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";
 
 // Waive rules belong to the grader; cases extend it with their keywords.
 const grader = DefaultGrader({
@@ -73,11 +73,11 @@ export const base = Group("base", ["test_quick_smoke", "test_hello_world", "test
 export const cosim = Group("cosim", ["test_hello_world.cosim", "test_bar_basic.cosim"]);
 
 export default Workspace({
-	tool: "vcs",
+	tool: VcsTool(),
 	filelist: "file.lst",
 	bareDefaults: { compileArgs: ["+nospecify", "+notimingcheck"] },
 	env: { passthrough: ["DTSIM_MOCK_*"], deny: ["LD_PRELOAD"] },
-	task: { type: "local", maxSlots: 4, maxCompiles: 2 },
+	task: { maxSlots: 4, maxCompiles: 2 },
 	grader,
 	groups: [base, cosim],
 });

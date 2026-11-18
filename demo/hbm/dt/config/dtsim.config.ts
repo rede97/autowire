@@ -5,7 +5,7 @@
 // All cases share one compile group; each test is a +UVM_TESTNAME.
 // Grading is the built-in DefaultGrader: the UVM Report Summary marks a
 // finished run and any UVM_ERROR / UVM_FATAL message fails it.
-import { Case, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import { Case, VcsTool, Workspace } from "../../../../src/dtsim/dsl/index.ts";
 
 // VCS O-2018.09 compiles its UVM DPI (uvm_dpi.cc) with the g++ on PATH.
 // g++ >= 10 rejects the curly quotes in a skipped `#error` of
@@ -30,14 +30,13 @@ export const bcastRead = uvmTest("hbm_bcast_read_test");
 export const concurrent = uvmTest("hbm_concurrent_test");
 
 export default Workspace({
-	tool: "vcs",
 	filelist: "hbm.f",
 	// Flags of the original run.sh: the backend defaults target newer VCS
 	// (O-2018.09 rejects -xlrm nettype_array and -lca breaks its UVM DPI).
-	toolOptions: {
+	tool: VcsTool({
 		ntbOpts: "uvm-1.2",
 		flags: ["-sverilog", "-full64", "-timescale=1ns/1ps", "-debug_access+all"],
-	},
+	}),
 	bareDefaults: {
 		random: false,
 		// --no-as-needed / --allow-shlib-undefined: VCS O-2018.09 on newer binutils.
@@ -47,5 +46,5 @@ export default Workspace({
 			...toolchain,
 		],
 	},
-	task: { type: "local", maxSlots: 4, maxCompiles: 1 },
+	task: { maxSlots: 4, maxCompiles: 1 },
 });

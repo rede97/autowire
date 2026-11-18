@@ -23,8 +23,7 @@ import { formatExcerpt } from "./excerpt.ts";
 import { toolPath, writeFlatFilelist } from "./filelist.ts";
 import { type Graded, runGrader } from "./grade.ts";
 import { type HookBase, runHooks } from "./hooks.ts";
-import { resolveTask, wrapCommand } from "./launch.ts";
-import { getLauncher, getTool } from "./registry.ts";
+import { wrapCommand } from "./launch.ts";
 import { runProcess } from "./run.ts";
 import { writeGitRev, writeResultMarker, writeRunSim } from "./scripts.ts";
 
@@ -63,7 +62,7 @@ export function varsFor(
 		output_dir: toolPath(dir),
 		caseId,
 		...(seed === undefined ? {} : { seed }),
-		tool: ws.toolId,
+		tool: ws.tool.name,
 	};
 }
 
@@ -111,7 +110,7 @@ export function toolContext(
 			compileArgs: c.compileArgs,
 			simArgs: c.simArgs,
 			...(c.uvm === undefined ? {} : { uvm: c.uvm }),
-			toolOptions: { ...ws.toolOptions, ...c.toolOptions },
+			toolOptions: { ...c.toolOptions },
 		},
 		dir,
 		compileDir,
@@ -136,8 +135,8 @@ export function childEnv(
 ) {
 	return buildChildEnv({
 		phase,
-		tool: getTool(ws.toolId),
-		launcherPassthrough: getLauncher(resolveTask(ws.task).type).passthrough,
+		tool: ws.tool,
+		launcherPassthrough: ws.task.launcher.passthrough,
 		passthrough: ws.passthrough,
 		deny: ws.deny,
 		caseEnv: c.env,
@@ -147,7 +146,7 @@ export function childEnv(
 			project_home: ws.root,
 			verify: ws.verify,
 			output_dir: dir,
-			DTSIM_TOOL: ws.toolId,
+			DTSIM_TOOL: ws.tool.name,
 			DTSIM_CASE: c.id,
 			DTSIM_PHASE: phase,
 			...(seed === undefined ? {} : { DTSIM_SEED: seed }),
@@ -173,14 +172,14 @@ function caseContext(
 		log,
 		verify: ws.verify,
 		workspace: ws.root,
-		tool: ws.toolId,
+		tool: ws.tool.name,
 		caseOpts: {
 			defines: c.defines,
 			compileArgs: c.compileArgs,
 			simArgs: c.simArgs,
 			env: c.env,
 			...(c.uvm === undefined ? {} : { uvm: c.uvm }),
-			toolOptions: { ...ws.toolOptions, ...c.toolOptions },
+			toolOptions: { ...c.toolOptions },
 			...(c.filelist === undefined ? {} : { filelist: c.filelist }),
 		},
 		env,
@@ -229,7 +228,7 @@ async function hookStage(
 		await formatExcerpt({
 			status: "FAIL",
 			phase: "hook",
-			tool: ws.toolId,
+			tool: ws.tool.name,
 			caseId: base.caseId,
 			...(base.seed === undefined ? {} : { seed: base.seed }),
 			log: failure.log,
@@ -252,7 +251,7 @@ export async function executeCompile(
 	compileDir: string,
 	opts: EngineOptions,
 ): Promise<CompileOutcome> {
-	const tool = getTool(ws.toolId);
+	const tool = ws.tool;
 	const ctx = toolContext(
 		ws,
 		c,
@@ -283,8 +282,7 @@ export async function executeCompile(
 	writeGitRev(compileDir, ws.verify);
 
 	let hookFailed = false;
-	const task = resolveTask(ws.task);
-	const argv = wrapCommand(prepared.argv, task, {
+	const argv = wrapCommand(prepared.argv, ws.task.launcher, {
 		phase: "compile",
 		jobName: `compile_${c.base}`,
 		caseId: c.id,
@@ -312,7 +310,7 @@ export async function executeCompile(
 				status: "FAIL",
 				phase: "compile",
 				exitCode: code,
-				tool: ws.toolId,
+				tool: ws.tool.name,
 				caseId: c.id,
 				log: prepared.log,
 				toolErrors: tool.compileErrors,
@@ -341,7 +339,7 @@ export async function executeSim(
 	seed: string,
 	opts: EngineOptions,
 ): Promise<SeedResult> {
-	const tool = getTool(ws.toolId);
+	const tool = ws.tool;
 	const ctx = toolContext(ws, c, "sim", seedDir, compileDir, seed, opts);
 	await mkdir(seedDir, { recursive: true });
 	tool.writeAux?.(ctx);
@@ -377,8 +375,7 @@ export async function executeSim(
 		return { ...base, status: "FAIL", code: 1, note: "preSim hook failed" };
 	}
 
-	const task = resolveTask(ws.task);
-	const argv = wrapCommand(["bash", runSim], task, {
+	const argv = wrapCommand(["bash", runSim], ws.task.launcher, {
 		phase: "sim",
 		jobName: `${c.id}_${seed}`,
 		caseId: c.id,
@@ -413,7 +410,7 @@ export async function executeSim(
 				status,
 				phase: "sim",
 				exitCode: code,
-				tool: ws.toolId,
+				tool: ws.tool.name,
 				caseId: c.id,
 				seed,
 				log: prepared.log,

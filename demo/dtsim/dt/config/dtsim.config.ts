@@ -2,7 +2,11 @@
 // The tools are fakes from ../bin (run.sh puts them first on PATH; the LSF
 // launcher goes through the fake bsub). Repo demos import the DSL source;
 // `docs unpack` rewrites the import to the .dtsim/dsl copy dtsim writes.
-import { Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import {
+	LsfLauncher,
+	VcsTool,
+	Workspace,
+} from "../../../../src/dtsim/dsl/index.ts";
 import { grader } from "./grader.ts";
 import { base, cosim, regrPlanA } from "./groups.ts";
 import {
@@ -15,7 +19,7 @@ import {
 } from "./hooks.ts";
 
 export default Workspace({
-	tool: "vcs",
+	tool: VcsTool(),
 	filelist: "file.lst",
 	bareDefaults: {
 		compileArgs: ["+nospecify", "+notimingcheck"],
@@ -24,14 +28,12 @@ export default Workspace({
 		passthrough: ["PROJ_CFG", "DTSIM_MOCK_*", "DTSIM_DEMO_*"],
 		deny: ["LD_PRELOAD"],
 	},
-	// Launcher "lsf" wraps every compile / sim in `bsub -I -J <job> -q normal
-	// <options.args> <cmd>`; DTSIM_TASK_TYPE=slurm|local switches launcher.
+	// LsfLauncher wraps every compile / sim in `bsub -I -J <job> -q normal
+	// <args> <cmd>`; DTSIM_TASK_TYPE=slurm|local switches to a built-in.
 	task: {
-		type: "lsf",
-		queue: "normal",
+		launcher: LsfLauncher({ queue: "normal", args: ["-R", "rusage[mem=4000]"] }),
 		maxSlots: 8,
 		maxCompiles: 4,
-		options: { args: ["-R", "rusage[mem=4000]"] },
 	},
 	grader,
 	// One TypeScript function (or a list) per stage; see hooks.ts.

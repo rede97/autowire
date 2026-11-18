@@ -52,7 +52,7 @@ Commands above are the dev and test entry (`index.ts`). Do not tell a production
 - Leaf ports: RtlIndex under `.autowire/hdxml/`. Do not reparse RTL in the page.
 - Printer input: `aw-render` only. Do not treat `aw-content` as the netlist.
 
-Generated and MUST NOT be hand-edited: `out/web/aw.js`, `out/web/page.js` (`bun run build:web`; not tracked), `rtl/gen/`, `plugins_dir/`, `fw/gen/`, `dv/ral/`, `.autowire/`, `dt/simout/`, `dt/config/.dtsim/`, and `src/dtsim/dsl/embedded.generated.ts` (`bun scripts/gen-dtsim-dsl.ts` after editing `src/dtsim/dsl/index.ts`). A wrong generated file is fixed by changing the SoT (Wishbone TypeScript or connect HTML) and re-running the writer. `demo/soc/ip/sdspi` stays at upstream `dfb16c8`; its FIFO patch is applied only for a smoke (the dtsim `preCompile` hook) and then discarded.
+Generated and MUST NOT be hand-edited: `out/web/aw.js`, `out/web/page.js` (`bun run build:web`; not tracked), `rtl/gen/`, `plugins_dir/`, `fw/gen/`, `dv/ral/`, `.autowire/`, `dt/simout/`, `dt/config/.dtsim/`, and `src/dtsim/dsl/embedded.generated.ts` (`bun scripts/gen-dtsim-dsl.ts` after editing any file under `src/dtsim/dsl/`). A wrong generated file is fixed by changing the SoT (Wishbone TypeScript or connect HTML) and re-running the writer. `demo/soc/ip/sdspi` stays at upstream `dfb16c8`; its FIFO patch is applied only for a smoke (the dtsim `preCompile` hook) and then discarded.
 
 ## Constraints
 
@@ -74,6 +74,6 @@ Verilator (`dt/verilator/run.sh`; `verilator` on PATH; `--timing` needs a C++ co
 - `./dt/verilator/run.sh --sv-reg` — case `sv_reg_smoke`: `sv_reg` package + localparam only (no firmware, no bus RTL)
 - `bun ../../index.ts dtsim regr` — all five
 
-VCS (`dt/vcs/run.sh`, only when `vcs` is on PATH; pure SV `tb_soc`, no C++ harness): `./dt/vcs/run.sh basic_smoke` and `./dt/vcs/run.sh regfile_smoke`. Do not run `--sd` under VCS (`sdspisim` is C++). demo/hbm: `./dt/vcs/run.sh [test ...]` (VCS + UVM-1.2).
+VCS (`dt/vcs/run.sh`, only when `vcs` is on PATH; pure SV `tb_soc`, no C++ harness): `./dt/vcs/run.sh basic_smoke` and `./dt/vcs/run.sh regfile_smoke`. Do not run `--sd` under VCS (`sdspisim` is C++). demo/hbm: `./dt/vcs/run.sh [test ...]` (VCS + UVM-1.2); VCS O-2018.09 needs g++ < 10 for its UVM DPI, so on a host whose PATH g++ is newer run `VCS_GCC_DIR=/usr/bin ./dt/vcs/run.sh`.
 
 `bun test` Verilator cases (skipped when `verilator` or `make` is missing; both use `--timing`): `wishbone-regfile smoke features` → `W1C hardware set survives a zero-lane write`; `wishbone master bridges` → `verilator: APB / JTAG / async WB masters through wb_cdc`.

@@ -17,7 +17,6 @@ import {
 	executeSim,
 	type SeedResult,
 } from "./engine.ts";
-import { resolveTask } from "./launch.ts";
 import { Progress } from "./progress.ts";
 import { runProcess } from "./run.ts";
 import {
@@ -48,7 +47,7 @@ export function planGroups(
 	const members = resolveGroup(ws, group).map((id) => mergeCase(ws, id));
 	const byFp = new Map<string, MergedCase[]>();
 	for (const c of members) {
-		const fp = compileKey(c, ws.toolId);
+		const fp = compileKey(c, ws.tool);
 		const list = byFp.get(fp) ?? [];
 		list.push(c);
 		byFp.set(fp, list);
@@ -119,7 +118,7 @@ export async function runRegression(
 	const progress = new Progress(opts.plain);
 	progress.plan(groups.length, simCount);
 	const results: SeedResult[] = [];
-	const task = resolveTask(ws.task);
+	const task = ws.task;
 	const running = new Set<Promise<void>>();
 	const simQueue: Array<() => void> = [];
 	let nextCompile = 0;

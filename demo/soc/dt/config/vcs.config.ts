@@ -6,6 +6,7 @@
 import {
 	Case,
 	DefaultGrader,
+	VcsTool,
 	Workspace,
 } from "../../../../src/dtsim/dsl/index.ts";
 import { applyIpPatch, buildFirmware } from "./hooks.ts";
@@ -26,14 +27,13 @@ export const regfileSmoke = Case("regfile_smoke", {
 });
 
 export default Workspace({
-	tool: "vcs",
 	filelist: "vcs.f",
 	// Flags of the original run.sh (pure SV, no UVM): the backend defaults
 	// target newer VCS than O-2018.09. -debug_access+all lets -ucli run dump.tcl.
-	toolOptions: {
+	tool: VcsTool({
 		ntbOpts: "",
 		flags: ["-full64", "-sverilog", "-timescale=1ns/1ps", "-debug_access+all"],
-	},
+	}),
 	bareDefaults: {
 		random: false,
 		// --no-as-needed: VCS O-2018.09 on binutils >= 2.34 drops its own shared libs.
@@ -41,6 +41,6 @@ export default Workspace({
 	},
 	grader: DefaultGrader({ pass: ["SMOKE PASS: tb_soc"], error: ["FAIL:"] }),
 	env: { passthrough: ["MAKE", "CROSS"] },
-	task: { type: "local", maxSlots: 2, maxCompiles: 1 },
+	task: { maxSlots: 2, maxCompiles: 1 },
 	hooks: { preCompile: applyIpPatch, preSim: buildFirmware },
 });
