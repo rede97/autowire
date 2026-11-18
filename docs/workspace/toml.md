@@ -122,7 +122,7 @@ deps = ["sha256wb"]
 
 # DV 仿真顶（与 DE connect 分节、分目录；根必须为 aw-tb-mod）
 [sim.soc_tb]
-html = "sim/soc_tb.html"
+html = "dt/soc_tb.html"
 deps = ["soc_top"]
 ```
 

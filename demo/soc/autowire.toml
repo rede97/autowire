@@ -83,5 +83,5 @@ html = "sot/connect/macro_width_probe.html"
 
 # DV TB top (aw-tb-mod) — dump → rtl/gen/sim/
 [sim.soc_tb]
-html = "sim/soc_tb.html"
+html = "dt/soc_tb.html"
 deps = ["soc_top"]

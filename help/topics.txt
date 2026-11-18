@@ -13,5 +13,6 @@ autowire help [topic]
   dont       forbidden items
   docs       unpack bundled docs and demos
   cdp        drive connect web from any CDP browser
+  dtsim      simulation runner (dt/ testbench, dt/config)
 
 Default (no topic): command index.

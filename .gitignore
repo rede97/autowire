@@ -10,7 +10,7 @@ src/cli/doc-pack.generated.ts
 # output
 out
 dist
-dtsim.js
+# dtsim: DSL cache under dt/config/, outputs under dt/simout/
 .dtsim/
 simout/
 

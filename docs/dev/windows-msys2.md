@@ -38,6 +38,7 @@
 7. **RISC-V 前缀**：固件脚本默认探测含 `riscv32-unknown-elf-`，装 UCRT64 包后无需 `CROSS=`。
 8. **Windows Store 的 `python3.exe` 别名会遮蔽 UCRT64 python**。`verilated.mk` 用 `python3 verilator_includer` 生成 `*__ALL.cpp`；`%LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe` 在用户 PATH 里通常排在 `C:\msys64\ucrt64\bin` 之前，返回非零（`mingw32-make: *** [verilated.mk: Vtb__ALL.cpp] Error 49`）。`test/fixtures/verilator.ts` 已把 verilator 所在目录放到子进程 PATH 最前；手动在 PowerShell 跑 verilator 时，要么同样前置 `C:\msys64\ucrt64\bin`，要么在"设置 → 应用执行别名"里关掉 python / python3 别名。
 9. **写代码 / 测试时的路径纪律**：比较路径前先把 `\` 归一为 `/`（或用 `node:path` 的 `basename` / `join`）；toml 与文档里的路径写 `/`；需要外部工具的用例用 `Bun.which` 探测，缺失时 `test.skip`，不要报红。
+10. **dtsim 在 UCRT64 shell 里跑**（`docs/dtsim/README.md` §Windows）：它自己把无扩展名的 `#!` 命令（UCRT64 的 `verilator` perl 包装、hook、`demo/dtsim/dt/bin` 假工具）交给解释器执行。2026-11 实测 UCRT64 的 GCC 16.2 在 `-Os -std=gnu++20` 下链接 Verilator 5.050 的 `verilated.o` 报 `std::__cxx11::basic_string(&&)` undefined reference（与 dtsim 无关，直接跑 `verilator --binary --timing` 同样失败）；绕过：`export MAKEFLAGS="OPT_FAST=-O2 OPT_GLOBAL=-O2"`，demo/soc 的 dtsim 配置把 `MAKEFLAGS` 透传给 `verilator --build`。
 
 ### 2.1 Git Bash 与 MSYS2 UCRT64 不是同一个环境
 

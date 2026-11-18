@@ -10,7 +10,7 @@
 
 | 二进制 | 职责 | 生产包 |
 |---|---|---|
-| `autowire` 或 `autowire.js` | CLI：`analysis` / `connect` / `plugin wishbone run`。两种产物见 §1.1，能力相同 | 二选一，必需 |
+| `autowire` 或 `autowire.js` | CLI：`analysis` / `connect` / `plugin wishbone run` / `dtsim`。两种产物见 §1.1，能力相同 | 二选一，必需 |
 | `hdxml` | RtlIndex sidecar（Rust） | 必需 |
 | `obscura` | 生产包唯一的调试浏览器（CDP 协议，CentOS 7 兼容构建）。同一文件的子命令 `mcp` 与 `serve` | 调试网页时带上；生成 RTL 不需要 |
 
@@ -27,7 +27,7 @@
 
 两条命令都先跑 `build:web`，再把仓库的 `docs/` 和 `demo/` 的可运行源文件 zstd 压缩后嵌进同一个文件。页面脚本不会留在包外单独分发，文档和示例也不会。禁止让生产入口再去读仓库里的 `index.ts`、`src/` 或 `web/*.js`。hdxml 与 obscura 仍是旁边的独立进程，不链进这两个文件。
 
-打包跳过本地构建产物（`.autowire/`、固件 `build/`、Verilator `obj_dir*`、`vcs/work/`）、git 元数据（`.git` 指针、`.github`）与导出物（`*.xlsx`、`ucli.key`、`~$*`）。`demo/*/ip/` 只打该 demo 的 `.f` filelist 引用到的源文件；`demo/*/patches/` 的补丁在打包时已应用；demo `sot/*.ts` 的 DSL 导入被改写到 `.autowire/dsl/`（独立树没有 `src/`）。解包后的 demo 可直接跑 `analysis run` → `plugin wishbone run` → `connect run` 全链路（包里已带 `rtl/gen`）。若 filelist 点名的生成物还不在盘上，`analysis run` 会指出先跑 `plugin wishbone run` 或 `connect run`。`*.sh` 解包后保持可执行。Agent 要读契约或示例时：
+打包跳过本地构建产物（`.autowire/`、固件 `build/`、Verilator `obj_dir*`、`vcs/work/`、dtsim 的 `dt/simout/` 与 `dt/config/.dtsim/`）、git 元数据（`.git` 指针、`.github`）与导出物（`*.xlsx`、`ucli.key`、`~$*`）。`demo/*/ip/` 只打该 demo 的 `.f` filelist 引用到的源文件；`demo/*/patches/` 的补丁在打包时已应用；demo `sot/*.ts` 的 DSL 导入被改写到 `.autowire/dsl/`（独立树没有 `src/`）。解包后的 demo 可直接跑 `analysis run` → `plugin wishbone run` → `connect run` 全链路（包里已带 `rtl/gen`）。若 filelist 点名的生成物还不在盘上，`analysis run` 会指出先跑 `plugin wishbone run` 或 `connect run`。以 `#!` 开头的文件（`*.sh`、`demo/dtsim/dt/bin/` 的假工具）解包后保持可执行。Agent 要读契约或示例时：
 
 ```text
 autowire docs unpack <dir>
@@ -36,6 +36,8 @@ autowire docs unpack <dir>
 解出 `<dir>/docs/` 和 `<dir>/demo/`。同名文件会被覆盖。开发时这条命令读的是仓库本身，不读包内压缩块。帮助是 `help docs`。
 
 开发与 CI 的帮助入口是 `bun index.ts help`。生产包里把同一组子命令交给 `autowire` 或 `bun autowire.js`。不要在生产文档里教用户跑 `index.ts`。
+
+`dtsim` 既是子命令，也是同一文件的多调用名：`ln -s /path/to/autowire.js dtsim`（或指向 `out/autowire`）后 `./dtsim run <case>` 等价于 `autowire dtsim run <case>`。`index.ts` 带 `#!/usr/bin/env bun`，`build:js` 把 `out/autowire.js` 写成可执行。dtsim 的 DSL 文本由 `scripts/gen-dtsim-dsl.ts` 嵌进 `src/dtsim/dsl/embedded.generated.ts`，`build:js` / `build:bin` 先刷新它。见 [`../dtsim/README.md`](../dtsim/README.md)。
 
 ## 2. 浏览器分工
 

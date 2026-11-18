@@ -220,8 +220,8 @@ Bus("soc_wb", "SoC cfg", {
 
 demo/soc 接入（JTAG）：`sot/wb_bus_soc.ts` 加 `Master("dbg", …, { jtag: true, pipe: 2 })`（fabric 侧、CDC 之后 2 级 posted 写 pipe）；`rtl/demo_tap.v` 为 **DFT 占位 TAP**（IDCODE / BYPASS / USER=1000 → `dbg_sel`），顶层引出 `jtag_*`，`dbg_en` 绑 1。外部 JTAG 冒烟与 CPU 固件并发（共享 soc_wb 仲裁）：
 
-- `sim/verilator/run.sh`（默认 / `--regfile` / `--sd`）：C++ host `sim/verilator/jtag_host.h` 驱动 `jtag_*`。
-- `sim/verilator/run.sh --tb-mod`：aw-tb-mod dump 的 `tb_soc`（`--binary --timing`），SV host `sim/tb_jtag.svh`。
+- `dt/verilator/run.sh`（默认 / `--regfile` / `--sd`）：C++ host `dt/verilator/jtag_host.h` 驱动 `jtag_*`。
+- `dt/verilator/run.sh --tb-mod`：aw-tb-mod dump 的 `tb_soc`（`--binary --timing`），SV host `dt/tb_jtag.svh`。
 - 序列：IDCODE → IR capture → BYPASS → USER：读 smoke ID、写读 SRAM `0x0000_8000`；两边都过才 PASS。
 
 未做：CDC 工具签核（无开源 CDC 工具）；demo 真实 DFT TAP / SIB 替换 `demo_tap`（留给后续工程检验反馈）。

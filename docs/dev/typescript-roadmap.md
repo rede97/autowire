@@ -141,7 +141,7 @@ wishbone-bus/
 ## 4. 顺序建议
 
 1. §3.2 Windows 跑通仿真层（环境项，不改代码）。
-2. §3.1 `-Wall` 清零 + lint 用例。模板两项先做（不改产物），再做三项改产物的，一次性 re-baseline demo 并跑 `sim/verilator/run.sh` 全部冒烟。
+2. §3.1 `-Wall` 清零 + lint 用例。模板两项先做（不改产物），再做三项改产物的，一次性 re-baseline demo 并跑 `dt/verilator/run.sh` 全部冒烟。
 3. §3.3 golden 文件。此后才有资格动 §3.4 / §3.5。
 4. §3.5 去重 / 分解（产物零 diff，golden 守）。
 5. §3.4a 扩 `RenderModule`，fabric 声明 / assign / 例化走 printer。

@@ -350,7 +350,7 @@ sv_reg = "dv/sv_reg"     # bus/<name>_map_pkg.sv（package+localparam；非 UVM 
 #           smoke FABRIC.rb_grant_en 驱动两个 channel rb_grant_en
 ```
 
-demo/hbm 是本插件的 VCS + UVM-1.2 验证展示：顶层 `hbm` = interconnect（`cfg` 原生 WB 800 MHz + `host` APB 100 MHz 经 `wb_apb2wb` + `wb_cdc`）；`center` regfile 挂在 channel 0 之前（偏移 `0x00000`，不随 pstate 复制），16 个 `SlaveBus(hbm_ch)` channel 从 `0x1000` 起（channel 选择 = `ADR[15:12] - 1`）+ `ch_bcast`（`0x11000`）；channel 内 `dword0`/`dword1` 订阅 `dword_all`；dword 叶子有 RO `train_pass_n`（每 lane 一位，广播读 OR = any-fail 回读）。环境在 `demo/hbm/dv/uvm/`（WB/APB agent、RAL frontdoor 走 WB master），回归入口 `demo/hbm/sim/vcs/run.sh`（reset / ro / rw / 广播写 / 广播读 OR / 双 master 并发仲裁）。
+demo/hbm 是本插件的 VCS + UVM-1.2 验证展示：顶层 `hbm` = interconnect（`cfg` 原生 WB 800 MHz + `host` APB 100 MHz 经 `wb_apb2wb` + `wb_cdc`）；`center` regfile 挂在 channel 0 之前（偏移 `0x00000`，不随 pstate 复制），16 个 `SlaveBus(hbm_ch)` channel 从 `0x1000` 起（channel 选择 = `ADR[15:12] - 1`）+ `ch_bcast`（`0x11000`）；channel 内 `dword0`/`dword1` 订阅 `dword_all`；dword 叶子有 RO `train_pass_n`（每 lane 一位，广播读 OR = any-fail 回读）。环境在 `demo/hbm/dt/uvm/`（WB/APB agent、RAL frontdoor 走 WB master），回归入口 `demo/hbm/dt/vcs/run.sh`（reset / ro / rw / 广播写 / 广播读 OR / 双 master 并发仲裁）。
 
 ## 8. 暂时不做
 

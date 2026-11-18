@@ -13,7 +13,7 @@
 			"!.autowire",
 			"!gen",
 			"!demo",
-			"!dtsim/dsl/embedded.generated.ts"
+			"!src/dtsim/dsl/embedded.generated.ts"
 		]
 	},
 	"formatter": {

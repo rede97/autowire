@@ -16,6 +16,9 @@ Landed
                             Saves are browser downloads. The page does not write files.
   aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir
   plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/{regfile,bus}/ (docs/cli.md)
+  autowire dtsim ...        simulation runner: <project>/dt/ testbench, dt/config/dtsim.config.ts,
+                            dt/simout/ outputs; `ln -s autowire.js dtsim` runs it directly;
+                            demo/dtsim (fake tools), demo/soc + demo/hbm smokes (docs/dtsim/README.md)
 
 Landed (release)
   Release 0.9.1 CI          push to main publishes hdxml (linux-x64 glibc 2.17,
@@ -179,8 +182,9 @@ Parallel (does not block connect)
     demo/soc: smoke FABRIC.rb_grant_en (reset 0) drives each channel rb_grant_en;
     basic_smoke checks cascade SHA MMIO + grant CSR; --sd is channel DMA+SHA;
     demo/soc sot/wb_bus_soc.ts → soc_wb_interconnect + soc_wb_bus_cfg (+ JTAG TDR / wb_cdc);
-    demo sim: Verilator only (sim/verilator/run.sh; --tb-mod runs the aw-tb-mod
-    dump tb_soc); external JTAG smoke runs concurrently with the firmware;
+    demo sim: dtsim (dt/config); Verilator dt/verilator/run.sh (--regfile / --sd /
+    --tb-mod runs the aw-tb-mod dump tb_soc / --sv-reg), VCS dt/vcs/run.sh;
+    external JTAG smoke runs concurrently with the firmware;
     sot/wb_bus_sd_sha.ts → sd_sha_interconnect + sd_sha_bus_cfg (mixed slave PIPE);
     ADR=byte; fabric addr_width parametrized;
     TGA: Bus tagWidth? / Slave tag? → {m}_o_wb_tga in, {slave}_i_wb_tga out; a declared tag adds {master}_o_wb_tga_<domain> on every master, including one that does not produce it (tie that input off, or it becomes a parent port);

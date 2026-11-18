@@ -1,0 +1,152 @@
+// Shared test helpers: isolated <project>/dt/config workspace per test plus
+// the mock tool binaries shipped with demo/dtsim. No real VCS/Verilator
+// installation is ever required.
+import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+
+const REPO = join(import.meta.dir, "..", "..");
+export const MOCK_BIN = join(REPO, "demo", "dtsim", "dt", "bin");
+export const AUTOWIRE = join(REPO, "index.ts");
+
+export type TestWorkspace = {
+	dir: string;
+	/** <project>/dt/config */
+	verify: string;
+	/** project root (RTL design dir) */
+	root: string;
+	/** <project>/dt/simout */
+	out: string;
+	config: string;
+};
+
+export const CASES_TS = `
+import { Case, Group, Subcase, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
+
+export const hello = Case("test_hello_world", {
+	owner: "andy",
+	random: false,
+	defines: ["NUM=1"],
+	simArgs: ["+TEST_OPT=1"],
+	grade: { pass: ["TEST PASSED"], error: ["Error:"], expect: ["Keyword"] },
+	uvm: { test: "top_test", seq: "test_hello_world_seq", timeout: "1000ps" },
+});
+
+export const helloCosim = Subcase(hello, "cosim", {
+	compileArgs: ["-ad=\${verify}/abc", "-debug_access+all"],
+	simArgs: ["+fsdb+glitch=0"],
+	env: { INPUT: "input.spf" },
+});
+
+export const helloTiming = Subcase(hello, "timing", {
+	grade: { error: ["re:ERROR:.*timing violation"] },
+});
+
+export const bar = Case("test_bar_basic", {
+	owner: "bob",
+	defines: ["NUM=1"],
+	env: { BAR_CFG: "basic", SIM_TRACE: { value: "1", scope: "sim" } },
+	uvm: { test: "top_test", seq: "test_bar_seq" },
+});
+
+export const barCosim = Subcase(bar, "cosim", {
+	compileArgs: ["-debug_access+all"],
+	env: { INPUT: "input.spf" },
+});
+
+export const smoke = Case("test_quick_smoke", {
+	owner: "dave",
+	uvm: { test: "quick_test", timeout: "100ps" },
+});
+
+export const base = Group("base", ["test_quick_smoke", "test_hello_world", "test_bar_basic"]);
+export const cosim = Group("cosim", ["test_hello_world.cosim", "test_bar_basic.cosim"]);
+
+export default Workspace({
+	tool: "vcs",
+	filelist: "file.lst",
+	bareDefaults: { compileArgs: ["+nospecify", "+notimingcheck"] },
+	env: { passthrough: ["DTSIM_MOCK_*"], deny: ["LD_PRELOAD"] },
+	task: { type: "local", maxSlots: 4, maxCompiles: 2 },
+	waive: [
+		WaiveRule("boot_timeout", "Error: timeout in boot phase"),
+		WaiveRule("timing_rl_rdwin", "re:tRL_I \\\\+ tRDWIN_I .*timing violation"),
+	],
+	groups: [base, cosim],
+});
+`;
+
+export async function makeWorkspace(
+	configBody: string = CASES_TS,
+): Promise<TestWorkspace> {
+	const dir = await mkdtemp(join(tmpdir(), "dtsim-test-"));
+	const root = join(dir, "proj");
+	const verify = join(root, "dt", "config");
+	await mkdir(verify, { recursive: true });
+	const config = join(verify, "dtsim.config.ts");
+	await writeFile(config, configBody);
+	await writeFile(join(verify, "file.lst"), "# mock filelist\n");
+	return { dir, verify, root, out: join(root, "dt", "simout"), config };
+}
+
+export type CliResult = {
+	code: number;
+	stdout: string;
+	stderr: string;
+};
+
+/** Child env with the mock bin dir first. Windows env names are
+ *  case-insensitive, so every PATH spelling is replaced, not duplicated. */
+export function mockEnv(
+	extraEnv: Record<string, string> = {},
+): Record<string, string> {
+	const env: Record<string, string> = {};
+	let path = "";
+	for (const [k, v] of Object.entries(process.env)) {
+		if (v === undefined) continue;
+		if (k.toUpperCase() === "PATH") path = v;
+		else env[k] = v;
+	}
+	return {
+		...env,
+		PATH: `${MOCK_BIN}${delimiter}${path}`,
+		DTSIM_TASK_TYPE: "local",
+		DTSIM_LOG_WAIT_SEC: "2",
+		...extraEnv,
+	};
+}
+
+/** `bun index.ts dtsim <args>` from the project root (config found upward). */
+export async function runDtsim(
+	ws: TestWorkspace,
+	args: string[],
+	extraEnv: Record<string, string> = {},
+): Promise<CliResult> {
+	const proc = Bun.spawn({
+		cmd: ["bun", AUTOWIRE, "dtsim", ...args],
+		cwd: ws.root,
+		env: mockEnv(extraEnv),
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdout, stderr, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { code, stdout, stderr };
+}
+
+export async function seedDirs(caseDir: string): Promise<string[]> {
+	const entries = await readdir(caseDir, { withFileTypes: true });
+	return entries
+		.filter(
+			(e) =>
+				e.isDirectory() &&
+				!e.name.startsWith(".") &&
+				!e.name.startsWith("compile_g") &&
+				e.name !== "simv.vdb" &&
+				e.name !== "obj_dir",
+		)
+		.map((e) => join(caseDir, e.name));
+}

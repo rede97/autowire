@@ -1,0 +1,35 @@
+dtsim — simulation runner (docs/dtsim/README.md)
+
+Layout
+  <project>/               RTL design dir; filelists and ${workspace} resolve here
+  <project>/dt/            testbench code
+  <project>/dt/config/     dtsim.config.ts (TypeScript), filelists, hooks/
+  <project>/dt/simout/     outputs (git-ignored)
+
+Entry
+  autowire dtsim <cmd>     same as: ln -s autowire.js dtsim; ./dtsim <cmd>
+  dev: bun index.ts dtsim <cmd>
+
+Commands
+  run <case>               compile + simulate (--compile-only, --sim-only, --interactive)
+  regr [group]             regression, default group all
+  plan [group]             compile-group plan, no run
+  list | groups            cases / groups
+  results --dir <dir>      read or --recheck results
+  env --case <id>          environment a case would get (--phase, --show-values)
+  common: --config <file> (default dt/config/dtsim.config.ts upward from CWD),
+          -s, --num-seeds, -d <label>, -v, --plain, --cov, --no-wave
+
+Rules
+  Filelist entries are relative to the project root (nested -f too); dtsim
+  writes an absolute flat copy into each compile dir.
+  Grading reads sim.log keywords, not the exit code.
+  Children get only passthrough-listed env vars.
+  Built-in backends: vcs (toolOptions.ntbOpts, flags), verilator (top, mdir,
+  main=false for a C++ harness). Custom backends: defineTool + Workspace({ tools }).
+
+Demos
+  demo/dtsim/run.sh <args>          fake tools in demo/dtsim/dt/bin
+  demo/soc/dt/verilator/run.sh      Verilator smokes (--regfile --sd --tb-mod --sv-reg)
+  demo/soc/dt/vcs/run.sh [case]     VCS tb_soc smokes
+  demo/hbm/dt/vcs/run.sh [test...]  VCS + UVM-1.2 regression

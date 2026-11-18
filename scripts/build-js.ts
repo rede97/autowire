@@ -2,7 +2,7 @@
 // --compile also writes out/autowire with the Bun runtime linked in.
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
@@ -56,6 +56,9 @@ bunBuild([
 	"--keep-names",
 	...defineArgs,
 ]);
+// Executable so `ln -s out/autowire.js dtsim` runs straight from the shell
+// (index.ts carries the bun shebang).
+chmodSync(join(root, "out", "autowire.js"), 0o755);
 console.log(`autowire.js ${release} commit ${commit} built ${built}`);
 
 if (process.argv.includes("--compile")) {

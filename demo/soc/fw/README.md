@@ -3,8 +3,9 @@
 C firmware for SoC smoke / DV. Built with an RV32IMC toolchain and loaded into
 the SPI flash model via `$readmemh` / `+firmware=…`.
 
-**Runner: Verilator only** (`sim/verilator/run.sh`). The external JTAG smoke
-(`sim/verilator/jtag_host.h`) runs concurrently with the firmware.
+**Runner: Verilator** (`dt/verilator/run.sh`, a `dtsim` wrapper; VCS uses
+`dt/vcs/run.sh`). The external JTAG smoke (`dt/verilator/jtag_host.h`) runs
+concurrently with the firmware.
 
 ## Layout
 
@@ -25,26 +26,27 @@ Flash XIP reset PC = `0x0100_0000`. SRAM = `0x0000_0000`..`0x0000_FFFF`
 ```bash
 # from demo/soc
 bun ../../index.ts plugin wishbone run   # SV + packed C / Excel / uvm_reg
-./sim/verilator/run.sh              # basic_smoke (cascade MMIO + grant CSR)
-./sim/verilator/run.sh --regfile    # wishbone-regfile MMIO (FIFO loopback + counters)
-./sim/verilator/run.sh --sd         # sd_sha256 + sdspisim card image
-./sim/verilator/run.sh --tb-mod     # aw-tb-mod dump tb_soc (--binary) + SV JTAG host
+./dt/verilator/run.sh              # basic_smoke (cascade MMIO + grant CSR)
+./dt/verilator/run.sh --regfile    # wishbone-regfile MMIO (FIFO loopback + counters)
+./dt/verilator/run.sh --sd         # sd_sha256 + sdspisim card image
+./dt/verilator/run.sh --tb-mod     # aw-tb-mod dump tb_soc (--binary) + SV JTAG host
 ```
 
 Toolchain: set `CROSS=` if needed (defaults probe `riscv32-wch-elf-`,
 `riscv-none-embed-`, `riscv64-unknown-elf-`, `riscv32-unknown-elf-`).
 
 The JTAG smoke writes SRAM `0x0000_8000`; firmware must not use that word.
-Pass `+nojtag` to `sim/verilator/obj_dir/Vtb_soc_vl` to run the firmware alone
+Pass `+nojtag` to the case binary `dt/simout/<case>/obj_dir/Vtb_soc_vl` (e.g.
+`dt/simout/basic_smoke/obj_dir/Vtb_soc_vl`) to run the firmware alone
 (bisect a failure between the two masters).
 
 ## SD notes (`--sd`)
 
-- Card model: GPL-3 `sim/verilator/third_party/sdspisim/` (vendored ZipCPU
+- Card model: GPL-3 `dt/verilator/third_party/sdspisim/` (vendored ZipCPU
   `sdspisim`; MIT SoC leaf does not link it into RTL).
-- Image: `sim/verilator/images/gen_zeros_sha_img.py` → `zeros_sha.img`
+- Image: `dt/verilator/images/gen_zeros_sha_img.py` → `zeros_sha.img`
   (sector 0 = same 32 soft-pad words as the SRAM zeros KAT, big-endian on disk).
 - `sdspi_regs.h` is MIT (constants mirrored from ZipCPU bench/driver; no GPL
   sources copied into firmware).
-- After submodule checkout run `patches/apply.sh` (also invoked by
-  `sim/verilator/run.sh`) so the FIFO pointer advances once per Classic beat.
+- After submodule checkout run `patches/apply.sh` (also invoked by the dtsim
+  preCompile hook `dt/config/hooks/pre_compile.sh`) so the FIFO pointer advances once per Classic beat.

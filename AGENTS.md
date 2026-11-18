@@ -32,6 +32,7 @@ bun index.ts connect check [unit]
 bun index.ts connect run [unit]
 bun index.ts connect web [unit]
 bun index.ts plugin wishbone run
+bun index.ts dtsim run|regr|plan|list|groups|results|env
 bun run lint
 bun run build:web
 bun run build:js
@@ -42,6 +43,8 @@ Commands above are the dev and test entry (`index.ts`). Do not tell a production
 
 `connect check` reports rules and does not write. `connect run` is the only writer of `.sv` and connect snapshots. `connect web` is a static session. `plugin wishbone run` is the plugin's own run; it does not call connect. Default writes are incremental; `--force` rewrites. Wishbone Excel is always rewritten.
 
+`dtsim` is the simulation runner ([`docs/dtsim/README.md`](docs/dtsim/README.md), `help dtsim`). A project (RTL design dir) keeps its testbench in `dt/`, the TypeScript config in `dt/config/dtsim.config.ts` (found upward from CWD), and outputs in `dt/simout/`. Filelist entries are relative to the project root. `ln -s autowire.js dtsim` (or a link to `out/autowire`) runs the same subcommands without the `autowire dtsim` prefix. `demo/dtsim` runs on the fake tools in `demo/dtsim/dt/bin`, which `test/dtsim/` also uses.
+
 ## Sources of truth
 
 - Author HTML: `[connect.<id>]` / `[sim.<id>]` `html=` in `autowire.toml`. One toml per workspace. `deps` are direct edges only.
@@ -49,7 +52,7 @@ Commands above are the dev and test entry (`index.ts`). Do not tell a production
 - Leaf ports: RtlIndex under `.autowire/hdxml/`. Do not reparse RTL in the page.
 - Printer input: `aw-render` only. Do not treat `aw-content` as the netlist.
 
-Generated and MUST NOT be hand-edited: `out/web/aw.js`, `out/web/page.js` (`bun run build:web`; not tracked), `rtl/gen/`, `plugins_dir/`, `fw/gen/`, `dv/ral/`, and `.autowire/`. A wrong generated file is fixed by changing the SoT (Wishbone TypeScript or connect HTML) and re-running the writer. `demo/soc/ip/sdspi` stays at upstream `dfb16c8`; its FIFO patch is applied only for a smoke and then discarded.
+Generated and MUST NOT be hand-edited: `out/web/aw.js`, `out/web/page.js` (`bun run build:web`; not tracked), `rtl/gen/`, `plugins_dir/`, `fw/gen/`, `dv/ral/`, `.autowire/`, `dt/simout/`, `dt/config/.dtsim/`, and `src/dtsim/dsl/embedded.generated.ts` (`bun scripts/gen-dtsim-dsl.ts` after editing `src/dtsim/dsl/index.ts`). A wrong generated file is fixed by changing the SoT (Wishbone TypeScript or connect HTML) and re-running the writer. `demo/soc/ip/sdspi` stays at upstream `dfb16c8`; its FIFO patch is applied only for a smoke (the dtsim `preCompile` hook) and then discarded.
 
 ## Constraints
 
@@ -60,16 +63,17 @@ Generated and MUST NOT be hand-edited: `out/web/aw.js`, `out/web/page.js` (`bun 
 - The page and its GET APIs MUST NOT write the workspace. Saving is a browser download or the driver storing `#aw-generated`.
 - Do not implement parked work: the installer and the production-browser (obscura) .mcp.json switch, HTML node-edit MCP, plugin type B, extra Wishbone policies in `docs/plugins/wishbone-bus.md` section 8, or a second `autowire.toml`. Dev and CI stay on Playwright Chromium. The two autowire artifacts in section 1.1 are already specified.
 
-hdxml is its own repo (`rede97/hdxml`, own `AGENTS.md`); this repo only pins `hdxml-version.txt`. Demo smoke details: [`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md). Run these from `demo/soc` after `plugin wishbone run` when the Wishbone SoT changed.
+hdxml is its own repo (`rede97/hdxml`, own `AGENTS.md`); this repo only pins `hdxml-version.txt`. Demo smoke details: [`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md). Run these from `demo/soc` after `plugin wishbone run` when the Wishbone SoT changed. The scripts are thin wrappers over `dtsim` (`dt/config/dtsim.config.ts` / `dt/config/vcs.config.ts`); outputs land in `dt/simout/`.
 
-Verilator (`sim/verilator/run.sh`; `verilator` on PATH; `--timing` needs a C++ compiler with `-fcoroutines`, GCC 10+):
+Verilator (`dt/verilator/run.sh`; `verilator` on PATH; `--timing` needs a C++ compiler with `-fcoroutines`, GCC 10+):
 
-- `./sim/verilator/run.sh` — `fw/basic_smoke` (cascade MMIO, smoke CSR, external JTAG)
-- `./sim/verilator/run.sh --regfile` — wishbone-regfile MMIO (FIFO / counter / access)
-- `./sim/verilator/run.sh --sd` — `fw/sd_sha256` + card image (channel DMA)
-- `./sim/verilator/run.sh --tb-mod` — dumped `rtl/gen/sim/tb_soc.sv` (`--binary --timing`)
-- `./sim/verilator/sv_reg_smoke.sh` — `sv_reg` package + localparam only (no firmware, no bus RTL, no `--timing`)
+- `./dt/verilator/run.sh` — case `basic_smoke`: `fw/basic_smoke` (cascade MMIO, smoke CSR, external JTAG)
+- `./dt/verilator/run.sh --regfile` — case `regfile_smoke`: wishbone-regfile MMIO (FIFO / counter / access)
+- `./dt/verilator/run.sh --sd` — case `sd_sha256`: `fw/sd_sha256` + card image (channel DMA)
+- `./dt/verilator/run.sh --tb-mod` — case `tb_mod`: dumped `rtl/gen/sim/tb_soc.sv` (`--binary --timing`)
+- `./dt/verilator/run.sh --sv-reg` — case `sv_reg_smoke`: `sv_reg` package + localparam only (no firmware, no bus RTL)
+- `bun ../../index.ts dtsim regr` — all five
 
-VCS (`sim/vcs/run.sh`, only when `vcs` is on PATH; pure SV `tb_soc`, no C++ harness): `./sim/vcs/run.sh basic_smoke` and `./sim/vcs/run.sh regfile_smoke`. Do not run `--sd` under VCS (`sdspisim` is C++).
+VCS (`dt/vcs/run.sh`, only when `vcs` is on PATH; pure SV `tb_soc`, no C++ harness): `./dt/vcs/run.sh basic_smoke` and `./dt/vcs/run.sh regfile_smoke`. Do not run `--sd` under VCS (`sdspisim` is C++). demo/hbm: `./dt/vcs/run.sh [test ...]` (VCS + UVM-1.2).
 
 `bun test` Verilator cases (skipped when `verilator` or `make` is missing; both use `--timing`): `wishbone-regfile smoke features` → `W1C hardware set survives a zero-lane write`; `wishbone master bridges` → `verilator: APB / JTAG / async WB masters through wb_cdc`.

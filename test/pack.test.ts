@@ -53,8 +53,11 @@ describe("docs pack", () => {
 			);
 			// Exec bits are not preserved by Windows unpacks; POSIX-only check.
 			if (process.platform !== "win32") {
-				const runSh = statSync(join(dest, "demo/soc/sim/vcs/run.sh"));
+				const runSh = statSync(join(dest, "demo/soc/dt/vcs/run.sh"));
 				expect(runSh.mode & 0o111).not.toBe(0);
+				// Extensionless shebang scripts (demo/dtsim fake tools) too.
+				const vcs = statSync(join(dest, "demo/dtsim/dt/bin/vcs"));
+				expect(vcs.mode & 0o111).not.toBe(0);
 			}
 		} finally {
 			rmSync(dest, { recursive: true, force: true });

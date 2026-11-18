@@ -11,6 +11,7 @@ Autowire — commands
   connect elaborate [unit] check + elaborate, no write    → help cli
   connect web [unit]       static session page            → help web
   plugin wishbone run      generate regfiles and buses    → help status
+  dtsim run|regr|plan|...  simulation runner, dt/config  → help dtsim
   docs unpack <dir>        write bundled docs/, demo/, AGENTS.md → help docs
   update                   latest release address + AI upgrade prompt
 

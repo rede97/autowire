@@ -27,12 +27,5 @@
 		"noUnusedParameters": false,
 		"noPropertyAccessFromIndexSignature": false
 	},
-	"include": [
-		"index.ts",
-		"src/**/*.ts",
-		"src/**/*.d.ts",
-		"test/**/*.ts",
-		"dtsim/**/*.ts",
-		"dt/**/*.ts"
-	]
+	"include": ["index.ts", "src/**/*.ts", "src/**/*.d.ts", "test/**/*.ts"]
 }

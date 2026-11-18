@@ -47,6 +47,12 @@
 | [plugins/wishbone-master.md](./plugins/wishbone-master.md) | Master 口：CDC / APB / JTAG；开放项暂时不动 | 已落地 |
 | [examples/regfile/](./examples/regfile/) | Wishbone regfile 作者面 TS + 生成 SV 展示 | 示例 |
 
+## 仿真 · [`dtsim/`](./dtsim/)
+
+| 文档 | 内容 | 状态 |
+|---|---|---|
+| [dtsim/README.md](./dtsim/README.md) | `autowire dtsim` / `dtsim` 多调用名；`<project>/dt/` 放 testbench，`dt/config/` 放 TS 配置；filelist 展开、后端插件、环境隔离、判分；demo/dtsim、demo/soc、demo/hbm | 已落地 |
+
 ## 开发环境 · [`dev/`](./dev/)
 
 | 文档 | 内容 | 状态 |

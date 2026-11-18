@@ -2,6 +2,15 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.8.0] - 2026-11-18
+
+- **dtsim 并入 autowire**：`autowire dtsim run|regr|plan|list|groups|results|env`；`ln -s autowire.js dtsim`（或指向编译版 `out/autowire`）后 `./dtsim <cmd>` 直接进入同一组子命令。`index.ts` 带 bun shebang，`out/autowire.js` 写成可执行。独立的 `dtsim.js` / `build:dtsim` 删除，DSL 文本由 `scripts/gen-dtsim-dsl.ts` 在 `build:js` / `build:bin` 里嵌入。
+- **`dt` 目录语义**：RTL 设计目录（项目）下的 `dt/` 放 testbench，`dt/config/dtsim.config.ts` 放配置（从 CWD 向上找），输出到 `dt/simout/`。`${workspace}` / `$WORKSPACE` 是项目根；`--root` 与 `Workspace({ root })` 删除。filelist 条目（含嵌套 `-f`）相对项目根，dtsim 在每个编译目录写一份展开后的绝对路径 `filelist.f`；缺失或循环的 filelist 在启动工具前报错。Case 可用 `filelist` 覆盖工作区 filelist（单独成编译组）。
+- 后端 `toolOptions`：Verilator `main: false` 走 `--cc --exe --build` 的 C++ harness；VCS `ntbOpts` 选择 `-ntb_opts`（如 `uvm-1.2`，`""` 不加），`flags` 替换内置编译选项（内置的 `-xlrm nettype_array` 在 VCS O-2018.09 上被当成源文件；demo 两份 VCS 配置用旧 run.sh 的选项）。`git_rev` 记录 `dt/config` 所在仓库的版本。工具无法启动时打印 `dtsim: cannot start <tool>`。
+- **Windows（MSYS2 UCRT64）**：无扩展名的 `#!` 命令（UCRT64 `verilator` perl 包装、hook、假工具）交给解释器执行；环境变量名大小写不敏感，`SYSTEMROOT` 等启动必需变量总会传给子进程；`run_sim` 以 MSYS 形式导出 `PATH`；`results --recheck` 修正 Windows 路径拆分。
+- **demo**：新增 `demo/dtsim`（`dt/bin/` 假 vcs / simv / urg / verdi / verilator / bsub / srun，`run.sh` 包装）。`demo/soc/sim/` 迁到 `demo/soc/dt/`（`[sim.soc_tb] html = "dt/soc_tb.html"`），Verilator 冒烟改为 dtsim 用例 `basic_smoke` / `regfile_smoke` / `sd_sha256` / `tb_mod` / `sv_reg_smoke`，VCS 用 `dt/config/vcs.config.ts`；`dt/verilator/run.sh`（新增 `--sv-reg`，替代 `sv_reg_smoke.sh`）与 `dt/vcs/run.sh` 只是 dtsim 包装，`Makefile` 删除，固件与 SD 镜像在 `preSim` hook 构建。`demo/hbm/dv/uvm` 迁到 `demo/hbm/dt/uvm`，`dt/vcs/run.sh` 走 dtsim（VCS + UVM-1.2，`onGrade` 按 UVM 汇总判分）。
+- 测试迁到 `test/dtsim/`，用 `demo/dtsim/dt/bin` 的假工具；新增 filelist 展开用例。`docs unpack` 对所有 `#!` 文件恢复可执行位，打包跳过 `dt/simout/` 与 `.dtsim/`。文档：`docs/dtsim/README.md`、`help dtsim`。
+
 ## [2.7.2] - 2026-11-05
 
 - **新增独立 Access.W1CC**：软件写 1 清除，硬件导出等宽 `_set` / `_clr` mask，逐 bit 按旧状态仲裁：旧 0 接受 set，旧 1 接受 clear；两输入持续同时为 1 时每拍翻转。支持 SEL、ready、shadow broadcast / 硬件 mux / per-copy 数组和独立复位域；硬件更新不受软件选择或 ready 阻塞影响。

@@ -1,0 +1,3 @@
+# Simulation filelist for the dtsim demo. Entries are relative to the project
+# root (demo/dtsim); dtsim writes an absolute, flat copy into each compile dir.
+rtl/top.sv

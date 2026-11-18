@@ -11,6 +11,7 @@ import connect from "../../help/connect.txt" with { type: "text" };
 import deps from "../../help/deps.txt" with { type: "text" };
 import docs from "../../help/docs.txt" with { type: "text" };
 import dont from "../../help/dont.txt" with { type: "text" };
+import dtsim from "../../help/dtsim.txt" with { type: "text" };
 import dump from "../../help/dump.txt" with { type: "text" };
 import index from "../../help/index.txt" with { type: "text" };
 import initAttach from "../../help/init-attach.txt" with { type: "text" };
@@ -33,6 +34,7 @@ export const HELP_TOPICS = [
 	"dont",
 	"docs",
 	"cdp",
+	"dtsim",
 ] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
@@ -54,6 +56,7 @@ const SECTIONS: Record<HelpTopic, string> = {
 	dont,
 	docs,
 	cdp,
+	dtsim,
 };
 
 function finish(text: string): string {

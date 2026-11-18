@@ -27,6 +27,8 @@ function skip(path: string, ipFiles?: ReadonlySet<string>): boolean {
 		parts.includes("obj_dir_tb")
 	)
 		return true;
+	// dtsim outputs (dt/simout) and its DSL cache (dt/config/.dtsim): git-ignored.
+	if (parts.includes("simout") || parts.includes(".dtsim")) return true;
 	// IP submodules ship full upstream doc/bench trees; the demo only needs
 	// the sources its filelists reference (closure computed by ipClosure).
 	if (ipFiles && /^demo\/[^/]+\/ip\//.test(path) && !ipFiles.has(path))
@@ -316,9 +318,10 @@ export async function unpackPack(
 		}
 		await mkdir(dirname(abs), { recursive: true });
 		await writeFile(abs, file.bytes);
-		// The archive stores bytes only. Shell entry points (demo sim run.sh)
-		// are executable in git; restore that bit on unpack.
-		if (file.path.endsWith(".sh")) await chmod(abs, 0o755);
+		// The archive stores bytes only. Scripts (demo run.sh, demo/dtsim fake
+		// tools) are executable in git; restore that bit for every #! file.
+		if (file.bytes[0] === 0x23 && file.bytes[1] === 0x21)
+			await chmod(abs, 0o755);
 		written.push(abs);
 	}
 	return written;

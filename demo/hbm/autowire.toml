@@ -5,7 +5,7 @@
 #                     center CSR at 0x00000, channel i at (i + 1) * 0x1000
 #   level 2  hbm_ch   aword + dword0 + dword1; passes the tag through
 # Run from this directory: bun ../../index.ts plugin wishbone run
-# VCS + UVM-1.2 regression (agents/RAL in dv/uvm): sim/vcs/run.sh
+# VCS + UVM-1.2 regression (agents in dt/uvm, RAL in dv/ral): dt/vcs/run.sh (dtsim)
 
 [workspace]
 name = "hbm"
