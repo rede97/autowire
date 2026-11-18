@@ -287,9 +287,32 @@ Every seed directory has `run_sim`, `check_result.js`, keyword files,
 `.result`, `git_rev` (revision of the repo holding `dt/config`), and, for any
 non-clean result, `error.txt` with a bounded excerpt. A tool that cannot be
 started at all reports `dtsim: cannot start <tool>` on stderr.
-Hooks (`preCompile`, `postCompile`, `preSim`, `postSim`, `onGrade`, `onResult`)
-are script files relative to `dt/config/`; `onGrade` replaces the built-in
-grader and is honored by `results --recheck`.
+
+## Hooks
+
+Hooks are scripts (`.sh` run with bash, `.ts` with bun, anything else
+executed directly) at fixed points of every compile and every seed. Paths are
+relative to `dt/config/`. A hook runs in the compile or seed directory with
+the same isolated environment as the tool (plus `DTSIM_HOOK=<stage>`), gets
+`--phase --case [--seed] --dir --tool [--log] [--status]`, and its output
+goes to `<dir>/hook-<stage>.log`. `Hook(path, { fail, timeoutSec })`:
+`fail: "stop"` (default) turns a non-zero exit into a failed compile / seed
+with `phase: hook` in `error.txt`; `"continue"` only logs it. Default timeout
+600 s.
+
+| Stage | Runs | Typical use | Demo |
+|---|---|---|---|
+| `preCompile` | once per compile dir, before the tool | generate code, apply an IP patch, prebuild a C model | soc: sdspi patch; dtsim: `gen_stamp.svh` |
+| `postCompile` | after the tool exits | compile-log policy, archive the build | dtsim: fail on more than `DTSIM_DEMO_MAX_WARN` warnings |
+| `preSim` | per seed, before `run_sim` | per-seed input: firmware, memory image, stimulus | soc: firmware + SD image; dtsim: `stim.hex` from the seed |
+| `postSim` | per seed, before grading | golden-model compare (exit 1 fails), metrics, wave conversion | dtsim: `metrics.json` |
+| `onGrade` | per seed, instead of keyword grading | a pass rule keywords cannot express; first stdout line is the status | hbm: UVM report summary |
+| `onResult` | per seed, after the status is final | results database, notifications, cleanup on PASS | dtsim: `results.csv`, drop waves of passing seeds |
+
+Hooks versus patches: a patch is an in-process TypeScript callback with the
+merged case options; a hook is a separate script with only arguments and the
+environment, so it can be rerun by hand, and `onGrade` is reused by
+`results --recheck`.
 
 ## Windows (MSYS2 UCRT64)
 

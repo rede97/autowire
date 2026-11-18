@@ -5,6 +5,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+	Hook,
 	type PatchContext,
 	WaiveRule,
 	Workspace,
@@ -28,7 +29,7 @@ export default Workspace({
 		compileArgs: ["+nospecify", "+notimingcheck"],
 	},
 	env: {
-		passthrough: ["PROJ_CFG", "DTSIM_MOCK_*"],
+		passthrough: ["PROJ_CFG", "DTSIM_MOCK_*", "DTSIM_DEMO_*"],
 		deny: ["LD_PRELOAD"],
 	},
 	// Launcher "lsf" wraps every compile / sim in `bsub -I -J <job> -q normal
@@ -45,7 +46,16 @@ export default Workspace({
 		WaiveRule("boot_timeout", "Error: timeout in boot phase"),
 	],
 	patches: [spiceDeck],
-	hooks: {},
+	// Hooks are scripts at fixed points of every compile / seed; see each
+	// file's header for what it is for. onGrade (replace keyword grading) is
+	// shown in demo/hbm.
+	hooks: {
+		preCompile: Hook("hooks/pre_compile.sh"),
+		postCompile: Hook("hooks/post_compile.sh"),
+		preSim: Hook("hooks/pre_sim.sh"),
+		postSim: Hook("hooks/post_sim.sh"),
+		onResult: Hook("hooks/on_result.sh", { fail: "continue" }),
+	},
 	groups: [base, regrPlanA, cosim],
 	cases: ["./cases/hello.ts", "./cases/chip.ts"],
 });

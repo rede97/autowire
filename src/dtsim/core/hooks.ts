@@ -67,8 +67,10 @@ export async function runHook(
 	child.stdout?.on("data", (chunk: Buffer) => {
 		stdout += chunk.toString();
 	});
-	child.stdout?.pipe(out);
-	child.stderr?.pipe(out);
+	// Both streams share one log; end it once after the child closes, not when
+	// the first stream ends (stderr written after stdout closed would throw).
+	child.stdout?.pipe(out, { end: false });
+	child.stderr?.pipe(out, { end: false });
 	const timer = setTimeout(() => child.kill("SIGKILL"), spec.timeoutSec * 1000);
 	const { promise, resolve: done } = Promise.withResolvers<number>();
 	child.on("error", () => done(127));

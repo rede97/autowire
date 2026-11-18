@@ -32,6 +32,8 @@ Rules
   only when that case is used. c.descendants() lists the subtree.
   Group(name, [caseObj, "id", "base.*.cosim", "base.**"]): * = one segment,
   ** = any depth.
+  Hooks (scripts): preCompile postCompile preSim postSim onGrade onResult;
+  demo/dtsim shows five, demo/hbm onGrade, demo/soc preCompile + preSim.
   Grading reads sim.log keywords, not the exit code.
   Children get only passthrough-listed env vars.
   Built-in backends: vcs (toolOptions.ntbOpts, flags), verilator (top, mdir,
