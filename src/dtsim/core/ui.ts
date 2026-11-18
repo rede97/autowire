@@ -40,7 +40,7 @@ export function block(
 	rows: ReadonlyArray<readonly [string, string]>,
 ): string {
 	const shown = rows.filter(([, v]) => v.length > 0);
-	return `${chalk.bold.underline(title)}\n${table(shown.map(([k, v]) => [chalk.cyan(k), v]))}`;
+	return `${chalk.bold(title)}\n${table(shown.map(([k, v]) => [chalk.cyan(k), v]))}`;
 }
 
 export type TreeNode = { label: string; children?: readonly TreeNode[] };
