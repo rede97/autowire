@@ -310,7 +310,10 @@ A throw (or rejected promise) fails that compile or seed: the stack is
 appended to `hook-<stage>.log` and `error.txt` says `phase: hook`. The rest
 of that stage's list is skipped. Exceptions: `onResult` errors are only
 logged, and `onGrade` grades `FAIL` when it throws or returns something
-other than `PASS`, `PASS WITH ERRORS`, `FAIL`, `NO SIM LOG`. Hooks run in the
+other than a hook status. Statuses are the const object `Status` from the DSL
+(`Status.Pass`, `Status.PassWithErrors`, `Status.Fail`, `Status.NoSimLog`;
+`Status.Aborted` is dtsim's own); the plain strings (`"PASS"`, ...) are the
+same values. Hooks run in the
 dtsim process, so `process.env` is dtsim's own environment; `ctx.env` is what
 the tool sees. In a regression, compile stages run once per compile group
 and `ctx` describes the group's first case.
