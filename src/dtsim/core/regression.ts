@@ -2,6 +2,7 @@
 // compile per group, and pipeline compile -> sim behind a shared slot pool.
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import chalk from "chalk";
 import {
 	compileKey,
 	type MergedCase,
@@ -20,11 +21,12 @@ import { resolveTask } from "./launch.ts";
 import { Progress } from "./progress.ts";
 import { runProcess } from "./run.ts";
 import {
-	timingLines,
+	elapsedLine,
 	writeDresultsScript,
 	writeResultMarker,
 } from "./scripts.ts";
 import { readSeeds, type SeedOptions, seedsFor } from "./single.ts";
+import { plain, status, table, tree } from "./ui.ts";
 
 export type CompileGroup = {
 	index: number;
@@ -68,28 +70,27 @@ export function planGroups(
 	});
 }
 
+/** Plan header plus one table row per compile group. */
 export function planText(groups: readonly CompileGroup[]): string {
 	const total = groups.reduce((n, g) => n + g.cases.length, 0);
-	const lines = [
-		"========== Regression Plan ==========",
-		`Total cases    : ${total}`,
-		`Compile groups : ${groups.length}`,
-	];
-	for (const g of groups) {
-		lines.push(`Group ${g.index} (${g.cases.length} cases)`);
+	const rows = groups.map((g) => {
 		const rep = g.representative;
-		if (rep.defines.length > 0)
-			lines.push(`  defines: ${rep.defines.join(" ")}`);
-		if (rep.compileArgs.length > 0) {
-			lines.push(`  compileArgs: ${rep.compileArgs.join(" ")}`);
-		}
-		const envKeys = Object.keys(rep.env);
-		if (envKeys.length > 0) lines.push(`  env: ${envKeys.join(", ")}`);
-		for (const c of g.cases) {
-			lines.push(`  ${c.id}${c.random ? "" : " (no-random)"}`);
-		}
-	}
-	return lines.join("\n");
+		return [
+			`g${g.index}`,
+			g.cases
+				.map((c) => `${c.id}${c.random ? "" : chalk.dim(" (no-random)")}`)
+				.join("\n"),
+			rep.defines.join(" "),
+			rep.compileArgs.join(" "),
+			Object.keys(rep.env).join(" "),
+		];
+	});
+	const n = groups.length;
+	return `${chalk.bold("Regression plan")}: ${total} cases in ${n} compile group${n === 1 ? "" : "s"}\n${table(
+		rows,
+		["Group", "Cases", "Defines", "Compile args", "Env"],
+		60,
+	)}`;
 }
 
 export type RegressionOptions = EngineOptions &
@@ -104,7 +105,10 @@ export async function runRegression(
 	const groups = planGroups(ws, group, opts.label);
 	const regDir = regressionDir(ws, opts.label);
 	await mkdir(regDir, { recursive: true });
-	await writeFile(join(regDir, "regression.txt"), `${planText(groups)}\n`);
+	await writeFile(
+		join(regDir, "regression.txt"),
+		`${plain(planText(groups))}\n`,
+	);
 	console.log(planText(groups));
 
 	const seeds = await readSeeds(opts);
@@ -223,31 +227,35 @@ export async function runRegression(
 	progress.stop();
 
 	const exitCode = await finishRegression(ws, groups, regDir, results, opts);
-	for (const line of timingLines(t0)) console.log(`[dtsim] ${line}`);
+	console.log(chalk.dim(elapsedLine(t0)));
 	return exitCode;
 }
 
+/** Results as a case → seed tree, then one count per status. */
 export function resultTree(results: readonly SeedResult[]): string {
-	const lines = ["========== Results =========="];
 	const byCase = new Map<string, SeedResult[]>();
 	for (const r of results) {
 		const list = byCase.get(r.caseId) ?? [];
 		list.push(r);
 		byCase.set(r.caseId, list);
 	}
-	for (const [caseId, list] of [...byCase.entries()].sort()) {
-		lines.push(caseId);
-		for (const r of list.sort((a, b) => a.seed.localeCompare(b.seed))) {
-			lines.push(`  ${r.seed}: ${r.status}${r.note ? ` (${r.note})` : ""}`);
-		}
-	}
+	const width = Math.max(0, ...results.map((r) => r.seed.length));
+	const nodes = [...byCase.entries()].sort().map(([caseId, list]) => ({
+		label: caseId,
+		children: list
+			.sort((a, b) => a.seed.localeCompare(b.seed))
+			.map((r) => ({
+				label: `${r.seed.padEnd(width)}  ${status(r.status)}${r.note ? chalk.dim(` (${r.note})`) : ""}`,
+			})),
+	}));
 	const counts = new Map<string, number>();
 	for (const r of results)
 		counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
-	for (const [status, n] of [...counts.entries()].sort()) {
-		lines.push(`${status}: ${n}`);
-	}
-	return lines.join("\n");
+	const summary = [...counts.entries()]
+		.sort()
+		.map(([s, n]) => `${status(s)} ${n}`)
+		.join("  ");
+	return [chalk.bold("Results"), ...tree(nodes), summary].join("\n");
 }
 
 async function finishRegression(
@@ -257,9 +265,9 @@ async function finishRegression(
 	results: readonly SeedResult[],
 	opts: RegressionOptions,
 ): Promise<number> {
-	const tree = resultTree(results);
-	console.log(tree);
-	await writeFile(join(regDir, "result.txt"), `${tree}\n`);
+	const text = resultTree(results);
+	console.log(text);
+	await writeFile(join(regDir, "result.txt"), `${plain(text)}\n`);
 	writeDresultsScript(regDir);
 
 	let covOk = true;

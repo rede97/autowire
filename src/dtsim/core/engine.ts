@@ -243,8 +243,7 @@ export async function executeCompile(
 	await mkdir(compileDir, { recursive: true });
 	tool.writeAux?.(ctx);
 	const env = childEnv(ws, c, "compile", compileDir);
-	if (opts.verbose)
-		process.stderr.write(`[dtsim] ${envStatsLine(env.stats)}\n`);
+	if (opts.verbose) process.stderr.write(`${envStatsLine(env.stats)}\n`);
 	// Preparing argv is pure; it gives preCompile the compile log path.
 	const prepared = tool.compile(ctx);
 	const stage = (s: HookStage) =>

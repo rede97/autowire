@@ -3,6 +3,7 @@
 import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import chalk from "chalk";
 import {
 	type MergedCase,
 	mergeCase,
@@ -18,7 +19,8 @@ import {
 } from "./engine.ts";
 import { envStatsLine } from "./env.ts";
 import { getTool } from "./registry.ts";
-import { fmtElapsed, timingLines } from "./scripts.ts";
+import { elapsedLine, fmtElapsed } from "./scripts.ts";
+import { block, status, table } from "./ui.ts";
 
 export type SeedOptions = {
 	seed?: string;
@@ -68,11 +70,11 @@ export function caseOutputDir(
 	return join(ws.out, ...(label ? [label] : []), caseId);
 }
 
-function printBlock(title: string, rows: Array<[string, string]>): void {
-	console.log(`[dtsim] ========== ${title} ==========`);
-	for (const [label, value] of rows) {
-		console.log(`[dtsim] ${label.padEnd(12)}: ${value}`);
-	}
+function printBlock(
+	title: string,
+	rows: ReadonlyArray<readonly [string, string]>,
+): void {
+	console.log(block(title, rows));
 }
 
 export type SingleOptions = EngineOptions &
@@ -118,21 +120,21 @@ export async function runSingle(
 		if (!outcome.ok) {
 			printBlock("Summary", [
 				["Test", c.id],
-				["Result", "FAIL"],
+				["Result", status("FAIL")],
 				["Phase", "compile"],
 				["Log", outcome.log],
 				["Error", join(compileDir, "error.txt")],
 			]);
-			for (const line of timingLines(t0)) console.log(`[dtsim] ${line}`);
+			console.log(chalk.dim(elapsedLine(t0)));
 			return 1;
 		}
 		if (opts.compileOnly) {
 			printBlock("Summary", [
 				["Test", c.id],
-				["Result", "COMPILE ONLY"],
+				["Result", status("COMPILE ONLY")],
 				["Log", outcome.log],
 			]);
-			for (const line of timingLines(t0)) console.log(`[dtsim] ${line}`);
+			console.log(chalk.dim(elapsedLine(t0)));
 			return 0;
 		}
 	} else {
@@ -167,7 +169,10 @@ export async function runSingle(
 			["Test", c.id],
 			["Seq", c.uvm?.seq ?? ""],
 			["Seed", seed],
-			["Result", result.status + (result.note ? ` (${result.note})` : "")],
+			[
+				"Result",
+				status(result.status) + (result.note ? ` (${result.note})` : ""),
+			],
 			["Output", seedDir],
 			["Log", `${result.log} (${Bun.file(result.log).size} bytes)`],
 			["Elapsed", fmtElapsed((Date.now() - started) / 1000)],
@@ -202,7 +207,7 @@ export async function runSingle(
 			worst = 1;
 		}
 	}
-	for (const line of timingLines(t0)) console.log(`[dtsim] ${line}`);
+	console.log(chalk.dim(elapsedLine(t0)));
 	return worst;
 }
 
@@ -216,9 +221,13 @@ export function printCaseEnv(
 	const c = mergeCase(ws, caseId);
 	const dir = caseOutputDir(ws, c.id);
 	const built = childEnv(ws, c, phase, dir, phase === "sim" ? "0" : undefined);
-	console.log(`[dtsim] ${envStatsLine(built.stats)}`);
-	for (const [key, source] of [...built.sources.entries()].sort()) {
-		const value = showValues ? ` = ${built.env[key] ?? ""}` : "";
-		console.log(`${source.padEnd(7)} ${key}${value}`);
-	}
+	console.log(chalk.dim(envStatsLine(built.stats)));
+	const rows = [...built.sources.entries()]
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+		.map(([key, source]) =>
+			showValues ? [source, key, built.env[key] ?? ""] : [source, key],
+		);
+	console.log(
+		table(rows, showValues ? ["Source", "Name", "Value"] : ["Source", "Name"]),
+	);
 }

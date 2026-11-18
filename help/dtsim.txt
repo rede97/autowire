@@ -19,6 +19,8 @@ Commands
   env --case <id>          environment a case would get (--phase, --show-values)
   common: --config <file> (default dt/config/dtsim.config.ts upward from CWD),
           -s, --num-seeds, -d <label>, -v, --plain, --cov, --no-wave
+  output: plans, tables and result trees on stdout; progress on stderr
+          (live panel on a TTY, one line per event with --plain or a pipe)
 
 Rules
   Filelist entries are relative to the project root (nested -f too); dtsim

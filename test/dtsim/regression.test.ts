@@ -8,7 +8,7 @@ describe("regression", () => {
 		const ws = await makeWorkspace();
 		const result = await runDtsim(ws, ["plan"]);
 		expect(result.code).toBe(0);
-		expect(result.stdout).toContain("Compile groups");
+		expect(result.stdout).toContain("compile groups");
 		const regDir = join(ws.out, "regression");
 		expect(await Bun.file(join(regDir, "regression.txt")).exists()).toBe(true);
 		expect(await Bun.file(join(regDir, "result.txt")).exists()).toBe(false);
@@ -27,7 +27,7 @@ describe("regression", () => {
 		// smoke has no defines; hello and bar share NUM=1 but bar adds env.
 		const groups = (
 			await Bun.file(join(regDir, "regression.txt")).text()
-		).match(/Group \d+/g);
+		).match(/│ g\d+ /g);
 		expect(groups?.length).toBe(3);
 		const helloSeeds = await seedDirs(join(regDir, "test_hello_world"));
 		expect(helloSeeds.length).toBe(1);

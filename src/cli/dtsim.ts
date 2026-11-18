@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import chalk from "chalk";
 import { Command } from "commander";
 import {
 	loadWorkspace,
@@ -19,6 +20,7 @@ import {
 } from "../dtsim/core/regression.ts";
 import { resultsCommand } from "../dtsim/core/results.ts";
 import { printCaseEnv, runSingle } from "../dtsim/core/single.ts";
+import { plain, type TreeNode, table, tree } from "../dtsim/core/ui.ts";
 import type { CaseDef } from "../dtsim/dsl/index.ts";
 import { formatRelease } from "./version.ts";
 
@@ -131,29 +133,27 @@ function addDtsimCommands(cmd: Command): Command {
 		console.log(planText(groups));
 		const dir = regressionDir(ws, opts.label);
 		await mkdir(dir, { recursive: true });
-		await writeFile(join(dir, "regression.txt"), `${planText(groups)}\n`);
+		await writeFile(
+			join(dir, "regression.txt"),
+			`${plain(planText(groups))}\n`,
+		);
 	});
 
 	cmd
 		.command("list")
-		.description(
-			"list testcases; derived cases are indented under their parent",
-		)
+		.description("list testcases as trees of derived cases")
 		.option("--config <path>", CONFIG_HELP)
 		.action(async (opts: { config?: string }) => {
 			const ws = await loadWorkspace({ config: opts.config });
 			// Top-level cases show seq and owner; derived ids are listed without
 			// evaluating their (possibly lazy) options.
-			const walk = (node: CaseDef, depth: number): void => {
-				for (const child of node.children) {
-					console.log(`${"  ".repeat(depth)}${child.id}`);
-					walk(child, depth + 1);
-				}
-			};
+			const nodes = (node: CaseDef): TreeNode[] =>
+				node.children.map((c) => ({ label: c.id, children: nodes(c) }));
 			for (const [id, node] of [...ws.cases.entries()].sort()) {
 				const c = mergeCase(ws, id);
-				console.log(`${id}\t${c.uvm?.seq ?? ""}\t${c.owner}`);
-				walk(node, 1);
+				const info = [c.uvm?.seq, c.owner].filter(Boolean).join(" · ");
+				console.log(`${chalk.bold(id)}${info ? `  ${chalk.dim(info)}` : ""}`);
+				for (const line of tree(nodes(node))) console.log(line);
 			}
 		});
 
@@ -163,9 +163,11 @@ function addDtsimCommands(cmd: Command): Command {
 		.option("--config <path>", CONFIG_HELP)
 		.action(async (opts: { config?: string }) => {
 			const ws = await loadWorkspace({ config: opts.config });
-			for (const name of ["all", ...ws.groups.keys()]) {
-				console.log(`${name}\t${resolveGroup(ws, name).length} cases`);
-			}
+			const rows = ["all", ...ws.groups.keys()].map((name) => [
+				name,
+				String(resolveGroup(ws, name).length),
+			]);
+			console.log(table(rows, ["Group", "Cases"]));
 		});
 
 	cmd

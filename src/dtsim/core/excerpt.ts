@@ -37,7 +37,7 @@ export function excerptLines(args: {
 	picked.sort((a, b) => a.index - b.index);
 	const out = picked.map((p) => p.line);
 	if (out.length > MAX_EXCERPT) {
-		return [...out.slice(0, MAX_EXCERPT), "[dtsim] excerpt truncated"];
+		return [...out.slice(0, MAX_EXCERPT), "(excerpt truncated)"];
 	}
 	return out;
 }
@@ -73,7 +73,7 @@ export function formatExcerpt(input: ExcerptInput): string {
 				.split("\n")
 				.slice(-20);
 		} catch {
-			tail = ["[dtsim] hook log not readable"];
+			tail = ["(hook log not readable)"];
 		}
 		return `${[...header, "excerpt:", ...tail].join("\n")}\n`;
 	}

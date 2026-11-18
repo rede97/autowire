@@ -97,10 +97,10 @@ const shared = defineTool({
 		).replace('tool: "vcs"', 'tool: "shared-sim", tools: [shared]');
 		const ws = await makeWorkspace(body);
 		const vcsPlan = await runDtsim(await makeWorkspace(), ["plan", "base"]);
-		expect(vcsPlan.stdout).toContain("Compile groups : 3");
+		expect(vcsPlan.stdout).toContain("in 3 compile groups");
 		const plan = await runDtsim(ws, ["plan", "base"]);
 		expect(plan.code).toBe(0);
-		expect(plan.stdout).toContain("Compile groups : 1");
+		expect(plan.stdout).toContain("in 1 compile group\n");
 	});
 
 	test("deny list rejects a case assignment when that case is used", async () => {
@@ -236,10 +236,10 @@ export default Workspace({ tool: "vcs", groups: [
 		const result = await runDtsim(await makeWorkspace(TREE), ["list"]);
 		expect(result.code).toBe(0);
 		expect(result.stdout.split("\n").slice(0, 4)).toEqual([
-			"t\t\t",
-			"  t.fast",
-			"    t.fast.ss",
-			"  t.slow",
+			"t",
+			"├─ t.fast",
+			"│  └─ t.fast.ss",
+			"└─ t.slow",
 		]);
 	});
 
@@ -311,9 +311,9 @@ describe("environment isolation", () => {
 			"test_bar_basic.cosim",
 		]);
 		expect(result.code).toBe(0);
-		expect(result.stdout).toContain("case    INPUT");
-		expect(result.stdout).toContain("inject  output_dir");
-		expect(result.stdout).toContain("plugin  PATH");
+		expect(result.stdout).toMatch(/│ case\s+│ INPUT\s/);
+		expect(result.stdout).toMatch(/│ inject\s+│ output_dir\s/);
+		expect(result.stdout).toMatch(/│ plugin\s+│ PATH\s/);
 	});
 });
 

@@ -119,7 +119,7 @@ export async function runProcess(opts: RunOpts): Promise<number> {
 		if (opts.interactive && now - lastSigint > 2000) {
 			lastSigint = now;
 			process.stderr.write(
-				"\n[dtsim] Ctrl+C passed to child; press again within 2s to force-kill\n",
+				"\nCtrl+C passed to the simulator; press again within 2s to force-kill\n",
 			);
 			child.kill("SIGINT");
 			return;

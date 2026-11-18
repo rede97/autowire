@@ -102,14 +102,12 @@ export function fmtElapsed(seconds: number): string {
 	return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export function timingLines(t0: number): string[] {
+/** "elapsed 00:37 (2026-11-18 09:46:09 → 09:46:46)" for the end of a run. */
+export function elapsedLine(t0: number): string {
 	const fmt = (t: number): string =>
 		new Date(t).toISOString().replace("T", " ").slice(0, 19);
-	return [
-		`Start time : ${fmt(t0)}`,
-		`End time   : ${fmt(Date.now())}`,
-		`Elapsed    : ${fmtElapsed((Date.now() - t0) / 1000)}`,
-	];
+	const end = fmt(Date.now());
+	return `elapsed ${fmtElapsed((Date.now() - t0) / 1000)} (${fmt(t0)} → ${end.slice(11)})`;
 }
 
 /** Fast result viewer living in each regression root. */

@@ -6,6 +6,7 @@ import { childEnv, hookBase } from "./engine.ts";
 import { gradeLog, waiveRuleMap } from "./grade.ts";
 import { runGradeHook } from "./hooks.ts";
 import { writeResultMarker } from "./scripts.ts";
+import { status, table } from "./ui.ts";
 
 export type ResultRow = { dir: string; status: string };
 
@@ -63,18 +64,25 @@ export async function resultsCommand(opts: {
 			if (seed.length === 0) row.status = "FAIL";
 		}
 	}
-	for (const row of rows) {
+	if (opts.csv) {
+		for (const row of rows) console.log(`${row.dir},${row.status}`);
+	} else if (rows.length > 0) {
 		console.log(
-			opts.csv ? `${row.dir},${row.status}` : `${row.status}\t${row.dir}`,
+			table(
+				rows.map((r) => [status(r.status), r.dir]),
+				["Status", "Seed dir"],
+				120,
+			),
 		);
 	}
 	const counts = new Map<string, number>();
 	for (const row of rows)
 		counts.set(row.status, (counts.get(row.status) ?? 0) + 1);
+	// `STATUS=n` stays plain: scripts grep it.
 	console.log(
 		[...counts.entries()]
 			.sort()
-			.map(([status, n]) => `${status}=${n}`)
+			.map(([s, n]) => `${s}=${n}`)
 			.join(" "),
 	);
 	return rows.every(

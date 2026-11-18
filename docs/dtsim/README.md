@@ -58,6 +58,20 @@ Useful flags: `-s <seed>`, `--seed-file <f>`, `--num-seeds <n>`, `-d <label>`
 `--cov`, `--no-cov-merge`, `--no-wave`, `--wave-depth`, `--wave-top`,
 `--config <path>` (another config file, e.g. `dt/config/vcs.config.ts`).
 
+### Output
+
+stdout 只放计划与结果：`plan` / `regr` 的编译组表（Group / Cases / Defines /
+Compile args / Env），`run` 的 Run / Summary 键值表，`regr` 的
+用例 → seed 结果树（`├─` / `└─`）加各状态计数，`list` 的派生用例树，`groups`
+与 `env` 的表格，结束时一行 `elapsed MM:SS (start → end)`。`results` 打印
+Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 grep；`--csv`
+仍是 `dir,status` 行。
+
+进度只写 stderr：终端（TTY）上是 log-update 刷新的面板（编译 / 仿真进度与
+正在运行的任务表），完成的任务打印在面板上方；`--plain`、管道、LSF / CI 日志
+则每个事件一行（`compile g1 started`、`compile g1 OK 00:17 <log> (12K)`）。
+颜色跟随 chalk 的终端检测；写入 `regression.txt` / `result.txt` 的文本去掉颜色。
+
 ## Configuration
 
 Default config: `<project>/dt/config/dtsim.config.ts`, searched upward from the
