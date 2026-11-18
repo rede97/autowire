@@ -41,7 +41,11 @@ describe("regression", () => {
 			join(barSeeds[0] as string, "sim.log"),
 		).text();
 		expect(barLog).toContain("BAR_CFG=basic");
-		expect(await Bun.file(join(regDir, "dresults")).exists()).toBe(true);
+		const dresults = Bun.spawnSync(["bash", join(regDir, "dresults")], {
+			cwd: ws.root,
+		});
+		expect(dresults.exitCode).toBe(0);
+		expect(dresults.stdout.toString()).toContain("PASS=");
 	});
 
 	test("named group and unknown group", async () => {

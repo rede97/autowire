@@ -72,6 +72,11 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 则每个事件一行（`compile g1 started`、`compile g1 OK 00:17 <log> (12K)`）。
 颜色跟随 chalk 的终端检测；写入 `regression.txt` / `result.txt` 的文本去掉颜色。
 
+每个回归根目录里生成的 `dresults` 只是转发：用生成它的那个 dtsim（`bun <entry>
+dtsim` 或编译版 `autowire dtsim`）执行 `results --dir <该目录>`，参数原样传递
+（`--recheck`、`--csv`），输出与 `dtsim results` 相同。`$DTSIM_BIN` 可替换记录的
+命令（例如目录搬到另一台机器后）。
+
 ## Configuration
 
 Default config: `<project>/dt/config/dtsim.config.ts`, searched upward from the
