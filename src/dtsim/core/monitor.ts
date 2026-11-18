@@ -15,13 +15,22 @@ import type logUpdate from "log-update";
 import { createLogUpdate } from "log-update";
 import type { CasePhase, PhaseObserver } from "./engine.ts";
 import { fmtElapsed } from "./scripts.ts";
-import { status as colour, fmtSize } from "./ui.ts";
+import { status as colour, fmtSize, titledBox } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TAIL_BYTES = 4096;
+/** Steps that always get an end line; hook steps only on a TTY or a failure. */
+const MAIN: ReadonlySet<CasePhase> = new Set(["compile", "sim", "grade"]);
+/** Column widths: status (or spinner), phase, log name, log size. */
+const STATUS_W = 6;
+const PHASE_W = 22;
+const LOG_W = 12;
+const SIZE_W = 10;
+/** Where the phase column starts: status, space, MM:SS, two spaces. */
+const INDENT = " ".repeat(STATUS_W + 1 + 5 + 2);
 
 type StartInfo = { log?: string; seed?: string; cmd?: readonly string[] };
-type Current = { phase: CasePhase; seed?: string; log?: string; t0: number };
+type Current = { phase: CasePhase; log?: string; t0: number };
 type Tail = { size?: number; line: string };
 
 /** Size of a log, or undefined while it is not visible on disk. */
@@ -50,13 +59,31 @@ async function tail(path: string): Promise<Tail> {
 	return { size, line: clean };
 }
 
-/** `$ prog flags args`: program bold, options in yellow, the rest dim. */
-function styleCmd(argv: readonly string[]): string {
-	const [prog, ...rest] = argv;
-	const args = rest.map((a) =>
-		/^[-+]/.test(a) ? chalk.yellow(a) : chalk.dim(a),
+/** Pad coloured text to `width` visible columns. */
+function pad(text: string, width: number): string {
+	return (
+		text +
+		" ".repeat(Math.max(0, width - stripVTControlCharacters(text).length))
 	);
-	return `  ${chalk.dim("$")} ${chalk.bold.cyan(prog ?? "")} ${args.join(" ")}`;
+}
+
+/** `compile.log    3.0 KiB` (size "-" while the log is not on disk). */
+function logCol(log: string | undefined, size: number | undefined): string {
+	if (!log) return "";
+	return `${chalk.dim(basename(log).padEnd(LOG_W))} ${chalk.bold(showSize(size).padStart(SIZE_W))}`;
+}
+
+/** The submitted command in a box titled `cmd`: program bold cyan,
+ *  options yellow, the rest dim. */
+function cmdBox(argv: readonly string[]): string {
+	const width = process.stderr.columns || 100;
+	return titledBox("cmd", argv, width, (piece, i) =>
+		i === 0
+			? chalk.bold.cyan(piece)
+			: /^[-+]/.test(argv[i] ?? "")
+				? chalk.yellow(piece)
+				: chalk.dim(piece),
+	);
 }
 
 export class CaseMonitor implements PhaseObserver {
@@ -78,7 +105,6 @@ export class CaseMonitor implements PhaseObserver {
 	/** `follow` (TTY only): print the running step's log lines above the
 	 *  panel as they land, like `tail -f`. */
 	constructor(
-		private readonly label: string,
 		plain: boolean,
 		private readonly follow = false,
 	) {
@@ -99,7 +125,6 @@ export class CaseMonitor implements PhaseObserver {
 		this.current = {
 			phase,
 			t0: Date.now(),
-			...(info.seed === undefined ? {} : { seed: info.seed }),
 			...(info.log === undefined ? {} : { log: info.log }),
 		};
 		if (info.log) {
@@ -114,10 +139,13 @@ export class CaseMonitor implements PhaseObserver {
 				};
 			}
 			this.line(
-				`${chalk.cyan("▶")} ${this.title(this.current)}  ${chalk.dim("log")} ${info.log}`,
+				`${chalk.cyan(pad("▶", STATUS_W))} ${chalk.dim("start")}  ${chalk.bold(pad(this.name(this.current), PHASE_W))} ${chalk.dim(info.log)}`,
 			);
 		}
-		if (info.cmd?.length) this.line(styleCmd(info.cmd));
+		// TTY: the command in a titled box. Otherwise one plain line.
+		if (info.cmd?.length) {
+			this.line(this.live ? cmdBox(info.cmd) : `$ ${info.cmd.join(" ")}`);
+		}
 		this.render();
 	}
 
@@ -137,9 +165,15 @@ export class CaseMonitor implements PhaseObserver {
 		this.live?.done();
 	}
 
-	private title(c: Current): string {
-		const seed = c.seed === undefined ? "" : ` seed ${c.seed}`;
-		return `${chalk.bold(this.label)} ${c.phase}${seed}`;
+	/** The step name only: the seed is in the Run / Summary blocks. */
+	private name(c: Current): string {
+		return c.phase;
+	}
+
+	/** `<first col> MM:SS  <phase>  <log> <size>`, columns aligned. */
+	private row(first: string, c: Current, size: number | undefined): string {
+		const elapsed = fmtElapsed((Date.now() - c.t0) / 1000);
+		return `${pad(first, STATUS_W)} ${elapsed}  ${chalk.bold(pad(this.name(c), PHASE_W))} ${logCol(c.log, size)}`.trimEnd();
 	}
 
 	/** A permanent line above the panel (or a plain line). */
@@ -153,13 +187,10 @@ export class CaseMonitor implements PhaseObserver {
 		const c = this.current;
 		this.current = undefined;
 		if (!c) return;
-		const ok = result === "OK" || result.startsWith("PASS");
-		const log = c.log
-			? `  ${chalk.dim(`${basename(c.log)} ${showSize(sizeOf(c.log))}`)}`
-			: "";
-		this.line(
-			`${ok ? chalk.green("✓") : chalk.red("✗")} ${this.title(c)}  ${colour(result)}  ${fmtElapsed((Date.now() - c.t0) / 1000)}${log}`,
-		);
+		// Without a TTY keep it short: hook steps only show when they fail.
+		if (!this.live && !MAIN.has(c.phase) && result === "OK") return;
+		const size = c.log ? sizeOf(c.log) : undefined;
+		this.line(this.row(colour(result), c, size));
 	}
 
 	private async refresh(): Promise<void> {
@@ -208,12 +239,15 @@ export class CaseMonitor implements PhaseObserver {
 		}
 		this.frame = (this.frame + 1) % FRAMES.length;
 		const width = (process.stderr.columns || 100) - 1;
-		const own = c.log ? `  ${showSize(this.tails.get(c.phase)?.size)}` : "";
-		const head = `${chalk.cyan(FRAMES[this.frame])} ${this.title(c)}  ${fmtElapsed((Date.now() - c.t0) / 1000)}${chalk.dim(own)}`;
+		const head = this.row(
+			chalk.cyan(FRAMES[this.frame] ?? ""),
+			c,
+			this.tails.get(c.phase)?.size,
+		);
 		const rows = [...this.logs].map(([phase, log]) => {
 			const t = this.tails.get(phase) ?? { line: "" };
-			const lead = `  ${basename(log).padEnd(12)} ${showSize(t.size).padStart(6)}  `;
-			const room = Math.max(0, width - lead.length);
+			const lead = `${INDENT}${logCol(log, t.size)}  `;
+			const room = Math.max(0, width - stripVTControlCharacters(lead).length);
 			const text =
 				t.line.length > room
 					? `${t.line.slice(0, Math.max(0, room - 1))}…`

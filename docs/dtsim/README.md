@@ -72,24 +72,42 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 则每个事件一行（`compile g1 started`、`compile g1 OK 00:17 <log> (12K)`）。
 颜色跟随 chalk 的终端检测；写入 `regression.txt` / `result.txt` 的文本去掉颜色。
 
-`dtsim run` 在 stderr 上实时显示当前用例的状态：
+`dtsim run` 在 stderr 上实时显示当前用例的状态，各列对齐：
 
-- compile / sim 开始时先打印一行 `▶ <case> <步骤>  log <日志路径>`，再打印实际
-  提交的命令（`$ bsub ... vcs ...`，程序名加粗、选项高亮），方便提前定位。
-- 运行中是一个 spinner 面板：当前步骤（`preCompile`、`compile`、`postCompile`、
-  `preSim`、`sim seed N`、`postSim`、`grade`、`onResult`；hook 步骤只在配置了
-  该阶段的 hook 时出现）、已运行时间和日志大小；下面每个已出现的日志一行（编译
-  日志、仿真日志），显示大小和最后一行（只读文件末尾 4 KB，每 250 ms 刷新）。
-  日志还没落盘或 NFS 还没同步时大小显示 `-`。
-- 每个步骤结束打印一行 `✓ / ✗ <case> <步骤>  <带颜色的状态>  <耗时>  <日志> <大小>`。
-  sim 的状态是退出码（`OK` 或 `exit N`），判定看 grade 那一行。
+```text
+▶      start  compile                D:\...\compile.log
+┌─ cmd ───────────────────────────────────────────┐
+│ verilator --binary --top-module sv_reg_smoke ... │
+└──────────────────────────────────────────────────┘
+⠹      00:07  compile                compile.log     3.3 KiB      ← 运行中
+              compile.log     3.3 KiB  <日志最后一行>
+OK     00:07  compile                compile.log     3.9 KiB      ← 结束
+PASS   00:00  grade
+```
+
+- compile / sim 开始时打印日志路径，以及实际提交的命令：框线标题写 `cmd`，与上框线
+  同一行；程序名粗体青色，`-` / `+` 开头的选项黄色，其余灰色，长命令在框内折行。
+- 运行中：`[spinner] [已运行时间] [步骤] <日志> <大小>`，下面每个已出现的日志（编译、
+  仿真）一行，显示大小和最后一行（只读文件末尾 4 KB，每 250 ms 刷新）。日志还没落盘
+  或 NFS 还没同步时大小显示 `-`。步骤有 `preCompile`、`compile`、`postCompile`、
+  `preSim`、`sim`、`postSim`、`grade`、`onResult`（不带 seed，seed 在 Run / Summary
+  表里）；hook 步骤只在配置了该阶段的 hook 时出现。
+- 结束：`[状态] [耗时] [步骤] <日志> <大小>`，状态粗体着色（`OK` / `PASS` 绿、
+  `PASS WITH ERRORS` 黄、`FAIL` / `exit N` 红）。sim 的状态是退出码，判定看 grade 行。
+- 大小用二进制单位：`512 B`、`3.3 KiB`、`1.2 MiB`。
 
 `-v` 在终端上同时显示状态和日志：正在运行的 compile / sim 日志新写入的行实时打印在
 面板上方（像 `tail -f`，直接读日志文件，所以 VCS `-l` 这种工具自己写的日志也能
-跟），面板留在最下面。`--plain` 或 stderr 不是终端时只打印上面的开始 / 结束行，
-没有 spinner；此时 `-v` 照旧把子进程输出直接写到终端。`--interactive` 不显示这些。
-demo 的 `dt/*/run.sh` 不再强制 `--plain`，多余参数原样交给 `dtsim run`（如
+跟），面板留在最下面。
+
+stderr 不是终端（LSF 日志、管道）或 `--plain` 时输出精简：没有 spinner，命令打印
+成一行 `$ ...`，只有 compile / sim / grade 的开始与结束行，hook 步骤只在失败时出现；
+此时 `-v` 照旧把子进程输出直接写出。`--interactive` 不显示这些。demo 的
+`dt/*/run.sh` 不强制 `--plain`，多余参数原样交给 `dtsim run`（如
 `./dt/verilator/run.sh -v`）。
+
+表格（Run / Summary、计划、结果、`groups`、`env`）的框线为灰色，表头粗体青色，
+键值表的键为青色，状态粗体着色。
 
 每个回归根目录里生成的 `dresults` 只是转发：用生成它的那个 dtsim（`bun <entry>
 dtsim` 或编译版 `autowire dtsim`）执行 `results --dir <该目录>`，参数原样传递

@@ -109,7 +109,7 @@ export async function runSingle(
 	const monitor =
 		opts.interactive || (opts.verbose && !tty)
 			? undefined
-			: new CaseMonitor(c.id, opts.plain, follow);
+			: new CaseMonitor(opts.plain, follow);
 	const engine: EngineOptions = monitor
 		? { ...opts, verbose: opts.verbose && !follow, monitor }
 		: opts;
