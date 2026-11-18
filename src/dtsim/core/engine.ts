@@ -2,13 +2,14 @@
 // assembly, tool invocation, hooks, grading, and per-directory artifacts.
 import { existsSync } from "node:fs";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { CovSpec, ToolContext, WaveSpec } from "../dsl/index.ts";
 import {
-	applyPatches,
+	type ExpandVars,
 	expandVars,
 	type MergedCase,
 	type ResolvedWorkspace,
+	resolvePath,
 } from "./config.ts";
 import { buildChildEnv, envStatsLine } from "./env.ts";
 import { formatExcerpt } from "./excerpt.ts";
@@ -47,28 +48,42 @@ export type SeedResult = {
 	note?: string;
 };
 
+/** Placeholder values for one case phase (forward slashes on Windows). */
+export function varsFor(
+	ws: ResolvedWorkspace,
+	caseId: string,
+	dir: string,
+	seed?: string,
+): ExpandVars {
+	return {
+		verify: toolPath(ws.verify),
+		workspace: toolPath(ws.root),
+		output_dir: toolPath(dir),
+		caseId,
+		...(seed === undefined ? {} : { seed }),
+		tool: ws.toolId,
+	};
+}
+
 export function expandFor(
 	ws: ResolvedWorkspace,
 	caseId: string,
 	dir: string,
 	seed?: string,
 ): (text: string) => string {
-	return (text) =>
-		expandVars(text, {
-			verify: toolPath(ws.verify),
-			workspace: toolPath(ws.root),
-			output_dir: toolPath(dir),
-			caseId,
-			...(seed === undefined ? {} : { seed }),
-			tool: ws.toolId,
-		});
+	const vars = varsFor(ws, caseId, dir, seed);
+	return (text) => expandVars(text, vars);
 }
 
 /** Source filelist of a case: its own override, else the workspace one. */
-export function caseFilelist(ws: ResolvedWorkspace, c: MergedCase): string {
+export function caseFilelist(
+	ws: ResolvedWorkspace,
+	c: MergedCase,
+	dir: string,
+): string {
 	return c.filelist === undefined
 		? ws.filelist
-		: resolve(ws.verify, c.filelist);
+		: resolvePath(c.filelist, varsFor(ws, c.id, dir));
 }
 
 /** The flattened, absolute filelist dtsim writes into every compile dir. */
@@ -106,6 +121,7 @@ export function toolContext(
 		cov: opts.cov,
 		regression: opts.regression,
 		expand: expandFor(ws, c.id, dir, seed),
+		resolvePath: (text) => resolvePath(text, varsFor(ws, c.id, dir, seed)),
 	};
 }
 
@@ -185,6 +201,57 @@ export type CompileOutcome = {
 	hookFailed: boolean;
 };
 
+/** Workspace patch callbacks, in order, before the compile command. A throw
+ *  stops the compile: patch.log keeps the stack, error.txt the excerpt. */
+async function runPatches(
+	ws: ResolvedWorkspace,
+	c: MergedCase,
+	compileDir: string,
+	env: Record<string, string>,
+	ctx: ToolContext,
+): Promise<CompileOutcome | undefined> {
+	for (const [i, patch] of ws.patches.entries()) {
+		try {
+			await patch({
+				caseId: c.id,
+				baseId: c.base,
+				dir: compileDir,
+				verify: ws.verify,
+				workspace: ws.root,
+				tool: ws.toolId,
+				caseOpts: {
+					...ctx.caseOpts,
+					env: c.env,
+					...(c.filelist === undefined ? {} : { filelist: c.filelist }),
+				},
+				env,
+				expand: ctx.expand,
+				resolvePath: ctx.resolvePath,
+			});
+		} catch (error) {
+			const log = join(compileDir, "patch.log");
+			const detail =
+				error instanceof Error ? (error.stack ?? error.message) : String(error);
+			await writeFile(
+				log,
+				`patch #${i + 1} (${patch.name || "anonymous"}) threw:\n${detail}\n`,
+			);
+			await writeFile(
+				join(compileDir, "error.txt"),
+				formatExcerpt({
+					status: "FAIL",
+					phase: "patch",
+					tool: ws.toolId,
+					caseId: c.id,
+					log,
+				}),
+			);
+			return { ok: false, code: 1, log, hookFailed: true };
+		}
+	}
+	return undefined;
+}
+
 export async function executeCompile(
 	ws: ResolvedWorkspace,
 	c: MergedCase,
@@ -203,18 +270,19 @@ export async function executeCompile(
 	);
 	await mkdir(compileDir, { recursive: true });
 	tool.writeAux?.(ctx);
-	await applyPatches(ws, compileDir, ctx.expand);
+	const env = childEnv(ws, c, "compile", compileDir);
+	if (opts.verbose)
+		process.stderr.write(`[dtsim] ${envStatsLine(env.stats)}\n`);
+	const patchFailure = await runPatches(ws, c, compileDir, env.env, ctx);
+	if (patchFailure) return patchFailure;
 	writeFlatFilelist(
-		caseFilelist(ws, c),
+		caseFilelist(ws, c, compileDir),
 		flatFilelist(compileDir),
 		ws.root,
 		ctx.expand,
 	);
 	writeGitRev(compileDir, ws.verify);
 	const prepared = tool.compile(ctx);
-	const env = childEnv(ws, c, "compile", compileDir);
-	if (opts.verbose)
-		process.stderr.write(`[dtsim] ${envStatsLine(env.stats)}\n`);
 
 	const pre = await hookStage(
 		ws,

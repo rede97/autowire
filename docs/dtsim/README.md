@@ -66,16 +66,57 @@ is always the parent of the config file's `dt/` directory. User configs are
 loaded at runtime; the DSL is written to `dt/config/.dtsim/dsl/index.ts` on
 every run and config files import it from there.
 
-- `Workspace({ tool, filelist, tools, launchers, toolOptions, bareDefaults, env, task, waive, patches, hooks, groups, cases })`
+- `Workspace({ tool, filelist, output, tools, launchers, toolOptions, bareDefaults, env, task, waive, patches, hooks, groups, cases })`
 - `Case(name, opts)` / `Subcase(base, suffix, opts)` / `Group(name, ids)` / `Hook(path, opts)`
 - List fields (`defines`, `compileArgs`, `simArgs`, `grade.*`) append.
   `env` maps merge per key. Bare names get `bareDefaults`; explicit subcases do not.
 - `filelist` (workspace or case) is a path relative to `dt/config/`. A case
   filelist replaces the workspace one and splits the compile group.
+- `output` moves the output root (default `<project>/dt/simout`), e.g.
+  `output: "${workspace}/temp/output"` or `"${SCRATCH}/dtsim"`.
 - `uvm` is only interpreted by the VCS backend; other backends ignore it.
-- Placeholders in args, env values, filelists and patches: `${workspace}`
-  (project root), `${verify}` (`dt/config`), `${output_dir}`, `${case}`,
-  `${seed}`, `${tool}`.
+
+### Placeholders and paths
+
+One style everywhere: `${name}`. dtsim variables are `${workspace}` (project
+root), `${verify}` (`dt/config`), `${output_dir}`, `${case}`, `${seed}`,
+`${tool}` (`${WORKSPACE}`, `${project_home}`, `${root}` alias `${workspace}`).
+
+- **Args, env values, patched text** (`expand`): dtsim variables are
+  replaced; anything else, including `$HOME`, is left for the shell or
+  simulator.
+- **Paths** (`resolvePath`): `output`, `filelist`, `cases`, hook paths, and
+  whatever a backend or patch passes to `ctx.resolvePath`. dtsim variables
+  first, then variables of the shell that started dtsim (`${HOME}`,
+  `${SCRATCH}`); the result is made absolute against `dt/config`. An unknown
+  name, a bare `$NAME`, or a per-case name in a workspace-level path
+  (`${case}` in `output`) is an error naming the path.
+
+### Patches
+
+`patches` is a list of TypeScript functions. dtsim calls them in order in its
+own process before every compile (after `writeAux`, before the filelist is
+flattened and the tool starts) and does not care what they do.
+
+```ts
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+async function spiceDeck(ctx: PatchContext) {
+	const deck = await readFile(ctx.resolvePath("${verify}/cosim/spice/input.sp"), "utf8");
+	await writeFile(join(ctx.dir, "input.sp"), ctx.expand(deck));
+}
+export default Workspace({ ..., patches: [spiceDeck] });
+```
+
+`ctx`: `caseId`, `baseId`, `dir` (compile dir = `${output_dir}`), `verify`,
+`workspace`, `tool`, `caseOpts` (merged `defines`, `compileArgs`, `simArgs`,
+`env`, `uvm`, `toolOptions`, `filelist`, placeholders intact), `env` (the
+isolated environment the compile command receives), `expand`, `resolvePath`.
+In a regression the compile is shared by a compile group and `ctx` describes
+the group's first case. A throw or rejected promise fails that compile:
+`patch.log` holds the stack, `error.txt` says `phase: patch`, and the tool
+does not run.
 
 ## Filelists
 

@@ -86,11 +86,45 @@ export type TaskSpec = {
 	options?: Record<string, unknown>;
 };
 
-export type PatchSpec = { from: string; to: string };
+/** What a patch callback sees: one compile, before the tool starts. */
+export type PatchContext = {
+	caseId: string;
+	baseId: string;
+	/** Compile directory; `${output_dir}` of this compile. */
+	dir: string;
+	/** dt/config. */
+	verify: string;
+	/** Project root. */
+	workspace: string;
+	tool: string;
+	/** Merged case options, placeholders intact. */
+	caseOpts: {
+		defines: readonly string[];
+		compileArgs: readonly string[];
+		simArgs: readonly string[];
+		env: Readonly<Record<string, EnvValue>>;
+		uvm?: UvmCfg;
+		toolOptions: Record<string, unknown>;
+		filelist?: string;
+	};
+	/** The environment the compile command will receive (after isolation). */
+	env: Readonly<Record<string, string>>;
+	/** Expand `${...}` placeholders in text. */
+	expand: (text: string) => string;
+	/** `${...}` placeholders plus shell variables, absolute against dt/config. */
+	resolvePath: (text: string) => string;
+};
+
+/** Runs in the dtsim process before each compile; dtsim does not care what it
+ *  does. A throw (or rejected promise) fails that compile with phase "patch". */
+export type Patch = (ctx: PatchContext) => void | Promise<void>;
 
 export type WorkspaceOpts = {
 	tool: string;
+	/** Filelist path (`${...}` allowed; relative to dt/config). Default "file.lst". */
 	filelist?: string;
+	/** Output root (`${...}` allowed; relative to dt/config). Default "${workspace}/dt/simout". */
+	output?: string;
 	tools?: readonly SimTool[];
 	launchers?: readonly Launcher[];
 	toolOptions?: Record<string, unknown>;
@@ -98,7 +132,7 @@ export type WorkspaceOpts = {
 	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
 	task?: Partial<TaskSpec>;
 	waive?: readonly WaiveRuleDef[];
-	patches?: readonly PatchSpec[];
+	patches?: readonly Patch[];
 	hooks?: Partial<Record<HookPhase, HookSpec>>;
 	groups?: readonly GroupDef[];
 	cases?: readonly string[];
@@ -148,6 +182,9 @@ export type ToolContext = {
 	regression: boolean;
 	/** Expand ${verify}/${workspace}/${output_dir}/... placeholders. */
 	expand: (text: string) => string;
+	/** Same placeholders plus shell variables (${HOME}), then absolute against
+	 *  dt/config; unknown names throw. For paths a backend reads or writes. */
+	resolvePath: (text: string) => string;
 };
 
 export type SimTool = {
@@ -376,5 +413,12 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 	for (const t of opts.tools ?? []) defineTool(t);
 	for (const l of opts.launchers ?? []) defineLauncher(l);
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);
+	for (const p of opts.patches ?? []) {
+		if (typeof p !== "function") {
+			throw new Error(
+				"dtsim: patches entries must be functions (ctx) => void | Promise<void>",
+			);
+		}
+	}
 	return { kind: "dtsim-workspace", opts };
 }

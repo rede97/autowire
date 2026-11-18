@@ -2,7 +2,7 @@
 // DSL copy, import the TypeScript sources, merge cases, and compute compile
 // fingerprints.
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DSL_SOURCE } from "../dsl/embedded.generated.ts";
@@ -17,7 +17,7 @@ import {
 	isCase,
 	isSubcase,
 	isWorkspace,
-	type PatchSpec,
+	type Patch,
 	type SubcaseDef,
 	type TaskSpec,
 	type UvmCfg,
@@ -66,25 +66,24 @@ export type ResolvedWorkspace = {
 	deny: string[];
 	task: TaskSpec;
 	waive: WaiveRuleDef[];
-	patches: PatchSpec[];
+	patches: Patch[];
 	hooks: Partial<Record<HookPhase, HookSpec>>;
 	groups: Map<string, string[]>;
 	cases: Map<string, CaseDef>;
 	subcases: Map<string, SubcaseDef>;
 };
 
-export function expandVars(
-	text: string,
-	vars: {
-		verify: string;
-		workspace: string;
-		output_dir?: string;
-		caseId?: string;
-		seed?: string;
-		tool?: string;
-	},
-): string {
-	const table: Record<string, string | undefined> = {
+export type ExpandVars = {
+	verify: string;
+	workspace: string;
+	output_dir?: string;
+	caseId?: string;
+	seed?: string;
+	tool?: string;
+};
+
+function varTable(vars: ExpandVars): Record<string, string | undefined> {
+	return {
 		verify: vars.verify,
 		workspace: vars.workspace,
 		WORKSPACE: vars.workspace,
@@ -95,10 +94,66 @@ export function expandVars(
 		seed: vars.seed,
 		tool: vars.tool,
 	};
+}
+
+/** Replace dtsim placeholders `${name}` in args, env values and patched file
+ *  text. Bare `$NAME` and unknown names are left for the shell / simulator. */
+export function expandVars(text: string, vars: ExpandVars): string {
+	const table = varTable(vars);
 	return text.replace(
 		/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
-		(whole, name: string) => (table[name] === undefined ? whole : table[name]),
+		(whole, name: string) => table[name] ?? whole,
 	);
+}
+
+function parentEnv(name: string): string | undefined {
+	if (process.platform !== "win32") return process.env[name];
+	const upper = name.toUpperCase();
+	for (const [k, v] of Object.entries(process.env))
+		if (k.toUpperCase() === upper) return v;
+	return undefined;
+}
+
+/**
+ * Turn a configured path into an absolute one. Same `${name}` placeholders
+ * as args and env values: dtsim variables first (workspace, verify,
+ * output_dir, case, seed, tool), then variables of the shell that started
+ * dtsim (`${HOME}`, `${SCRATCH}`); a relative result resolves against `base`
+ * (dt/config). Unknown names and bare `$NAME` are errors: a path never keeps
+ * a literal `$` segment.
+ */
+export function resolvePath(
+	text: string,
+	vars: ExpandVars,
+	base: string = vars.verify,
+): string {
+	const table = varTable(vars);
+	const expanded = text.replace(
+		/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
+		(_whole, name: string) => {
+			// dtsim names never fall back to the shell: `${case}` in a workspace
+			// path is an error, not whatever $case the shell happens to hold.
+			const value = name in table ? table[name] : parentEnv(name);
+			if (value === undefined) {
+				const why =
+					name in table
+						? "is not known for this path (only per-case paths see output_dir / case / seed)"
+						: "is neither a dtsim variable nor set in the environment";
+				throw new Error(`dtsim: path "${text}": \${${name}} ${why}`);
+			}
+			return value;
+		},
+	);
+	// Checked on the source text: a substituted value may contain "$" itself.
+	const bare = /\$([A-Za-z_][A-Za-z0-9_]*)/.exec(
+		text.replace(/\$\{[A-Za-z_][A-Za-z0-9_]*\}/g, ""),
+	);
+	if (bare) {
+		throw new Error(
+			`dtsim: path "${text}": write \${${bare[1]}} instead of $${bare[1]}`,
+		);
+	}
+	return resolve(base, expanded);
 }
 
 function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
@@ -231,6 +286,11 @@ export async function loadWorkspace(opts: {
 		? resolve(cwd, opts.config)
 		: await findConfig(cwd);
 	const verify = dirname(configPath);
+	// <project>/dt/config/dtsim.config.ts: dt/ holds the testbench, its parent
+	// is the RTL design dir that filelists and ${workspace} resolve against.
+	const dt = dirname(verify);
+	const root = dirname(dt);
+	const paths: ExpandVars = { verify, workspace: root };
 	await ensureDsl(verify);
 
 	const configModule = await importModule(configPath);
@@ -265,7 +325,7 @@ export async function loadWorkspace(opts: {
 	};
 	registerExports(configModule, configPath);
 	for (const rel of o.cases ?? []) {
-		const path = resolve(verify, rel);
+		const path = resolvePath(rel, paths);
 		registerExports(await importModule(path), path);
 	}
 	for (const sub of subcases.values()) {
@@ -280,10 +340,6 @@ export async function loadWorkspace(opts: {
 	for (const g of (o.groups ?? []) as GroupDef[])
 		groups.set(g.name, [...g.members]);
 
-	// <project>/dt/config/dtsim.config.ts: dt/ holds the testbench, its parent
-	// is the RTL design dir that filelists and ${workspace} resolve against.
-	const dt = dirname(verify);
-	const root = dirname(dt);
 	const deny = [...(o.env?.deny ?? [])];
 	const partial: Pick<
 		ResolvedWorkspace,
@@ -310,9 +366,12 @@ export async function loadWorkspace(opts: {
 		configPath,
 		root,
 		verify,
-		out: join(dt, "simout"),
+		out:
+			o.output === undefined
+				? join(dt, "simout")
+				: resolvePath(o.output, paths),
 		toolId: o.tool,
-		filelist: resolve(verify, o.filelist ?? "file.lst"),
+		filelist: resolvePath(o.filelist ?? "file.lst", paths),
 		toolOptions: { ...o.toolOptions },
 		...partial,
 		passthrough: [...(o.env?.passthrough ?? [])],
@@ -320,22 +379,12 @@ export async function loadWorkspace(opts: {
 		task,
 		waive: [...(o.waive ?? [])],
 		patches: [...(o.patches ?? [])],
-		hooks: { ...o.hooks },
+		hooks: Object.fromEntries(
+			Object.entries(o.hooks ?? {}).map(([phase, spec]) => [
+				phase,
+				{ ...spec, path: resolvePath(spec.path, paths) },
+			]),
+		),
 		groups,
 	};
-}
-
-export async function applyPatches(
-	ws: ResolvedWorkspace,
-	compileDir: string,
-	expand: (text: string) => string,
-): Promise<void> {
-	for (const patch of ws.patches) {
-		const from = expand(patch.from);
-		const to = expand(patch.to);
-		const text = await readFile(from, "utf8");
-		await mkdir(dirname(to), { recursive: true });
-		await writeFile(to, expand(text));
-	}
-	if (compileDir.length === 0) throw new Error("dtsim: empty compile dir");
 }

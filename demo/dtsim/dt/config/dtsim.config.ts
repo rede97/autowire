@@ -2,8 +2,20 @@
 // The tools are fakes from ../bin (run.sh puts them first on PATH; the LSF
 // launcher goes through the fake bsub). The DSL copy under .dtsim/ is
 // materialized by dtsim on every run.
-import { WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { type PatchContext, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
 import { base, cosim, regrPlanA } from "./groups.ts";
+
+// Patches are plain functions; dtsim only calls them before each compile.
+// This one copies the SPICE deck into the compile dir with placeholders
+// expanded, and only for cosim subcases.
+async function spiceDeck(ctx: PatchContext): Promise<void> {
+	if (!ctx.caseId.includes(".cosim")) return;
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded by ctx.resolvePath
+	const deck = await readFile(ctx.resolvePath("${verify}/cosim/spice/input.sp"), "utf8");
+	await writeFile(join(ctx.dir, "input.sp"), ctx.expand(deck));
+}
 
 export default Workspace({
 	tool: "vcs",
@@ -28,14 +40,7 @@ export default Workspace({
 		WaiveRule("timing_rl_rdwin", "re:tRL_I \\+ tRDWIN_I .*timing violation"),
 		WaiveRule("boot_timeout", "Error: timeout in boot phase"),
 	],
-	patches: [
-		{
-			// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time
-			from: "${verify}/cosim/spice/input.sp",
-			// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time
-			to: "${output_dir}/input.sp",
-		},
-	],
+	patches: [spiceDeck],
 	hooks: {},
 	groups: [base, regrPlanA, cosim],
 	cases: ["./cases/hello.ts", "./cases/chip.ts"],

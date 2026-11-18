@@ -23,6 +23,10 @@ Commands
 Rules
   Filelist entries are relative to the project root (nested -f too); dtsim
   writes an absolute flat copy into each compile dir.
+  Placeholders are ${name}: ${workspace} ${verify} ${output_dir} ${case} ${seed}
+  ${tool}. Paths (output, filelist, cases, hooks) also take shell vars (${HOME});
+  unknown names fail. Workspace({ output }) moves dt/simout.
+  patches: [(ctx) => ...] TypeScript callbacks run before each compile.
   Grading reads sim.log keywords, not the exit code.
   Children get only passthrough-listed env vars.
   Built-in backends: vcs (toolOptions.ntbOpts, flags), verilator (top, mdir,
