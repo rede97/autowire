@@ -37,6 +37,23 @@ describe("docs pack", () => {
 			(f) => f.path === "demo/soc/ip/sdspi/rtl/spi/sdspi.v",
 		);
 		expect(new TextDecoder().decode(sdspi?.bytes)).toContain("(!dly_stb)");
+		// Repo dtsim configs import src/dtsim/dsl; the pack points them at the
+		// .dtsim/dsl copy next to the config instead.
+		const text = (path: string) =>
+			new TextDecoder().decode(files.find((f) => f.path === path)?.bytes);
+		expect(text("demo/soc/dt/config/dtsim.config.ts")).toContain(
+			'from "./.dtsim/dsl/index.ts"',
+		);
+		expect(text("demo/dtsim/dt/config/cases/hello.ts")).toContain(
+			'from "../.dtsim/dsl/index.ts"',
+		);
+		expect(
+			files.some(
+				(f) =>
+					/^demo\/[^/]+\/dt\/config\/.*\.ts$/.test(f.path) &&
+					new TextDecoder().decode(f.bytes).includes("src/dtsim/"),
+			),
+		).toBe(false);
 		const again = decodePack(encodePack(files));
 		expect(again.map((file) => file.path)).toEqual(
 			files.map((file) => file.path),

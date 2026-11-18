@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { chmod, mkdir, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, posix, relative, resolve, sep } from "node:path";
 
 export type PackedFile = { path: string; bytes: Uint8Array };
 
@@ -88,23 +88,49 @@ export async function collectPackFiles(root: string): Promise<PackedFile[]> {
 	return out;
 }
 
-/** Repo demos import the wishbone DSL from src/plugins/...; a standalone
- *  unpacked tree has no src/. Rewrite packed sot/*.ts to the self-healing
- *  .autowire/dsl/ copy (plugin wishbone run re-materializes it every run). */
+/** Repo demos import the DSLs from src/: wishbone from src/plugins/..., dtsim
+ *  from src/dtsim/dsl/index.ts, so edits to the DSL source reach them without
+ *  a regenerate step. A standalone unpacked tree has no src/; rewrite packed
+ *  imports to the self-healing copies (.autowire/dsl/ re-materialized by
+ *  plugin wishbone run, dt/config/.dtsim/dsl/ by every dtsim run). */
 function rewriteDemoDslImports(files: PackedFile[]): void {
 	const REPO_DSL =
 		/(["'])\.\.\/\.\.\/\.\.\/src\/plugins\/(wishbone-(?:bus|regfile))\//g;
+	const DTSIM_DSL = /(["'])((?:\.\.\/)+)src\/dtsim\/dsl\/index\.ts\1/g;
 	for (const file of files) {
-		if (!/^demo\/[^/]+\/sot\/.*\.ts$/.test(file.path)) continue;
+		const sot = /^demo\/[^/]+\/sot\/.*\.ts$/.test(file.path);
+		const dtConfig = /^(demo\/[^/]+\/dt\/config)\/.*\.ts$/.exec(file.path);
+		if (!sot && !dtConfig) continue;
 		const text = new TextDecoder().decode(file.bytes);
-		const rewritten = text.replace(
-			REPO_DSL,
-			(_m, quote: string, mod: string) => `${quote}../.autowire/dsl/${mod}/`,
-		);
-		if (rewritten.includes("src/plugins/"))
-			throw new Error(
-				`docs pack: ${file.path} has a src/plugins import at an unexpected depth`,
+		let rewritten = text;
+		if (sot) {
+			rewritten = rewritten.replace(
+				REPO_DSL,
+				(_m, quote: string, mod: string) => `${quote}../.autowire/dsl/${mod}/`,
 			);
+			if (rewritten.includes("src/plugins/"))
+				throw new Error(
+					`docs pack: ${file.path} has a src/plugins import at an unexpected depth`,
+				);
+		}
+		if (dtConfig) {
+			const dir = posix.dirname(file.path);
+			const copy = `${dtConfig[1]}/.dtsim/dsl/index.ts`;
+			rewritten = rewritten.replace(
+				DTSIM_DSL,
+				(m, quote: string, up: string) => {
+					if (
+						posix.join(dir, up, "src/dtsim/dsl/index.ts") !==
+						"src/dtsim/dsl/index.ts"
+					)
+						throw new Error(
+							`docs pack: ${file.path}: ${m} does not point at the repo src/dtsim/dsl`,
+						);
+					const rel = posix.relative(dir, copy);
+					return `${quote}${rel.startsWith("../") ? rel : `./${rel}`}${quote}`;
+				},
+			);
+		}
 		if (rewritten !== text) file.bytes = new TextEncoder().encode(rewritten);
 	}
 }

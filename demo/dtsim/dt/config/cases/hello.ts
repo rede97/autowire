@@ -1,5 +1,5 @@
 // Hello-world cases and their subcases, ported from dsim testcase.toml.
-import { Case, Subcase } from "../.dtsim/dsl/index.ts";
+import { Case, Subcase } from "../../../../../src/dtsim/dsl/index.ts";
 
 const cosim = {
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time

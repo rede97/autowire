@@ -3,7 +3,7 @@
 //   bun ../../index.ts dtsim regr --no-wave        (or ./dt/vcs/run.sh)
 //   bun ../../index.ts dtsim run hbm_rw_test --no-wave
 // All cases share one compile group; each test is a +UVM_TESTNAME.
-import { Case, Hook, Workspace } from "./.dtsim/dsl/index.ts";
+import { Case, Hook, Workspace } from "../../../../src/dtsim/dsl/index.ts";
 
 const uvmTest = (name: string) =>
 	Case(name, {

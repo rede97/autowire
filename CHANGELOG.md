@@ -13,6 +13,7 @@
 - **Windows（MSYS2 UCRT64）**：无扩展名的 `#!` 命令（UCRT64 `verilator` perl 包装、hook、假工具）交给解释器执行；环境变量名大小写不敏感，`SYSTEMROOT` 等启动必需变量总会传给子进程；`run_sim` 以 MSYS 形式导出 `PATH`；`results --recheck` 修正 Windows 路径拆分。
 - **demo**：新增 `demo/dtsim`（`dt/bin/` 假 vcs / simv / urg / verdi / verilator / bsub / srun，`run.sh` 包装）。`demo/soc/sim/` 迁到 `demo/soc/dt/`（`[sim.soc_tb] html = "dt/soc_tb.html"`），Verilator 冒烟改为 dtsim 用例 `basic_smoke` / `regfile_smoke` / `sd_sha256` / `tb_mod` / `sv_reg_smoke`，VCS 用 `dt/config/vcs.config.ts`；`dt/verilator/run.sh`（新增 `--sv-reg`，替代 `sv_reg_smoke.sh`）与 `dt/vcs/run.sh` 只是 dtsim 包装，`Makefile` 删除，固件与 SD 镜像在 `preSim` hook 构建。`demo/hbm/dv/uvm` 迁到 `demo/hbm/dt/uvm`，`dt/vcs/run.sh` 走 dtsim（VCS + UVM-1.2，`onGrade` 按 UVM 汇总判分）。
 - 测试迁到 `test/dtsim/`，用 `demo/dtsim/dt/bin` 的假工具；新增 filelist 展开用例。`docs unpack` 对所有 `#!` 文件恢复可执行位，打包跳过 `dt/simout/` 与 `.dtsim/`。文档：`docs/dtsim/README.md`、`help dtsim`。
+- 仓库内 demo 的 dtsim 配置直接 import `src/dtsim/dsl/index.ts`（与 wishbone SoT 同一约定），改 DSL 源码立即生效；打包时改写为配置旁的 `.dtsim/dsl/index.ts`，解包树照常运行。不用软链接（Windows 需要额外权限，Bun 也不跟随 MSYS 链接）。
 
 ## [2.7.2] - 2026-11-05
 

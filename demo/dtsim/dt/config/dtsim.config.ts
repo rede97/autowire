@@ -1,10 +1,14 @@
 // dtsim demo workspace: VCS backend, LSF slots, environment isolation.
 // The tools are fakes from ../bin (run.sh puts them first on PATH; the LSF
-// launcher goes through the fake bsub). The DSL copy under .dtsim/ is
-// materialized by dtsim on every run.
+// launcher goes through the fake bsub). Repo demos import the DSL source;
+// `docs unpack` rewrites the import to the .dtsim/dsl copy dtsim writes.
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type PatchContext, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
+import {
+	type PatchContext,
+	WaiveRule,
+	Workspace,
+} from "../../../../src/dtsim/dsl/index.ts";
 import { base, cosim, regrPlanA } from "./groups.ts";
 
 // Patches are plain functions; dtsim only calls them before each compile.

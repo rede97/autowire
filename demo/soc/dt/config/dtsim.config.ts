@@ -4,7 +4,7 @@
 // VCS: dt/config/vcs.config.ts (./dt/vcs/run.sh).
 // Filelists are relative to the project root (demo/soc); dtsim flattens them
 // into each compile dir. Outputs: dt/simout/<case>/.
-import { Case, Group, Hook, Workspace } from "./.dtsim/dsl/index.ts";
+import { Case, Group, Hook, Workspace } from "../../../../src/dtsim/dsl/index.ts";
 
 const VL_WARN = [
 	"-Wno-fatal",

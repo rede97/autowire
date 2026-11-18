@@ -1,5 +1,5 @@
 // Regression groups. Members are string ids; unknown ids fail at load time.
-import { Group } from "./.dtsim/dsl/index.ts";
+import { Group } from "../../../../src/dtsim/dsl/index.ts";
 
 export const base = Group("base", [
 	"test_quick_smoke",

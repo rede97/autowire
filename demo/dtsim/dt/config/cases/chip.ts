@@ -1,6 +1,6 @@
 // Remaining example cases. SIM_TRACE demonstrates a sim-only env variable:
 // it reaches the simulator but never splits a compile group.
-import { Case, Subcase } from "../.dtsim/dsl/index.ts";
+import { Case, Subcase } from "../../../../../src/dtsim/dsl/index.ts";
 
 export const bar = Case("test_bar_basic", {
 	owner: "bob",

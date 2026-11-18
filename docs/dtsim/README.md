@@ -64,7 +64,11 @@ Default config: `<project>/dt/config/dtsim.config.ts`, searched upward from the
 CWD (stops at a `.git` directory). `--config` selects another file; the project
 is always the parent of the config file's `dt/` directory. User configs are
 loaded at runtime; the DSL is written to `dt/config/.dtsim/dsl/index.ts` on
-every run and config files import it from there.
+every run and config files import it from there. Inside this repository the
+demo configs import `src/dtsim/dsl/index.ts` directly (same convention as the
+wishbone SoT), so DSL edits reach them without a regenerate step; `docs unpack`
+rewrites those imports to the `.dtsim/dsl` copy. No symlink is used: Windows
+symlinks need extra privileges and Bun does not follow MSYS ones.
 
 - `Workspace({ tool, filelist, output, tools, launchers, toolOptions, bareDefaults, env, task, waive, patches, hooks, groups, cases })`
 - `Case(name, opts)` / `Subcase(base, suffix, opts)` / `Group(name, ids)` / `Hook(path, opts)`
