@@ -5,7 +5,7 @@ import chalk from "chalk";
 import type logUpdate from "log-update";
 import { createLogUpdate } from "log-update";
 import { fmtElapsed } from "./scripts.ts";
-import { status as colour, table } from "./ui.ts";
+import { status as colour, fmtSize, table } from "./ui.ts";
 
 export type TaskKind = "compile" | "sim";
 
@@ -44,7 +44,7 @@ export class Progress {
 		else this.counts.simDone += 1;
 		const elapsed = task ? fmtElapsed((Date.now() - task.t0) / 1000) : "--:--";
 		this.line(
-			`${kind} ${label} ${colour(status)} ${elapsed} ${chalk.dim(`${log} (${logSize(log)})`)}`,
+			`${kind} ${label} ${colour(status)} ${elapsed} ${chalk.dim(`${log} (${fmtSize(Bun.file(log).size)})`)}`,
 		);
 	}
 
@@ -77,21 +77,10 @@ export class Progress {
 			t.kind,
 			t.label,
 			fmtElapsed((Date.now() - t.t0) / 1000),
-			logSize(t.log),
+			fmtSize(Bun.file(t.log).size),
 		]);
 		this.live(
 			rows.length ? `${chalk.bold(head)}\n${table(rows)}` : chalk.bold(head),
 		);
-	}
-}
-
-function logSize(path: string): string {
-	try {
-		const size = Bun.file(path).size;
-		return size > 1024 * 1024
-			? `${(size / 1024 / 1024).toFixed(1)}M`
-			: `${Math.round(size / 1024)}K`;
-	} catch {
-		return "0K";
 	}
 }

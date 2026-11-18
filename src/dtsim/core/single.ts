@@ -18,6 +18,7 @@ import {
 	toolContext,
 } from "./engine.ts";
 import { envStatsLine } from "./env.ts";
+import { CaseMonitor } from "./monitor.ts";
 import { elapsedLine, fmtElapsed } from "./scripts.ts";
 import { block, status, table } from "./ui.ts";
 
@@ -81,6 +82,8 @@ export type SingleOptions = EngineOptions &
 		label?: string;
 		compileOnly: boolean;
 		simOnly: boolean;
+		/** No live panel: one line per step (also when stderr is no TTY). */
+		plain: boolean;
 	};
 
 export async function runSingle(
@@ -98,6 +101,12 @@ export async function runSingle(
 	const seeds = seedsFor(c, await readSeeds(opts));
 	const compileDir = caseOutputDir(ws, c.id, opts.label);
 	const tool = ws.tool;
+	// --verbose streams logs and --interactive owns the terminal: no panel.
+	const monitor =
+		opts.verbose || opts.interactive
+			? undefined
+			: new CaseMonitor(c.id, opts.plain);
+	const engine: EngineOptions = monitor ? { ...opts, monitor } : opts;
 
 	printBlock("Run", [
 		["WORKSPACE", ws.root],
@@ -115,7 +124,8 @@ export async function runSingle(
 
 	if (!opts.simOnly) {
 		await rm(compileDir, { recursive: true, force: true });
-		const outcome = await executeCompile(ws, c, compileDir, opts);
+		const outcome = await executeCompile(ws, c, compileDir, engine);
+		monitor?.stop();
 		if (!outcome.ok) {
 			printBlock("Summary", [
 				["Test", c.id],
@@ -162,8 +172,9 @@ export async function runSingle(
 			compileDir,
 			seedDir,
 			seed,
-			opts,
+			engine,
 		);
+		monitor?.stop();
 		const rows: Array<[string, string]> = [
 			["Test", c.id],
 			["Seq", c.uvm?.seq ?? ""],

@@ -27,6 +27,40 @@ import { wrapCommand } from "./launch.ts";
 import { runProcess } from "./run.ts";
 import { writeGitRev, writeResultMarker, writeRunSim } from "./scripts.ts";
 
+/** Steps of one case, reported to EngineOptions.monitor. */
+export type CasePhase =
+	| "preCompile"
+	| "compile"
+	| "postCompile"
+	| "preSim"
+	| "sim"
+	| "postSim"
+	| "grade"
+	| "onResult";
+
+/** Live display hook. Every step starts (hook steps only when that stage
+ *  has hooks); compile and sim carry their log and submitted command.
+ *  Compile, sim, grade and failed hooks also end with a result ("OK",
+ *  "FAIL", "exit 3", or the seed status). */
+export type PhaseObserver = {
+	start(
+		phase: CasePhase,
+		info: { log?: string; seed?: string; cmd?: readonly string[] },
+	): void;
+	end(phase: CasePhase, result: string): void;
+};
+
+/** Report a hook step only when the workspace has hooks for it. */
+function hookStep(
+	ws: ResolvedWorkspace,
+	opts: EngineOptions,
+	stage: HookStage,
+	seed?: string,
+): void {
+	if (ws.hooks[stage] === undefined) return;
+	opts.monitor?.start(stage, seed === undefined ? {} : { seed });
+}
+
 export type EngineOptions = {
 	verbose: boolean;
 	interactive: boolean;
@@ -35,6 +69,7 @@ export type EngineOptions = {
 	wave: WaveSpec;
 	cov: CovSpec;
 	abort?: AbortSignal;
+	monitor?: PhaseObserver;
 };
 
 export type SeedResult = {
@@ -271,8 +306,12 @@ export async function executeCompile(
 		hookBase(ws, c, s, compileDir, prepared.log, env.env);
 	// preCompile runs before the filelist is flattened so it can generate or
 	// patch sources the filelist names.
+	hookStep(ws, opts, "preCompile");
 	const pre = await hookStage(ws, stage("preCompile"));
-	if (pre) return { ok: false, code: 1, log: pre.log, hookFailed: true };
+	if (pre) {
+		opts.monitor?.end("preCompile", "FAIL");
+		return { ok: false, code: 1, log: pre.log, hookFailed: true };
+	}
 	writeFlatFilelist(
 		caseFilelist(ws, c, compileDir),
 		flatFilelist(compileDir),
@@ -289,6 +328,7 @@ export async function executeCompile(
 		cwd: prepared.cwd,
 		interactive: false,
 	});
+	opts.monitor?.start("compile", { log: prepared.log, cmd: argv });
 	let code = await runProcess({
 		argv,
 		cwd: prepared.cwd,
@@ -298,7 +338,10 @@ export async function executeCompile(
 		interactive: false,
 		...(opts.abort === undefined ? {} : { abort: opts.abort }),
 	});
+	opts.monitor?.end("compile", code === 0 ? "OK" : "FAIL");
+	hookStep(ws, opts, "postCompile");
 	if (await hookStage(ws, stage("postCompile"))) {
+		opts.monitor?.end("postCompile", "FAIL");
 		code = 1;
 		hookFailed = true;
 	}
@@ -370,7 +413,9 @@ export async function executeSim(
 			seed,
 			...(status === undefined ? {} : { status }),
 		});
+	hookStep(ws, opts, "preSim", seed);
 	if (await hookStage(ws, stage("preSim"))) {
+		opts.monitor?.end("preSim", "FAIL");
 		writeResultMarker(seedDir, "FAIL");
 		return { ...base, status: "FAIL", code: 1, note: "preSim hook failed" };
 	}
@@ -383,6 +428,7 @@ export async function executeSim(
 		cwd: seedDir,
 		interactive: opts.interactive,
 	});
+	opts.monitor?.start("sim", { log: prepared.log, seed, cmd: argv });
 	const code = await runProcess({
 		argv,
 		cwd: seedDir,
@@ -392,13 +438,18 @@ export async function executeSim(
 		interactive: opts.interactive,
 		...(opts.abort === undefined ? {} : { abort: opts.abort }),
 	});
+	opts.monitor?.end("sim", code === 0 ? "OK" : `exit ${code}`);
+	hookStep(ws, opts, "postSim", seed);
 	if (await hookStage(ws, stage("postSim"))) {
+		opts.monitor?.end("postSim", "FAIL");
 		writeResultMarker(seedDir, "FAIL");
 		return { ...base, status: "FAIL", code: 1, note: "postSim hook failed" };
 	}
 
+	opts.monitor?.start("grade", { seed });
 	await waitForLog(prepared.log);
 	const graded = await gradeSeed(ws, c, seedDir, prepared.log, seed);
+	opts.monitor?.end("grade", graded.status);
 	let status: Status = graded.status;
 	if (opts.abort?.aborted) status = "ABORTED";
 	writeResultMarker(seedDir, status);
@@ -423,6 +474,7 @@ export async function executeSim(
 		);
 	}
 	// onResult cannot change the result; a throw is only recorded in its log.
+	hookStep(ws, opts, "onResult", seed);
 	await runHooks(ws.hooks, stage("onResult", status));
 	return {
 		...base,

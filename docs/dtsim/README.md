@@ -72,6 +72,21 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 则每个事件一行（`compile g1 started`、`compile g1 OK 00:17 <log> (12K)`）。
 颜色跟随 chalk 的终端检测；写入 `regression.txt` / `result.txt` 的文本去掉颜色。
 
+`dtsim run` 在 stderr 上实时显示当前用例的状态：
+
+- compile / sim 开始时先打印一行 `▶ <case> <步骤>  log <日志路径>`，再打印实际
+  提交的命令（`$ bsub ... vcs ...`，程序名加粗、选项高亮），方便提前定位。
+- 运行中是一个 spinner 面板：当前步骤（`preCompile`、`compile`、`postCompile`、
+  `preSim`、`sim seed N`、`postSim`、`grade`、`onResult`；hook 步骤只在配置了
+  该阶段的 hook 时出现）、已运行时间和日志大小；下面每个已出现的日志一行（编译
+  日志、仿真日志），显示大小和最后一行（只读文件末尾 4 KB，每 250 ms 刷新）。
+  日志还没落盘或 NFS 还没同步时大小显示 `-`。
+- 每个步骤结束打印一行 `✓ / ✗ <case> <步骤>  <带颜色的状态>  <耗时>  <日志> <大小>`。
+  sim 的状态是退出码（`OK` 或 `exit N`），判定看 grade 那一行。
+
+`--plain` 或 stderr 不是终端时只打印上面的开始 / 结束行，没有 spinner。`-v`
+（日志直接输出到终端）与 `--interactive` 不显示这些。
+
 每个回归根目录里生成的 `dresults` 只是转发：用生成它的那个 dtsim（`bun <entry>
 dtsim` 或编译版 `autowire dtsim`）执行 `results --dir <该目录>`，参数原样传递
 （`--recheck`、`--csv`），输出与 `dtsim results` 相同。`$DTSIM_BIN` 可替换记录的

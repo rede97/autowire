@@ -94,3 +94,11 @@ function wrap(cell: string, width: number): string {
 		})
 		.join("\n");
 }
+
+/** "512B", "12K", "3.4M" for a byte count. */
+export function fmtSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes}B`;
+	return bytes > 1024 * 1024
+		? `${(bytes / 1024 / 1024).toFixed(1)}M`
+		: `${Math.round(bytes / 1024)}K`;
+}

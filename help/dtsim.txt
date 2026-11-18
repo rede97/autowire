@@ -20,7 +20,11 @@ Commands
   common: --config <file> (default dt/config/dtsim.config.ts upward from CWD),
           -s, --num-seeds, -d <label>, -v, --plain, --cov, --no-wave
   output: plans, tables and result trees on stdout; progress on stderr
-          (live panel on a TTY, one line per event with --plain or a pipe)
+          (live panel on a TTY, one line per event with --plain or a pipe).
+          run: start line with the log path and the submitted command,
+          spinner with step + elapsed + log size and the last line of the
+          compile and sim logs ("-" until a log is on disk), and an end line
+          per step with colored status and elapsed time
 
 Rules
   Filelist entries are relative to the project root (nested -f too); dtsim
