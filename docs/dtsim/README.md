@@ -80,15 +80,15 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 │ verilator --binary --top-module sv_reg_smoke ... │
 └──────────────────────────────────────────────────┘
 ⠹      00:07  compile                compile.log     3.3 KiB      ← 运行中
-              compile.log     3.3 KiB  <日志最后一行>
+              <日志最后一行>
 OK     00:07  compile                compile.log     3.9 KiB      ← 结束
 PASS   00:00  grade
 ```
 
 - compile / sim 开始时打印日志路径，以及实际提交的命令：框线标题写 `cmd`，与上框线
   同一行；程序名粗体青色，`-` / `+` 开头的选项黄色，其余灰色，长命令在框内折行。
-- 运行中：`[spinner] [已运行时间] [步骤] <日志> <大小>`，下面每个已出现的日志（编译、
-  仿真）一行，显示大小和最后一行（只读文件末尾 4 KB，每 250 ms 刷新）。日志还没落盘
+- 运行中：`[spinner] [已运行时间] [步骤] <日志> <大小>`，下一行是该日志的最后一行（只读
+  文件末尾 4 KB，每 250 ms 刷新）。日志还没落盘
   或 NFS 还没同步时大小显示 `-`。步骤有 `preCompile`、`compile`、`postCompile`、
   `preSim`、`sim`、`postSim`、`grade`、`onResult`（不带 seed，seed 在 Run / Summary
   表里）；hook 步骤只在配置了该阶段的 hook 时出现。
