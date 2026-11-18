@@ -220,8 +220,8 @@ describe("verilator backend", () => {
 describe("user-registered backend", () => {
 	test("a workspace can ship its own simulator plugin", async () => {
 		const body = CASES_TS.replace(
-			'import { Case, Group, Subcase, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
-			`import { Case, Group, Subcase, WaiveRule, Workspace, defineTool } from "./.dtsim/dsl/index.ts";
+			'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
+			`import { Case, Group, WaiveRule, Workspace, defineTool } from "./.dtsim/dsl/index.ts";
 const echoTool = defineTool({
 	kind: "dtsim-tool",
 	id: "echo-sim",

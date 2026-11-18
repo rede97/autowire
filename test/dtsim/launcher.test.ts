@@ -59,8 +59,8 @@ describe("launchers", () => {
 			'{ type: "tagged", maxSlots: 1, maxCompiles: 1, options: { tag: "T42" } }',
 		)
 			.replace(
-				'import { Case, Group, Subcase, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
-				`import { Case, Group, Subcase, WaiveRule, Workspace, defineLauncher } from "./.dtsim/dsl/index.ts";
+				'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
+				`import { Case, Group, WaiveRule, Workspace, defineLauncher } from "./.dtsim/dsl/index.ts";
 const tagged = defineLauncher({
 	kind: "dtsim-launcher",
 	id: "tagged",

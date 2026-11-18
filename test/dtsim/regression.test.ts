@@ -150,8 +150,8 @@ describe("user hooks", () => {
 			"waive: [",
 			'hooks: { preSim: Hook("fail_hook.sh") },\n\twaive: [',
 		).replace(
-			"import { Case, Group, Subcase, WaiveRule, Workspace }",
-			"import { Case, Group, Hook, Subcase, WaiveRule, Workspace }",
+			"import { Case, Group, WaiveRule, Workspace }",
+			"import { Case, Group, Hook, WaiveRule, Workspace }",
 		);
 		const ws = await makeWorkspace(body);
 		await Bun.write(
@@ -171,8 +171,8 @@ describe("user hooks", () => {
 			"waive: [",
 			'hooks: { onGrade: Hook("grade.sh") },\n\twaive: [',
 		).replace(
-			"import { Case, Group, Subcase, WaiveRule, Workspace }",
-			"import { Case, Group, Hook, Subcase, WaiveRule, Workspace }",
+			"import { Case, Group, WaiveRule, Workspace }",
+			"import { Case, Group, Hook, WaiveRule, Workspace }",
 		);
 		const ws = await makeWorkspace(body);
 		await Bun.write(

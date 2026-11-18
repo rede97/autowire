@@ -21,8 +21,9 @@ export type TestWorkspace = {
 };
 
 export const CASES_TS = `
-import { Case, Group, Subcase, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
+import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
 
+// Only top-level cases are exported; derived cases hang off them.
 export const hello = Case("test_hello_world", {
 	owner: "andy",
 	random: false,
@@ -32,13 +33,13 @@ export const hello = Case("test_hello_world", {
 	uvm: { test: "top_test", seq: "test_hello_world_seq", timeout: "1000ps" },
 });
 
-export const helloCosim = Subcase(hello, "cosim", {
+hello.SubCase("cosim", {
 	compileArgs: ["-ad=\${verify}/abc", "-debug_access+all"],
 	simArgs: ["+fsdb+glitch=0"],
 	env: { INPUT: "input.spf" },
 });
 
-export const helloTiming = Subcase(hello, "timing", {
+hello.SubCase("timing", {
 	grade: { error: ["re:ERROR:.*timing violation"] },
 });
 
@@ -49,11 +50,10 @@ export const bar = Case("test_bar_basic", {
 	uvm: { test: "top_test", seq: "test_bar_seq" },
 });
 
-export const barCosim = Subcase(bar, "cosim", {
+bar.SubCase("cosim", {
 	compileArgs: ["-debug_access+all"],
 	env: { INPUT: "input.spf" },
 });
-
 export const smoke = Case("test_quick_smoke", {
 	owner: "dave",
 	uvm: { test: "quick_test", timeout: "100ps" },

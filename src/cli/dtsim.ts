@@ -19,6 +19,7 @@ import {
 } from "../dtsim/core/regression.ts";
 import { resultsCommand } from "../dtsim/core/results.ts";
 import { printCaseEnv, runSingle } from "../dtsim/core/single.ts";
+import type { CaseDef } from "../dtsim/dsl/index.ts";
 import { formatRelease } from "./version.ts";
 
 type CommonOpts = {
@@ -135,13 +136,24 @@ function addDtsimCommands(cmd: Command): Command {
 
 	cmd
 		.command("list")
-		.description("list base testcases")
+		.description(
+			"list testcases; derived cases are indented under their parent",
+		)
 		.option("--config <path>", CONFIG_HELP)
 		.action(async (opts: { config?: string }) => {
 			const ws = await loadWorkspace({ config: opts.config });
-			for (const [id] of [...ws.cases.entries()].sort()) {
+			// Top-level cases show seq and owner; derived ids are listed without
+			// evaluating their (possibly lazy) options.
+			const walk = (node: CaseDef, depth: number): void => {
+				for (const child of node.children) {
+					console.log(`${"  ".repeat(depth)}${child.id}`);
+					walk(child, depth + 1);
+				}
+			};
+			for (const [id, node] of [...ws.cases.entries()].sort()) {
 				const c = mergeCase(ws, id);
 				console.log(`${id}\t${c.uvm?.seq ?? ""}\t${c.owner}`);
+				walk(node, 1);
 			}
 		});
 

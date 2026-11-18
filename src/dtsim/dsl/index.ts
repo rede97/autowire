@@ -35,18 +35,26 @@ export type CaseOpts = {
 	filelist?: string;
 };
 
+/** Case options, or a function computing them from the parent's merged
+ *  options. Functions run only when that case is used (run, regr, env, plan)
+ *  and at most once per load. */
+export type CaseOptsInput =
+	| CaseOpts
+	| ((parent: Readonly<CaseOpts>) => CaseOpts);
+
 export type CaseDef = {
 	kind: "dtsim-case";
+	/** Last id segment: the case name for a root, the suffix for a derived case. */
 	name: string;
-	opts: CaseOpts;
-};
-
-export type SubcaseDef = {
-	kind: "dtsim-subcase";
-	name: string;
-	base: string;
-	suffix: string;
-	opts: CaseOpts;
+	/** Full id: root.suffix.suffix... */
+	id: string;
+	parent?: CaseDef;
+	opts: CaseOptsInput;
+	/** Derived cases, in declaration order. */
+	readonly children: readonly CaseDef[];
+	/** Derive `<id>.<suffix>`: lists append, maps merge, scalars override the
+	 *  parent (which is this case, itself possibly derived). */
+	SubCase(suffix: string, opts?: CaseOptsInput): CaseDef;
 };
 
 export type GroupDef = {
@@ -300,14 +308,6 @@ export function isCase(v: unknown): v is CaseDef {
 	);
 }
 
-export function isSubcase(v: unknown): v is SubcaseDef {
-	return (
-		typeof v === "object" &&
-		v !== null &&
-		(v as SubcaseDef).kind === "dtsim-subcase"
-	);
-}
-
 export function isWorkspace(v: unknown): v is WorkspaceDef {
 	return (
 		typeof v === "object" &&
@@ -330,33 +330,58 @@ export function isLauncher(v: unknown): v is Launcher {
 	);
 }
 
+/** Validate evaluated case options (also used for lazily computed ones). */
+export function checkCaseOpts(
+	what: string,
+	opts: CaseOpts | undefined,
+): CaseOpts {
+	return needOpts(what, opts);
+}
+
+function caseNode(
+	name: string,
+	id: string,
+	opts: CaseOptsInput,
+	parent: CaseDef | undefined,
+): CaseDef {
+	// Object options validate now; functions validate when evaluated.
+	if (typeof opts !== "function") needOpts(id, opts);
+	const children: CaseDef[] = [];
+	const node: CaseDef = {
+		kind: "dtsim-case",
+		name,
+		id,
+		...(parent === undefined ? {} : { parent }),
+		opts,
+		children,
+		SubCase(suffix: string, sub: CaseOptsInput = {}): CaseDef {
+			needString(`subcase suffix of ${id}`, suffix);
+			if (
+				suffix.includes("/") ||
+				suffix.includes(".") ||
+				suffix === "default"
+			) {
+				throw new Error(`dtsim: invalid subcase suffix "${suffix}" on ${id}`);
+			}
+			if (children.some((c) => c.name === suffix)) {
+				throw new Error(`dtsim: ${id} already has subcase "${suffix}"`);
+			}
+			const child = caseNode(suffix, `${id}.${suffix}`, sub, node);
+			children.push(child);
+			return child;
+		},
+	};
+	return node;
+}
+
+/** A top-level case. Derive with `.SubCase(suffix, opts)`, at any depth; a
+ *  case file only needs to export the top-level cases. */
 export function Case(name: string, opts: CaseOpts = {}): CaseDef {
 	needString("case name", name);
 	if (name.includes(".") || name.includes("/")) {
 		throw new Error(`dtsim: case name "${name}" must not contain "." or "/"`);
 	}
-	return { kind: "dtsim-case", name, opts: needOpts(name, opts) };
-}
-
-export function Subcase(
-	base: CaseDef,
-	suffix: string,
-	opts: CaseOpts = {},
-): SubcaseDef {
-	if (!isCase(base)) {
-		throw new Error("dtsim: Subcase needs a Case(...) as its first arg");
-	}
-	needString("subcase suffix", suffix);
-	if (suffix.includes("/") || suffix === "default" || suffix.includes(".")) {
-		throw new Error(`dtsim: invalid subcase suffix "${suffix}"`);
-	}
-	return {
-		kind: "dtsim-subcase",
-		name: `${base.name}.${suffix}`,
-		base: base.name,
-		suffix,
-		opts: needOpts(`${base.name}.${suffix}`, opts),
-	};
+	return caseNode(name, name, opts, undefined);
 }
 
 export function Group(name: string, members: readonly string[]): GroupDef {

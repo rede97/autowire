@@ -1,6 +1,6 @@
 // Remaining example cases. SIM_TRACE demonstrates a sim-only env variable:
 // it reaches the simulator but never splits a compile group.
-import { Case, Subcase } from "../../../../../src/dtsim/dsl/index.ts";
+import { Case } from "../../../../../src/dtsim/dsl/index.ts";
 
 export const bar = Case("test_bar_basic", {
 	owner: "bob",
@@ -18,7 +18,7 @@ export const bar = Case("test_bar_basic", {
 	},
 });
 
-export const barCosim = Subcase(bar, "cosim", {
+bar.SubCase("cosim", {
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time
 	compileArgs: ["-ad=${verify}/abc", "-debug_access+all"],
 	simArgs: ["+fsdb+glitch=0"],
@@ -37,7 +37,7 @@ export const fullChip = Case("test_full_chip", {
 	},
 });
 
-export const fullChipCosim = Subcase(fullChip, "cosim", {
+fullChip.SubCase("cosim", {
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time
 	compileArgs: ["-ad=${verify}/abc", "-debug_access+all"],
 	simArgs: ["+fsdb+glitch=0"],

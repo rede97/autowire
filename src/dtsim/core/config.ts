@@ -9,16 +9,15 @@ import { DSL_SOURCE } from "../dsl/embedded.generated.ts";
 import {
 	type CaseDef,
 	type CaseOpts,
+	checkCaseOpts,
 	type EnvValue,
 	type GradeSpec,
 	type GroupDef,
 	type HookPhase,
 	type HookSpec,
 	isCase,
-	isSubcase,
 	isWorkspace,
 	type Patch,
-	type SubcaseDef,
 	type TaskSpec,
 	type UvmCfg,
 	type WaiveRuleDef,
@@ -35,7 +34,9 @@ import {
 
 export type MergedCase = {
 	id: string;
+	/** Top-level case name (first id segment). */
 	base: string;
+	/** Last id segment of a derived case. */
 	suffix?: string;
 	owner: string;
 	random: boolean;
@@ -69,8 +70,10 @@ export type ResolvedWorkspace = {
 	patches: Patch[];
 	hooks: Partial<Record<HookPhase, HookSpec>>;
 	groups: Map<string, string[]>;
+	/** Top-level cases by name; derived cases hang off `children`. */
 	cases: Map<string, CaseDef>;
-	subcases: Map<string, SubcaseDef>;
+	/** Lazily merged options per case id (functions evaluated once). */
+	resolved: Map<string, CaseOpts>;
 };
 
 export type ExpandVars = {
@@ -181,24 +184,48 @@ function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
 	return out;
 }
 
-export function mergeCase(
-	ws: Pick<ResolvedWorkspace, "cases" | "subcases" | "bareDefaults">,
+type CaseSource = Pick<
+	ResolvedWorkspace,
+	"cases" | "resolved" | "bareDefaults" | "deny"
+>;
+
+/** Find a case node by id: root name, then one child per `.suffix`. */
+export function findCase(
+	ws: Pick<ResolvedWorkspace, "cases">,
 	id: string,
-): MergedCase {
-	const dot = id.indexOf(".");
-	const baseName = dot === -1 ? id : id.slice(0, dot);
-	const base = ws.cases.get(baseName);
-	if (!base) throw new Error(`dtsim: testcase "${id}" not found`);
-	let opts = base.opts;
-	let suffix: string | undefined;
-	if (dot === -1) {
-		if (ws.bareDefaults) opts = mergeOpts(opts, ws.bareDefaults);
-	} else {
-		const sub = ws.subcases.get(id);
-		if (!sub) throw new Error(`dtsim: testcase "${id}" not found`);
-		suffix = sub.suffix;
-		opts = mergeOpts(opts, sub.opts);
+): CaseDef {
+	const [rootName, ...suffixes] = id.split(".");
+	let node = ws.cases.get(rootName ?? "");
+	for (const suffix of suffixes) {
+		node = node?.children.find((c) => c.name === suffix);
 	}
+	if (!node) throw new Error(`dtsim: testcase "${id}" not found`);
+	return node;
+}
+
+/** Merged options of a node without bareDefaults: root options, then each
+ *  derivation level in order. Function options run here, once per load. */
+function treeOpts(ws: CaseSource, node: CaseDef): CaseOpts {
+	const cached = ws.resolved.get(node.id);
+	if (cached) return cached;
+	const parent = node.parent ? treeOpts(ws, node.parent) : {};
+	const own =
+		typeof node.opts === "function"
+			? checkCaseOpts(node.id, node.opts(parent))
+			: node.opts;
+	const opts = node.parent ? mergeOpts(parent, own) : own;
+	assertNoDeniedAssignments(node.id, opts.env ?? {}, ws.deny);
+	ws.resolved.set(node.id, opts);
+	return opts;
+}
+
+export function mergeCase(ws: CaseSource, id: string): MergedCase {
+	const node = findCase(ws, id);
+	let opts = treeOpts(ws, node);
+	// A bare top-level case gets bareDefaults; derived cases do not.
+	if (!node.parent && ws.bareDefaults) opts = mergeOpts(opts, ws.bareDefaults);
+	const baseName = id.split(".")[0] as string;
+	const suffix = node.parent ? node.name : undefined;
 	return {
 		id,
 		base: baseName,
@@ -306,24 +333,22 @@ export async function loadWorkspace(opts: {
 	for (const launcher of o.launchers ?? []) registerLauncher(launcher);
 	getTool(o.tool); // unknown tool fails before any output dir is created
 
+	// Only top-level cases need exporting. A derived case exported as well
+	// registers its root; the same root object exported twice is fine.
 	const cases = new Map<string, CaseDef>();
-	const subcases = new Map<string, SubcaseDef>();
 	const registerExports = (
 		mod: Record<string, unknown>,
 		from: string,
 	): void => {
 		for (const value of Object.values(mod)) {
-			if (isCase(value)) {
-				if (cases.has(value.name)) {
-					throw new Error(`dtsim: duplicate case "${value.name}" (${from})`);
-				}
-				cases.set(value.name, value);
-			} else if (isSubcase(value)) {
-				if (subcases.has(value.name)) {
-					throw new Error(`dtsim: duplicate subcase "${value.name}"`);
-				}
-				subcases.set(value.name, value);
+			if (!isCase(value)) continue;
+			let root = value;
+			while (root.parent) root = root.parent;
+			const known = cases.get(root.name);
+			if (known && known !== root) {
+				throw new Error(`dtsim: duplicate case "${root.name}" (${from})`);
 			}
+			cases.set(root.name, root);
 		}
 	};
 	registerExports(configModule, configPath);
@@ -331,30 +356,14 @@ export async function loadWorkspace(opts: {
 		const path = resolvePath(rel, paths);
 		registerExports(await importModule(path), path);
 	}
-	for (const sub of subcases.values()) {
-		if (!cases.has(sub.base)) {
-			throw new Error(
-				`dtsim: subcase ${sub.name} has no base case ${sub.base}`,
-			);
-		}
-	}
 
 	const groups = new Map<string, string[]>();
 	for (const g of (o.groups ?? []) as GroupDef[])
 		groups.set(g.name, [...g.members]);
 
+	// Case options (and deny checks on them) are evaluated per case on first
+	// use, not here: a load touches only the cases a command runs.
 	const deny = [...(o.env?.deny ?? [])];
-	const partial: Pick<
-		ResolvedWorkspace,
-		"cases" | "subcases" | "bareDefaults"
-	> = {
-		cases,
-		subcases,
-		...(o.bareDefaults === undefined ? {} : { bareDefaults: o.bareDefaults }),
-	};
-	for (const id of [...cases.keys(), ...subcases.keys()]) {
-		assertNoDeniedAssignments(id, mergeCase(partial, id).env, deny);
-	}
 	const task: TaskSpec = {
 		type: o.task?.type ?? "local",
 		...(o.task?.queue === undefined ? {} : { queue: o.task.queue }),
@@ -376,7 +385,9 @@ export async function loadWorkspace(opts: {
 		toolId: o.tool,
 		filelist: resolvePath(o.filelist ?? "file.lst", paths),
 		toolOptions: { ...o.toolOptions },
-		...partial,
+		cases,
+		resolved: new Map(),
+		...(o.bareDefaults === undefined ? {} : { bareDefaults: o.bareDefaults }),
 		passthrough: [...(o.env?.passthrough ?? [])],
 		deny,
 		task,

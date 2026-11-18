@@ -5,8 +5,8 @@ import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 
 const withPatches = (decl: string, list: string) =>
 	CASES_TS.replace(
-		'import { Case, Group, Subcase, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
-		`import { Case, Group, Subcase, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
+		'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
+		`import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 ${decl}`,

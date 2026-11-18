@@ -85,8 +85,8 @@ describe("dsl merge", () => {
 	test("a backend compileKey decides which cases share a build", async () => {
 		// This backend compiles nothing from defines or env: one build for all.
 		const body = CASES_TS.replace(
-			'import { Case, Group, Subcase, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
-			`import { Case, Group, Subcase, WaiveRule, Workspace, defineTool } from "./.dtsim/dsl/index.ts";
+			'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
+			`import { Case, Group, WaiveRule, Workspace, defineTool } from "./.dtsim/dsl/index.ts";
 const shared = defineTool({
 	kind: "dtsim-tool", id: "shared-sim", passthrough: [], interactive: false,
 	compileErrors: [], simErrors: [],
@@ -103,15 +103,90 @@ const shared = defineTool({
 		expect(plan.stdout).toContain("Compile groups : 1");
 	});
 
-	test("deny list rejects a case assignment at load time", async () => {
+	test("deny list rejects a case assignment when that case is used", async () => {
 		const body = CASES_TS.replace(
 			'BAR_CFG: "basic",',
 			'BAR_CFG: "basic", LD_PRELOAD: "evil.so",',
 		);
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(body)).config,
+		});
+		expect(() => mergeCase(ws, "test_hello_world")).not.toThrow();
+		expect(() => mergeCase(ws, "test_bar_basic")).toThrow("deny list");
+		// Derived cases inherit the assignment and fail the same way.
+		expect(() => mergeCase(ws, "test_bar_basic.cosim")).toThrow("deny list");
+	});
+});
+
+// Shared with the generated config below, which records lazy evaluations here.
+declare global {
+	var dtsimTreeCalls: string[] | undefined;
+}
+
+describe("case tree", () => {
+	const TREE = `
+import { Case, Workspace } from "./.dtsim/dsl/index.ts";
+const calls = (globalThis.dtsimTreeCalls ??= []);
+export const top = Case("t", { defines: ["A"], simArgs: ["+a"], env: { X: "1" } });
+const fast = top.SubCase("fast", { defines: ["FAST"], env: { Y: "2" } });
+fast.SubCase("ss", (parent) => {
+	calls.push("ss");
+	return { simArgs: [\`+n=\${parent.defines?.length}\`], env: { X: "3" } };
+});
+top.SubCase("slow", () => {
+	calls.push("slow");
+	throw new Error("slow opts should never be evaluated");
+});
+export default Workspace({ tool: "vcs" });
+`;
+
+	test("multi-level SubCase merges every level; only the root is exported", async () => {
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(TREE)).config,
+		});
+		expect([...ws.cases.keys()]).toEqual(["t"]);
+		const c = mergeCase(ws, "t.fast.ss");
+		expect(c.base).toBe("t");
+		expect(c.suffix).toBe("ss");
+		expect(c.defines).toEqual(["A", "FAST"]);
+		expect(c.simArgs).toEqual(["+a", "+n=2"]);
+		expect(c.env).toEqual({ X: "3", Y: "2" });
+		expect(() => mergeCase(ws, "t.ss")).toThrow("not found");
+	});
+
+	test("function options run only for the case being used, once", async () => {
+		globalThis.dtsimTreeCalls = [];
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(TREE)).config,
+		});
+		expect(globalThis.dtsimTreeCalls).toEqual([]);
+		mergeCase(ws, "t.fast.ss");
+		mergeCase(ws, "t.fast.ss");
+		expect(globalThis.dtsimTreeCalls).toEqual(["ss"]);
+		expect(() => mergeCase(ws, "t.slow")).toThrow("never be evaluated");
+		expect(globalThis.dtsimTreeCalls).toEqual(["ss", "slow"]);
+	});
+
+	test("duplicate suffix under one parent fails at definition", async () => {
+		const body = TREE.replace(
+			"export default",
+			'top.SubCase("fast");\nexport default',
+		);
 		const ws = await makeWorkspace(body);
 		await expect(loadWorkspace({ config: ws.config })).rejects.toThrow(
-			"deny list",
+			'already has subcase "fast"',
 		);
+	});
+
+	test("dtsim list prints derived ids under their parent", async () => {
+		const result = await runDtsim(await makeWorkspace(TREE), ["list"]);
+		expect(result.code).toBe(0);
+		expect(result.stdout.split("\n").slice(0, 4)).toEqual([
+			"t\t\t",
+			"  t.fast",
+			"    t.fast.ss",
+			"  t.slow",
+		]);
 	});
 
 	test("unknown tool id fails before any run", async () => {

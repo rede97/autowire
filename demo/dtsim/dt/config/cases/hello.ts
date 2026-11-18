@@ -1,5 +1,11 @@
-// Hello-world cases and their subcases, ported from dsim testcase.toml.
-import { Case, Subcase } from "../../../../../src/dtsim/dsl/index.ts";
+// Hello-world case and its derivation tree, ported from dsim testcase.toml.
+// Only the top-level case is exported; dtsim walks .SubCase children:
+//   test_hello_world
+//     test_hello_world.cosim          (+ cosim compile args, typical deck)
+//       test_hello_world.cosim.ss     (corner deck, computed lazily)
+//       test_hello_world.cosim.ff
+//     test_hello_world.timing
+import { Case } from "../../../../../src/dtsim/dsl/index.ts";
 
 const cosim = {
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time
@@ -27,22 +33,21 @@ export const hello = Case("test_hello_world", {
 	},
 });
 
-export const helloCosim = Subcase(hello, "cosim", {
+const cosimCase = hello.SubCase("cosim", {
 	...cosim,
 	env: { INPUT: "input.spf" },
 });
 
-export const helloCosimSs = Subcase(hello, "cosim_ss", {
-	...cosim,
-	env: { INPUT: "input_ss.spf" },
-});
-
-export const helloCosimFf = Subcase(hello, "cosim_ff", {
-	...cosim,
-	env: { INPUT: "input_ff.spf" },
-});
+// A function runs only when that case is used, with the parent's merged
+// options: here the corner deck name is derived from the cosim deck.
+for (const corner of ["ss", "ff"]) {
+	cosimCase.SubCase(corner, (parent) => {
+		const deck = String(parent.env?.INPUT ?? "input.spf");
+		return { env: { INPUT: deck.replace(".spf", `_${corner}.spf`) } };
+	});
+}
 
 // grade.error appends: the base "Error:" keyword is still active here.
-export const helloTiming = Subcase(hello, "timing", {
+hello.SubCase("timing", {
 	grade: { error: ["re:ERROR:.*timing violation"] },
 });

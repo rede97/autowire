@@ -71,14 +71,40 @@ rewrites those imports to the `.dtsim/dsl` copy. No symlink is used: Windows
 symlinks need extra privileges and Bun does not follow MSYS ones.
 
 - `Workspace({ tool, filelist, output, tools, launchers, toolOptions, bareDefaults, env, task, waive, patches, hooks, groups, cases })`
-- `Case(name, opts)` / `Subcase(base, suffix, opts)` / `Group(name, ids)` / `Hook(path, opts)`
+- `Case(name, opts)` / `case.SubCase(suffix, opts)` / `Group(name, ids)` / `Hook(path, opts)`
 - List fields (`defines`, `compileArgs`, `simArgs`, `grade.*`) append.
-  `env` maps merge per key. Bare names get `bareDefaults`; explicit subcases do not.
+  `env` maps merge per key. Bare top-level cases get `bareDefaults`; derived cases do not.
 - `filelist` (workspace or case) is a path relative to `dt/config/`. A case
   filelist replaces the workspace one and splits the compile group.
 - `output` moves the output root (default `<project>/dt/simout`), e.g.
   `output: "${workspace}/temp/output"` or `"${SCRATCH}/dtsim"`.
 - `uvm` is only interpreted by the VCS backend; other backends ignore it.
+
+### Case trees
+
+A top-level case owns its derived cases. `SubCase` returns the new case, so
+derivation nests to any depth, and the id is the dotted path:
+
+```ts
+export const hello = Case("test_hello_world", { defines: ["NUM=1"] });
+const cosim = hello.SubCase("cosim", { compileArgs: ["-debug_access+all"], env: { INPUT: "input.spf" } });
+cosim.SubCase("ss", (parent) => ({ env: { INPUT: String(parent.env?.INPUT).replace(".spf", "_ss.spf") } }));
+hello.SubCase("timing", { grade: { error: ["re:ERROR:.*timing violation"] } });
+// ids: test_hello_world, test_hello_world.cosim, test_hello_world.cosim.ss, test_hello_world.timing
+```
+
+- A case file exports only its top-level cases; dtsim walks `children`.
+  Exporting a derived case too is harmless (it registers its root).
+- Each level merges onto its parent's merged options with the list / map /
+  scalar rules above.
+- Options may be a function of the parent's merged options. dtsim calls it
+  only when that case is used (`run`, `regr`, `plan`, `env`, a group that
+  names it), at most once per load; `list` prints derived ids without
+  evaluating them. Deny-list checks run at the same moment, so a bad
+  assignment fails the case that has it, not the whole load.
+- A suffix may not contain `.` or `/`, may not be `default`, and must be
+  unique under its parent (checked when `SubCase` is called).
+- `group "all"` is the top-level cases; name derived ids in a `Group`.
 
 ### Placeholders and paths
 
