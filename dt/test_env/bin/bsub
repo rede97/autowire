@@ -1,0 +1,15 @@
+#!/bin/bash
+# Mock bsub: strips LSF flags and runs the wrapped command.
+args=()
+skip_next=false
+for arg in "$@"; do
+  if $skip_next; then skip_next=false; continue; fi
+  case "$arg" in
+    -I) ;;
+    -J|-q|-o|-e|-W|-R|-M|-n|-P|-app|-We) skip_next=true ;;
+    -*) skip_next=true ;;
+    *) args+=("$arg") ;;
+  esac
+done
+if [ ${#args[@]} -eq 0 ]; then echo "mock bsub: nothing to run" >&2; exit 1; fi
+exec "${args[@]}"

@@ -1,0 +1,16 @@
+#!/bin/bash
+# Mock srun: strips SLURM flags and runs the wrapped command.
+args=()
+skip_next=false
+for arg in "$@"; do
+  if $skip_next; then skip_next=false; continue; fi
+  case "$arg" in
+    --pty) ;;
+    --qos|--job-name|--mem|--gres|--partition|--account|--time) skip_next=true ;;
+    --*) skip_next=true ;;
+    -*) skip_next=true ;;
+    *) args+=("$arg") ;;
+  esac
+done
+if [ ${#args[@]} -eq 0 ]; then echo "mock srun: nothing to run" >&2; exit 1; fi
+exec "${args[@]}"

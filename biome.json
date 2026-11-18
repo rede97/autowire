@@ -6,7 +6,15 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!web", "!.vscode", "!.autowire", "!gen", "!demo"]
+		"includes": [
+			"**",
+			"!web",
+			"!.vscode",
+			"!.autowire",
+			"!gen",
+			"!demo",
+			"!dtsim/dsl/embedded.generated.ts"
+		]
 	},
 	"formatter": {
 		"enabled": true,

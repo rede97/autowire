@@ -1,0 +1,4 @@
+#!/bin/bash
+# Mock verdi: echo args for verification; never blocks.
+echo "Mock Verdi: $*"
+exit 0

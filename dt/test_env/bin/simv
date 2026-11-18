@@ -1,0 +1,46 @@
+#!/bin/bash
+# Mock simv: writes sim.log with keywords, env echo, and failure modes.
+LOG="sim.log"
+prev=""
+for arg in "$@"; do
+  case "$prev" in
+    -l) LOG="$arg" ;;
+  esac
+  prev="$arg"
+done
+mkdir -p "$(dirname "$LOG")"
+{
+  echo "mock simv: $*"
+  echo "output_dir=${output_dir:-}"
+  echo "BAR_CFG=${BAR_CFG:-}"
+  echo "INPUT=${INPUT:-}"
+  echo "SIM_TRACE=${SIM_TRACE:-}"
+  echo "UNRELATED_SECRET=${UNRELATED_SECRET:-}"
+  echo "LD_PRELOAD=${LD_PRELOAD:-}"
+  echo "DTSIM_TASK_TYPE=${DTSIM_TASK_TYPE:-}"
+} > "$LOG"
+if [ "${DTSIM_MOCK_SIMV_FAIL:-0}" = "1" ]; then
+  echo "UVM_FATAL @ 1200ns: mock fatal" >> "$LOG"
+  exit 1
+fi
+if [ "${DTSIM_MOCK_SIMV_WAIVE:-0}" = "1" ]; then
+  echo "DSIM_WAIVE_BEGIN" >> "$LOG"
+  echo "Error: benign inside waive region" >> "$LOG"
+  echo "DSIM_WAIVE_END" >> "$LOG"
+fi
+if [ "${DTSIM_MOCK_SIMV_RULES:-0}" = "1" ]; then
+  echo "DSIM_WAIVE_ON boot_timeout" >> "$LOG"
+  echo "Error: timeout in boot phase" >> "$LOG"
+  echo "DSIM_WAIVE_OFF" >> "$LOG"
+fi
+if [ "${DTSIM_MOCK_SIMV_ERROR:-0}" = "1" ]; then
+  echo "Error: mock runtime error" >> "$LOG"
+fi
+if [ "${DTSIM_MOCK_SIMV_TIMING:-0}" = "1" ]; then
+  echo "ERROR:/path/model.svp (26) tb_top.u_top at time 4390584.82ns : tRL_I + tRDWIN_I mum [0] max value timing violation by 11.0" >> "$LOG"
+fi
+if [ "${DTSIM_MOCK_SIMV_MISSING_EXPECT:-0}" != "1" ]; then
+  echo "Keyword" >> "$LOG"
+fi
+echo "TEST PASSED" >> "$LOG"
+exit 0

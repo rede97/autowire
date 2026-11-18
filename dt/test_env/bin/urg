@@ -1,0 +1,19 @@
+#!/bin/bash
+# Mock urg: creates the merged db and report directories.
+DBNAME="merge.vdb"
+REPORT="urgReport"
+prev=""
+for arg in "$@"; do
+  case "$prev" in
+    -dbname) DBNAME="$arg" ;;
+    -report) REPORT="$arg" ;;
+  esac
+  prev="$arg"
+done
+if [ "${DTSIM_MOCK_URG_FAIL:-0}" = "1" ]; then
+  echo "Error: mock urg failure"
+  exit 1
+fi
+mkdir -p "$DBNAME" "$REPORT"
+echo "<html>mock urg</html>" > "$REPORT/dashboard.html"
+exit 0

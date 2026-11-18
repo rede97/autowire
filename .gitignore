@@ -10,6 +10,9 @@ src/cli/doc-pack.generated.ts
 # output
 out
 dist
+dtsim.js
+.dtsim/
+simout/
 
 # 本地索引/临时产物
 tmp/
