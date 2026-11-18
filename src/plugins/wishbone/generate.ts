@@ -5,7 +5,12 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { writeIfChanged } from "../../core/write.ts";
 import type { WishboneSource, WorkspaceConfig } from "../../workspace.ts";
-import { type BusDef, flattenBuses, isBusDef } from "../wishbone-bus/dsl.ts";
+import {
+	type BusDef,
+	busNeedsSlaveCdc,
+	flattenBuses,
+	isBusDef,
+} from "../wishbone-bus/dsl.ts";
 import { busModuleName } from "../wishbone-bus/emit.ts";
 import {
 	attachedSlaves,
@@ -292,7 +297,11 @@ export async function generateAll(
 		await mkdir(outDir, { recursive: true });
 		const pipe = await generatePipeModule(outDir, force);
 		if (pipe) paths.push(pipe);
-		if (allBuses.some(busNeedsMasterModules)) {
+		if (
+			allBuses.some(
+				(bus) => busNeedsMasterModules(bus) || busNeedsSlaveCdc(bus),
+			)
+		) {
 			paths.push(...(await generateMasterModules(outDir, force)));
 		}
 	}

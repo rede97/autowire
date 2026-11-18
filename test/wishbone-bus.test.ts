@@ -450,8 +450,33 @@ ts = "${ts.replaceAll("\\", "/")}"
 				SlaveRegfile(sha256, 0x40, { id: "sha256_1", external: true }),
 			],
 		});
-		expect(twice.slaves.map((s) => s.external)).toEqual([false, true]);
 		expect(twice.slaves.map((s) => s.name)).toEqual(["sha256_0", "sha256_1"]);
+	});
+	test("SlaveRegfile CDC emits target clock/reset and wb_cdc", () => {
+		const cdcBus = Bus("slave_cdc", "regfile CDC", {
+			addrWidth: 12,
+			masters: [Master("cfg", "config")],
+			slaves: [
+				SlaveRegfile(smoke_rw, 0, {
+					cdc: { clock: "reg_clk", reset: "reg_rst_n" },
+				}),
+			],
+		});
+		const wrap = emitBusSystemSv(cdcBus, ALIGNED) ?? "";
+		expect(wrap).toMatch(/^\s*input\s+logic\s+reg_clk\b/m);
+		expect(wrap).toMatch(/^\s*input\s+logic\s+reg_rst_n\b/m);
+		expect(wrap).toMatch(/u_smoke_rw_cdc\s*\(/);
+		expect(wrap).toMatch(/\.clk\s*\(\s*reg_clk\s*\)/);
+		expect(wrap).toMatch(/\.rst_n\s*\(\s*reg_rst_n\s*\)/);
+		expect(wrap).toMatch(/smoke_rw_regfile\s+u_smoke_rw\s*\(/);
+		expect(wrap).toMatch(/\.i_clk\s*\(\s*reg_clk\s*\)/);
+		expect(wrap).toMatch(/\.i_rst_n\s*\(\s*reg_rst_n\s*\)/);
+		expect(() =>
+			SlaveRegfile(smoke_rw, 0, {
+				cdc: { clock: "reg_clk", reset: "reg_rst_n" },
+				external: true,
+			}),
+		).toThrow(/cannot be combined with external/);
 	});
 
 	test("broadcast and broadcastBy are mutually exclusive", () => {

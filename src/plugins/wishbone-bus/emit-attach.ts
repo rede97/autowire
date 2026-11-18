@@ -4,6 +4,7 @@
 import {
 	type PrintStyle,
 	printSv,
+	type RenderConnect,
 	type RenderInst,
 	type RenderModule,
 	type RenderSignal,
@@ -50,6 +51,109 @@ function isSlaveWbPort(name: string, slave: string): boolean {
 	return name.startsWith(`${slave}_i_wb_`) || name.startsWith(`${slave}_o_wb_`);
 }
 
+function cdcTargetWbNet(slave: WbSlave, port: string): string {
+	return `${slave.name}_cdc_${port}`;
+}
+
+function cdcTgaNet(slave: WbSlave): string {
+	return `${slave.name}_cdc_tga`;
+}
+
+function cdcTgaPart(slave: WbSlave, domain: string): string {
+	const shadows = slave.regfile?.shadows ?? [];
+	let lo = 0;
+	for (const shadow of shadows) {
+		if (shadow.name === domain) {
+			return shadow.tag_width === 1
+				? String(lo)
+				: `${lo + shadow.tag_width - 1}:${lo}`;
+		}
+		lo += shadow.tag_width;
+	}
+	return "";
+}
+
+function cdcPortName(slave: WbSlave, suffix: "clock" | "reset"): string {
+	return slave.cdc?.[suffix] ?? "";
+}
+
+function cdcTagPack(
+	slave: WbSlave,
+	source: (domain: string) => string,
+): string {
+	const shadows = slave.regfile?.shadows ?? [];
+	if (shadows.length === 0) return "1'b0";
+	if (shadows.length === 1) return source(shadows[0]?.name ?? "");
+	return `{${[...shadows]
+		.reverse()
+		.map((s) => source(s.name))
+		.join(", ")}}`;
+}
+
+function cdcConn(port: string, to: string, packed = ""): RenderConnect {
+	return {
+		port,
+		to,
+		part: "",
+		type: "",
+		dir: "",
+		portPacked: packed,
+		portUnpacked: "",
+	};
+}
+
+function cdcInst(slave: WbSlave): RenderInst {
+	const rf = slave.regfile;
+	if (!rf || !slave.cdc)
+		throw new Error(`wishbone: slave ${slave.name} has no CDC leaf`);
+	const aw = rf.addr_width;
+	const tw = Math.max(
+		1,
+		rf.shadows.reduce((n, s) => n + s.tag_width, 0),
+	);
+	const sourceTga = cdcTagPack(
+		slave,
+		(domain) => `${slave.name}_i_wb_tga_${domain}`,
+	);
+	const conns = [
+		cdcConn("s_clk", "clk"),
+		cdcConn("s_rst_n", "rst_n"),
+		cdcConn("s_cyc", `${slave.name}_i_wb_cyc`),
+		cdcConn("s_stb", `${slave.name}_i_wb_stb`),
+		cdcConn("s_we", `${slave.name}_i_wb_we`),
+		cdcConn("s_adr", `${slave.name}_i_wb_adr`, packedRange(aw)),
+		cdcConn("s_dat", `${slave.name}_i_wb_dat`, "[31:0]"),
+		cdcConn("s_sel", `${slave.name}_i_wb_sel`, "[3:0]"),
+		cdcConn("s_tga", sourceTga, packedRange(tw)),
+		cdcConn("s_ack", `${slave.name}_o_wb_ack`),
+		cdcConn("s_err", cdcTargetWbNet(slave, "err")),
+		cdcConn("clk", cdcPortName(slave, "clock")),
+		cdcConn("rst_n", cdcPortName(slave, "reset")),
+		cdcConn("m_cyc", cdcTargetWbNet(slave, "cyc")),
+		cdcConn("m_stb", cdcTargetWbNet(slave, "stb")),
+		cdcConn("m_we", cdcTargetWbNet(slave, "we")),
+		cdcConn("m_adr", cdcTargetWbNet(slave, "adr"), packedRange(aw)),
+		cdcConn("m_dat", cdcTargetWbNet(slave, "dat"), "[31:0]"),
+		cdcConn("m_sel", cdcTargetWbNet(slave, "sel"), "[3:0]"),
+		cdcConn("m_tga", cdcTgaNet(slave), packedRange(tw)),
+		cdcConn("m_ack", cdcTargetWbNet(slave, "ack")),
+		cdcConn("m_rdat", cdcTargetWbNet(slave, "rdat"), "[31:0]"),
+	];
+	return {
+		id: `u_${slave.name}_cdc`,
+		mod: "wb_cdc",
+		params: [
+			{ name: "AW", value: String(aw) },
+			{ name: "TW", value: String(tw) },
+		],
+		connects: conns,
+	};
+}
+
+function packedRange(width: number): string {
+	return width > 1 ? `[${width - 1}:0]` : "";
+}
+
 function hasCascadeFace(def: BusDef): boolean {
 	return def.cascadeFace !== undefined;
 }
@@ -83,6 +187,24 @@ function readyPorts(slave: WbSlave): PortDecl[] {
 	if (!rf) return [];
 	const names = readyNames(slave);
 	return collectPorts(layoutRegfile(rf)).filter((p) => names.has(p.name));
+}
+
+function cdcPortDecl(slave: WbSlave): PortDecl[] {
+	if (!slave.cdc) return [];
+	return [
+		{
+			dir: "input",
+			packed: "",
+			name: slave.cdc.clock,
+			comment: `Regfile CDC clock for ${slave.name}`,
+		},
+		{
+			dir: "input",
+			packed: "",
+			name: slave.cdc.reset,
+			comment: `Regfile CDC reset for ${slave.name}`,
+		},
+	];
 }
 
 // Ready roles are deliberately shared by exact i_<name>; unlike ordinary sidebands,
@@ -208,6 +330,16 @@ function wrapperPorts(def: BusDef): Array<{
 			});
 		}
 	}
+	for (const s of attached) {
+		for (const p of cdcPortDecl(s)) {
+			if (ports.some((x) => x.name === p.name)) {
+				throw new Error(
+					`wishbone-bus: wrapper ${def.name} CDC port collision on "${p.name}"`,
+				);
+			}
+			ports.push(p);
+		}
+	}
 	return ports;
 }
 
@@ -252,11 +384,11 @@ function leafPairs(
 			unpacked: p.unpacked ?? "",
 		};
 		if (p.name === "i_clk") {
-			pairs.push({ port: p.name, net: "clk", ...meta });
+			pairs.push({ port: p.name, net: slave.cdc?.clock ?? "clk", ...meta });
 			continue;
 		}
 		if (p.name === "i_rst_n") {
-			pairs.push({ port: p.name, net: "rst_n", ...meta });
+			pairs.push({ port: p.name, net: slave.cdc?.reset ?? "rst_n", ...meta });
 			continue;
 		}
 		if (ready.has(p.name)) {
@@ -273,7 +405,27 @@ function leafPairs(
 					`wishbone-bus: wrapper ${slave.name} missing fabric port for ${p.name}`,
 				);
 			}
-			pairs.push({ port: p.name, ...meta, net: fabric.name });
+			if (!slave.cdc) {
+				pairs.push({ port: p.name, ...meta, net: fabric.name });
+				continue;
+			}
+			const input = p.name.startsWith(`${table}_i_wb_`);
+			const suffix = p.name.slice(`${table}_${input ? "i" : "o"}_wb_`.length);
+			if (suffix.startsWith("tga_")) {
+				pairs.push({
+					port: p.name,
+					...meta,
+					net: cdcTgaNet(slave),
+					part: cdcTgaPart(slave, suffix.slice(4)),
+				});
+			} else {
+				const target = suffix === "dat" ? (input ? "dat" : "rdat") : suffix;
+				pairs.push({
+					port: p.name,
+					...meta,
+					net: cdcTargetWbNet(slave, target),
+				});
+			}
 			continue;
 		}
 		pairs.push({
@@ -304,6 +456,10 @@ function leafInst(def: BusDef, slave: WbSlave): RenderInst | null {
 	};
 }
 
+function cdcInstForSlave(slave: WbSlave): RenderInst | null {
+	return slave.cdc ? cdcInst(slave) : null;
+}
+
 /** Internal WB nets: fabric slave face ↔ attached regfile leaf. */
 function internalWbSignals(def: BusDef, nt: string): RenderSignal[] {
 	const out: RenderSignal[] = [];
@@ -325,6 +481,77 @@ function internalWbSignals(def: BusDef, nt: string): RenderSignal[] {
 		}
 	}
 	return out;
+}
+
+function cdcSignals(slave: WbSlave, nt: string): RenderSignal[] {
+	if (!slave.cdc || !slave.regfile) return [];
+	const aw = slave.regfile.addr_width;
+	const tw = Math.max(
+		1,
+		slave.regfile.shadows.reduce((n, s) => n + s.tag_width, 0),
+	);
+	return [
+		{
+			name: cdcTargetWbNet(slave, "adr"),
+			packed: packedRange(aw),
+			unpacked: "",
+			nettype: nt,
+		},
+		{
+			name: cdcTargetWbNet(slave, "dat"),
+			packed: "[31:0]",
+			unpacked: "",
+			nettype: nt,
+		},
+		{
+			name: cdcTargetWbNet(slave, "sel"),
+			packed: "[3:0]",
+			unpacked: "",
+			nettype: nt,
+		},
+		{
+			name: cdcTargetWbNet(slave, "cyc"),
+			packed: "",
+			unpacked: "",
+			nettype: nt,
+		},
+		{
+			name: cdcTargetWbNet(slave, "stb"),
+			packed: "",
+			unpacked: "",
+			nettype: nt,
+		},
+		{
+			name: cdcTargetWbNet(slave, "we"),
+			packed: "",
+			unpacked: "",
+			nettype: nt,
+		},
+		{
+			name: cdcTargetWbNet(slave, "ack"),
+			packed: "",
+			unpacked: "",
+			nettype: nt,
+		},
+		{
+			name: cdcTargetWbNet(slave, "rdat"),
+			packed: "[31:0]",
+			unpacked: "",
+			nettype: nt,
+		},
+		{
+			name: cdcTargetWbNet(slave, "err"),
+			packed: "",
+			unpacked: "",
+			nettype: nt,
+		},
+		{
+			name: cdcTgaNet(slave),
+			packed: packedRange(tw),
+			unpacked: "",
+			nettype: nt,
+		},
+	];
 }
 
 /** Fabric instance: every fabric port onto its wrapper net. */
@@ -351,6 +578,7 @@ export function emitBusSystemSv(
 ): string | null {
 	const attached = attachedSlaves(def);
 	const external = attached.filter((s) => s.external);
+	const cdcAttached = attached.filter((s) => s.cdc);
 	assertExternalTagSources(def, external);
 	const cascade = hasCascadeFace(def);
 	const bridged = bridgedMasters(def).length > 0;
@@ -415,13 +643,18 @@ export function emitBusSystemSv(
 			modport: "",
 			comment: p.comment,
 		})),
-		signals: [...internalWbSignals(def, nt), ...masters.signals],
+		signals: [
+			...internalWbSignals(def, nt),
+			...cdcAttached.flatMap((s) => cdcSignals(s, nt)),
+			...masters.signals,
+		],
 		insts: [
 			...masters.insts,
 			fabricInst(def),
 			...attached.flatMap((s) => {
-				const inst = leafInst(def, s);
-				return inst ? [inst] : [];
+				const cdc = cdcInstForSlave(s);
+				const leaf = leafInst(def, s);
+				return [...(cdc ? [cdc] : []), ...(leaf ? [leaf] : [])];
 			}),
 		],
 		assigns: masters.assigns,

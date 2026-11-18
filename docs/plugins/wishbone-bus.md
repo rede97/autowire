@@ -144,7 +144,7 @@ Pipe **内建**在 decoder / interconnect 的 **slave 口**和 **master 口**上
 |---|---|
 | **SlaveRegion** | `SlaveRegion(name, desc, base, Size(bytes), { pipe: N, tag?, broadcast?, broadcastBy? })` 字符串窗口按 **字节跨度**；底层 mask = span 向上取 2 的幂；`(base & mask) === base`；**参与**区间重叠检查。`broadcast` / `broadcastBy` 见 §4.1 |
 | **Slave** | `Slave(name, desc, base, mask, { pipe: N, tag? })` **Raw** 端口（手写 match mask，不经 `Size`）。比较式是 `(adr & mask) == base`：基址必须落在窗口内，忽略位必须是连续低位，base/mask 不得超出 `addrWidth`，并与其它窗口一起查重叠。**禁止** `broadcast` / `broadcastBy`；`N=0`（缺省）= 组合直通；`N>0` = 本口插入 N 级打拍（1..16） |
-| **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（叶子 + `Size(layout span)`，可 `size=` 覆盖且必须盖住 span） |
+| **SlaveRegfile** | `SlaveRegfile(RegfileDef, base, { id?, pipe?, tag?, size?, desc?, cdc? })` = `SlaveRegion` 语法糖；`cdc: { clock, reset }` 在 wrapper 内插入 `wb_cdc`，叶子运行在目标域 |
 | **SlaveBus** | `SlaveBus(child.uplink(name?), base, { id?, pipe?, tag?, size?, desc? })` = `SlaveRegion` **语法糖**（子总线窗 + `Size(child span)`）。子模用 `.uplink(name?)` 指定级联面（单 master 可省名，多 master 必须点名）；一份 child RTL，N 次例化。父级已经下发 `adr & ~mask`（丢掉窗口基址所在的高位，**不是**基址相减，也 **不能**把地址位取反；窗口必须覆盖基址本身），子地址是窗相对的 |
 | **Master** | `Master(name, desc, { pipe: N })`；`N=0`（缺省）= 组合直通；`N>0`（1..16）= 在 **仲裁之前**（decoder 则在译码之前）插入 `wb_cfg_pipe`。仲裁请求与 grant 保持看 pipe 的 `s_cyc`，posted 写撤掉端口 `CYC` 后总线仍归该 master，直到队列排空。与父级 `SlaveBus` 的 slave pipe 是两级，互不替代 |
 
@@ -180,6 +180,19 @@ PIPE 读不可取消：发起后直到 ACK 必须保持 CYC/STB、WE、ADR、SEL
 
 **RWE / Cell ready 背压**：RWE `read_write_block` 缺省 false；Cell `.ready(name)` 独立启用整 Cell 读写阻塞。叶子 ACK=0 时 posted 写保留在 pipe，满后反压；master 已有的入队 ACK 不撤回。ready 不能依赖被该事务挡住的后续访问，否则形成队头死锁。pipe 协议和配置不变。
 
+**SlaveRegfile CDC**：
+
+```ts
+SlaveRegfile(regfile, 0x1000, {
+  cdc: { clock: "reg_clk", reset: "reg_rst_n" },
+})
+```
+
+- CDC 位于 fabric slave 口与 regfile 叶子之间；fabric / decoder 仍运行在 `clk` / `rst_n`，叶子和所有叶子旁路运行在 `reg_clk` / `reg_rst_n`。
+- Type-A wrapper 自动导出命名的目标时钟和低有效复位，并生成 `wb_cdc`、目标域 WB nets 和 regfile 例化。CDC 需要共享生成的 `wb_cdc` / `wb_async_fifo` / `wb_sync_cell` 模块。
+- 侧带信号只被接到目标域，不自动插入逐 bit synchronizer。`W1C/W1CC` 的 `_set/_clr`、RW/RWW/RO 输入、ready 和 reset-domain 输入必须由上层按目标域协议驱动；一次性事件应使用 handshake 或异步 FIFO。
+- `cdc` 与 `external: true` 互斥。若需要自行管理 CDC，使用 `external`，由上层负责 WB、叶子时钟/复位和全部侧带。
+- 本版本不扩展 fabric 的 ERR 通道。目标域复位必须在没有未完成 WB 事务时发生，或同时复位 fabric；禁止用目标域独立复位取消挂起读。
 ### 3.3 透明 register slice（备选，仅换时序）
 
 仅打拍、不改完成语义（前向/返回级数相同，ACK 仍表示叶完成）时可用对称 FF slice；与上表 **写 posted** 不同，二者勿混称为同一种 pipe。
@@ -303,7 +316,7 @@ v1 **只预留**：decoder 上的 **memory range / opaque slave 口**（不生�
 - 协议子集与 pipe **以本文为准**；叶子口 **必须**遵守。  
 - 生成编排 **必须**同一 plugin id `wishbone` 一次打出 arb+decoder+regfile（类型仍分立）；每个生成模经 **analysis → RtlIndex 普通叶子**；connect 侧一律 `aw-inst` 例化（**禁止**插件树私有口表向上递推）。  
 - **字符串窗口**：优先 `SlaveRegion(name, desc, base, Size(bytes), { pipe?, tag? })`。`Size` 是作者面跨度（字节）；底层 mask = `deriveWindowMask`（向上取 2 的幂）；`(base & mask) === base`。`Bus()` **必须**拒绝 Region 窗口两两重叠（含 `SlaveRegfile`）。原始 `Slave(name, desc, base, mask, …)` 是 **Raw** 口：作者手写 mask，不经 `Size`。`(adr & mask) == base` 必须能命中（基址落在窗口内），忽略位必须是连续低位，并与 Region 窗口一起查重叠。demo `uart` 是 `0x0200_0008` / `0xffff_fff8`。**禁止**给 `Slave` / `SlaveRegion` 重载 `RegfileDef`。  
-- **`SlaveRegfile` = `SlaveRegion` 语法糖**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, size?, desc?, external? })`。默认 `Size(layout span)` 再 2^N 对齐；`size=` 可放大窗口，**禁止**小于 span。`id` 缺省 = `RegfileDef.name`；同一 SoT 多挂总线用不同 `id`。`tag` 缺省 = 叶子 `tga_width`，**必须**与叶子一致。地址宽度：**fabric 的 regfile slave 口 `{id}_i_wb_adr` 直接按叶子 `addrWidth` 声明**，与 `<name>_regfile` 的 ADR 口逐位对齐；其它 slave（`Slave` / `SlaveRegion` / `SlaveBus`）仍是 fabric `addrWidth`。fabric 下发窗内 offset（`adr & ~mask`），窗口转发位以上全是 0，适配在 fabric 内完成：叶子更窄 → 取低位（被切掉的恒零高位经 lint sink 吃掉）；叶子更宽 → 零扩展 `{(M-N)'d0, …}`；相等 → 直连。有 `pipe` 时 `wb_cfg_pipe` 按两者中较窄的宽度寄存（叶子更窄先切位再进 pipe，叶子更宽 pipe 出口后再零扩展），不为恒零位加寄存器。wrapper 内置叶子与上层外置叶子都直连，不再做 ADR 适配。叶子 `addrWidth` **应当**等于它所在窗口转发的位数（demo：`sd_sha` 12 位 fabric 上 0x40 窗 → `sha256` 写 6；`hbm_ch` 0x100 窗 → `aword` / `dword` 写 8），可以更大（多出的高位恒零），但 **不得小于**（截断会把窗口别名到叶子上）→ `Bus()` 构造期报错。
+- **`SlaveRegfile` = `SlaveRegion` 语法糖**：`SlaveRegfile(regfile, base, { id?, pipe?, tag?, size?, desc?, external?, cdc?: { clock, reset } })`。默认 `Size(layout span)` 再 2^N 对齐；`cdc` 将 `wb_cdc` 放在 fabric slave 与内置叶子之间，叶子和侧带在命名目标时钟/复位域；`cdc` 与 `external` 互斥，目标域复位必须在无未完成总线事务时发生。其余地址、tag、窗口和叶子对齐规则不变。
 - **`external?`（缺省 `false` = 内置）**：按挂接点选择 regfile 分离模式。**内置**时 wrapper 例化 `<name>_regfile`、提升其字段旁路、把 fabric slave 口转成内部网线（现状）。**外置**时 wrapper **不**例化该叶子、**不**提升旁路，改为 **导出 fabric slave 口**（`{id}_i_wb_adr/dat/sel/cyc/stb/we[/_tga_<domain>]` 作 wrapper output，`{id}_o_wb_dat/ack` 作 wrapper input），由上层自行例化 `<name>_regfile` 并连接 WB、旁路、clk/rst。导出口已按叶子对齐（ADR 位宽 = 叶子 `addrWidth`，窗内相对地址，pipe 之后），上层直接同名连接，无需截位或零扩展。可内外混用；同一 `RegfileDef` 多挂时各挂接点独立选择。`<name>_regfile.sv` 与软件地址图（C / uvm_reg / Excel / sv_reg）在两种模式下 **完全一致**——插件照常生成独立叶子和地址图，只有 wrapper 层次不同。
 - **`SlaveBus` = `SlaveRegion` 语法糖**：`SlaveBus(child.uplink(name?), base, { id?, pipe?, tag?, size?, desc? })`。用于 **级联多级 decoder / interconnect / crossbar**。`id` 缺省 = `BusDef.name`；同一 child 多挂用不同 `id`（demo：`sd_sha` ×2 → `ch0`/`ch1`）。默认 `Size(busByteSpan(child))`；`size=` 可放大，**禁止**小于 child span。子总线用 `.uplink(name?)` 指定级联面（单 master 省名、多 master 必须点名；桥接口不能当面），**只选面、不改口名**：所有拓扑的 Type-A wrapper 均保留 `{master}_o_wb_*` / `{master}_i_wb_*`，由上层按角色显式连接父级 slave。注册生成与被级联的 **必须是同一个 `.uplink()` 对象**，使独立 wrapper 保留级联元数据（见 §9）。父级译码已下发窗内 offset（`adr & ~mask`），子地址是相对的，子 `addrWidth` **不得超过**这条窗口转发的位数（demo：`soc_wb` 的 4 KiB channel 窗转发 12 位，`sd_sha` 的 `addrWidth` 就是 12，不能再写 32）。channel 内 DMA 的 SRC **必须**写相对地址。**禁止**假设子 DMA 能打到父级 SRAM/flash（没有自动 downlink）。generate **必须**对 child RTL 只打一份，HTML 例化 N 次。  
 - 若 bus 上有挂接的 regfile **或** `.uplink()` 级联面：generate **必须**再打一份 Type-A **wrapper** `<bus>_bus_cfg`。connect HTML **禁止**再 `aw-inst mod="*_regfile"` 这些叶子；只例化 wrapper。未挂接的 slave 仍在 HTML。  

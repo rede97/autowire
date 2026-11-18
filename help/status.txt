@@ -65,6 +65,12 @@ Parallel (does not block connect)
     shadow copies within each group share a block. W1C/W1CC factor software clear
     and effective set/clear into combinational signals, with no extra latency.
     W1C keeps set-wins arbitration and its existing shadow update eligibility.
+    SlaveRegfile cdc: {clock, reset} inserts wb_cdc between fabric and the inline
+    leaf; leaf and sidebands use the named target domain. cdc excludes external;
+    target reset must be quiet or reset fabric together; sidebands are not synchronized.
+    SlaveRegfile CDC wrapper contract: fabric stays on clk/rst_n; inline leaf and
+    all sidebands use cdc.clock/cdc.reset. Target reset is quiet-only; no ERR path
+    is added to fabric. See docs/plugins/wishbone-bus.md §3.3.
     draft API + samples: docs/examples/regfile/regfile.ts;
     toml [wishbone.<source>] ts= (one file may export either or both; optional exports=);
     [plugins.wishbone] packed software (SoT exports only; no reverse to TS):

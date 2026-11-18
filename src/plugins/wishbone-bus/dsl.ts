@@ -131,8 +131,22 @@ export type SlaveOpts = {
 	readonly broadcastBy?: readonly string[];
 };
 
+/** Target clock/reset for an inline regfile-side Wishbone CDC bridge. */
+export type SlaveRegfileCdc = {
+	/** Wrapper input and target clock connected to the leaf's i_clk. */
+	readonly clock: string;
+	/** Wrapper input and target active-low reset connected to the leaf's i_rst_n. */
+	readonly reset: string;
+};
+
 /** Extra options when `SlaveRegfile` attaches a `RegfileDef`. */
 export type SlaveRegfileOpts = SlaveOpts & {
+	/**
+	 * Fabric-to-leaf CDC. The leaf runs on `cdc.clock` / `cdc.reset`; the
+	 * wrapper owns a `wb_cdc` bridge. Sidebands are exposed in that target
+	 * domain. `external` and `cdc` are mutually exclusive.
+	 */
+	readonly cdc?: SlaveRegfileCdc;
 	/**
 	 * Fabric slave id / interconnect port prefix. Defaults to `RegfileDef.name`.
 	 * Distinct ids hang the same SoT leaf more than once.
@@ -174,6 +188,8 @@ export type WbSlave = {
 	readonly regfile?: RegfileDef;
 	/** Attached leaf is instantiated above the wrapper; omitted/false = inline. */
 	readonly external?: boolean;
+	/** Optional fabric-to-leaf Wishbone CDC configuration. */
+	readonly cdc?: SlaveRegfileCdc;
 	/** Child fabric hung via `SlaveBus` (generated once; instantiated per hang). */
 	readonly bus?: BusDef;
 	/** Child master that faces this parent window (`SlaveBus` only). */
@@ -188,6 +204,11 @@ export type WbSlave = {
 	/** Broadcast strobes that also select this region while WE is set. */
 	readonly broadcastBy?: readonly string[];
 };
+
+/** True when this bus directly attaches a regfile CDC bridge. */
+export function busNeedsSlaveCdc(def: BusDef): boolean {
+	return def.slaves.some((slave) => slave.cdc !== undefined);
+}
 
 /** Author-facing window span (bytes). Decode still uses a 2^N match mask. */
 export type RegionSize = {
@@ -542,12 +563,40 @@ export function deriveWindowMask(spanBytes: number, addrWidth: number): number {
 	return (ones ^ (size - 1)) >>> 0;
 }
 
+function validateSlaveRegfileCdc(
+	name: string,
+	cdc: SlaveRegfileCdc | undefined,
+): void {
+	if (cdc === undefined) return;
+	for (const [kind, value] of [
+		["clock", cdc.clock],
+		["reset", cdc.reset],
+	] as const) {
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+			throw new Error(
+				`wishbone-bus: slave ${name} cdc ${kind} must be an identifier`,
+			);
+		}
+	}
+	if (cdc.clock === cdc.reset) {
+		throw new Error(
+			`wishbone-bus: slave ${name} cdc clock and reset must differ`,
+		);
+	}
+}
+
 function attachRegfile(
 	regfile: RegfileDef,
 	base: number,
 	opts: SlaveRegfileOpts,
 ): WbSlave {
 	const name = opts.id ?? regfile.name;
+	validateSlaveRegfileCdc(name, opts.cdc);
+	if (opts.cdc !== undefined && opts.external === true) {
+		throw new Error(
+			`wishbone-bus: slave ${name} cdc cannot be combined with external`,
+		);
+	}
 	const laid = layoutRegfile(regfile);
 	const tga = laid.tga_width;
 	if (opts.tag !== undefined && opts.tag !== tga) {
@@ -574,9 +623,13 @@ function attachRegfile(
 		broadcast: opts.broadcast,
 		broadcastBy: opts.broadcastBy,
 	});
-	return { ...region, regfile, external: opts.external ?? false };
+	return {
+		...region,
+		regfile,
+		external: opts.external ?? false,
+		...(opts.cdc ? { cdc: opts.cdc } : {}),
+	};
 }
-
 export function Slave(
 	name: string,
 	desc: string,
