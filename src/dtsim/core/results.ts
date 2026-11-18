@@ -2,8 +2,9 @@
 import { readdirSync, readlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { loadWorkspace, mergeCase } from "./config.ts";
+import { childEnv, hookBase } from "./engine.ts";
 import { gradeLog, waiveRuleMap } from "./grade.ts";
-import { runHook } from "./hooks.ts";
+import { runGradeHook } from "./hooks.ts";
 import { writeResultMarker } from "./scripts.ts";
 
 export type ResultRow = { dir: string; status: string };
@@ -39,25 +40,22 @@ export async function resultsCommand(opts: {
 			const seed = basename(row.dir);
 			try {
 				const c = mergeCase(ws, caseId);
-				if (ws.hooks.onGrade) {
-					const outcome = await runHook(ws.hooks.onGrade, {
-						phase: "onGrade",
-						caseId,
-						seed,
-						dir: row.dir,
-						verify: ws.verify,
-						tool: ws.toolId,
-						log: join(row.dir, "sim.log"),
-						env: process.env as Record<string, string>,
-					});
-					row.status = outcome.firstLine || "FAIL";
-				} else {
-					row.status = gradeLog(
-						join(row.dir, "sim.log"),
-						c.grade,
-						rules,
-					).status;
-				}
+				const log = join(row.dir, "sim.log");
+				const graded = ws.hooks.onGrade
+					? await runGradeHook(
+							ws.hooks,
+							hookBase(
+								ws,
+								c,
+								"onGrade",
+								row.dir,
+								log,
+								childEnv(ws, c, "sim", row.dir, seed).env,
+								{ seed },
+							),
+						)
+					: undefined;
+				row.status = graded ?? gradeLog(log, c.grade, rules).status;
 			} catch {
 				row.status = "FAIL";
 			}

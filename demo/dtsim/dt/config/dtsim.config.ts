@@ -2,25 +2,16 @@
 // The tools are fakes from ../bin (run.sh puts them first on PATH; the LSF
 // launcher goes through the fake bsub). Repo demos import the DSL source;
 // `docs unpack` rewrites the import to the .dtsim/dsl copy dtsim writes.
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import {
-	Hook,
-	type PatchContext,
-	WaiveRule,
-	Workspace,
-} from "../../../../src/dtsim/dsl/index.ts";
+import { WaiveRule, Workspace } from "../../../../src/dtsim/dsl/index.ts";
 import { base, cosim, regrPlanA } from "./groups.ts";
-
-// Patches are plain functions; dtsim only calls them before each compile.
-// This one copies the SPICE deck into the compile dir with placeholders
-// expanded, and only for cosim subcases.
-async function spiceDeck(ctx: PatchContext): Promise<void> {
-	if (!ctx.caseId.includes(".cosim")) return;
-	// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded by ctx.resolvePath
-	const deck = await readFile(ctx.resolvePath("${verify}/cosim/spice/input.sp"), "utf8");
-	await writeFile(join(ctx.dir, "input.sp"), ctx.expand(deck));
-}
+import {
+	metrics,
+	recordResult,
+	spiceDeck,
+	stampHeader,
+	stimulus,
+	warningBudget,
+} from "./hooks.ts";
 
 export default Workspace({
 	tool: "vcs",
@@ -45,16 +36,14 @@ export default Workspace({
 		WaiveRule("timing_rl_rdwin", "re:tRL_I \\+ tRDWIN_I .*timing violation"),
 		WaiveRule("boot_timeout", "Error: timeout in boot phase"),
 	],
-	patches: [spiceDeck],
-	// Hooks are scripts at fixed points of every compile / seed; see each
-	// file's header for what it is for. onGrade (replace keyword grading) is
-	// shown in demo/hbm.
+	// One TypeScript function (or a list) per stage; see hooks.ts. onGrade
+	// (replace keyword grading) is shown in demo/hbm.
 	hooks: {
-		preCompile: Hook("hooks/pre_compile.sh"),
-		postCompile: Hook("hooks/post_compile.sh"),
-		preSim: Hook("hooks/pre_sim.sh"),
-		postSim: Hook("hooks/post_sim.sh"),
-		onResult: Hook("hooks/on_result.sh", { fail: "continue" }),
+		preCompile: [spiceDeck, stampHeader],
+		postCompile: warningBudget,
+		preSim: stimulus,
+		postSim: metrics,
+		onResult: recordResult,
 	},
 	groups: [base, regrPlanA, cosim],
 	cases: ["./cases/hello.ts", "./cases/chip.ts"],

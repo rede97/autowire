@@ -14,11 +14,9 @@ import {
 	type GradeSpec,
 	type GroupDef,
 	type GroupMember,
-	type HookPhase,
-	type HookSpec,
+	type Hooks,
 	isCase,
 	isWorkspace,
-	type Patch,
 	type TaskSpec,
 	type UvmCfg,
 	type WaiveRuleDef,
@@ -68,8 +66,7 @@ export type ResolvedWorkspace = {
 	deny: string[];
 	task: TaskSpec;
 	waive: WaiveRuleDef[];
-	patches: Patch[];
-	hooks: Partial<Record<HookPhase, HookSpec>>;
+	hooks: Hooks;
 	groups: Map<string, GroupMember[]>;
 	/** Top-level cases by name; derived cases hang off `children`. */
 	cases: Map<string, CaseDef>;
@@ -441,13 +438,7 @@ export async function loadWorkspace(opts: {
 		deny,
 		task,
 		waive: [...(o.waive ?? [])],
-		patches: [...(o.patches ?? [])],
-		hooks: Object.fromEntries(
-			Object.entries(o.hooks ?? {}).map(([phase, spec]) => [
-				phase,
-				{ ...spec, path: resolvePath(spec.path, paths) },
-			]),
-		),
+		hooks: { ...o.hooks },
 		groups,
 	};
 }

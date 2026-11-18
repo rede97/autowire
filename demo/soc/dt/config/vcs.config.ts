@@ -3,7 +3,8 @@
 //   bun ../../index.ts dtsim run basic_smoke --config dt/config/vcs.config.ts --no-wave -d vcs
 //   ./dt/vcs/run.sh [basic_smoke|regfile_smoke]
 // The SD card-image case stays Verilator-only (sdspisim is a C++ model).
-import { Case, Hook, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import { Case, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import { applyIpPatch, buildFirmware } from "./hooks.ts";
 
 const firmware = (fw: string) =>
 	`+firmware=\${workspace}/fw/${fw}/build/firmware.hex`;
@@ -37,8 +38,5 @@ export default Workspace({
 	},
 	env: { passthrough: ["MAKE", "CROSS"] },
 	task: { type: "local", maxSlots: 2, maxCompiles: 1 },
-	hooks: {
-		preCompile: Hook("hooks/pre_compile.sh"),
-		preSim: Hook("hooks/pre_sim.sh"),
-	},
+	hooks: { preCompile: applyIpPatch, preSim: buildFirmware },
 });

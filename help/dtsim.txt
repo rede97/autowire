@@ -3,7 +3,7 @@ dtsim — simulation runner (docs/dtsim/README.md)
 Layout
   <project>/               RTL design dir; filelists and ${workspace} resolve here
   <project>/dt/            testbench code
-  <project>/dt/config/     dtsim.config.ts (TypeScript), filelists, hooks/
+  <project>/dt/config/     dtsim.config.ts (TypeScript), filelists, hook modules
   <project>/dt/simout/     outputs (git-ignored)
 
 Entry
@@ -26,13 +26,15 @@ Rules
   Placeholders are ${name}: ${workspace} ${verify} ${output_dir} ${case} ${seed}
   ${tool}. Paths (output, filelist, cases, hooks) also take shell vars (${HOME});
   unknown names fail. Workspace({ output }) moves dt/simout.
-  patches: [(ctx) => ...] TypeScript callbacks run before each compile.
+  hooks: { preCompile: fn | [fn, ...], ... } TypeScript callbacks; one
+  HookContext for every stage (dir, log, seed, status, caseOpts, env,
+  expand, resolvePath, sh). ctx.sh runs bash with the phase env; a throw fails.
   Cases: Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) derives
   <id>.<suffix> at any depth; export only top-level cases. Function opts run
   only when that case is used. c.descendants() lists the subtree.
   Group(name, [caseObj, "id", "base.*.cosim", "base.**"]): * = one segment,
   ** = any depth.
-  Hooks (scripts): preCompile postCompile preSim postSim onGrade onResult;
+  Hook stages: preCompile postCompile preSim postSim onGrade onResult;
   demo/dtsim shows five, demo/hbm onGrade, demo/soc preCompile + preSim.
   Grading reads sim.log keywords, not the exit code.
   Children get only passthrough-listed env vars.

@@ -2,14 +2,7 @@
 // simulator exit code. The generated check_result.js embeds the exact same
 // functions via toString(), so the two cannot drift apart.
 import { readFileSync } from "node:fs";
-import type { GradeSpec, WaiveRuleDef } from "../dsl/index.ts";
-
-export type GradeStatus =
-	| "PASS"
-	| "PASS WITH ERRORS"
-	| "FAIL"
-	| "NO SIM LOG"
-	| "ABORTED";
+import type { GradeSpec, Status, WaiveRuleDef } from "../dsl/index.ts";
 
 export type WaiveOutcome = {
 	kept: string[];
@@ -95,7 +88,7 @@ export function applyWaiveRegions(
 }
 
 export type GradeDetails = {
-	status: GradeStatus;
+	status: Status;
 	errorCounts: Record<string, number>;
 	missingExpect: string[];
 	waived: number;
@@ -123,7 +116,7 @@ export function gradeLines(
 	const passed = spec.pass.some((kw) =>
 		lines.some((line) => line.includes(kw)),
 	);
-	let status: GradeStatus = "PASS";
+	let status: Status = "PASS";
 	if (!passed) status = "FAIL";
 	else if (Object.keys(errorCounts).length > 0 || missingExpect.length > 0) {
 		status = "PASS WITH ERRORS";

@@ -48,5 +48,5 @@ Pass `+nojtag` to the case binary `dt/simout/<case>/obj_dir/Vtb_soc_vl` (e.g.
   (sector 0 = same 32 soft-pad words as the SRAM zeros KAT, big-endian on disk).
 - `sdspi_regs.h` is MIT (constants mirrored from ZipCPU bench/driver; no GPL
   sources copied into firmware).
-- After submodule checkout run `patches/apply.sh` (also invoked by the dtsim
-  preCompile hook `dt/config/hooks/pre_compile.sh`) so the FIFO pointer advances once per Classic beat.
+- After submodule checkout run `patches/apply.sh` (also run by the dtsim
+  preCompile hook `applyIpPatch` in `dt/config/hooks.ts`) so the FIFO pointer advances once per Classic beat.

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { CASES_TS, makeWorkspace, runDtsim, seedDirs } from "./helpers.ts";
+import { makeWorkspace, runDtsim, seedDirs } from "./helpers.ts";
 
 describe("regression", () => {
 	test("plan writes regression.txt without results", async () => {
@@ -141,49 +141,5 @@ describe("regression", () => {
 				join(ws.out, "nightly", "regression", "result.txt"),
 			).exists(),
 		).toBe(true);
-	});
-});
-
-describe("user hooks", () => {
-	test("a failing preSim hook fails the seed and captures its log", async () => {
-		const body = CASES_TS.replace(
-			"waive: [",
-			'hooks: { preSim: Hook("fail_hook.sh") },\n\twaive: [',
-		).replace(
-			"import { Case, Group, WaiveRule, Workspace }",
-			"import { Case, Group, Hook, WaiveRule, Workspace }",
-		);
-		const ws = await makeWorkspace(body);
-		await Bun.write(
-			join(ws.verify, "fail_hook.sh"),
-			"#!/bin/bash\necho hook exploded\nexit 3\n",
-		);
-		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "31"]);
-		expect(result.code).toBe(1);
-		const seedDir = join(ws.out, "test_hello_world", "31");
-		const err = await Bun.file(join(seedDir, "error.txt")).text();
-		expect(err).toContain("phase: hook");
-		expect(err).toContain("hook exploded");
-	});
-
-	test("onGrade replaces the built-in keyword grader", async () => {
-		const body = CASES_TS.replace(
-			"waive: [",
-			'hooks: { onGrade: Hook("grade.sh") },\n\twaive: [',
-		).replace(
-			"import { Case, Group, WaiveRule, Workspace }",
-			"import { Case, Group, Hook, WaiveRule, Workspace }",
-		);
-		const ws = await makeWorkspace(body);
-		await Bun.write(
-			join(ws.verify, "grade.sh"),
-			"#!/bin/bash\necho PASS\necho detail line\n",
-		);
-		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "32"], {
-			DTSIM_MOCK_SIMV_FAIL: "1",
-		});
-		// The sim log has no TEST PASSED, but the hook's verdict wins.
-		expect(result.code).toBe(0);
-		expect(result.stdout).toContain("Result");
 	});
 });

@@ -12,7 +12,7 @@ and `dt/config/` holds the dtsim configuration written in TypeScript.
     config/
       dtsim.config.ts      default config (found upward from CWD)
       *.f / *.lst          filelists (entries relative to <project>)
-      hooks/               hook scripts
+      hooks.ts             hook functions (any module the config imports)
       .dtsim/dsl/          materialized DSL (deletable cache, do not edit)
     simout/                outputs (git-ignored)
 ```
@@ -70,8 +70,8 @@ wishbone SoT), so DSL edits reach them without a regenerate step; `docs unpack`
 rewrites those imports to the `.dtsim/dsl` copy. No symlink is used: Windows
 symlinks need extra privileges and Bun does not follow MSYS ones.
 
-- `Workspace({ tool, filelist, output, tools, launchers, toolOptions, bareDefaults, env, task, waive, patches, hooks, groups, cases })`
-- `Case(name, opts)` / `case.SubCase(suffix, opts)` / `Group(name, ids)` / `Hook(path, opts)`
+- `Workspace({ tool, filelist, output, tools, launchers, toolOptions, bareDefaults, env, task, waive, hooks, groups, cases })`
+- `Case(name, opts)` / `case.SubCase(suffix, opts)` / `Group(name, ids)`
 - List fields (`defines`, `compileArgs`, `simArgs`, `grade.*`) append.
   `env` maps merge per key. Bare top-level cases get `bareDefaults`; derived cases do not.
 - `filelist` (workspace or case) is a path relative to `dt/config/`. A case
@@ -136,41 +136,18 @@ One style everywhere: `${name}`. dtsim variables are `${workspace}` (project
 root), `${verify}` (`dt/config`), `${output_dir}`, `${case}`, `${seed}`,
 `${tool}` (`${WORKSPACE}`, `${project_home}`, `${root}` alias `${workspace}`).
 
-- **Args, env values, patched text** (`expand`): dtsim variables are
+- **Args, env values, generated text** (`expand`): dtsim variables are
   replaced; anything else, including `$HOME`, is left for the shell or
   simulator.
-- **Paths** (`resolvePath`): `output`, `filelist`, `cases`, hook paths, and
-  whatever a backend or patch passes to `ctx.resolvePath`. dtsim variables
+- **Paths** (`resolvePath`): `output`, `filelist`, `cases`, and
+  whatever a backend or hook passes to `ctx.resolvePath`. dtsim variables
   first, then variables of the shell that started dtsim (`${HOME}`,
   `${SCRATCH}`); the result is made absolute against `dt/config`. An unknown
   name, a bare `$NAME`, or a per-case name in a workspace-level path
   (`${case}` in `output`) is an error naming the path.
 
-### Patches
-
-`patches` is a list of TypeScript functions. dtsim calls them in order in its
-own process before every compile (after `writeAux`, before the filelist is
-flattened and the tool starts) and does not care what they do.
-
-```ts
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-
-async function spiceDeck(ctx: PatchContext) {
-	const deck = await readFile(ctx.resolvePath("${verify}/cosim/spice/input.sp"), "utf8");
-	await writeFile(join(ctx.dir, "input.sp"), ctx.expand(deck));
-}
-export default Workspace({ ..., patches: [spiceDeck] });
-```
-
-`ctx`: `caseId`, `baseId`, `dir` (compile dir = `${output_dir}`), `verify`,
-`workspace`, `tool`, `caseOpts` (merged `defines`, `compileArgs`, `simArgs`,
-`env`, `uvm`, `toolOptions`, `filelist`, placeholders intact), `env` (the
-isolated environment the compile command receives), `expand`, `resolvePath`.
-In a regression the compile is shared by a compile group and `ctx` describes
-the group's first case. A throw or rejected promise fails that compile:
-`patch.log` holds the stack, `error.txt` says `phase: patch`, and the tool
-does not run.
+(Generating or patching sources before a compile is a `preCompile` hook; see
+[Hooks](#hooks).)
 
 ## Filelists
 
@@ -290,35 +267,68 @@ started at all reports `dtsim: cannot start <tool>` on stderr.
 
 ## Hooks
 
-Hooks are scripts (`.sh` run with bash, `.ts` with bun, anything else
-executed directly) at fixed points of every compile and every seed. Paths are
-relative to `dt/config/`. A hook runs in the compile or seed directory with
-the same isolated environment as the tool (plus `DTSIM_HOOK=<stage>`), gets
-`--phase --case [--seed] --dir --tool [--log] [--status]`, and its output
-goes to `<dir>/hook-<stage>.log`. `Hook(path, { fail, timeoutSec })`:
-`fail: "stop"` (default) turns a non-zero exit into a failed compile / seed
-with `phase: hook` in `error.txt`; `"continue"` only logs it. Default timeout
-600 s.
+Hooks are TypeScript functions in the config, called in the dtsim process at
+fixed points of every compile and every seed. Each stage takes one function or
+a list run in order. dtsim does not care what a hook does; to run a program,
+use `ctx.sh`.
+
+```ts
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+async function spiceDeck(ctx: HookContext) {
+	const deck = await readFile(ctx.resolvePath("${verify}/cosim/spice/input.sp"), "utf8");
+	await writeFile(join(ctx.dir, "input.sp"), ctx.expand(deck));
+}
+async function firmware(ctx: HookContext) {
+	await ctx.sh(`make -C "${ctx.workspace}/fw/${ctx.env.FW}"`);
+}
+async function uvmSummary(ctx: HookContext): Promise<HookStatus> {
+	const log = await readFile(ctx.log, "utf8");
+	return /UVM_ERROR :\s+0\b/.test(log) ? "PASS" : "FAIL";
+}
+export default Workspace({ ..., hooks: { preCompile: [spiceDeck], preSim: firmware, onGrade: uvmSummary } });
+```
+
+Every stage gets the same `HookContext`:
+
+| Field | Meaning |
+|---|---|
+| `stage` | `preCompile` `postCompile` `preSim` `postSim` `onGrade` `onResult` |
+| `caseId`, `baseId` | case id and its top-level case |
+| `dir` | compile dir (compile stages) or seed dir (sim stages); equals `${output_dir}` |
+| `seed` | sim stages only |
+| `log` | compile log (compile stages) or sim log (sim stages) |
+| `status` | onResult only: the final status |
+| `verify`, `workspace`, `tool` | `dt/config`, project root, backend id |
+| `caseOpts` | merged `defines`, `compileArgs`, `simArgs`, `env`, `uvm`, `toolOptions`, `filelist`, placeholders intact |
+| `env` | the isolated environment of this phase's tool command |
+| `expand(text)`, `resolvePath(text)` | see [Placeholders and paths](#placeholders-and-paths) |
+| `sh(cmd, { timeoutSec? })` | runs `bash -c cmd` in `dir` with `env` (plus `DTSIM_HOOK=<stage>`); output appended to `<dir>/hook-<stage>.log`; returns stdout; a non-zero exit throws |
+
+A throw (or rejected promise) fails that compile or seed: the stack is
+appended to `hook-<stage>.log` and `error.txt` says `phase: hook`. The rest
+of that stage's list is skipped. Exceptions: `onResult` errors are only
+logged, and `onGrade` grades `FAIL` when it throws or returns something
+other than `PASS`, `PASS WITH ERRORS`, `FAIL`, `NO SIM LOG`. Hooks run in the
+dtsim process, so `process.env` is dtsim's own environment; `ctx.env` is what
+the tool sees. In a regression, compile stages run once per compile group
+and `ctx` describes the group's first case.
 
 | Stage | Runs | Typical use | Demo |
 |---|---|---|---|
-| `preCompile` | once per compile dir, before the tool | generate code, apply an IP patch, prebuild a C model | soc: sdspi patch; dtsim: `gen_stamp.svh` |
-| `postCompile` | after the tool exits | compile-log policy, archive the build | dtsim: fail on more than `DTSIM_DEMO_MAX_WARN` warnings |
+| `preCompile` | per compile dir, before the filelist is flattened and the tool runs | generate or patch sources, prebuild a C model | soc: sdspi patch via `ctx.sh`; dtsim: SPICE deck, `gen_stamp.svh` |
+| `postCompile` | after the compile tool exits | compile-log policy, archive the build | dtsim: fail on more than `DTSIM_DEMO_MAX_WARN` warnings |
 | `preSim` | per seed, before `run_sim` | per-seed input: firmware, memory image, stimulus | soc: firmware + SD image; dtsim: `stim.hex` from the seed |
-| `postSim` | per seed, before grading | golden-model compare (exit 1 fails), metrics, wave conversion | dtsim: `metrics.json` |
-| `onGrade` | per seed, instead of keyword grading | a pass rule keywords cannot express; first stdout line is the status | hbm: UVM report summary |
+| `postSim` | per seed, before grading | golden-model compare (throw to fail), metrics, wave conversion | dtsim: `metrics.json` |
+| `onGrade` | per seed, instead of keyword grading; also `results --recheck` | a pass rule keywords cannot express | hbm: UVM report summary |
 | `onResult` | per seed, after the status is final | results database, notifications, cleanup on PASS | dtsim: `results.csv`, drop waves of passing seeds |
-
-Hooks versus patches: a patch is an in-process TypeScript callback with the
-merged case options; a hook is a separate script with only arguments and the
-environment, so it can be rerun by hand, and `onGrade` is reused by
-`results --recheck`.
 
 ## Windows (MSYS2 UCRT64)
 
 Run dtsim from a UCRT64 shell (`docs/dev/windows-msys2.md`). Windows cannot
 exec shebang scripts, so dtsim runs an extensionless `#!` command (the UCRT64
-`verilator` perl wrapper, hook scripts, the demo fake tools) through the named
+`verilator` perl wrapper, the demo fake tools) through the named
 interpreter found on the child `PATH`. Environment names match
 case-insensitively, `SYSTEMROOT` / `TEMP` / `COMSPEC` and friends always reach
 the child, and `run_sim` exports `PATH` in MSYS form.
@@ -327,7 +337,7 @@ the child, and `run_sim` exports `PATH` in MSYS form.
 
 | Demo | Config | Wrapper | Tools |
 |---|---|---|---|
-| `demo/dtsim` | `dt/config/dtsim.config.ts` (VCS + LSF, cases, groups, waive, patches) | `demo/dtsim/run.sh <dtsim args>` | fake `vcs` / `simv` / `urg` / `verdi` / `verilator` / `bsub` / `srun` in `dt/bin/` |
+| `demo/dtsim` | `dt/config/dtsim.config.ts` (VCS + LSF, cases, groups, waive, hooks for every stage in `hooks.ts`) | `demo/dtsim/run.sh <dtsim args>` | fake `vcs` / `simv` / `urg` / `verdi` / `verilator` / `bsub` / `srun` in `dt/bin/` |
 | `demo/soc` | `dt/config/dtsim.config.ts` (Verilator: `basic_smoke`, `regfile_smoke`, `sd_sha256`, `tb_mod`, `sv_reg_smoke`; groups `smoke`, `sd`) and `dt/config/vcs.config.ts` (VCS: `basic_smoke`, `regfile_smoke`) | `dt/verilator/run.sh [--regfile\|--sd\|--tb-mod\|--sv-reg]`, `dt/vcs/run.sh [case]` | Verilator 5 + RISC-V GCC; VCS |
 | `demo/hbm` | `dt/config/dtsim.config.ts` (VCS + UVM-1.2, six `hbm_*_test` cases, `onGrade` on the UVM summary) | `dt/vcs/run.sh [test ...]` | VCS |
 

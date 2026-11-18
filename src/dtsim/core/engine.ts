@@ -3,7 +3,13 @@
 import { existsSync } from "node:fs";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { CovSpec, ToolContext, WaveSpec } from "../dsl/index.ts";
+import type {
+	CovSpec,
+	HookStage,
+	Status,
+	ToolContext,
+	WaveSpec,
+} from "../dsl/index.ts";
 import {
 	type ExpandVars,
 	expandVars,
@@ -17,11 +23,10 @@ import { toolPath, writeFlatFilelist } from "./filelist.ts";
 import {
 	checkResultSource,
 	type GradeDetails,
-	type GradeStatus,
 	gradeLog,
 	waiveRuleMap,
 } from "./grade.ts";
-import { runHook } from "./hooks.ts";
+import { type HookBase, runGradeHook, runHooks } from "./hooks.ts";
 import { resolveTask, wrapCommand } from "./launch.ts";
 import { getLauncher, getTool } from "./registry.ts";
 import { runProcess } from "./run.ts";
@@ -42,7 +47,7 @@ export type SeedResult = {
 	seed: string;
 	dir: string;
 	log: string;
-	status: GradeStatus;
+	status: Status;
 	code: number;
 	details?: GradeDetails;
 	note?: string;
@@ -154,44 +159,62 @@ export function childEnv(
 	});
 }
 
+/** The shared hook context for one stage of one case directory. */
+export function hookBase(
+	ws: ResolvedWorkspace,
+	c: MergedCase,
+	stage: HookStage,
+	dir: string,
+	log: string,
+	env: Record<string, string>,
+	extra: { seed?: string; status?: string } = {},
+): HookBase {
+	const vars = varsFor(ws, c.id, dir, extra.seed);
+	return {
+		stage,
+		caseId: c.id,
+		baseId: c.base,
+		dir,
+		...extra,
+		log,
+		verify: ws.verify,
+		workspace: ws.root,
+		tool: ws.toolId,
+		caseOpts: {
+			defines: c.defines,
+			compileArgs: c.compileArgs,
+			simArgs: c.simArgs,
+			env: c.env,
+			...(c.uvm === undefined ? {} : { uvm: c.uvm }),
+			toolOptions: { ...ws.toolOptions, ...c.toolOptions },
+			...(c.filelist === undefined ? {} : { filelist: c.filelist }),
+		},
+		env,
+		expand: (text) => expandVars(text, vars),
+		resolvePath: (text) => resolvePath(text, vars),
+	};
+}
+
+/** Run one stage; on a throw write error.txt (phase: hook) and report it. */
 async function hookStage(
 	ws: ResolvedWorkspace,
-	phase: "preCompile" | "postCompile" | "preSim" | "postSim",
-	c: MergedCase,
-	dir: string,
-	seed: string | undefined,
-	env: Record<string, string>,
-	log: string,
-): Promise<{ ok: boolean; log: string; code: number } | undefined> {
-	const spec = ws.hooks[phase];
-	if (!spec) return undefined;
-	const outcome = await runHook(spec, {
-		phase,
-		caseId: c.id,
-		...(seed === undefined ? {} : { seed }),
-		dir,
-		verify: ws.verify,
-		tool: ws.toolId,
-		log,
-		env,
-	});
-	if (!outcome.ok && spec.fail === "stop") {
-		await writeFile(
-			join(dir, "error.txt"),
-			formatExcerpt({
-				status: "FAIL",
-				phase: "hook",
-				exitCode: outcome.code,
-				tool: ws.toolId,
-				caseId: c.id,
-				...(seed === undefined ? {} : { seed }),
-				log: outcome.log,
-				hookLog: outcome.log,
-			}),
-		);
-		return { ok: false, log: outcome.log, code: outcome.code };
-	}
-	return { ok: true, log: outcome.log, code: outcome.code };
+	base: HookBase,
+): Promise<{ log: string } | undefined> {
+	const failure = await runHooks(ws.hooks, base);
+	if (!failure) return undefined;
+	await writeFile(
+		join(base.dir, "error.txt"),
+		formatExcerpt({
+			status: "FAIL",
+			phase: "hook",
+			tool: ws.toolId,
+			caseId: base.caseId,
+			...(base.seed === undefined ? {} : { seed: base.seed }),
+			log: failure.log,
+			hookLog: failure.log,
+		}),
+	);
+	return { log: failure.log };
 }
 
 export type CompileOutcome = {
@@ -200,57 +223,6 @@ export type CompileOutcome = {
 	log: string;
 	hookFailed: boolean;
 };
-
-/** Workspace patch callbacks, in order, before the compile command. A throw
- *  stops the compile: patch.log keeps the stack, error.txt the excerpt. */
-async function runPatches(
-	ws: ResolvedWorkspace,
-	c: MergedCase,
-	compileDir: string,
-	env: Record<string, string>,
-	ctx: ToolContext,
-): Promise<CompileOutcome | undefined> {
-	for (const [i, patch] of ws.patches.entries()) {
-		try {
-			await patch({
-				caseId: c.id,
-				baseId: c.base,
-				dir: compileDir,
-				verify: ws.verify,
-				workspace: ws.root,
-				tool: ws.toolId,
-				caseOpts: {
-					...ctx.caseOpts,
-					env: c.env,
-					...(c.filelist === undefined ? {} : { filelist: c.filelist }),
-				},
-				env,
-				expand: ctx.expand,
-				resolvePath: ctx.resolvePath,
-			});
-		} catch (error) {
-			const log = join(compileDir, "patch.log");
-			const detail =
-				error instanceof Error ? (error.stack ?? error.message) : String(error);
-			await writeFile(
-				log,
-				`patch #${i + 1} (${patch.name || "anonymous"}) threw:\n${detail}\n`,
-			);
-			await writeFile(
-				join(compileDir, "error.txt"),
-				formatExcerpt({
-					status: "FAIL",
-					phase: "patch",
-					tool: ws.toolId,
-					caseId: c.id,
-					log,
-				}),
-			);
-			return { ok: false, code: 1, log, hookFailed: true };
-		}
-	}
-	return undefined;
-}
 
 export async function executeCompile(
 	ws: ResolvedWorkspace,
@@ -273,8 +245,14 @@ export async function executeCompile(
 	const env = childEnv(ws, c, "compile", compileDir);
 	if (opts.verbose)
 		process.stderr.write(`[dtsim] ${envStatsLine(env.stats)}\n`);
-	const patchFailure = await runPatches(ws, c, compileDir, env.env, ctx);
-	if (patchFailure) return patchFailure;
+	// Preparing argv is pure; it gives preCompile the compile log path.
+	const prepared = tool.compile(ctx);
+	const stage = (s: HookStage) =>
+		hookBase(ws, c, s, compileDir, prepared.log, env.env);
+	// preCompile runs before the filelist is flattened so it can generate or
+	// patch sources the filelist names.
+	const pre = await hookStage(ws, stage("preCompile"));
+	if (pre) return { ok: false, code: 1, log: pre.log, hookFailed: true };
 	writeFlatFilelist(
 		caseFilelist(ws, c, compileDir),
 		flatFilelist(compileDir),
@@ -282,53 +260,28 @@ export async function executeCompile(
 		ctx.expand,
 	);
 	writeGitRev(compileDir, ws.verify);
-	const prepared = tool.compile(ctx);
 
-	const pre = await hookStage(
-		ws,
-		"preCompile",
-		c,
-		compileDir,
-		undefined,
-		env.env,
-		prepared.log,
-	);
-	let code = 0;
 	let hookFailed = false;
-	if (pre && !pre.ok) {
-		code = pre.code;
+	const task = resolveTask(ws.task);
+	const argv = wrapCommand(prepared.argv, task, {
+		phase: "compile",
+		jobName: `compile_${c.base}`,
+		caseId: c.id,
+		cwd: prepared.cwd,
+		interactive: false,
+	});
+	let code = await runProcess({
+		argv,
+		cwd: prepared.cwd,
+		env: env.env,
+		...(prepared.logMode === "tee" ? { captureLog: prepared.log } : {}),
+		verbose: opts.verbose,
+		interactive: false,
+		...(opts.abort === undefined ? {} : { abort: opts.abort }),
+	});
+	if (await hookStage(ws, stage("postCompile"))) {
+		code = 1;
 		hookFailed = true;
-	} else {
-		const task = resolveTask(ws.task);
-		const argv = wrapCommand(prepared.argv, task, {
-			phase: "compile",
-			jobName: `compile_${c.base}`,
-			caseId: c.id,
-			cwd: prepared.cwd,
-			interactive: false,
-		});
-		code = await runProcess({
-			argv,
-			cwd: prepared.cwd,
-			env: env.env,
-			...(prepared.logMode === "tee" ? { captureLog: prepared.log } : {}),
-			verbose: opts.verbose,
-			interactive: false,
-			...(opts.abort === undefined ? {} : { abort: opts.abort }),
-		});
-		const post = await hookStage(
-			ws,
-			"postCompile",
-			c,
-			compileDir,
-			undefined,
-			env.env,
-			prepared.log,
-		);
-		if (post && !post.ok) {
-			code = post.code;
-			hookFailed = true;
-		}
 	}
 	const ok = code === 0;
 	if (!ok && !hookFailed) {
@@ -426,23 +379,14 @@ export async function executeSim(
 		return { ...base, status: "ABORTED", code: -15 };
 	}
 
-	const pre = await hookStage(
-		ws,
-		"preSim",
-		c,
-		seedDir,
-		seed,
-		env.env,
-		prepared.log,
-	);
-	if (pre && !pre.ok) {
+	const stage = (s: HookStage, status?: string) =>
+		hookBase(ws, c, s, seedDir, prepared.log, env.env, {
+			seed,
+			...(status === undefined ? {} : { status }),
+		});
+	if (await hookStage(ws, stage("preSim"))) {
 		writeResultMarker(seedDir, "FAIL");
-		return {
-			...base,
-			status: "FAIL",
-			code: pre.code,
-			note: "preSim hook failed",
-		};
+		return { ...base, status: "FAIL", code: 1, note: "preSim hook failed" };
 	}
 
 	const task = resolveTask(ws.task);
@@ -463,49 +407,17 @@ export async function executeSim(
 		interactive: opts.interactive,
 		...(opts.abort === undefined ? {} : { abort: opts.abort }),
 	});
-	const post = await hookStage(
-		ws,
-		"postSim",
-		c,
-		seedDir,
-		seed,
-		env.env,
-		prepared.log,
-	);
-	if (post && !post.ok) {
+	if (await hookStage(ws, stage("postSim"))) {
 		writeResultMarker(seedDir, "FAIL");
-		return {
-			...base,
-			status: "FAIL",
-			code: post.code,
-			note: "postSim hook failed",
-		};
+		return { ...base, status: "FAIL", code: 1, note: "postSim hook failed" };
 	}
 
 	await waitForLog(prepared.log);
 	let details: GradeDetails | undefined;
-	let status: GradeStatus;
-	const onGrade = ws.hooks.onGrade;
-	if (onGrade) {
-		const outcome = await runHook(onGrade, {
-			phase: "onGrade",
-			caseId: c.id,
-			seed,
-			dir: seedDir,
-			verify: ws.verify,
-			tool: ws.toolId,
-			log: prepared.log,
-			env: env.env,
-		});
-		const valid: readonly string[] = [
-			"PASS",
-			"PASS WITH ERRORS",
-			"FAIL",
-			"NO SIM LOG",
-		];
-		status = valid.includes(outcome.firstLine)
-			? (outcome.firstLine as GradeStatus)
-			: "FAIL";
+	let status: Status;
+	const graded = await runGradeHook(ws.hooks, stage("onGrade"));
+	if (graded) {
+		status = graded;
 	} else {
 		details = gradeLog(prepared.log, c.grade, rules);
 		status = details.status;
@@ -529,20 +441,8 @@ export async function executeSim(
 			}),
 		);
 	}
-	const onResult = ws.hooks.onResult;
-	if (onResult) {
-		await runHook(onResult, {
-			phase: "onResult",
-			caseId: c.id,
-			seed,
-			dir: seedDir,
-			verify: ws.verify,
-			tool: ws.toolId,
-			log: prepared.log,
-			status,
-			env: env.env,
-		});
-	}
+	// onResult cannot change the result; a throw is only recorded in its log.
+	await runHooks(ws.hooks, stage("onResult", status));
 	return {
 		...base,
 		status,

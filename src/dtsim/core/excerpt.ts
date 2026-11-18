@@ -44,7 +44,7 @@ export function excerptLines(args: {
 
 export type ExcerptInput = {
 	status: string;
-	phase: "compile" | "sim" | "hook" | "patch";
+	phase: "compile" | "sim" | "hook";
 	exitCode?: number;
 	tool: string;
 	caseId: string;
@@ -66,7 +66,7 @@ export function formatExcerpt(input: ExcerptInput): string {
 		`log: ${input.log}`,
 		"",
 	];
-	if (input.phase === "hook" || input.phase === "patch") {
+	if (input.phase === "hook") {
 		let tail: string[] = [];
 		try {
 			tail = readFileSync(input.hookLog ?? input.log, "utf8")

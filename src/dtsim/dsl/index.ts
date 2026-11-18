@@ -77,20 +77,28 @@ export type WaiveRuleDef = {
 	pattern: string;
 };
 
-export type HookSpec = {
-	kind: "dtsim-hook";
-	path: string;
-	fail: "stop" | "continue";
-	timeoutSec: number;
-};
-
-export type HookPhase =
+export type HookStage =
 	| "preCompile"
 	| "postCompile"
 	| "preSim"
 	| "postSim"
 	| "onGrade"
 	| "onResult";
+
+/** Result statuses. A const object rather than a TS `enum`: hooks may return
+ *  either `Status.Pass` or the plain string `"PASS"`, and the value is the
+ *  same in the bundled DSL and in the materialized .dtsim/dsl copy. */
+export const Status = {
+	Pass: "PASS",
+	PassWithErrors: "PASS WITH ERRORS",
+	Fail: "FAIL",
+	NoSimLog: "NO SIM LOG",
+	Aborted: "ABORTED",
+} as const;
+export type Status = (typeof Status)[keyof typeof Status];
+
+/** Statuses an onGrade hook may return (ABORTED is dtsim's own). */
+export type HookStatus = Exclude<Status, typeof Status.Aborted>;
 
 export type TaskSpec = {
 	/** Launcher id: built-in "local" / "lsf" / "slurm", or a Workspace.launchers entry. */
@@ -102,12 +110,20 @@ export type TaskSpec = {
 	options?: Record<string, unknown>;
 };
 
-/** What a patch callback sees: one compile, before the tool starts. */
-export type PatchContext = {
+/** What every hook sees. Compile stages describe one compile directory (in a
+ *  regression: the compile group's first case); sim stages one seed. */
+export type HookContext = {
+	stage: HookStage;
 	caseId: string;
 	baseId: string;
-	/** Compile directory; `${output_dir}` of this compile. */
+	/** Compile dir (compile stages) or seed dir (sim stages); `${output_dir}`. */
 	dir: string;
+	/** Sim stages only. */
+	seed?: string;
+	/** The phase log: compile log for compile stages, sim log for sim stages. */
+	log: string;
+	/** onResult only: the final status. */
+	status?: string;
 	/** dt/config. */
 	verify: string;
 	/** Project root. */
@@ -123,17 +139,34 @@ export type PatchContext = {
 		toolOptions: Record<string, unknown>;
 		filelist?: string;
 	};
-	/** The environment the compile command will receive (after isolation). */
+	/** The isolated environment the tool command of this phase receives. */
 	env: Readonly<Record<string, string>>;
 	/** Expand `${...}` placeholders in text. */
 	expand: (text: string) => string;
 	/** `${...}` placeholders plus shell variables, absolute against dt/config. */
 	resolvePath: (text: string) => string;
+	/** Run `command` with bash in `dir` under `env`. Output is appended to
+	 *  `<dir>/hook-<stage>.log` and stdout returned; a non-zero exit throws. */
+	sh: (command: string, opts?: { timeoutSec?: number }) => Promise<string>;
 };
 
-/** Runs in the dtsim process before each compile; dtsim does not care what it
- *  does. A throw (or rejected promise) fails that compile with phase "patch". */
-export type Patch = (ctx: PatchContext) => void | Promise<void>;
+/** A hook runs in the dtsim process; a throw (or rejected promise) fails that
+ *  compile / seed, except onResult, whose errors are only logged. */
+export type Hook = (ctx: HookContext) => void | Promise<void>;
+
+/** Replaces keyword grading for one seed; also used by `results --recheck`. */
+export type GradeHook = (ctx: HookContext) => HookStatus | Promise<HookStatus>;
+
+export type Hooks = {
+	/** Before the compile tool, before the filelist is flattened: generate or
+	 *  patch sources (the former `patches`). */
+	preCompile?: Hook | readonly Hook[];
+	postCompile?: Hook | readonly Hook[];
+	preSim?: Hook | readonly Hook[];
+	postSim?: Hook | readonly Hook[];
+	onGrade?: GradeHook;
+	onResult?: Hook | readonly Hook[];
+};
 
 export type WorkspaceOpts = {
 	tool: string;
@@ -148,8 +181,7 @@ export type WorkspaceOpts = {
 	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
 	task?: Partial<TaskSpec>;
 	waive?: readonly WaiveRuleDef[];
-	patches?: readonly Patch[];
-	hooks?: Partial<Record<HookPhase, HookSpec>>;
+	hooks?: Hooks;
 	groups?: readonly GroupDef[];
 	cases?: readonly string[];
 };
@@ -416,19 +448,6 @@ export function WaiveRule(name: string, pattern: string): WaiveRuleDef {
 	return { kind: "dtsim-waive", name, pattern };
 }
 
-export function Hook(
-	path: string,
-	opts: { fail?: "stop" | "continue"; timeoutSec?: number } = {},
-): HookSpec {
-	needString("hook path", path);
-	return {
-		kind: "dtsim-hook",
-		path,
-		fail: opts.fail ?? "stop",
-		timeoutSec: opts.timeoutSec ?? 600,
-	};
-}
-
 /** Validate and register a user simulator backend. */
 export function defineTool(tool: SimTool): SimTool {
 	if (!isTool(tool)) {
@@ -470,11 +489,15 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 	for (const t of opts.tools ?? []) defineTool(t);
 	for (const l of opts.launchers ?? []) defineLauncher(l);
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);
-	for (const p of opts.patches ?? []) {
-		if (typeof p !== "function") {
+	for (const [stage, value] of Object.entries(opts.hooks ?? {})) {
+		const fns = Array.isArray(value) ? value : [value];
+		if (fns.some((f) => typeof f !== "function")) {
 			throw new Error(
-				"dtsim: patches entries must be functions (ctx) => void | Promise<void>",
+				`dtsim: hooks.${stage} must be a function (ctx) => ...${stage === "onGrade" ? "" : " or an array of them"}`,
 			);
+		}
+		if (stage === "onGrade" && Array.isArray(value)) {
+			throw new Error("dtsim: hooks.onGrade takes one function");
 		}
 	}
 	return { kind: "dtsim-workspace", opts };

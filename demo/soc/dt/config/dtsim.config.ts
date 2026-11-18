@@ -4,7 +4,8 @@
 // VCS: dt/config/vcs.config.ts (./dt/vcs/run.sh).
 // Filelists are relative to the project root (demo/soc); dtsim flattens them
 // into each compile dir. Outputs: dt/simout/<case>/.
-import { Case, Group, Hook, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import { Case, Group, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import { applyIpPatch, buildFirmware } from "./hooks.ts";
 
 const VL_WARN = [
 	"-Wno-fatal",
@@ -97,10 +98,7 @@ export default Workspace({
 	// MAKEFLAGS=OPT_FAST=-O2); CROSS picks the RISC-V toolchain prefix.
 	env: { passthrough: ["MAKE", "MAKEFLAGS", "CROSS", "MSYSTEM"] },
 	task: { type: "local", maxSlots: 4, maxCompiles: 2 },
-	hooks: {
-		preCompile: Hook("hooks/pre_compile.sh"),
-		preSim: Hook("hooks/pre_sim.sh"),
-	},
+	hooks: { preCompile: applyIpPatch, preSim: buildFirmware },
 	groups: [
 		Group("smoke", ["basic_smoke", "regfile_smoke", "tb_mod", "sv_reg_smoke"]),
 		Group("sd", ["sd_sha256"]),

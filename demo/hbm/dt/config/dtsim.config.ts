@@ -3,7 +3,22 @@
 //   bun ../../index.ts dtsim regr --no-wave        (or ./dt/vcs/run.sh)
 //   bun ../../index.ts dtsim run hbm_rw_test --no-wave
 // All cases share one compile group; each test is a +UVM_TESTNAME.
-import { Case, Hook, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import { readFile } from "node:fs/promises";
+import {
+	Case,
+	type HookContext,
+	type HookStatus,
+	Workspace,
+} from "../../../../src/dtsim/dsl/index.ts";
+
+// onGrade: the UVM report summary decides (zero UVM_ERROR and UVM_FATAL)
+// instead of pass/error keywords. `results --recheck` calls it again.
+async function uvmSummary(ctx: HookContext): Promise<HookStatus> {
+	const log = await readFile(ctx.log, "utf8").catch(() => undefined);
+	if (log === undefined) return "NO SIM LOG";
+	const clean = /UVM_ERROR :\s+0\b/.test(log) && /UVM_FATAL :\s+0\b/.test(log);
+	return clean ? "PASS" : "FAIL";
+}
 
 const uvmTest = (name: string) =>
 	Case(name, {
@@ -36,6 +51,5 @@ export default Workspace({
 		],
 	},
 	task: { type: "local", maxSlots: 4, maxCompiles: 1 },
-	// The UVM report summary decides: zero UVM_ERROR and zero UVM_FATAL.
-	hooks: { onGrade: Hook("hooks/grade_uvm.sh") },
+	hooks: { onGrade: uvmSummary },
 });
