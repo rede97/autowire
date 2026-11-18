@@ -88,9 +88,8 @@ function cmdBox(argv: readonly string[]): string {
 
 export class CaseMonitor implements PhaseObserver {
 	private current?: Current;
-	/** Log per step that writes one (compile, sim), in start order. */
-	private readonly logs = new Map<CasePhase, string>();
-	private readonly tails = new Map<CasePhase, Tail>();
+	/** Size and last line of the running step's log. */
+	private tailed?: Tail;
 	private frame = 0;
 	private timers: Timer[] = [];
 	private readonly live?: typeof logUpdate;
@@ -127,9 +126,8 @@ export class CaseMonitor implements PhaseObserver {
 			t0: Date.now(),
 			...(info.log === undefined ? {} : { log: info.log }),
 		};
+		this.tailed = undefined;
 		if (info.log) {
-			this.logs.set(phase, info.log);
-			this.tails.delete(phase);
 			if (this.follow && this.live) {
 				this.followed = {
 					path: info.log,
@@ -156,7 +154,7 @@ export class CaseMonitor implements PhaseObserver {
 	}
 
 	/** Remove the panel so stdout can print; the step still running ends
-	 *  normally. The next start() brings the panel back with its logs. */
+	 *  normally. The next start() brings the panel back. */
 	stop(): void {
 		this.close("OK");
 		for (const t of this.timers) clearInterval(t);
@@ -194,8 +192,8 @@ export class CaseMonitor implements PhaseObserver {
 	}
 
 	private async refresh(): Promise<void> {
-		for (const [phase, log] of this.logs)
-			this.tails.set(phase, await tail(log));
+		const log = this.current?.log;
+		if (log) this.tailed = await tail(log);
 		this.drain(false);
 	}
 
@@ -239,21 +237,14 @@ export class CaseMonitor implements PhaseObserver {
 		}
 		this.frame = (this.frame + 1) % FRAMES.length;
 		const width = (process.stderr.columns || 100) - 1;
-		const head = this.row(
-			chalk.cyan(FRAMES[this.frame] ?? ""),
-			c,
-			this.tails.get(c.phase)?.size,
-		);
-		const rows = [...this.logs].map(([phase, log]) => {
-			const t = this.tails.get(phase) ?? { line: "" };
-			const lead = `${INDENT}${logCol(log, t.size)}  `;
-			const room = Math.max(0, width - stripVTControlCharacters(lead).length);
-			const text =
-				t.line.length > room
-					? `${t.line.slice(0, Math.max(0, room - 1))}…`
-					: t.line;
-			return `${lead}${chalk.dim(text)}`;
-		});
-		this.live([head, ...rows].join("\n"));
+		const t = this.tailed;
+		const head = this.row(chalk.cyan(FRAMES[this.frame] ?? ""), c, t?.size);
+		// The head already names the log and its size; below it only the
+		// running log's last line, under the phase column.
+		const room = Math.max(0, width - INDENT.length);
+		const line = t?.line ?? "";
+		const text =
+			line.length > room ? `${line.slice(0, Math.max(0, room - 1))}…` : line;
+		this.live(text ? `${head}\n${INDENT}${chalk.dim(text)}` : head);
 	}
 }
