@@ -1,9 +1,10 @@
 // Shared execution engine for single-case and regression runs: environment
 // assembly, tool invocation, hooks, grading, and per-directory artifacts.
 import { existsSync } from "node:fs";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
+	CaseContext,
 	CovSpec,
 	HookStage,
 	Status,
@@ -21,14 +22,14 @@ import { buildChildEnv, envStatsLine } from "./env.ts";
 import { formatExcerpt } from "./excerpt.ts";
 import { toolPath, writeFlatFilelist } from "./filelist.ts";
 import {
-	checkResultSource,
 	type GradeDetails,
-	gradeLog,
+	type Graded,
+	runGrader,
 	waiveRuleMap,
 } from "./grade.ts";
-import { type HookBase, runGradeHook, runHooks } from "./hooks.ts";
+import { type HookBase, runHooks } from "./hooks.ts";
 import { resolveTask, wrapCommand } from "./launch.ts";
-import { getLauncher, getTool } from "./registry.ts";
+import { getGrader, getLauncher, getTool } from "./registry.ts";
 import { runProcess } from "./run.ts";
 import { writeGitRev, writeResultMarker, writeRunSim } from "./scripts.ts";
 
@@ -159,23 +160,20 @@ export function childEnv(
 	});
 }
 
-/** The shared hook context for one stage of one case directory. */
-export function hookBase(
+/** Fields hooks and graders share for one case directory (no `sh`). */
+function caseContext(
 	ws: ResolvedWorkspace,
 	c: MergedCase,
-	stage: HookStage,
 	dir: string,
 	log: string,
 	env: Record<string, string>,
-	extra: { seed?: string; status?: string } = {},
-): HookBase {
-	const vars = varsFor(ws, c.id, dir, extra.seed);
+	seed?: string,
+): Omit<CaseContext, "sh"> {
+	const vars = varsFor(ws, c.id, dir, seed);
 	return {
-		stage,
 		caseId: c.id,
 		baseId: c.base,
 		dir,
-		...extra,
 		log,
 		verify: ws.verify,
 		workspace: ws.root,
@@ -193,6 +191,37 @@ export function hookBase(
 		expand: (text) => expandVars(text, vars),
 		resolvePath: (text) => resolvePath(text, vars),
 	};
+}
+
+/** The shared hook context for one stage of one case directory. */
+export function hookBase(
+	ws: ResolvedWorkspace,
+	c: MergedCase,
+	stage: HookStage,
+	dir: string,
+	log: string,
+	env: Record<string, string>,
+	extra: { seed?: string; status?: string } = {},
+): HookBase {
+	return { ...caseContext(ws, c, dir, log, env, extra.seed), stage, ...extra };
+}
+
+/** Grade one seed directory with the case's grader (run and --recheck). */
+export function gradeSeed(
+	ws: ResolvedWorkspace,
+	c: MergedCase,
+	dir: string,
+	log: string,
+	seed: string,
+): Promise<Graded> {
+	const env = childEnv(ws, c, "sim", dir, seed).env;
+	return runGrader(getGrader(c.grader), {
+		...caseContext(ws, c, dir, log, env, seed),
+		seed,
+		grader: c.grader,
+		grade: c.grade,
+		waive: waiveRuleMap(ws.waive),
+	});
 }
 
 /** Run one stage; on a throw write error.txt (phase: hook) and report it. */
@@ -337,26 +366,6 @@ export async function executeSim(
 	await mkdir(seedDir, { recursive: true });
 	tool.writeAux?.(ctx);
 	writeGitRev(seedDir, ws.verify);
-	const rules = waiveRuleMap(ws.waive);
-	await writeFile(
-		join(seedDir, "waive_rules"),
-		`${ws.waive.map((r) => `${r.name}\t${r.pattern}`).join("\n")}\n`,
-	);
-	await writeFile(
-		join(seedDir, "error_keywords"),
-		`${c.grade.error.join("\n")}\n`,
-	);
-	await writeFile(
-		join(seedDir, "expect_keywords"),
-		`${c.grade.expect.join("\n")}\n`,
-	);
-	await writeFile(
-		join(seedDir, "pass_keywords"),
-		`${c.grade.pass.join("\n")}\n`,
-	);
-	const checker = join(seedDir, "check_result.js");
-	await writeFile(checker, checkResultSource());
-	await chmod(checker, 0o755);
 
 	const prepared = tool.simulate(ctx);
 	const env = childEnv(ws, c, "sim", seedDir, seed);
@@ -412,15 +421,9 @@ export async function executeSim(
 	}
 
 	await waitForLog(prepared.log);
-	let details: GradeDetails | undefined;
-	let status: Status;
-	const graded = await runGradeHook(ws.hooks, stage("onGrade"));
-	if (graded) {
-		status = graded;
-	} else {
-		details = gradeLog(prepared.log, c.grade, rules);
-		status = details.status;
-	}
+	const graded = await gradeSeed(ws, c, seedDir, prepared.log, seed);
+	const details: GradeDetails | undefined = graded.details;
+	let status: Status = graded.status;
 	if (opts.abort?.aborted) status = "ABORTED";
 	writeResultMarker(seedDir, status);
 
@@ -446,6 +449,7 @@ export async function executeSim(
 		...base,
 		status,
 		code,
+		...(graded.note === undefined ? {} : { note: graded.note }),
 		...(details === undefined ? {} : { details }),
 	};
 }

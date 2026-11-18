@@ -31,9 +31,6 @@ describe("single case", () => {
 		expect(runSim).toContain("../simv");
 		expect(runSim).toContain("+ntb_random_seed=$SEED");
 		expect(runSim).toContain("export output_dir=");
-		expect(await Bun.file(join(seedDir, "check_result.js")).exists()).toBe(
-			true,
-		);
 		expect(await Bun.file(join(seedDir, ".result")).exists()).toBe(true);
 	});
 

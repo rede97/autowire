@@ -33,6 +33,8 @@ export type CaseOpts = {
 	toolOptions?: Record<string, unknown>;
 	/** Filelist for this case instead of the workspace one (relative to dt/config). */
 	filelist?: string;
+	/** Grader id for this case and its derived cases (default: Workspace.grader). */
+	grader?: string;
 };
 
 /** Case options, or a function computing them from the parent's merged
@@ -82,10 +84,9 @@ export type HookStage =
 	| "postCompile"
 	| "preSim"
 	| "postSim"
-	| "onGrade"
 	| "onResult";
 
-/** Result statuses. A const object rather than a TS `enum`: hooks may return
+/** Result statuses. A const object rather than a TS `enum`: graders may return
  *  either `Status.Pass` or the plain string `"PASS"`, and the value is the
  *  same in the bundled DSL and in the materialized .dtsim/dsl copy. */
 export const Status = {
@@ -97,8 +98,8 @@ export const Status = {
 } as const;
 export type Status = (typeof Status)[keyof typeof Status];
 
-/** Statuses an onGrade hook may return (ABORTED is dtsim's own). */
-export type HookStatus = Exclude<Status, typeof Status.Aborted>;
+/** Statuses a grader may return (ABORTED is dtsim's own). */
+export type GradeStatus = Exclude<Status, typeof Status.Aborted>;
 
 export type TaskSpec = {
 	/** Launcher id: built-in "local" / "lsf" / "slurm", or a Workspace.launchers entry. */
@@ -110,20 +111,14 @@ export type TaskSpec = {
 	options?: Record<string, unknown>;
 };
 
-/** What every hook sees. Compile stages describe one compile directory (in a
- *  regression: the compile group's first case); sim stages one seed. */
-export type HookContext = {
-	stage: HookStage;
+/** What hooks and graders see for one case directory. */
+export type CaseContext = {
 	caseId: string;
 	baseId: string;
-	/** Compile dir (compile stages) or seed dir (sim stages); `${output_dir}`. */
+	/** Compile dir (compile stages) or seed dir (sim stages, graders); `${output_dir}`. */
 	dir: string;
-	/** Sim stages only. */
-	seed?: string;
-	/** The phase log: compile log for compile stages, sim log for sim stages. */
+	/** The phase log: compile log for compile stages, sim log otherwise. */
 	log: string;
-	/** onResult only: the final status. */
-	status?: string;
 	/** dt/config. */
 	verify: string;
 	/** Project root. */
@@ -146,26 +141,71 @@ export type HookContext = {
 	/** `${...}` placeholders plus shell variables, absolute against dt/config. */
 	resolvePath: (text: string) => string;
 	/** Run `command` with bash in `dir` under `env`. Output is appended to
-	 *  `<dir>/hook-<stage>.log` and stdout returned; a non-zero exit throws. */
+	 *  `<dir>/hook-<stage>.log` (hooks) or `<dir>/grade.log` (graders) and
+	 *  stdout returned; a non-zero exit throws. */
 	sh: (command: string, opts?: { timeoutSec?: number }) => Promise<string>;
+};
+
+/** What every hook sees. Compile stages describe one compile directory (in a
+ *  regression: the compile group's first case); sim stages one seed. */
+export type HookContext = CaseContext & {
+	stage: HookStage;
+	/** Sim stages only. */
+	seed?: string;
+	/** onResult only: the final status. */
+	status?: string;
 };
 
 /** A hook runs in the dtsim process; a throw (or rejected promise) fails that
  *  compile / seed, except onResult, whose errors are only logged. */
 export type Hook = (ctx: HookContext) => void | Promise<void>;
 
-/** Replaces keyword grading for one seed; also used by `results --recheck`. */
-export type GradeHook = (ctx: HookContext) => HookStatus | Promise<HookStatus>;
-
 export type Hooks = {
 	/** Before the compile tool, before the filelist is flattened: generate or
-	 *  patch sources (the former `patches`). */
+	 *  patch sources. */
 	preCompile?: Hook | readonly Hook[];
 	postCompile?: Hook | readonly Hook[];
 	preSim?: Hook | readonly Hook[];
 	postSim?: Hook | readonly Hook[];
-	onGrade?: GradeHook;
 	onResult?: Hook | readonly Hook[];
+};
+
+const HOOK_STAGES: readonly string[] = [
+	"preCompile",
+	"postCompile",
+	"preSim",
+	"postSim",
+	"onResult",
+];
+
+// --- Grader plugin contract --------------------------------------------------
+
+/** What a grader sees for one seed after the simulation (and postSim). */
+export type GradeContext = CaseContext & {
+	seed: string;
+	/** Id of the grader being run. */
+	grader: string;
+	/** Merged case keywords (`grade` option). */
+	grade: Readonly<GradeSpec>;
+	/** Workspace waive rules by name. */
+	waive: Readonly<Record<string, string>>;
+	/** The built-in "keywords" verdict on `log`; a grader may refine it. */
+	keywords: () => GradeStatus;
+};
+
+/** A verdict, optionally with a short note shown next to it in results. */
+export type GradeOutcome = { status: GradeStatus; note?: string };
+
+/** Decides the status of one seed. Built-in: "keywords" (pass / error /
+ *  expect keywords plus waive regions). dtsim reports NO SIM LOG itself when
+ *  the log is missing; a throw or an unknown status grades FAIL. Also used
+ *  by `results --recheck`. */
+export type Grader = {
+	kind: "dtsim-grader";
+	id: string;
+	grade: (
+		ctx: GradeContext,
+	) => GradeStatus | GradeOutcome | Promise<GradeStatus | GradeOutcome>;
 };
 
 export type WorkspaceOpts = {
@@ -176,6 +216,9 @@ export type WorkspaceOpts = {
 	output?: string;
 	tools?: readonly SimTool[];
 	launchers?: readonly Launcher[];
+	graders?: readonly Grader[];
+	/** Default grader id. Default "keywords". */
+	grader?: string;
 	toolOptions?: Record<string, unknown>;
 	bareDefaults?: CaseOpts;
 	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
@@ -326,6 +369,7 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 	}
 	if (opts.filelist !== undefined)
 		needString(`${what}.filelist`, opts.filelist);
+	if (opts.grader !== undefined) needString(`${what}.grader`, opts.grader);
 	if (opts.env) {
 		for (const [k, v] of Object.entries(opts.env)) {
 			const bad =
@@ -367,6 +411,12 @@ export function isLauncher(v: unknown): v is Launcher {
 		typeof v === "object" &&
 		v !== null &&
 		(v as Launcher).kind === "dtsim-launcher"
+	);
+}
+
+export function isGrader(v: unknown): v is Grader {
+	return (
+		typeof v === "object" && v !== null && (v as Grader).kind === "dtsim-grader"
 	);
 }
 
@@ -481,6 +531,18 @@ export function defineLauncher(launcher: Launcher): Launcher {
 	return launcher;
 }
 
+/** Validate a user grader (result verdict for one seed). */
+export function defineGrader(grader: Grader): Grader {
+	if (!isGrader(grader)) {
+		throw new Error('dtsim: a grader must have kind: "dtsim-grader"');
+	}
+	needString("grader id", grader.id);
+	if (typeof grader.grade !== "function") {
+		throw new Error(`dtsim: grader ${grader.id} needs grade()`);
+	}
+	return grader;
+}
+
 export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 	if (typeof opts !== "object" || opts === null) {
 		throw new Error("dtsim: Workspace options must be an object");
@@ -488,16 +550,20 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 	needString("workspace tool", opts.tool);
 	for (const t of opts.tools ?? []) defineTool(t);
 	for (const l of opts.launchers ?? []) defineLauncher(l);
+	for (const g of opts.graders ?? []) defineGrader(g);
+	if (opts.grader !== undefined) needString("workspace grader", opts.grader);
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);
 	for (const [stage, value] of Object.entries(opts.hooks ?? {})) {
+		if (!HOOK_STAGES.includes(stage)) {
+			throw new Error(
+				`dtsim: unknown hooks.${stage} (stages: ${HOOK_STAGES.join(", ")}; result verdicts are graders)`,
+			);
+		}
 		const fns = Array.isArray(value) ? value : [value];
 		if (fns.some((f) => typeof f !== "function")) {
 			throw new Error(
-				`dtsim: hooks.${stage} must be a function (ctx) => ...${stage === "onGrade" ? "" : " or an array of them"}`,
+				`dtsim: hooks.${stage} must be a function (ctx) => ... or an array of them`,
 			);
-		}
-		if (stage === "onGrade" && Array.isArray(value)) {
-			throw new Error("dtsim: hooks.onGrade takes one function");
 		}
 	}
 	return { kind: "dtsim-workspace", opts };

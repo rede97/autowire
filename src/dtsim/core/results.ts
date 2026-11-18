@@ -2,9 +2,7 @@
 import { readdirSync, readlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { loadWorkspace, mergeCase } from "./config.ts";
-import { childEnv, hookBase } from "./engine.ts";
-import { gradeLog, waiveRuleMap } from "./grade.ts";
-import { runGradeHook } from "./hooks.ts";
+import { gradeSeed } from "./engine.ts";
 import { writeResultMarker } from "./scripts.ts";
 import { status, table } from "./ui.ts";
 
@@ -35,28 +33,13 @@ export async function resultsCommand(opts: {
 	const rows = collectResults(opts.dir);
 	if (opts.recheck) {
 		const ws = await loadWorkspace({ config: opts.config });
-		const rules = waiveRuleMap(ws.waive);
 		for (const row of rows) {
 			const caseId = basename(dirname(row.dir));
 			const seed = basename(row.dir);
 			try {
 				const c = mergeCase(ws, caseId);
 				const log = join(row.dir, "sim.log");
-				const graded = ws.hooks.onGrade
-					? await runGradeHook(
-							ws.hooks,
-							hookBase(
-								ws,
-								c,
-								"onGrade",
-								row.dir,
-								log,
-								childEnv(ws, c, "sim", row.dir, seed).env,
-								{ seed },
-							),
-						)
-					: undefined;
-				row.status = graded ?? gradeLog(log, c.grade, rules).status;
+				row.status = (await gradeSeed(ws, c, row.dir, log, seed)).status;
 			} catch {
 				row.status = "FAIL";
 			}

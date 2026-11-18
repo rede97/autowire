@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { excerptLines } from "../../src/dtsim/core/excerpt.ts";
 import {
 	applyWaiveRegions,
-	checkResultSource,
 	gradeLines,
 	kwMatchLine,
 } from "../../src/dtsim/core/grade.ts";
@@ -105,26 +101,6 @@ describe("grading", () => {
 		);
 		expect(r.status).toBe("PASS");
 		expect(r.waived).toBe(1);
-	});
-});
-
-describe("generated check_result.js", () => {
-	test("re-grades a seed directory standalone", async () => {
-		const dir = await mkdtemp(join(tmpdir(), "dtsim-check-"));
-		await writeFile(join(dir, "sim.log"), "Keyword\nError: x\nTEST PASSED\n");
-		await writeFile(join(dir, "error_keywords"), "Error:\n");
-		await writeFile(join(dir, "expect_keywords"), "Keyword\n");
-		await writeFile(join(dir, "pass_keywords"), "TEST PASSED\n");
-		await writeFile(join(dir, "waive_rules"), "");
-		await writeFile(join(dir, "check_result.js"), checkResultSource());
-		const proc = Bun.spawnSync({
-			cmd: ["bun", "check_result.js"],
-			cwd: dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		expect(proc.stdout.toString().trim()).toBe("PASS WITH ERRORS");
-		expect(proc.exitCode).toBe(0);
 	});
 });
 

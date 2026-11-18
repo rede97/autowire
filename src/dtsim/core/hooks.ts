@@ -4,13 +4,12 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, createWriteStream, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-	type Hook,
-	type HookContext,
-	type HookStage,
-	type HookStatus,
-	type Hooks,
-	Status,
+import type {
+	CaseContext,
+	Hook,
+	HookContext,
+	HookStage,
+	Hooks,
 } from "../dsl/index.ts";
 import { resolveCommand } from "./run.ts";
 
@@ -21,10 +20,16 @@ export function hookLog(dir: string, stage: HookStage): string {
 	return join(dir, `hook-${stage}.log`);
 }
 
-function shellFor(base: HookBase, log: string): HookContext["sh"] {
+/** `ctx.sh` for hooks and graders: bash in `dir` under `env` plus `extraEnv`,
+ *  output appended to `log`. */
+export function shellFor(
+	base: Pick<CaseContext, "dir" | "env">,
+	log: string,
+	extraEnv: Record<string, string>,
+): CaseContext["sh"] {
 	return async (command, opts = {}) => {
 		appendFileSync(log, `$ ${command}\n`);
-		const env = { ...base.env, DTSIM_HOOK: base.stage };
+		const env = { ...base.env, ...extraEnv };
 		const argv = resolveCommand(["bash", "-c", command], env, base.dir);
 		const out = createWriteStream(log, { flags: "a" });
 		const child = spawn(argv[0] as string, argv.slice(1), {
@@ -64,10 +69,13 @@ function shellFor(base: HookBase, log: string): HookContext["sh"] {
 function withShell(base: HookBase): { ctx: HookContext; log: string } {
 	const log = hookLog(base.dir, base.stage);
 	writeFileSync(log, "");
-	return { ctx: { ...base, sh: shellFor(base, log) }, log };
+	return {
+		ctx: { ...base, sh: shellFor(base, log, { DTSIM_HOOK: base.stage }) },
+		log,
+	};
 }
 
-function errorText(error: unknown): string {
+export function errorText(error: unknown): string {
 	return error instanceof Error
 		? (error.stack ?? error.message)
 		: String(error);
@@ -81,7 +89,7 @@ export async function runHooks(
 	hooks: Hooks,
 	base: HookBase,
 ): Promise<HookFailure | undefined> {
-	const value = hooks[base.stage as Exclude<HookStage, "onGrade">];
+	const value = hooks[base.stage];
 	if (!value) return undefined;
 	const fns: readonly Hook[] = Array.isArray(value) ? value : [value as Hook];
 	const { ctx, log } = withShell(base);
@@ -95,29 +103,4 @@ export async function runHooks(
 		}
 	}
 	return undefined;
-}
-
-const HOOK_STATUSES: readonly string[] = Object.values(Status).filter(
-	(s) => s !== Status.Aborted,
-);
-
-/** Run onGrade. A throw or a value outside HookStatus grades FAIL (logged). */
-export async function runGradeHook(
-	hooks: Hooks,
-	base: HookBase,
-): Promise<HookStatus | undefined> {
-	const grade = hooks.onGrade;
-	if (!grade) return undefined;
-	const { ctx, log } = withShell(base);
-	try {
-		const status = await grade(ctx);
-		if (HOOK_STATUSES.includes(status)) return status;
-		appendFileSync(
-			log,
-			`onGrade returned ${JSON.stringify(status)}; graded FAIL\n`,
-		);
-	} catch (error) {
-		appendFileSync(log, `onGrade threw:\n${errorText(error)}\n`);
-	}
-	return "FAIL";
 }

@@ -25,8 +25,10 @@ import {
 import { assertNoDeniedAssignments, compileEnvEntries } from "./env.ts";
 import { resolveTask } from "./launch.ts";
 import {
+	getGrader,
 	getLauncher,
 	getTool,
+	registerGrader,
 	registerLauncher,
 	registerTool,
 } from "./registry.ts";
@@ -48,6 +50,8 @@ export type MergedCase = {
 	toolOptions: Record<string, unknown>;
 	/** Case filelist override, relative to the config dir (default: workspace filelist). */
 	filelist?: string;
+	/** Grader id (case option, else the workspace default). */
+	grader: string;
 };
 
 export type ResolvedWorkspace = {
@@ -67,6 +71,8 @@ export type ResolvedWorkspace = {
 	task: TaskSpec;
 	waive: WaiveRuleDef[];
 	hooks: Hooks;
+	/** Default grader id. */
+	grader: string;
 	groups: Map<string, GroupMember[]>;
 	/** Top-level cases by name; derived cases hang off `children`. */
 	cases: Map<string, CaseDef>;
@@ -179,12 +185,13 @@ function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
 	if (overlay.owner !== undefined) out.owner = overlay.owner;
 	if (overlay.random !== undefined) out.random = overlay.random;
 	if (overlay.filelist !== undefined) out.filelist = overlay.filelist;
+	if (overlay.grader !== undefined) out.grader = overlay.grader;
 	return out;
 }
 
 type CaseSource = Pick<
 	ResolvedWorkspace,
-	"cases" | "resolved" | "bareDefaults" | "deny"
+	"cases" | "resolved" | "bareDefaults" | "deny" | "grader"
 >;
 
 /** Case node by id: root name, then one child per `.suffix`. */
@@ -242,6 +249,7 @@ export function mergeCase(ws: CaseSource, id: string): MergedCase {
 		...(opts.uvm === undefined ? {} : { uvm: { ...opts.uvm } }),
 		toolOptions: { ...opts.toolOptions },
 		...(opts.filelist === undefined ? {} : { filelist: opts.filelist }),
+		grader: getGrader(opts.grader ?? ws.grader).id,
 	};
 }
 
@@ -377,7 +385,9 @@ export async function loadWorkspace(opts: {
 	const o = wsDef.opts;
 	for (const tool of o.tools ?? []) registerTool(tool);
 	for (const launcher of o.launchers ?? []) registerLauncher(launcher);
+	for (const grader of o.graders ?? []) registerGrader(grader);
 	getTool(o.tool); // unknown tool fails before any output dir is created
+	const grader = getGrader(o.grader ?? "keywords").id;
 
 	// Only top-level cases need exporting. A derived case exported as well
 	// registers its root; the same root object exported twice is fine.
@@ -439,6 +449,7 @@ export async function loadWorkspace(opts: {
 		task,
 		waive: [...(o.waive ?? [])],
 		hooks: { ...o.hooks },
+		grader,
 		groups,
 	};
 }

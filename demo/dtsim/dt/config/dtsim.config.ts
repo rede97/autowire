@@ -36,8 +36,8 @@ export default Workspace({
 		WaiveRule("timing_rl_rdwin", "re:tRL_I \\+ tRDWIN_I .*timing violation"),
 		WaiveRule("boot_timeout", "Error: timeout in boot phase"),
 	],
-	// One TypeScript function (or a list) per stage; see hooks.ts. onGrade
-	// (replace keyword grading) is shown in demo/hbm.
+	// One TypeScript function (or a list) per stage; see hooks.ts. A custom
+	// grader (the result verdict) is shown in demo/hbm.
 	hooks: {
 		preCompile: [spiceDeck, stampHeader],
 		postCompile: warningBudget,

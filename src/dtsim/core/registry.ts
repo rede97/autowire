@@ -1,11 +1,14 @@
-// Simulator backend and launcher registries. Core modules never branch on a
-// tool or launcher id; they look the id up here and call the plugin contract.
+// Simulator backend, launcher and grader registries. Core modules never
+// branch on a plugin id; they look the id up here and call its contract.
 import {
+	defineGrader,
 	defineLauncher,
 	defineTool,
+	type Grader,
 	type Launcher,
 	type SimTool,
 } from "../dsl/index.ts";
+import { keywordsGrader } from "../graders/keywords.ts";
 import { localLauncher } from "../launchers/local.ts";
 import { lsfLauncher } from "../launchers/lsf.ts";
 import { slurmLauncher } from "../launchers/slurm.ts";
@@ -14,6 +17,7 @@ import { verilatorTool } from "../tools/verilator.ts";
 
 const registry = new Map<string, SimTool>();
 const launchers = new Map<string, Launcher>();
+const graders = new Map<string, Grader>();
 
 export function registerTool(tool: SimTool): void {
 	defineTool(tool);
@@ -55,11 +59,29 @@ export function getLauncher(id: string): Launcher {
 	return launcher;
 }
 
+export function registerGrader(grader: Grader): void {
+	defineGrader(grader);
+	if (graders.has(grader.id)) {
+		throw new Error(`dtsim: grader id "${grader.id}" is already registered`);
+	}
+	graders.set(grader.id, grader);
+}
+
+export function getGrader(id: string): Grader {
+	const grader = graders.get(id);
+	if (!grader) {
+		const known = [...graders.keys()].sort().join(", ");
+		throw new Error(`dtsim: unknown grader "${id}" (graders: ${known})`);
+	}
+	return grader;
+}
+
 // Built-ins register on import, so embedders (tests, library use) see the
-// same backends as the CLI. User tools and launchers register later via
-// Workspace.tools / Workspace.launchers.
+// same plugins as the CLI. User ones register later via Workspace.tools /
+// Workspace.launchers / Workspace.graders.
 registerTool(vcsTool);
 registerTool(verilatorTool);
 registerLauncher(localLauncher);
 registerLauncher(lsfLauncher);
 registerLauncher(slurmLauncher);
+registerGrader(keywordsGrader);

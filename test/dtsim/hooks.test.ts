@@ -96,31 +96,94 @@ describe("hooks", () => {
 		expect(result.stderr).not.toContain("write after end");
 	});
 
-	test("onGrade replaces keyword grading; onResult cannot change the result", async () => {
+	test("onResult errors are only logged", async () => {
 		const ws = await makeWorkspace(
 			withHooks(
-				'const grade = (ctx) => (ctx.seed === "32" ? "PASS" : "FAIL");\nconst boom = () => { throw new Error("db down"); };',
-				"onGrade: grade, onResult: boom",
+				'const boom = () => { throw new Error("db down"); };',
+				"onResult: boom",
 			),
 		);
-		// The sim log has no TEST PASSED, but the hook's verdict wins.
-		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "32"], {
-			DTSIM_MOCK_SIMV_FAIL: "1",
-		});
+		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "3"]);
 		expect(result.code).toBe(0);
-		const seedDir = join(ws.out, "test_hello_world", "32");
+		const seedDir = join(ws.out, "test_hello_world", "3");
 		expect(existsSync(join(seedDir, "PASS"))).toBe(true);
 		expect(await Bun.file(join(seedDir, "hook-onResult.log")).text()).toContain(
 			"db down",
 		);
-		// results --recheck grades with the same hook, not with keywords.
+	});
+});
+
+describe("graders", () => {
+	// lenient: seed 32 passes with a note, other seeds keep the keyword
+	// verdict. broken: always throws; test_bar_basic selects it per case.
+	const GRADERS = CASES_TS.replace(
+		'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
+		`import { Case, Group, WaiveRule, Workspace, defineGrader } from "./.dtsim/dsl/index.ts";
+const lenient = defineGrader({
+	kind: "dtsim-grader",
+	id: "lenient",
+	grade: (ctx) =>
+		ctx.seed === "32" ? { status: "PASS", note: "seed 32 waived" } : ctx.keywords(),
+});
+const broken = defineGrader({
+	kind: "dtsim-grader",
+	id: "broken",
+	grade: () => {
+		throw new Error("no report");
+	},
+});`,
+	)
+		.replace('owner: "bob",', 'owner: "bob",\n\tgrader: "broken",')
+		.replace(
+			"waive: [",
+			'graders: [lenient, broken],\n\tgrader: "lenient",\n\twaive: [',
+		);
+
+	test("workspace default, case override, keywords() and --recheck", async () => {
+		const ws = await makeWorkspace(GRADERS);
+		const failing = { DTSIM_MOCK_SIMV_FAIL: "1" };
+		const waived = await runDtsim(
+			ws,
+			["run", "test_hello_world", "-s", "32"],
+			failing,
+		);
+		expect(waived.code).toBe(0);
+		expect(waived.stdout).toContain("seed 32 waived");
+		const hello = join(ws.out, "test_hello_world");
+		expect(existsSync(join(hello, "32", "PASS"))).toBe(true);
+		// --recheck runs the same grader, not plain keywords.
 		const recheck = await runDtsim(ws, [
 			"results",
 			"--dir",
-			join(ws.out, "test_hello_world"),
+			hello,
 			"--recheck",
 		]);
-		expect(recheck.code).toBe(0);
 		expect(recheck.stdout).toContain("PASS=1");
+
+		const kept = await runDtsim(
+			ws,
+			["run", "test_hello_world", "-s", "7"],
+			failing,
+		);
+		expect(kept.code).toBe(1);
+		expect(existsSync(join(hello, "7", "FAIL"))).toBe(true);
+
+		// Inherited by the derived case; a throw grades FAIL with grade.log.
+		const bar = await runDtsim(ws, ["run", "test_bar_basic.cosim", "-s", "9"]);
+		expect(bar.code).toBe(1);
+		const barSeed = join(ws.out, "test_bar_basic.cosim", "9");
+		expect(existsSync(join(barSeed, "FAIL"))).toBe(true);
+		expect(await Bun.file(join(barSeed, "grade.log")).text()).toContain(
+			"no report",
+		);
+	});
+
+	test("an unknown grader id fails when the case is used", async () => {
+		const ws = await makeWorkspace(
+			CASES_TS.replace('owner: "dave",', 'owner: "dave",\n\tgrader: "nope",'),
+		);
+		const result = await runDtsim(ws, ["run", "test_quick_smoke"]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain('unknown grader "nope"');
 	});
 });

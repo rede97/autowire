@@ -6,19 +6,29 @@
 import { readFile } from "node:fs/promises";
 import {
 	Case,
-	type HookContext,
-	type HookStatus,
+	defineGrader,
 	Workspace,
 } from "../../../../src/dtsim/dsl/index.ts";
 
-// onGrade: the UVM report summary decides (zero UVM_ERROR and UVM_FATAL)
-// instead of pass/error keywords. `results --recheck` calls it again.
-async function uvmSummary(ctx: HookContext): Promise<HookStatus> {
-	const log = await readFile(ctx.log, "utf8").catch(() => undefined);
-	if (log === undefined) return "NO SIM LOG";
-	const clean = /UVM_ERROR :\s+0\b/.test(log) && /UVM_FATAL :\s+0\b/.test(log);
-	return clean ? "PASS" : "FAIL";
-}
+// The UVM report summary decides (zero UVM_ERROR and UVM_FATAL) instead of
+// pass/error keywords. `results --recheck` runs it again.
+const uvmSummary = defineGrader({
+	kind: "dtsim-grader",
+	id: "uvm-summary",
+	grade: async (ctx) => {
+		const log = await readFile(ctx.log, "utf8");
+		const count = (sev: string) =>
+			Number(log.match(new RegExp(`${sev} :\\s+(\\d+)`))?.[1] ?? Number.NaN);
+		const errors = count("UVM_ERROR");
+		const fatals = count("UVM_FATAL");
+		if (Number.isNaN(errors) || Number.isNaN(fatals)) {
+			return { status: "FAIL", note: "no UVM report summary" };
+		}
+		return errors === 0 && fatals === 0
+			? "PASS"
+			: { status: "FAIL", note: `UVM_ERROR ${errors}, UVM_FATAL ${fatals}` };
+	},
+});
 
 const uvmTest = (name: string) =>
 	Case(name, {
@@ -51,5 +61,6 @@ export default Workspace({
 		],
 	},
 	task: { type: "local", maxSlots: 4, maxCompiles: 1 },
-	hooks: { onGrade: uvmSummary },
+	graders: [uvmSummary],
+	grader: "uvm-summary",
 });
