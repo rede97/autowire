@@ -28,6 +28,7 @@ const DEFAULT_FLAGS = [
 	"+pulse_r/0",
 ];
 
+/** Whole ns (at least 1): UVM reads +UVM_TIMEOUT with $sscanf("%d,%s"). */
 function parseTimeoutNs(value: string): string {
 	const m = /^(\d+(?:\.\d+)?)(s|ms|us|ns|ps)?$/.exec(value.trim());
 	if (!m) throw new Error(`dtsim: invalid uvm timeout "${value}"`);
@@ -39,7 +40,7 @@ function parseTimeoutNs(value: string): string {
 		ps: 0.001,
 	};
 	const unit = m[2] ?? "ns";
-	return String(Number(m[1]) * (scale[unit] ?? 1));
+	return String(Math.max(1, Math.ceil(Number(m[1]) * (scale[unit] ?? 1))));
 }
 
 function ntbOpts(opts: Record<string, unknown>): string {
@@ -186,7 +187,9 @@ export const vcsTool: SimTool = {
 				`+UVM_TESTNAME=${uvm.test ?? "top_test"}`,
 				`+UVM_VERBOSITY=${uvm.verbosity ?? "UVM_HIGH"}`,
 				`+UVM_MAX_QUIT_COUNT=${uvm.maxQuit ?? 9999}`,
-				`+UVM_TIMEOUT="${parseTimeoutNs(uvm.timeout ?? "1000ps")}ns,YES"`,
+				// argv, not a shell line: quotes would reach UVM, whose "%d"
+				// then reads 0 and every test dies of PH_TIMEOUT at time 0.
+				`+UVM_TIMEOUT=${parseTimeoutNs(uvm.timeout ?? "1000ps")},YES`,
 				`+test_drain_time=${uvm.drainTime ?? 100}`,
 			);
 			if (uvm.seq) argv.push(`+user_seq_type=${uvm.seq}`);

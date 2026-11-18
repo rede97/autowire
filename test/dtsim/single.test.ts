@@ -26,7 +26,7 @@ describe("single case", () => {
 		const log = await Bun.file(join(seedDir, "sim.log")).text();
 		expect(log).toContain("TEST PASSED");
 		expect(log).toContain("+user_seq_type=test_hello_world_seq");
-		expect(log).toContain('+UVM_TIMEOUT="1ns,YES"');
+		expect(log).toContain("+UVM_TIMEOUT=1,YES");
 		const runSim = await Bun.file(join(seedDir, "run_sim")).text();
 		expect(runSim).toContain("../simv");
 		expect(runSim).toContain("+ntb_random_seed=$SEED");
