@@ -18,7 +18,14 @@ describe("single case", () => {
 		expect(result.stdout).toContain("PASS");
 		const caseDir = join(ws.out, "test_hello_world");
 		expect(await Bun.file(join(caseDir, "vcs.log")).exists()).toBe(true);
-		expect(await Bun.file(join(caseDir, "dump.tcl")).exists()).toBe(true);
+		// No --wave: no dump.tcl, simv runs without UCLI.
+		expect(await Bun.file(join(caseDir, "dump.tcl")).exists()).toBe(false);
+		// Filelists reach VCS untouched as -f, compiled from the project root.
+		const vcsLog = await Bun.file(join(caseDir, "vcs.log")).text();
+		// MSYS bash prints /tmp/... for C:/msys64/tmp/...: compare the tail.
+		expect(vcsLog).toMatch(/\ncwd=\S*\/proj\n/);
+		expect(vcsLog).toContain("dt/config/file.lst");
+		expect(await Bun.file(join(caseDir, "filelist.f")).exists()).toBe(false);
 		// run_compile records the compile command with its env.
 		const runCompile = await Bun.file(join(caseDir, "run_compile")).text();
 		expect(runCompile).toContain("'+define+NUM=1'");
@@ -38,7 +45,7 @@ describe("single case", () => {
 		expect(await Bun.file(join(seedDir, ".result")).exists()).toBe(true);
 	});
 
-	test("explicit subcase: cosim args without bareDefaults, env exported", async () => {
+	test("explicit subcase: bareDefaults, then cosim args; env exported", async () => {
 		const ws = await makeWorkspace();
 		const result = await runDtsim(ws, [
 			"run",
@@ -52,7 +59,7 @@ describe("single case", () => {
 		const vcsLog = await Bun.file(join(caseDir, "vcs.log")).text();
 		expect(vcsLog).toContain("-ad=");
 		expect(vcsLog).toContain("-debug_access+all");
-		expect(vcsLog).not.toContain("+nospecify");
+		expect(vcsLog).toContain("+nospecify");
 		const runSim = await Bun.file(join(seedDir, "run_sim")).text();
 		expect(runSim).toContain("export INPUT='input.spf'");
 		expect(runSim).toContain("+fsdb+glitch=0");
@@ -178,9 +185,9 @@ describe("single case", () => {
 		const off = await runDtsim(ws, ["run", "test_hello_world", "-s", "8"]);
 		expect(off.code).toBe(0);
 		const dir = join(ws.out, "test_hello_world");
-		expect(await Bun.file(join(dir, "dump.tcl")).text()).toContain(
-			"set dump_enable 0",
-		);
+		const offLog = await Bun.file(join(dir, "8", "sim.log")).text();
+		expect(offLog).not.toContain("-ucli");
+		expect(offLog).toContain("+TEST=test_hello_world");
 		const on = await runDtsim(ws, [
 			"run",
 			"test_hello_world",
@@ -192,8 +199,10 @@ describe("single case", () => {
 		]);
 		expect(on.code).toBe(0);
 		const tcl = await Bun.file(join(dir, "dump.tcl")).text();
-		expect(tcl).toContain("set dump_enable 1");
 		expect(tcl).toContain('fsdbDumpvars 2 "+all"');
+		expect(await Bun.file(join(dir, "8", "sim.log")).text()).toContain(
+			"-ucli -i",
+		);
 		// The switch is an env var: the sim child sees it, run_sim replays it.
 		expect(await Bun.file(join(dir, "8", "sim.log")).text()).toContain(
 			"DTSIM_WAVE=1",
@@ -204,7 +213,103 @@ describe("single case", () => {
 	});
 });
 
+describe("vcs options", () => {
+	test("top sets -top and the default wave scope", async () => {
+		const ws = await makeWorkspace(
+			CASES_TS.replace(
+				"tools: [VcsTool()],",
+				'tools: [VcsTool({ top: "tb_x" })],',
+			),
+		);
+		const run = await runDtsim(ws, [
+			"run",
+			"test_hello_world",
+			"-s",
+			"1",
+			"--wave",
+		]);
+		expect(run.code).toBe(0);
+		const dir = join(ws.out, "test_hello_world");
+		expect(await Bun.file(join(dir, "vcs.log")).text()).toContain("-top tb_x");
+		expect(await Bun.file(join(dir, "dump.tcl")).text()).toContain(
+			'fsdbDumpvars 0 tb_x "+all"',
+		);
+	});
+
+	test("casePlusarg renames or drops the case plusarg", async () => {
+		const renamed = await makeWorkspace(
+			CASES_TS.replace(
+				"tools: [VcsTool()],",
+				'tools: [VcsTool({ casePlusarg: "DTSIM_TEST" })],',
+			),
+		);
+		expect(
+			(await runDtsim(renamed, ["run", "test_hello_world", "-s", "1"])).code,
+		).toBe(0);
+		const log = await Bun.file(
+			join(renamed.out, "test_hello_world", "1", "sim.log"),
+		).text();
+		expect(log).toContain("+DTSIM_TEST=test_hello_world");
+		expect(log).not.toContain("+TEST=");
+		const none = await makeWorkspace(
+			CASES_TS.replace(
+				"tools: [VcsTool()],",
+				"tools: [VcsTool({ casePlusarg: false })],",
+			),
+		);
+		expect(
+			(await runDtsim(none, ["run", "test_hello_world", "-s", "1"])).code,
+		).toBe(0);
+		expect(
+			await Bun.file(join(none.out, "test_hello_world", "1", "sim.log")).text(),
+		).not.toContain("TEST=test_hello_world");
+	});
+
+	test("case filelists append to the workspace's; a missing one fails early", async () => {
+		const ws = await makeWorkspace(
+			CASES_TS.replace(
+				'export const smoke = Case("test_quick_smoke", {',
+				'export const smoke = Case("test_quick_smoke", {\n\tfilelists: ["extra.f"],',
+			),
+		);
+		const missing = await runDtsim(ws, ["run", "test_quick_smoke", "-s", "1"]);
+		expect(missing.code).not.toBe(0);
+		expect(missing.stderr).toContain("filelist not found");
+		await Bun.write(join(ws.verify, "extra.f"), "rtl/extra.sv\n");
+		expect(
+			(await runDtsim(ws, ["run", "test_quick_smoke", "-s", "1"])).code,
+		).toBe(0);
+		const vcsLog = await Bun.file(
+			join(ws.out, "test_quick_smoke", "vcs.log"),
+		).text();
+		expect(vcsLog).toMatch(
+			/-f \S*dt\/config\/file\.lst -f \S*dt\/config\/extra\.f/,
+		);
+	});
+});
+
 describe("verilator backend", () => {
+	test("no top: Verilator finds it and the binary is Vsim; --wave needs a top", async () => {
+		const body = CASES_TS.replace(
+			"tools: [VcsTool()],",
+			"tools: [VerilatorTool()],",
+		).replace(
+			'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
+			'import { DefaultGrader, VerilatorTool } from "./.dtsim/dsl/index.ts";',
+		);
+		const ws = await makeWorkspace(body);
+		const run = await runDtsim(ws, ["run", "test_hello_world", "-s", "2"]);
+		expect(run.code).toBe(0);
+		const dir = join(ws.out, "test_hello_world");
+		expect(await Bun.file(join(dir, "obj_dir", "Vsim")).exists()).toBe(true);
+		expect(await Bun.file(join(dir, "run_compile")).text()).not.toContain(
+			"--top-module",
+		);
+		const wave = await runDtsim(ws, ["run", "test_hello_world", "--wave"]);
+		expect(wave.code).not.toBe(0);
+		expect(wave.stderr).toContain("set VerilatorTool({ top })");
+	});
+
 	test("compile produces an executable, sim grades its stdout log", async () => {
 		const body = CASES_TS.replace(
 			"tools: [VcsTool()],",

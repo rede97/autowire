@@ -30,7 +30,7 @@ export const bcastRead = uvmTest("hbm_bcast_read_test");
 export const concurrent = uvmTest("hbm_concurrent_test");
 
 export default Workspace({
-	filelist: "hbm.f",
+	filelists: ["hbm.f"],
 	// Flags of the original run.sh: the backend defaults target newer VCS
 	// (O-2018.09 rejects -xlrm nettype_array and -lca breaks its UVM DPI).
 	tools: [

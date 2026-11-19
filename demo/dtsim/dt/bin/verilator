@@ -1,21 +1,25 @@
 #!/bin/bash
-# Mock verilator: produces obj_dir/V<top>, a script that logs to stdout.
+# Mock verilator: produces <Mdir>/<-o name> (default V<top>), a script that
+# logs to stdout.
 MDIR="obj_dir"
 TOP="top"
+OUT=""
 prev=""
 for arg in "$@"; do
   case "$prev" in
     -Mdir) MDIR="$arg" ;;
     --top-module) TOP="$arg" ;;
+    -o) OUT="$arg" ;;
   esac
   prev="$arg"
 done
+EXE="$MDIR/${OUT:-V$TOP}"
 if [ "${DTSIM_MOCK_VCS_FAIL:-0}" = "1" ]; then
   echo "%Error: mock verilator compile failure"
   exit 1
 fi
 mkdir -p "$MDIR"
-cat > "$MDIR/V$TOP" <<'EOF'
+cat > "$EXE" <<'EOF'
 #!/bin/bash
 echo "mock verilator sim: $*"
 echo "output_dir=${output_dir:-}"
@@ -28,6 +32,6 @@ fi
 echo "Keyword"
 echo "TEST PASSED"
 EOF
-chmod +x "$MDIR/V$TOP"
-echo "mock verilator: built $MDIR/V$TOP"
+chmod +x "$EXE"
+echo "mock verilator: built $EXE"
 exit 0

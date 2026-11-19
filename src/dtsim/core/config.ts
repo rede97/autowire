@@ -41,8 +41,9 @@ export type MergedCase = {
 	env: Record<string, EnvValue>;
 	uvm?: UvmCfg;
 	toolOptions: Record<string, unknown>;
-	/** Case filelist override, relative to the config dir (default: workspace filelist). */
-	filelist?: string;
+	/** Case filelists (config strings, relative to dt/config), appended in
+	 *  merge order after the workspace's. */
+	filelists: string[];
 	/** Case grader, else bareDefaults' (bare top-level cases), else the workspace's. */
 	grader: Grader;
 	/** Tools the case runs on; undefined = every Workspace tool. */
@@ -61,7 +62,8 @@ export type ResolvedWorkspace = {
 	tool: SimTool;
 	/** Every configured backend, in config order. */
 	tools: SimTool[];
-	filelist: string;
+	/** Workspace filelists, absolute. */
+	filelists: string[];
 	bareDefaults?: CaseOpts;
 	passthrough: string[];
 	deny: string[];
@@ -162,7 +164,12 @@ export function resolvePath(
 
 function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
 	const out: CaseOpts = { ...base };
-	for (const key of ["defines", "compileArgs", "simArgs"] as const) {
+	for (const key of [
+		"defines",
+		"compileArgs",
+		"simArgs",
+		"filelists",
+	] as const) {
 		if (overlay[key] !== undefined || base[key] !== undefined) {
 			out[key] = [...(base[key] ?? []), ...(overlay[key] ?? [])];
 		}
@@ -174,7 +181,6 @@ function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
 	}
 	if (overlay.owner !== undefined) out.owner = overlay.owner;
 	if (overlay.random !== undefined) out.random = overlay.random;
-	if (overlay.filelist !== undefined) out.filelist = overlay.filelist;
 	if (overlay.grader !== undefined) out.grader = overlay.grader;
 	if (overlay.tools !== undefined) out.tools = overlay.tools;
 	return out;
@@ -216,12 +222,18 @@ export function findCase(
 	return node;
 }
 
-/** Merged options of a node without bareDefaults: root options, then each
- *  derivation level in order. Function options run here, once per load. */
+/** Merged options of a node: bareDefaults as the lowest-priority base of
+ *  every top-level case, then the root's options, then each derivation level
+ *  in order (derived cases inherit bareDefaults through their parent).
+ *  Function options run here, once per load. */
 function treeOpts(ws: CaseSource, node: CaseDef): CaseOpts {
 	const cached = ws.resolved.get(node.id);
 	if (cached) return cached;
-	const parent = node.parent ? treeOpts(ws, node.parent) : {};
+	const parent = node.parent
+		? treeOpts(ws, node.parent)
+		: ws.bareDefaults
+			? forTool(ws, "bareDefaults", ws.bareDefaults)
+			: {};
 	const own = forTool(
 		ws,
 		node.id,
@@ -229,7 +241,7 @@ function treeOpts(ws: CaseSource, node: CaseDef): CaseOpts {
 			? checkCaseOpts(node.id, node.opts(parent))
 			: node.opts,
 	);
-	const opts = node.parent ? mergeOpts(parent, own) : own;
+	const opts = mergeOpts(parent, own);
 	assertNoDeniedAssignments(node.id, opts.env ?? {}, ws.deny);
 	ws.resolved.set(node.id, opts);
 	return opts;
@@ -238,21 +250,8 @@ function treeOpts(ws: CaseSource, node: CaseDef): CaseOpts {
 export function mergeCase(ws: CaseSource, id: string): MergedCase {
 	const node = findCase(ws, id);
 	if (!node) throw new Error(`dtsim: testcase "${id}" not found`);
-	const tree = treeOpts(ws, node);
-	// A bare top-level case gets bareDefaults; derived cases do not. Its own
-	// grader still beats bareDefaults' (which would win as a plain scalar).
-	const bareDefaults =
-		!node.parent && ws.bareDefaults !== undefined
-			? forTool(ws, "bareDefaults", ws.bareDefaults)
-			: undefined;
-	// The case's `tools` beats bareDefaults' (a plain scalar overlay would win).
-	const opts = bareDefaults
-		? {
-				...mergeOpts(tree, bareDefaults),
-				tools: tree.tools ?? bareDefaults.tools,
-			}
-		: tree;
-	const grader = tree.grader ?? bareDefaults?.grader ?? ws.grader;
+	const opts = treeOpts(ws, node);
+	const grader = opts.grader ?? ws.grader;
 	const baseName = id.split(".")[0] as string;
 	const suffix = node.parent ? node.name : undefined;
 	return {
@@ -267,7 +266,7 @@ export function mergeCase(ws: CaseSource, id: string): MergedCase {
 		env: { ...opts.env },
 		...(opts.uvm === undefined ? {} : { uvm: { ...opts.uvm } }),
 		toolOptions: { ...opts.toolOptions },
-		...(opts.filelist === undefined ? {} : { filelist: opts.filelist }),
+		filelists: [...(opts.filelists ?? [])],
 		grader,
 		...(opts.tools === undefined ? {} : { tools: [...opts.tools] }),
 	};
@@ -296,7 +295,7 @@ export function compileKey(c: MergedCase, tool: SimTool): string {
 		defines: [...c.defines].sort(),
 		compileArgs: c.compileArgs,
 		env: compileEnvEntries(c.env),
-		filelist: c.filelist ?? "",
+		filelists: c.filelists,
 	});
 	return tool.compileKey?.(c, base) ?? base;
 }
@@ -421,23 +420,34 @@ export async function loadWorkspace(opts: {
 		throw new Error(`dtsim: ${configPath} must default-export Workspace(...)`);
 	}
 	const o = wsDef.opts;
-	// Only top-level cases need exporting. A derived case exported as well
-	// registers its root; the same root object exported twice is fine.
+	// Only top-level cases need exporting, alone or inside an exported array,
+	// Set or Map (values). A derived case exported as well registers its root;
+	// the same root object exported twice is fine. Other objects (a Group's
+	// members, the Workspace) are not searched.
 	const cases = new Map<string, CaseDef>();
+	const register = (value: unknown, from: string): void => {
+		if (Array.isArray(value) || value instanceof Set) {
+			for (const v of value) register(v, from);
+			return;
+		}
+		if (value instanceof Map) {
+			for (const v of value.values()) register(v, from);
+			return;
+		}
+		if (!isCase(value)) return;
+		let root = value;
+		while (root.parent) root = root.parent;
+		const known = cases.get(root.name);
+		if (known && known !== root) {
+			throw new Error(`dtsim: duplicate case "${root.name}" (${from})`);
+		}
+		cases.set(root.name, root);
+	};
 	const registerExports = (
 		mod: Record<string, unknown>,
 		from: string,
 	): void => {
-		for (const value of Object.values(mod)) {
-			if (!isCase(value)) continue;
-			let root = value;
-			while (root.parent) root = root.parent;
-			const known = cases.get(root.name);
-			if (known && known !== root) {
-				throw new Error(`dtsim: duplicate case "${root.name}" (${from})`);
-			}
-			cases.set(root.name, root);
-		}
+		for (const value of Object.values(mod)) register(value, from);
 	};
 	registerExports(configModule, configPath);
 	for (const rel of o.cases ?? []) {
@@ -481,7 +491,7 @@ export async function loadWorkspace(opts: {
 		out: tools.length > 1 ? join(outRoot, tool.name) : outRoot,
 		tool,
 		tools,
-		filelist: resolvePath(o.filelist ?? "file.lst", paths),
+		filelists: (o.filelists ?? []).map((f) => resolvePath(f, paths)),
 		cases,
 		resolved: new Map(),
 		...(o.bareDefaults === undefined ? {} : { bareDefaults: o.bareDefaults }),

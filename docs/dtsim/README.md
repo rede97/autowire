@@ -159,15 +159,20 @@ SoT), so DSL edits reach them without a regenerate step; `docs unpack`
 rewrites those imports to the `.dtsim/dsl` copy. No symlink is used: Windows
 symlinks need extra privileges and Bun does not follow MSYS ones.
 
-- `Workspace({ tools, filelist, output, grader, bareDefaults, env, task, hooks, groups, cases })`.
+- `Workspace({ tools, filelists, output, grader, bareDefaults, env, task, hooks, groups, cases })`.
   `tools` (non-empty list), `task.launcher` and `grader` are values
   (`VcsTool(...)`, `LsfLauncher(...)`, `DefaultGrader(...)`), not ids.
 - `Case(name, opts)` / `case.SubCase(suffix, opts)` / `Group(name, ids)`
-- List fields (`defines`, `compileArgs`, `simArgs`) append.
+- List fields (`defines`, `compileArgs`, `simArgs`, `filelists`) append.
   `env` maps merge per key; `grader` is replaced (use `.extend()` to append keywords).
-  Bare top-level cases get `bareDefaults`; derived cases do not.
-- `filelist` (workspace or case) is a path relative to `dt/config/`. A case
-  filelist replaces the workspace one and splits the compile group.
+- `bareDefaults` is the lowest-priority base of every top-level case: the
+  case's own options merge on top (lists after it, its scalars win), and
+  derived cases inherit it through their parent like any other option.
+- `filelists` (workspace or case) are paths relative to `dt/config/`; see
+  [Filelists](#filelists).
+- Cases are found among a config / case module's exports: a `Case` value, or
+  `Case` values inside an exported array, `Set` or `Map`. Other objects are not
+  searched.
 - `output` moves the output root (default `<project>/dt/simout`), e.g.
   `output: "${workspace}/temp/output"` or `"${SCRATCH}/dtsim"`.
 - `uvm` is only interpreted by the VCS backend; other backends ignore it.
@@ -231,7 +236,7 @@ root), `${verify}` (`dt/config`), `${output_dir}`, `${case}`, `${seed}`,
 - **Args, env values, generated text** (`expand`): dtsim variables are
   replaced; anything else, including `$HOME`, is left for the shell or
   simulator.
-- **Paths** (`resolvePath`): `output`, `filelist`, `cases`, and
+- **Paths** (`resolvePath`): `output`, `filelists`, `cases`, and
   whatever a backend or hook passes to `ctx.resolvePath`. dtsim variables
   first, then variables of the shell that started dtsim (`${HOME}`,
   `${SCRATCH}`); the result is made absolute against `dt/config`. An unknown
@@ -243,13 +248,17 @@ root), `${verify}` (`dt/config`), `${output_dir}`, `${case}`, `${seed}`,
 
 ## Filelists
 
-Filelist entries are relative to the project root, the same rule as
-`autowire.toml` filelists, including nested `-f`. Before compiling, dtsim
-writes `<compile dir>/filelist.f`: nested `-f` / `-F` inlined, file entries,
-`+incdir+` directories and `-v` / `-y` arguments made absolute, other options
-kept as written, `$VAR` entries left for the tool. A missing nested filelist
-or a cycle fails the run before the tool starts. Backends receive this flat
-file as `ctx.filelist`.
+dtsim never reads a filelist. `Workspace({ filelists })` lists the ones every
+case compiles (default: none); a case's `filelists` (and each derived level,
+`byTool`, `bareDefaults`) append to them, so a case extends the workspace set
+with its own. Each becomes one `-f <absolute path>` on the compile command,
+and the compile runs with the project root as its cwd: entries relative to
+the project root (the `autowire.toml` rule), nested `-f`, `-F` (relative to
+its own file) and `$VAR` (from the compile environment) are the simulator's
+standard handling. Outputs still go to the compile dir (VCS `-Mdir` / `-o`,
+Verilator `-Mdir`), so the project root gets no files. Only one check runs
+before the tool: every listed filelist exists (after `preCompile`, which may
+generate one). Backends get the list as `ctx.filelists`.
 
 ## Simulator backends
 
@@ -275,11 +284,15 @@ Built-in options (factory argument, or case `toolOptions`):
 
 | Backend | Option | Default | Meaning |
 |---|---|---|---|
-| `VerilatorTool` | `top` | `top` | `--top-module`; executable `V<top>` |
-| `VerilatorTool` | `mdir` | `obj_dir` | `-Mdir` inside the compile dir |
+| `VerilatorTool` | `top` | none: Verilator finds the single top | `--top-module`; the `--wave` bind target (required for `--wave`) |
+| `VerilatorTool` | `mdir` | `obj_dir` | `-Mdir` inside the compile dir; the executable is `<mdir>/V<top>` (`Vsim` without `top`, via `-o`) |
 | `VerilatorTool` | `main` | `true` | `true`: `--binary`. `false`: `--cc --exe --build` for a C++ harness; the `.cpp` files and `--timing` go in `compileArgs` |
+| `VerilatorTool` | `command` | `verilator` | the compiler to run, e.g. `verilator_bin` or a full path |
+| `VcsTool` | `top` | none: VCS finds the top | `-top`; the default `--wave` scope and `run_verdi -t`'s `-top` |
 | `VcsTool` | `ntbOpts` | `uvm` | `-ntb_opts` value, e.g. `uvm-1.2`; `""` leaves `-ntb_opts` out |
-| `VcsTool` | `flags` | built-in list | replaces the built-in compile flags (`-xlrm nettype_array -lca -kdb ...`, written for a newer VCS); `-f`, `-l`, defines and `compileArgs` still follow |
+| `VcsTool` | `flags` | built-in list | replaces the built-in compile flags (`-xlrm nettype_array -lca -kdb ...`, written for a newer VCS); `-f`, `-Mdir`, `-o`, `-l`, defines and `compileArgs` still follow |
+| `VcsTool` | `command` | `vcs` | the compiler to run, e.g. a wrapper or a full path; `process.env.VCS ?? "vcs"` reads an env var |
+| `VcsTool` | `casePlusarg` | `"TEST"` | `+<name>=<case id>` on every simv run; `false` sends none (the child always has `$DTSIM_CASE`) |
 
 The engine owns scheduling, grading, and environment assembly. A backend only
 supplies argv, log locations, excerpt regexes, optional helper files
@@ -300,7 +313,7 @@ with `waveFromEnv()` / `covFromEnv()` when it is constructed (next sections).
   `regr` 报错；`groups` 列出每组可跑与跳过的数量；`list` 显示 `tools ...`。
 - **`byTool: { vcs: {...}, verilator: {...} }`**：选中某个仿真器时，在这一层的选项之上
   再合并对应的那份（列表追加、map 合并、标量覆盖，和派生同样的规则），可写
-  `filelist`、`compileArgs`、`grader`、`toolOptions` 等，不能再写 `tools` / `byTool`。
+  `filelists`、`compileArgs`、`grader`、`toolOptions` 等，不能再写 `tools` / `byTool`。
   每一层（根、各级派生、`bareDefaults`）都可以有自己的 `byTool`。键名必须是配置里的
   仿真器名。
 - **输出**：配置了多个仿真器时输出放到 `dt/simout/<tool>/`（`<tool>/<case>/`、
@@ -331,8 +344,11 @@ export 的值。需要在配置里固定时写 `process.env.DTSIM_WAVE ??= "1"`�
 
 各后端的波形：
 
-- **VCS**：`-ucli -i dump.tcl`，`fsdbDumpvars <depth> [<scope>] "+all"`，每个 seed 目录写
-  `verilog.fsdb`（`run_verdi` 打开它）；不给 `--wave-top` 时 dump 整个设计。
+- **VCS**：只在 `--wave` 时生成 `dump.tcl` 并用 `-ucli -i dump.tcl` 运行 simv（`--interactive`
+  只加 `-ucli`；两者都没有时 simv 直接运行，不需要 debug 权限）。
+  `fsdbDumpvars <depth> [<scope>] "+all"`，scope 取 `--wave-top`，否则 `VcsTool({ top })`，都没有则
+  dump 整个设计；每个 seed 目录写 `verilog.fsdb`（`run_verdi` 打开它）。TB 自己管 dump 时
+  不用 `--wave`，可在配置里按开关加 plusarg：`simArgs: process.env.DTSIM_WAVE ? ["+FSDB=1"] : []`。
 - **Verilator**：编译加 `--trace-fst`，并生成 `dtsim_wave.sv`（`bind <top> dtsim_wave`，
   内含 `$dumpfile("wave.fst")` 与 `$dumpvars(<depth>, <scope 或 top>)`），每个 seed 目录写
   `wave.fst`，TB 不用改。波形是编译进去的：开 / 关要重新编译，`--sim-only` 沿用已有
@@ -343,7 +359,7 @@ export 的值。需要在配置里固定时写 `process.env.DTSIM_WAVE ??= "1"`�
 
 In a regression, cases with equal compile keys share one compile directory.
 dtsim computes a generic key (tool name, defines as a set, `compileArgs` in
-order, compile-scope `env`, case `filelist`) and hands it to the backend's
+order, compile-scope `env`, `filelists` in order) and hands it to the backend's
 `compileKey(c, base)`, which returns the final key: `base` unchanged, `base`
 plus what else its build depends on, or a key of its own when the simulator
 knows better (for example a backend whose defines are runtime parameters can
@@ -433,21 +449,24 @@ no growth in dtsim's own memory).
 A grader decides the status of one seed after `postSim`, and `results
 --recheck` runs the same one. Graders are values: `Workspace({ grader })` sets
 the default (omitted: `DefaultGrader()`), a case sets `grader` and its derived
-cases inherit it, unless a derived case sets its own. A bare top-level case
-without one takes `bareDefaults.grader`, then the workspace's.
+cases inherit it, unless a derived case sets its own; `bareDefaults.grader`
+sits below every case, then the workspace's.
 
 `DefaultGrader(opts)` is the built-in:
 
 | Option | Meaning |
 |---|---|
-| `pass` | a line containing one of these marks a finished run; default `["TEST PASSED"]` |
+| `pass` | a line matching one of these marks a finished run; default `["TEST PASSED"]` |
 | `error` | a kept (not waived) line matching one: `PASS WITH ERRORS` |
 | `expect` | each must match somewhere, else `PASS WITH ERRORS` |
 | `waive` | `WaiveRule(name, pattern)` entries, switched on by `DSIM_WAIVE_ON <names>` |
 | `uvm` | default `true`: a `UVM Report Summary` also marks a finished run, and any kept `UVM_ERROR` / `UVM_FATAL` message (not the summary's count lines) is `FAIL` |
 
-Keywords are substrings, or `re:` regexes (an invalid regex is a substring).
-No finished marker is `FAIL`. Waive markers keep their dsim spelling:
+Keywords (`pass`, `error`, `expect`, waive patterns) are substrings, or `re:`
+regexes (an invalid regex is a substring). Lines are read without their line
+ending, so `re:^TEST PASSED$` also matches CRLF logs. No finished marker is
+`FAIL` with note `not finished` and a `Finished` row naming the keywords that
+were looked for. Waive markers keep their dsim spelling:
 `DSIM_WAIVE_BEGIN [pattern]` .. `DSIM_WAIVE_END` waives matching lines (all
 lines without a pattern; unclosed runs to EOF), `DSIM_WAIVE_ON` /
 `DSIM_WAIVE_OFF` switch named rules; marker lines never count. Waived UVM
@@ -523,7 +542,7 @@ Every stage gets the same `HookContext`:
 | `log` | compile log (compile stages) or sim log (sim stages) |
 | `status` | onResult only: the final status |
 | `verify`, `workspace`, `tool` | `dt/config`, project root, backend id |
-| `caseOpts` | merged `defines`, `compileArgs`, `simArgs`, `env`, `uvm`, `toolOptions`, `filelist`, placeholders intact |
+| `caseOpts` | merged `defines`, `compileArgs`, `simArgs`, `env`, `uvm`, `toolOptions`, `filelists`, placeholders intact |
 | `env` | the isolated environment of this phase's tool command |
 | `expand(text)`, `resolvePath(text)` | see [Placeholders and paths](#placeholders-and-paths) |
 | `sh(cmd, { timeoutSec? })` | runs `bash -c cmd` in `dir` with `env` (plus `DTSIM_HOOK=<stage>`); output appended to `<dir>/hook-<stage>.log`; returns stdout; a non-zero exit throws |
@@ -538,7 +557,7 @@ and `ctx` describes the group's first case.
 
 | Stage | Runs | Typical use | Demo |
 |---|---|---|---|
-| `preCompile` | per compile dir, before the filelist is flattened and the tool runs | generate or patch sources, prebuild a C model | soc: sdspi patch via `ctx.sh`; dtsim: SPICE deck, `gen_stamp.svh` |
+| `preCompile` | per compile dir, before the filelists are checked and the tool runs | generate or patch sources (or a filelist), prebuild a C model | soc: sdspi patch via `ctx.sh`; dtsim: SPICE deck, `gen_stamp.svh` |
 | `postCompile` | after the compile tool exits | compile-log policy, archive the build | dtsim: fail on more than `DTSIM_DEMO_MAX_WARN` warnings |
 | `preSim` | per seed, before `run_sim` | per-seed input: firmware, memory image, stimulus | soc: firmware + SD image; dtsim: `stim.hex` from the seed |
 | `postSim` | per seed, before grading | golden-model compare (throw to fail), metrics, wave conversion | dtsim: `metrics.json` |

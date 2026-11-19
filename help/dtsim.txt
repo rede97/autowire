@@ -40,9 +40,10 @@ Tools and run switches
     --wave-depth <n>    DTSIM_WAVE_DEPTH (0 = every level)
     --wave-top <scope>  DTSIM_WAVE_TOP (default: the tool's top)
     --cov / --cov-metrics / --no-cov-merge   DTSIM_COV / _METRICS / _MERGE=0
-  VCS: dump.tcl → <seed>/verilog.fsdb. Verilator: --trace-fst plus a bound
-  dtsim_wave module → <seed>/wave.fst (compiled in; a C++ harness calls
-  traceEverOn(true)).
+  VCS: --wave writes dump.tcl and runs simv -ucli -i dump.tcl → <seed>/verilog.fsdb
+  (no --wave: plain simv). Verilator: --trace-fst plus a bound dtsim_wave
+  module → <seed>/wave.fst (compiled in; needs top; a C++ harness calls
+  traceEverOn(true)). A TB that dumps itself: simArgs from $DTSIM_WAVE.
 
 Agent workflow
   1. dtsim list / dtsim groups / dtsim plan <group>: see what exists, no run.
@@ -58,18 +59,25 @@ Agent workflow
   via the grader, never the exit code).
 
 DSL (import from ./.dtsim/dsl/index.ts)
-  Workspace({ tools, filelist, output, grader, bareDefaults, env, task, hooks,
+  Workspace({ tools, filelists, output, grader, bareDefaults, env, task, hooks,
               groups, cases })
-  tools     [VcsTool({ ntbOpts, flags }) | VerilatorTool({ top, mdir, main })
+  tools     [VcsTool({ top, ntbOpts, flags, command, casePlusarg })
+            | VerilatorTool({ top, mdir, main, command })
             | defineTool({ name, passthrough, compile, simulate, ... }), ...];
-            case toolOptions override the factory options per case
+            top unset: the simulator finds it. casePlusarg (default "TEST")
+            sends +TEST=<case>; false sends none. Case toolOptions override.
+  filelists dtsim never reads them: each is -f <abs path>, compiled with the
+            project root as cwd (relative entries, nested -f, -F, $VAR are the
+            simulator's); case filelists append to the workspace's.
+  bareDefaults  base of every top-level case; derived cases inherit it.
   task      { launcher, maxSlots, maxCompiles }; launcher LocalLauncher() (default)
             | LsfLauncher({ queue, args }) | SlurmLauncher(...) | defineLauncher(...)
             DTSIM_TASK_TYPE=local|lsf|slurm swaps in a built-in; DTSIM_TASK_QUEUE
   Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) → <id>.<suffix>;
-            export only top-level cases. opts: defines, compileArgs, simArgs, env
+            export top-level cases (alone or in an exported array / Set / Map).
+            opts: defines, compileArgs, simArgs, env
             ({ value, scope: "sim" } keeps it out of the build), uvm, toolOptions,
-            filelist, grader, random, owner, tools: ["verilator"] (runs only
+            filelists, grader, random, owner, tools: ["verilator"] (runs only
             there; regr / plan skip it elsewhere), byTool: { vcs: {...} }
             (merged on top when that tool is selected). Lists append, maps merge.
   Group(name, [caseObj, "id", "base.*.cosim", "base.**"])

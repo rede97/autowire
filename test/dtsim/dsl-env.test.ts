@@ -14,7 +14,7 @@ import { VcsTool } from "../../src/dtsim/dsl/index.ts";
 import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 
 describe("dsl merge", () => {
-	test("bare case gets bareDefaults, explicit subcase does not", async () => {
+	test("bareDefaults are the base every case and subcase inherits", async () => {
 		const ws = await loadWorkspace({ config: (await makeWorkspace()).config });
 		const bare = mergeCase(ws, "test_hello_world");
 		expect(bare.compileArgs).toEqual(["+nospecify", "+notimingcheck"]);
@@ -23,12 +23,45 @@ describe("dsl merge", () => {
 
 		const cosim = mergeCase(ws, "test_hello_world.cosim");
 		expect(cosim.compileArgs).toEqual([
+			"+nospecify",
+			"+notimingcheck",
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time
 			"-ad=${verify}/abc",
 			"-debug_access+all",
 		]);
 		expect(cosim.defines).toEqual(["NUM=1"]);
 		expect(cosim.env.INPUT).toBe("input.spf");
+	});
+
+	test("a case's own scalar beats bareDefaults'", async () => {
+		const body = CASES_TS.replace(
+			'bareDefaults: { compileArgs: ["+nospecify", "+notimingcheck"] },',
+			'bareDefaults: { compileArgs: ["+nospecify"], random: false, owner: "team" },',
+		).replace(
+			'export const smoke = Case("test_quick_smoke", {',
+			'export const smoke = Case("test_quick_smoke", {\n\trandom: true,',
+		);
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(body)).config,
+		});
+		const smoke = mergeCase(ws, "test_quick_smoke");
+		expect(smoke.random).toBe(true);
+		expect(smoke.owner).toBe("dave");
+	});
+
+	test("cases inside exported arrays and Maps are registered", async () => {
+		const body = CASES_TS.replace(
+			"export default Workspace({",
+			`export const table = [Case("arr_a"), Case("arr_b")];
+export const byName = new Map([["m", Case("map_c")]]);
+export default Workspace({`,
+		);
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(body)).config,
+		});
+		for (const id of ["arr_a", "arr_b", "map_c"]) {
+			expect(ws.cases.has(id)).toBe(true);
+		}
 	});
 
 	test("a derived case's extended grader keeps the base keywords", async () => {

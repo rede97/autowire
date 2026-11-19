@@ -20,7 +20,7 @@ import {
 
 export default Workspace({
 	tools: [VcsTool()],
-	filelist: "file.lst",
+	filelists: ["file.lst"],
 	bareDefaults: {
 		compileArgs: ["+nospecify", "+notimingcheck"],
 	},

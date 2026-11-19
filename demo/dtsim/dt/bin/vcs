@@ -1,17 +1,21 @@
 #!/bin/bash
-# Mock VCS compiler: writes vcs.log and a simv script, honors failure switches.
+# Mock VCS compiler: writes vcs.log and a simv script (-o, default ./simv),
+# honors failure switches, and records its cwd and -f filelists.
 VCS_LOG="vcs.log"
 CM_DIR=""
+SIMV="./simv"
 prev=""
 for arg in "$@"; do
   case "$prev" in
     -l) VCS_LOG="$arg" ;;
     -cm_dir) CM_DIR="$arg" ;;
+    -o) SIMV="$arg" ;;
   esac
   prev="$arg"
 done
 {
   echo "mock vcs: $*"
+  echo "cwd=$PWD"
   echo "output_dir=${output_dir:-}"
   echo "BAR_CFG=${BAR_CFG:-}"
   echo "INPUT=${INPUT:-}"
@@ -27,7 +31,7 @@ if [ "${DTSIM_MOCK_VCS_FAIL:-0}" = "1" ]; then
   echo "mock vcs failed" >> "$VCS_LOG"
   exit 1
 fi
-cp "$(dirname "$0")/simv" ./simv
-chmod +x ./simv
+cp "$(dirname "$0")/simv" "$SIMV"
+chmod +x "$SIMV"
 echo "mock vcs: compile finished" >> "$VCS_LOG"
 exit 0

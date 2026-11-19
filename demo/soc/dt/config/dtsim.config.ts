@@ -39,7 +39,7 @@ const firmware = (fw: string) =>
 // The SD build links the sdspisim card model; it is a separate compile group.
 function harness(sd: boolean) {
 	return {
-		filelist: "harness.f",
+		filelists: ["harness.f"],
 		toolOptions: { top: "tb_soc_vl", main: false },
 		compileArgs: [
 			"-Wall",
@@ -85,7 +85,7 @@ export const sdSha256 = Case("sd_sha256", {
 export const tbMod = Case("tb_mod", {
 	owner: "soc",
 	tools: ["verilator"],
-	filelist: "tb_mod.f",
+	filelists: ["tb_mod.f"],
 	toolOptions: { top: "tb_soc" },
 	grader: smoke.extend({ pass: ["SMOKE PASS: tb_soc"] }),
 	compileArgs: ["-CFLAGS", "-O2 -std=c++17", "-LDFLAGS", "-pthread"],
@@ -97,7 +97,7 @@ export const tbMod = Case("tb_mod", {
 export const svRegSmoke = Case("sv_reg_smoke", {
 	owner: "soc",
 	tools: ["verilator"],
-	filelist: "sv_reg.f",
+	filelists: ["sv_reg.f"],
 	toolOptions: { top: "sv_reg_smoke" },
 	compileArgs: ["--timescale", "1ns/1ps", "-Wno-lint", "-Wno-style"],
 	grader: smoke.extend({ pass: ["SV_REG SMOKE PASS"] }),
@@ -111,10 +111,10 @@ export default Workspace({
 		// -ucli run dump.tcl.
 		VcsTool({
 			ntbOpts: "",
+			top: "tb_soc",
 			flags: ["-full64", "-sverilog", "-timescale=1ns/1ps", "-debug_access+all"],
 		}),
 	],
-	filelist: "harness.f",
 	bareDefaults: {
 		random: false,
 		byTool: {
@@ -122,8 +122,8 @@ export default Workspace({
 			// --no-as-needed: VCS O-2018.09 on binutils >= 2.34 drops its own
 			// shared libs.
 			vcs: {
-				filelist: "vcs.f",
-				compileArgs: ["-top", "tb_soc", "-LDFLAGS", "-Wl,--no-as-needed"],
+				filelists: ["vcs.f"],
+				compileArgs: ["-LDFLAGS", "-Wl,--no-as-needed"],
 				grader: smoke.extend({ pass: ["SMOKE PASS: tb_soc"] }),
 			},
 		},

@@ -36,14 +36,16 @@ export type CaseOpts = {
 	 *  (e.g. VerilatorTool `top`, VcsTool `flags`); objects merge per key.
 	 *  With several tools, put them under `byTool.<tool>`. */
 	toolOptions?: Record<string, unknown>;
-	/** Filelist for this case instead of the workspace one (relative to dt/config). */
-	filelist?: string;
+	/** Filelists (paths relative to dt/config), appended to the workspace's
+	 *  and the parent's. dtsim never reads them: each reaches the tool as -f,
+	 *  which runs in the project root. */
+	filelists?: readonly string[];
 	/** Grader for this case and its derived cases (default: Workspace.grader). */
 	grader?: Grader;
 	/** Tools this case runs on (default: every Workspace tool). Inherited. */
 	tools?: readonly string[];
 	/** Options merged on top of this level's options when that tool is
-	 *  selected: `byTool: { vcs: { filelist: "vcs.f" }, verilator: { ... } }`. */
+	 *  selected: `byTool: { vcs: { filelists: ["vcs.f"] }, verilator: { ... } }`. */
 	byTool?: Readonly<Record<string, ToolCaseOpts>>;
 };
 
@@ -142,7 +144,7 @@ export type CaseContext = {
 		env: Readonly<Record<string, EnvValue>>;
 		uvm?: UvmCfg;
 		toolOptions: Record<string, unknown>;
-		filelist?: string;
+		filelists: string[];
 	};
 	/** The isolated environment the tool command of this phase receives. */
 	env: Readonly<Record<string, string>>;
@@ -171,8 +173,7 @@ export type HookContext = CaseContext & {
 export type Hook = (ctx: HookContext) => void | Promise<void>;
 
 export type Hooks = {
-	/** Before the compile tool, before the filelist is flattened: generate or
-	 *  patch sources. */
+	/** Before the compile tool: generate or patch sources (and filelists). */
 	preCompile?: Hook | readonly Hook[];
 	postCompile?: Hook | readonly Hook[];
 	preSim?: Hook | readonly Hook[];
@@ -219,8 +220,9 @@ export type WorkspaceOpts = {
 	/** Simulator backends: VcsTool(...), VerilatorTool(...) or defineTool(...).
 	 *  The first is the default; `--tool <name>` or $DTSIM_TOOL picks another. */
 	tools: readonly SimTool[];
-	/** Filelist path (`${...}` allowed; relative to dt/config). Default "file.lst". */
-	filelist?: string;
+	/** Filelists every case compiles (paths relative to dt/config, `${...}`
+	 *  allowed); cases append theirs. Default: none. */
+	filelists?: readonly string[];
 	/** Output root (`${...}` allowed; relative to dt/config). Default "${workspace}/dt/simout". */
 	output?: string;
 	/** Default grader. Default `DefaultGrader()`. */
@@ -273,9 +275,12 @@ export type ToolContext = {
 	verify: string;
 	/** Project root: the RTL design dir that owns dt/. */
 	workspace: string;
-	/** Flat filelist in the compile dir: nested -f inlined, paths absolute. */
-	filelist: string;
+	/** Filelists of this case, absolute, workspace's first. Contents are the
+	 *  tool's business: pass each as -f with the project root as cwd. */
+	filelists: string[];
 	regression: boolean;
+	/** `run --interactive`: the terminal is attached to the simulator. */
+	interactive: boolean;
 	/** Expand ${verify}/${workspace}/${output_dir}/... placeholders. */
 	expand: (text: string) => string;
 	/** Same placeholders plus shell variables (${HOME}), then absolute against
@@ -292,7 +297,7 @@ export type CompileKeyInput = {
 	env: Readonly<Record<string, EnvValue>>;
 	uvm?: UvmCfg;
 	toolOptions: Record<string, unknown>;
-	filelist?: string;
+	filelists: readonly string[];
 };
 
 export type SimTool = {
@@ -306,7 +311,7 @@ export type SimTool = {
 	/**
 	 * Compile identity: cases whose keys are equal share one build in a
 	 * regression. `base` is dtsim's generic key (tool, defines as a set,
-	 * compileArgs in order, compile-scope env, filelist). Return it, extend it
+	 * compileArgs in order, compile-scope env, filelists). Return it, extend it
 	 * (`${base}|top=x`), or replace it with what this simulator actually
 	 * compiles from. Default: `base`.
 	 */
@@ -369,7 +374,13 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 	if (typeof opts !== "object" || opts === null) {
 		throw new Error(`dtsim: ${what} options must be an object`);
 	}
-	for (const key of ["defines", "compileArgs", "simArgs", "tools"] as const) {
+	for (const key of [
+		"defines",
+		"compileArgs",
+		"simArgs",
+		"tools",
+		"filelists",
+	] as const) {
 		const list = opts[key];
 		if (list !== undefined && !Array.isArray(list)) {
 			throw new Error(`dtsim: ${what}.${key} must be an array`);
@@ -378,8 +389,6 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 			throw new Error(`dtsim: ${what}.${key} entries must be strings`);
 		}
 	}
-	if (opts.filelist !== undefined)
-		needString(`${what}.filelist`, opts.filelist);
 	if (opts.grader !== undefined) needGrader(`${what}.grader`, opts.grader);
 	if (opts.env) {
 		for (const [k, v] of Object.entries(opts.env)) {
@@ -609,6 +618,7 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 		}
 		names.add(tool.name);
 	}
+	needList("Workspace filelists", opts.filelists);
 	if (opts.task?.launcher !== undefined) {
 		needLauncher("task.launcher", opts.task.launcher);
 	}
@@ -633,7 +643,8 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 // --- DefaultGrader -----------------------------------------------------------
 
 export type DefaultGraderOpts = {
-	/** A line containing any of these marks a finished run. Default ["TEST PASSED"]. */
+	/** A line matching any of these marks a finished run (substring, or "re:"
+	 *  for a regex). Default ["TEST PASSED"]. */
 	pass?: readonly string[];
 	/** Kept (not waived) lines matching any of these: PASS WITH ERRORS.
 	 *  Substring, or "re:" for a regex. */
@@ -664,11 +675,13 @@ export async function* streamLines(path: string): AsyncGenerator<string> {
 		const { done, value } = await reader.read();
 		if (done) break;
 		rest += decoder.decode(value, { stream: true });
-		const parts = rest.split("\n");
+		// CRLF logs (Windows tools): no trailing \r reaches a scanner, so
+		// anchored keywords (re:^...$) match there too.
+		const parts = rest.split(/\r?\n/);
 		rest = parts.pop() ?? "";
 		yield* parts;
 	}
-	rest += decoder.decode();
+	rest = (rest + decoder.decode()).replace(/\r$/, "");
 	if (rest.length > 0) yield rest;
 }
 
@@ -720,6 +733,10 @@ export async function scanLog<A, T>(
 
 export type GradeReport = {
 	status: GradeStatus;
+	/** A pass keyword (or, with uvm, the UVM Report Summary) was seen. */
+	finished: boolean;
+	/** The pass keywords that were looked for. */
+	pass: string[];
 	errorCounts: Record<string, number>;
 	missingExpect: string[];
 	uvmErrors: number;
@@ -784,7 +801,7 @@ export function defaultScanner(
 		push(line) {
 			if (
 				!finished &&
-				(pass.some((kw) => line.includes(kw)) ||
+				(pass.some((kw) => match(kw, line)) ||
 					(uvm && line.includes("UVM Report Summary")))
 			) {
 				finished = true;
@@ -836,6 +853,8 @@ export function defaultScanner(
 				status = "PASS WITH ERRORS";
 			return {
 				status,
+				finished,
+				pass: [...pass],
 				errorCounts,
 				missingExpect,
 				uvmErrors,
@@ -861,6 +880,8 @@ export function gradeLines(
 
 function reportOutcome(r: GradeReport): GradeOutcome {
 	const details: Array<[string, string]> = [];
+	const unfinished = `no line matched ${r.pass.join(" | ") || "(no pass keyword)"}`;
+	if (!r.finished) details.push(["Finished", unfinished]);
 	const kws = Object.entries(r.errorCounts)
 		.map(([kw, n]) => `${kw} (${n})`)
 		.join(", ");
@@ -877,7 +898,11 @@ function reportOutcome(r: GradeReport): GradeOutcome {
 	}
 	return {
 		status: r.status,
-		...(r.uvmErrors + r.uvmFatals > 0 ? { note: uvm } : {}),
+		...(r.uvmErrors + r.uvmFatals > 0
+			? { note: uvm }
+			: r.finished
+				? {}
+				: { note: "not finished" }),
 		details,
 		highlight: r.hits,
 	};

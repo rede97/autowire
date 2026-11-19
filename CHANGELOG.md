@@ -2,6 +2,15 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.8.3] - 2026-11-19
+
+- **dtsim 不再解析 filelist**（#3）：`Workspace({ filelist })` / Case `filelist` 改为 `filelists: [...]`，按列表追加（workspace 的在前，然后是 `bareDefaults`、根用例、各级派生，每层之后是该层的 `byTool`），workspace 不再默认 `file.lst`。每个 filelist 原样作为 `-f <绝对路径>` 交给仿真器，编译在项目根目录下运行：相对路径、嵌套 `-f`、`-F`（相对文件自身目录）与 `$VAR` 都由仿真器按标准处理；展开器与编译目录里的 `filelist.f` 删除，启动前只检查列出的 filelist 存在（在 `preCompile` 之后）。VCS 加 `-Mdir=<编译目录>/csrc -o <编译目录>/simv`，Verilator 的 `-Mdir` 改为编译目录下的绝对路径，项目根不落文件；`run_verdi` 先 cd 到项目根。`ToolContext.filelist` 改为 `filelists`，新增 `interactive`。
+- **bareDefaults 进入派生链**（#5）：bareDefaults 成为每个顶层用例的最低优先级底座，用例自己的选项合并在上面（列表在后、标量覆盖），派生用例经父用例继承；原来只给裸顶层用例、且其标量会反盖用例自己的值。用例模块导出的数组、`Set`、`Map` 里的 `Case` 也会登记。
+- **DefaultGrader**（#4）：`pass` 也支持 `re:`；日志行去掉行尾 `\r`，CRLF 日志上的锚点正则可用；没有结束标记时结果带 note `not finished` 和 `Finished` 一行（列出查找的关键字）。
+- **VcsTool**（#6）：新增 `top`（`-top`，同时是 `--wave` 默认范围与 `run_verdi -t` 的 `-top`，去掉写死的 `tb_top`）、`command`（编译器命令，默认 `vcs`）、`casePlusarg`（默认 `"TEST"`，`false` 不传）；没有 `--wave` 时不写 `dump.tcl`、simv 不加 `-ucli`（`--interactive` 只加 `-ucli`）。
+- **VerilatorTool**：`top` 不再默认 `"top"`，不设时不传 `--top-module`，由 Verilator 找唯一的 top；可执行文件用 `-o` 固定为 `<mdir>/V<top>`（无 top 时 `Vsim`）；`--wave` 需要 `top`，缺少时报错。新增 `command`（默认 `verilator`）。
+- demo/soc：filelist 移到各用例（`harness.f` / `tb_mod.f` / `sv_reg.f`，VCS 为 `bareDefaults.byTool.vcs.filelists`），VCS 用 `VcsTool({ top: "tb_soc" })`。
+
 ## [2.8.2] - 2026-11-19
 
 - **dtsim 多仿真器**：`Workspace({ tool })` 改为 `Workspace({ tools: [...] })`（非空列表，第一个是默认，名字不能重复）；`--tool <name>`（`$DTSIM_TOOL`）在 `run` / `regr` / `plan` / `list` / `groups` / `env` / `results` 上选择仿真器，不在 `tools` 里时加载即报错。Case 新增 `tools: ["verilator"]`（只在这些仿真器上跑，派生用例继承；`run` / `env` 报错，`regr` / `plan` 跳过并打印 `Skipped (not for <tool>): ...`，`groups` 显示每组可跑 / 跳过数）与 `byTool: { <tool>: opts }`（选中该仿真器时在这一层之上合并，`bareDefaults` 同样支持）。配置了多个仿真器时输出改到 `dt/simout/<tool>/`；回归目录的 `dresults` 记下仿真器供 `--recheck` 使用。

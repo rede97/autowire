@@ -1,25 +1,55 @@
 // Built-in Verilator backend. No UVM plusargs, no fsdb/urg: it compiles an
-// executable and runs it. VerilatorTool({ top, mdir, main }); a case's
-// toolOptions may override any of them. main=false builds a C++ harness
-// (--cc --exe --build; the .cpp files and --timing come from compileArgs)
-// instead of --binary.
+// executable and runs it. VerilatorTool({ top, mdir, main, command }); a
+// case's toolOptions may override any of them. No `top`: Verilator picks the
+// design's single top itself. main=false builds a C++ harness (--cc --exe
+// --build; the .cpp files and --timing come from compileArgs) instead of
+// --binary. The executable is <mdir>/V<top> (Vsim without a top).
 // $DTSIM_WAVE (read when the tool is constructed) compiles with --trace-fst
 // and binds a small dtsim_wave module into the top: $dumpfile("wave.fst"),
 // $dumpvars(depth, scope), so each seed dir gets wave.fst without touching
-// the bench. A C++ harness must call VerilatedContext::traceEverOn(true).
+// the bench. The bind needs `top`. A C++ harness must call
+// VerilatedContext::traceEverOn(true).
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { waveFromEnv } from "../env.ts";
 import type { SimTool, WaveSpec } from "../index.ts";
 
-export type VerilatorOpts = { top?: string; mdir?: string; main?: boolean };
+export type VerilatorOpts = {
+	/** --top-module (default: Verilator finds the single top). */
+	top?: string;
+	mdir?: string;
+	main?: boolean;
+	/** The compiler to run (default "verilator"), e.g. verilator_bin or a path. */
+	command?: string;
+};
 
-function verilatorOpts(opts: Record<string, unknown>): Required<VerilatorOpts> {
+type Resolved = Required<Omit<VerilatorOpts, "top">> & { top?: string };
+
+function verilatorOpts(opts: Record<string, unknown>): Resolved {
+	const command = opts.command ?? "verilator";
+	if (typeof command !== "string" || command.length === 0) {
+		throw new Error("dtsim: verilator command must be a non-empty string");
+	}
+	if (opts.top !== undefined && typeof opts.top !== "string") {
+		throw new Error("dtsim: verilator top must be a module name");
+	}
 	return {
-		top: typeof opts.top === "string" ? opts.top : "top",
+		...(opts.top === undefined ? {} : { top: opts.top }),
 		mdir: typeof opts.mdir === "string" ? opts.mdir : "obj_dir",
 		main: opts.main !== false,
+		command,
 	};
+}
+
+/** The executable name inside -Mdir, given to Verilator as -o. */
+function exeName(top: string | undefined): string {
+	return `V${top ?? "sim"}`;
+}
+
+/** Forward slashes on Windows: make (verilator --build) and the generated
+ *  scripts take them; backslashes do not survive make. */
+function slash(path: string): string {
+	return process.platform === "win32" ? path.replaceAll("\\", "/") : path;
 }
 
 /** The dump module, bound into `top`; $DTSIM_WAVE_TOP picks a sub-scope. */
@@ -38,6 +68,7 @@ bind ${top} dtsim_wave dtsim_wave_i();
 export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 	const resolved = (caseOpts: Record<string, unknown>) =>
 		verilatorOpts({ ...opts, ...caseOpts });
+	resolved({}); // a bad option fails at config load
 	const wave = waveFromEnv();
 	return {
 		kind: "dtsim-tool",
@@ -69,34 +100,41 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 		writeAux(ctx) {
 			if (ctx.phase !== "compile" || !wave.enabled) return;
 			const { top } = resolved(ctx.caseOpts.toolOptions);
+			if (!top) {
+				throw new Error(
+					`dtsim: ${ctx.caseId}: --wave on Verilator binds a dump module into the top; set VerilatorTool({ top }) or toolOptions.top`,
+				);
+			}
 			writeFileSync(join(ctx.dir, "dtsim_wave.sv"), waveModule(top, wave));
 		},
 
+		// Runs in the project root: the filelists' relative entries, $VARs
+		// and -F are Verilator's own business. -Mdir is under the compile dir.
 		compile(ctx) {
-			const { top, mdir, main } = resolved(ctx.caseOpts.toolOptions);
+			const { top, mdir, main, command } = resolved(ctx.caseOpts.toolOptions);
 			return {
 				argv: [
-					"verilator",
+					command,
 					...(main ? ["--binary"] : ["--cc", "--exe", "--build"]),
-					"--top-module",
-					top,
+					...(top ? ["--top-module", top] : []),
+					"-o",
+					exeName(top),
 					"-Mdir",
-					mdir,
-					"-f",
-					ctx.filelist,
+					slash(join(ctx.dir, mdir)),
+					...ctx.filelists.flatMap((f) => ["-f", f]),
 					...(wave.enabled
-						? ["--trace-fst", join(ctx.dir, "dtsim_wave.sv")]
+						? ["--trace-fst", slash(join(ctx.dir, "dtsim_wave.sv"))]
 						: []),
 					...ctx.caseOpts.defines.map((d) => `-D${d}`),
 					...ctx.caseOpts.compileArgs,
 				].map((a) => ctx.expand(a)),
-				cwd: ctx.dir,
+				cwd: ctx.workspace,
 				log: join(ctx.dir, "compile.log"),
 				logMode: "tee",
 				executable: join(
 					ctx.dir,
 					mdir,
-					`V${top}${process.platform === "win32" ? ".exe" : ""}`,
+					`${exeName(top)}${process.platform === "win32" ? ".exe" : ""}`,
 				),
 			};
 		},
@@ -105,7 +143,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 			const { top, mdir } = resolved(ctx.caseOpts.toolOptions);
 			return {
 				argv: [
-					join(ctx.compileDir, mdir, `V${top}`),
+					join(ctx.compileDir, mdir, exeName(top)),
 					...ctx.caseOpts.simArgs,
 				].map((a) => ctx.expand(a)),
 				cwd: ctx.dir,

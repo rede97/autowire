@@ -77,7 +77,7 @@ import { smoke } from "./cases/smoke.ts";
 
 export default Workspace({
 	tools: [VcsTool({ ntbOpts: "uvm-1.2" })], // several: --tool picks one
-	filelist: "file.lst", // entries relative to <project>/
+	filelists: ["file.lst"], // dtsim passes it as -f; entries relative to <project>/
 	grader: DefaultGrader({ pass: ["TEST PASSED"] }),
 	groups: [Group("nightly", [smoke, "smoke.**"])],
 	cases: ["./cases/smoke.ts"],

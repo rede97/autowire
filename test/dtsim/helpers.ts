@@ -74,7 +74,7 @@ export const cosim = Group("cosim", ["test_hello_world.cosim", "test_bar_basic.c
 
 export default Workspace({
 	tools: [VcsTool()],
-	filelist: "file.lst",
+	filelists: ["file.lst"],
 	bareDefaults: { compileArgs: ["+nospecify", "+notimingcheck"] },
 	env: { passthrough: ["DTSIM_MOCK_*"], deny: ["LD_PRELOAD"] },
 	task: { maxSlots: 4, maxCompiles: 2 },

@@ -19,7 +19,6 @@ import {
 } from "./config.ts";
 import { buildChildEnv, envStatsLine } from "./env.ts";
 import { formatExcerpt } from "./excerpt.ts";
-import { toolPath, writeFlatFilelist } from "./filelist.ts";
 import { type Graded, runGrader } from "./grade.ts";
 import { type HookBase, runHooks } from "./hooks.ts";
 import { wrapCommand } from "./launch.ts";
@@ -113,20 +112,22 @@ export function expandFor(
 	return (text) => expandVars(text, vars);
 }
 
-/** Source filelist of a case: its own override, else the workspace one. */
-export function caseFilelist(
+/** Windows tools and the generated bash scripts all accept forward slashes. */
+export function toolPath(path: string): string {
+	return process.platform === "win32" ? path.replaceAll("\\", "/") : path;
+}
+
+/** A case's filelists, absolute: the workspace's, then the case's in merge
+ *  order. dtsim never reads them; the tool gets each as -f. */
+export function caseFilelists(
 	ws: ResolvedWorkspace,
 	c: MergedCase,
 	dir: string,
-): string {
-	return c.filelist === undefined
-		? ws.filelist
-		: resolvePath(c.filelist, varsFor(ws, c.id, dir));
-}
-
-/** The flattened, absolute filelist dtsim writes into every compile dir. */
-export function flatFilelist(compileDir: string): string {
-	return join(compileDir, "filelist.f");
+): string[] {
+	const vars = varsFor(ws, c.id, dir);
+	return [...ws.filelists, ...c.filelists.map((f) => resolvePath(f, vars))].map(
+		toolPath,
+	);
 }
 
 export function toolContext(
@@ -154,8 +155,9 @@ export function toolContext(
 		...(seed === undefined ? {} : { seed }),
 		verify: ws.verify,
 		workspace: ws.root,
-		filelist: toolPath(flatFilelist(compileDir)),
+		filelists: caseFilelists(ws, c, compileDir),
 		regression: opts.regression,
+		interactive: opts.interactive,
 		expand: expandFor(ws, c.id, dir, seed),
 		resolvePath: (text) => resolvePath(text, varsFor(ws, c.id, dir, seed)),
 	};
@@ -226,7 +228,7 @@ function caseContext(
 			env: c.env,
 			...(c.uvm === undefined ? {} : { uvm: c.uvm }),
 			toolOptions: { ...c.toolOptions },
-			...(c.filelist === undefined ? {} : { filelist: c.filelist }),
+			filelists: [...c.filelists],
 		},
 		env,
 		expand: (text) => expandVars(text, vars),
@@ -315,20 +317,19 @@ export async function executeCompile(
 	const prepared = tool.compile(ctx);
 	const stage = (s: HookStage) =>
 		hookBase(ws, c, s, compileDir, prepared.log, env.env);
-	// preCompile runs before the filelist is flattened so it can generate or
-	// patch sources the filelist names.
+	// preCompile may generate sources or the filelists themselves; then each
+	// listed filelist must exist. Their contents are the tool's to read.
 	hookStep(ws, opts, "preCompile");
 	const pre = await hookStage(ws, stage("preCompile"));
 	if (pre) {
 		opts.monitor?.end("preCompile", "FAIL");
 		return { ok: false, code: 1, log: pre.log, hookFailed: true };
 	}
-	writeFlatFilelist(
-		caseFilelist(ws, c, compileDir),
-		flatFilelist(compileDir),
-		ws.root,
-		ctx.expand,
-	);
+	for (const f of ctx.filelists) {
+		if (!existsSync(f)) {
+			throw new Error(`dtsim: ${c.id}: filelist not found: ${f}`);
+		}
+	}
 	writeGitRev(compileDir, ws.verify);
 
 	let hookFailed = false;
