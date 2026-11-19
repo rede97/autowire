@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.8.1] - 2026-11-19
+
+- **`dtsim regr` 进度条**：TTY 上实时面板的最后一行改为 `<进度条>  compile x/N  sim y/M  running n  MM:SS`（原来的总计行从树上方移到这里）。进度条分两层：每个编译组占 1/N，组内每个 sim 占 1/(N·k)，一组 sim 全部跑完正好盖满该组长度。编译层从左到右为已编译蓝 `█`、编译失败灰 `█`（这一段作废，跳过的 sim 不画）、编译中 `░`（默认前景色）、待编译灰 `░`；跑完的 sim 从左边盖在已编译区上：PASS 绿、PASS WITH ERRORS 黄、其他状态红（`█`），未跑完处露出编译层。宽度取终端剩余列数，10 到 60 格。
+- 编译状态 `OK` 改为蓝色，与 `PASS` 的绿色区分（结束行、结果树、Summary 表、`dtsim run`）。
+
 ## [2.8.0] - 2026-11-19
 
 - **dtsim 并入 autowire**：`autowire dtsim run|regr|plan|list|groups|results|env`；`ln -s autowire.js dtsim`（或指向编译版 `out/autowire`）后 `./dtsim <cmd>` 直接进入同一组子命令。`index.ts` 带 bun shebang，`out/autowire.js` 写成可执行。独立的 `dtsim.js` / `build:dtsim` 删除，DSL 文本由 `scripts/gen-dtsim-dsl.ts` 在 `build:js` / `build:bin` 里嵌入。

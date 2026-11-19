@@ -56,11 +56,12 @@ export function tree(nodes: readonly TreeNode[], prefix = ""): string[] {
 	});
 }
 
-/** Status text, bold, in its colour: PASS / OK green, PASS WITH ERRORS
- *  yellow, the rest red. */
+/** Status text, bold, in its colour: PASS green, OK (a finished compile)
+ *  blue, PASS WITH ERRORS yellow, the rest red. */
 export function status(text: string): string {
 	if (text.startsWith("PASS WITH ERRORS")) return chalk.bold.yellow(text);
-	if (text.startsWith("PASS") || text === "OK") return chalk.bold.green(text);
+	if (text.startsWith("PASS")) return chalk.bold.green(text);
+	if (text === "OK") return chalk.bold.blue(text);
 	return chalk.bold.red(text);
 }
 

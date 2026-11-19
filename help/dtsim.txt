@@ -69,8 +69,12 @@ DSL (import from ./.dtsim/dsl/index.ts)
 Output
   stdout: Run / Regression tables, plan tree, results tree, Summary table.
   stderr: progress. TTY: spinner panel ([spinner] [elapsed] [phase] <log> <size>,
-  "-" until a log is on disk), the submitted command in a box titled cmd, live
-  build trees for regr. No TTY / --plain: concise start / end lines only.
+  "-" until a log is on disk), the submitted command in a box titled cmd. regr:
+  live build trees, then a bar line. Bar: each build 1/N, each of its k sims
+  1/(N·k); compile layer built blue █, build failed grey █, building ░, waiting
+  grey ░; finished sims cover it from the left: PASS green █, PASS WITH ERRORS
+  yellow █, other red █. Status OK (a compile) is blue, PASS green.
+  No TTY / --plain: concise start / end lines only.
 
 Demos
   demo/dtsim/run.sh <args>          fake tools in demo/dtsim/dt/bin, LSF launcher

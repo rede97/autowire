@@ -1,8 +1,9 @@
 // Regression progress on stderr as trees: one per compile group still in
 // flight (compile node, then its running sims and a count of the rest), so
-// several builds show side by side. Each finished compile or sim also leaves
-// a line with its status, time and log path (size). Not a TTY (--plain,
-// pipes, LSF logs): only those lines.
+// several builds show side by side, with a layered progress bar and counts
+// on the last line. Each finished compile or sim also leaves a line with its
+// status, time and log path (size). Not a TTY (--plain, pipes, LSF logs):
+// only those lines.
 import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -55,6 +56,92 @@ function pad(text: string, width: number): string {
 function elapsed(n: TaskNode): string {
 	if (n.t0 === undefined) return "--:--";
 	return fmtElapsed(((n.t1 ?? Date.now()) - n.t0) / 1000);
+}
+
+const BAR_MIN = 10;
+const BAR_MAX = 60;
+
+/** One bar cell: glyph and paint; runs of equal cells are merged. */
+type Cell = { ch: string; paint: (s: string) => string };
+const CELL = {
+	pass: { ch: "█", paint: chalk.green },
+	passWithErrors: { ch: "█", paint: chalk.yellow },
+	fail: { ch: "█", paint: chalk.red },
+	built: { ch: "█", paint: chalk.blue },
+	buildFailed: { ch: "█", paint: chalk.gray },
+	building: { ch: "░", paint: (s: string) => s },
+	waiting: { ch: "░", paint: chalk.gray },
+} satisfies Record<string, Cell>;
+
+/** Regression bar in two layers. Each build owns 1/N of the width; each of
+ *  its k sims 1/(N·k). The compile layer, left to right: built, build
+ *  failed, building, waiting. Finished sims of built builds cover it from
+ *  the left: PASS, PASS WITH ERRORS, then any other status. Sims skipped by
+ *  a failed compile are not drawn; their segment stays build-failed. */
+export function progressBar(
+	builds: readonly BuildNode[],
+	width: number,
+): string {
+	const n = builds.length || 1;
+	let built = 0;
+	let failed = 0;
+	let building = 0;
+	let pass = 0;
+	let warn = 0;
+	let bad = 0;
+	for (const b of builds) {
+		if (b.state === "running") building += 1 / n;
+		if (b.state !== "done") continue;
+		if (b.status !== "OK") {
+			failed += 1 / n;
+			continue;
+		}
+		built += 1 / n;
+		const each = 1 / (n * (b.sims.length || 1));
+		for (const s of b.sims) {
+			if (s.state !== "done") continue;
+			if (s.status === "PASS") pass += each;
+			else if (s.status === "PASS WITH ERRORS") warn += each;
+			else bad += each;
+		}
+	}
+	const layers: Array<Array<[Cell, number]>> = [
+		[
+			[CELL.pass, pass],
+			[CELL.passWithErrors, warn],
+			[CELL.fail, bad],
+		],
+		[
+			[CELL.built, built],
+			[CELL.buildFailed, failed],
+			[CELL.building, building],
+		],
+	];
+	const pick = (x: number): Cell => {
+		for (const layer of layers) {
+			let edge = 0;
+			for (const [cell, w] of layer) {
+				edge += w;
+				if (x < edge) return cell;
+			}
+		}
+		return CELL.waiting;
+	};
+	let out = "";
+	let run: Cell | undefined;
+	let len = 0;
+	for (let i = 0; i < width; i++) {
+		// Sample each cell at its centre: cumulative rounding, fixed width.
+		const cell = pick((i + 0.5) / width);
+		if (cell !== run) {
+			if (run) out += run.paint(run.ch.repeat(len));
+			run = cell;
+			len = 0;
+		}
+		len += 1;
+	}
+	if (run) out += run.paint(run.ch.repeat(len));
+	return out;
 }
 
 /** `sim.log    3.0 KiB` ("-" while the log is not on disk). */
@@ -150,9 +237,18 @@ export class Progress {
 		const count = (list: readonly TaskNode[], s: State) =>
 			list.filter((n) => n.state === s).length;
 		const running = count(this.builds, "running") + count(sims, "running");
-		const head = `${chalk.bold("compile")} ${count(this.builds, "done")}/${this.builds.length}  ${chalk.bold("sim")} ${count(sims, "done")}/${sims.length}  ${chalk.dim(`running ${running}  ${fmtElapsed((Date.now() - this.t0) / 1000)}`)}`;
-		const lines = [head];
-		const max = Math.max(4, (process.stderr.rows || 40) - 2);
+		const counts = `${chalk.bold("compile")} ${count(this.builds, "done")}/${this.builds.length}  ${chalk.bold("sim")} ${count(sims, "done")}/${sims.length}  ${chalk.dim(`running ${running}  ${fmtElapsed((Date.now() - this.t0) / 1000)}`)}`;
+		const room =
+			(process.stderr.columns || 80) -
+			stripVTControlCharacters(counts).length -
+			2;
+		const bar = progressBar(
+			this.builds,
+			Math.min(BAR_MAX, Math.max(BAR_MIN, room)),
+		);
+		const lines: string[] = [];
+		// One row stays free for the bar line below the trees.
+		const max = Math.max(4, (process.stderr.rows || 40) - 3);
 		// Trees for builds still in flight: compiling, or with sims left.
 		const active = this.builds.filter(
 			(b) =>
@@ -189,6 +285,7 @@ export class Progress {
 		if (shown < active.length) {
 			lines.push(chalk.dim(`… ${active.length - shown} more builds in flight`));
 		}
+		lines.push(`${bar}  ${counts}`);
 		this.live(lines.join("\n"));
 	}
 }

@@ -86,10 +86,15 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
       ├─ seed 1553122393
       └─ test full_chip_test
    ```
-3. **运行中（TTY）**：stderr 上一行总计（`compile 1/3  sim 2/5  running 3  00:14`），
-   下面每个仍在进行的编译组一棵树，多棵并列：编译节点 `[spinner|状态] [耗时]
-   compile <名字> <日志> <大小>`，子节点是正在跑的 sim（同样的列），其余折叠成
-   `… N waiting, M done`；超过终端高度时只画前面几组并注明还有几组。
+3. **运行中（TTY）**：stderr 上每个仍在进行的编译组一棵树，多棵并列：编译节点
+   `[spinner|状态] [耗时] compile <名字> <日志> <大小>`，子节点是正在跑的 sim（同样的列），
+   其余折叠成 `… N waiting, M done`；超过终端高度时只画前面几组并注明还有几组。
+   最后一行是进度条和总计（`<进度条>  compile 1/3  sim 2/5  running 3  00:14`）。
+   进度条分两层：每个编译组占 1/N，组内每个 sim 占该段的 1/k，所以一组 sim 全部跑完
+   正好盖满这一组的长度。编译层从左到右：已编译蓝 `█`、编译失败灰 `█`（这一段作废）、
+   编译中默认前景色 `░`、待编译灰 `░`。sim 层从左边盖在已编译区上：PASS 绿 `█`、
+   PASS WITH ERRORS 黄 `█`、其他状态红 `█`，未跑完的地方露出编译层。编译失败而跳过的
+   sim 不画。宽度取终端剩余列数，10 到 60 格。
 4. 每个 compile / sim 完成或失败时在上方留两行：`<状态> <耗时> <compile|sim 名字>`，
    下一行以 `└─` 给出日志路径和大小；编译失败跳过的 sim 写 `skipped: compile failed`。
    非 TTY（`--plain`、管道、LSF / CI 日志）只有这些行。一个用例有多个 seed 时 sim
@@ -118,7 +123,7 @@ PASS   00:00  grade
   或 NFS 还没同步时大小显示 `-`。步骤有 `preCompile`、`compile`、`postCompile`、
   `preSim`、`sim`、`postSim`、`grade`、`onResult`（不带 seed，seed 在 Run / Summary
   表里）；hook 步骤只在配置了该阶段的 hook 时出现。
-- 结束：`[状态] [耗时] [步骤] <日志> <大小>`，状态粗体着色（`OK` / `PASS` 绿、
+- 结束：`[状态] [耗时] [步骤] <日志> <大小>`，状态粗体着色（`OK` 蓝、`PASS` 绿、
   `PASS WITH ERRORS` 黄、`FAIL` / `exit N` 红）。sim 的状态是退出码，判定看 grade 行。
 - 大小用二进制单位：`512 B`、`3.3 KiB`、`1.2 MiB`。
 
