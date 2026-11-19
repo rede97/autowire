@@ -96,8 +96,8 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
    编译中默认前景色 `░`、待编译灰 `░`。sim 层从左边盖在已编译区上：PASS 绿 `█`、
    PASS WITH ERRORS 黄 `█`、其他状态红 `█`，未跑完的地方露出编译层。编译失败而跳过的
    sim 不画。宽度取终端剩余列数，10 到 60 格。
-4. 每个 compile / sim 完成或失败时在上方留两行：`<状态> <耗时> <compile|sim 名字>`，
-   下一行以 `└─` 给出日志路径和大小；编译失败跳过的 sim 写 `skipped: compile failed`。
+4. 每个 compile / sim 完成或失败时在上方留一行:`<状态> <耗时> <compile|sim 名字>  <日志路径> (大小)`,
+   日志路径直接接在同一行、长了由终端换行(不再用 `└─` 另起一行);编译失败跳过的 sim 写 `skipped: compile failed`。
    非 TTY（`--plain`、管道、LSF / CI 日志）只有这些行。一个用例有多个 seed 时 sim
    名字带 `seed N`。
 5. 全部完成后：结果树（用例 → seed → 状态）和 **Summary 表**：Compiles 一格先 `FAIL`

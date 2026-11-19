@@ -189,8 +189,9 @@ export class Progress {
 		this.render();
 	}
 
-	/** A task ended: a status line, then its log path (size) or note below
-	 *  it as a tree branch. */
+	/** A task ended: one plain line `<status> <elapsed> <label> <log> (size)`
+	 *  (or a note in place of the log). The log path is printed inline and the
+	 *  terminal wraps it; dtsim does not lay it out on a fixed-width branch. */
 	finish(node: TaskNode, status: string, log?: string, note?: string): void {
 		node.state = "done";
 		node.status = status;
@@ -203,10 +204,7 @@ export class Progress {
 				? `${chalk.dim(node.log)} ${chalk.bold(`(${size === undefined ? "-" : fmtSize(size)})`)}`
 				: "";
 		const head = `${pad(colour(status), STATUS_W)} ${elapsed(node)}  ${chalk.bold(node.label)}`;
-		const branch = where
-			? `\n${" ".repeat(STATUS_W + 1)}${chalk.gray("└─")} ${where}`
-			: "";
-		this.line(head + branch);
+		this.line(where ? `${head}  ${where}` : head);
 	}
 
 	stop(): void {
