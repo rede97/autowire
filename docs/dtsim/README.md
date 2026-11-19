@@ -90,12 +90,13 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
    下面每个仍在进行的编译组一棵树，多棵并列：编译节点 `[spinner|状态] [耗时]
    compile <名字> <日志> <大小>`，子节点是正在跑的 sim（同样的列），其余折叠成
    `… N waiting, M done`；超过终端高度时只画前面几组并注明还有几组。
-4. 每个 compile / sim 完成或失败时在上方留一行：`<状态> <耗时> <compile|sim 名字>
-   <日志路径> (<大小>)`；编译失败跳过的 sim 写 `skipped: compile failed`。
+4. 每个 compile / sim 完成或失败时在上方留两行：`<状态> <耗时> <compile|sim 名字>`，
+   下一行以 `└─` 给出日志路径和大小；编译失败跳过的 sim 写 `skipped: compile failed`。
    非 TTY（`--plain`、管道、LSF / CI 日志）只有这些行。一个用例有多个 seed 时 sim
    名字带 `seed N`。
-5. 全部完成后：结果树（用例 → seed → 状态）和 **Summary 表**（编译 OK / FAIL 数、各
-   状态的 sim 数、总数、耗时、`result.txt` 与 `dresults` 路径）。
+5. 全部完成后：结果树（用例 → seed → 状态）和 **Summary 表**：Compiles 一格先 `FAIL`
+   再 `OK`，Sims 一格先 `FAIL`（及其他失败状态）再 `PASS WITH ERRORS` / `PASS`，计数为 0
+   时显示为灰色；另有总数、耗时、`result.txt` 与 `dresults` 路径。
 
 `dtsim run` 在 stderr 上实时显示当前用例的状态，各列对齐：
 

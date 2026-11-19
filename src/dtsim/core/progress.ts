@@ -102,7 +102,8 @@ export class Progress {
 		this.render();
 	}
 
-	/** A task ended: one permanent line with status, time and log path. */
+	/** A task ended: a status line, then its log path (size) or note below
+	 *  it as a tree branch. */
 	finish(node: TaskNode, status: string, log?: string, note?: string): void {
 		node.state = "done";
 		node.status = status;
@@ -114,9 +115,11 @@ export class Progress {
 			: node.log
 				? `${chalk.dim(node.log)} ${chalk.bold(`(${size === undefined ? "-" : fmtSize(size)})`)}`
 				: "";
-		this.line(
-			`${pad(colour(status), STATUS_W)} ${elapsed(node)}  ${chalk.bold(pad(node.label, LABEL_W))} ${where}`.trimEnd(),
-		);
+		const head = `${pad(colour(status), STATUS_W)} ${elapsed(node)}  ${chalk.bold(node.label)}`;
+		const branch = where
+			? `\n${" ".repeat(STATUS_W + 1)}${chalk.gray("└─")} ${where}`
+			: "";
+		this.line(head + branch);
 	}
 
 	stop(): void {

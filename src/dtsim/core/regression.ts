@@ -373,18 +373,25 @@ async function finishRegression(
 	for (const r of results) {
 		counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
 	}
+	// Failures first (FAIL always, even at 0), then the passing counts.
+	const sims = [
+		["FAIL", counts.get("FAIL") ?? 0] as const,
+		...[...counts.entries()]
+			.filter(([s]) => !["FAIL", "PASS WITH ERRORS", "PASS"].includes(s))
+			.sort(),
+		...(counts.has("PASS WITH ERRORS")
+			? [["PASS WITH ERRORS", counts.get("PASS WITH ERRORS") ?? 0] as const]
+			: []),
+		["PASS", counts.get("PASS") ?? 0] as const,
+	];
 	const ok = groups.length - run.compilesFailed;
-	const compiles = `${status("OK")} ${ok}${run.compilesFailed ? `  ${status("FAIL")} ${run.compilesFailed}` : ""}`;
+	// A zero count is grey: nothing to look at.
+	const count = (s: string, n: number) =>
+		n === 0 ? chalk.gray(`${s} ${n}`) : `${status(s)} ${n}`;
 	console.log(
 		block("Summary", [
-			["Compiles", compiles],
-			[
-				"Sims",
-				[...counts.entries()]
-					.sort()
-					.map(([s, n]) => `${status(s)} ${n}`)
-					.join("  "),
-			],
+			["Compiles", `${count("FAIL", run.compilesFailed)}  ${count("OK", ok)}`],
+			["Sims", sims.map(([s, n]) => count(s, n)).join("  ")],
 			["Total", `${results.length} sims`],
 			["Elapsed", elapsedLine(run.t0).replace(/^elapsed /, "")],
 			["Results", join(regDir, "result.txt")],
