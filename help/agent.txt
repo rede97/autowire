@@ -7,7 +7,7 @@ Reference (top priority)
   Best practices live in docs/ (contracts and constraints) and demo/ (runnable examples).
   Before changing behavior, extract and read the relevant docs/ and demo/ files first —
   this is the top-priority reference. Start with docs/README.md, docs/workspace/toml.md,
-  docs/plugins/, docs/connect/, and the demos demo/soc + demo/hbm.
+  docs/plugins/, docs/connect/, docs/dtsim/, and the demos demo/soc + demo/hbm + demo/dtsim.
 
 What it is
   Connectivity is one HTML + <script>. After the browser runs the script, the live DOM is the netlist.
@@ -113,6 +113,17 @@ You can do now
   6. connect check reports author-face errors and warnings. It does not write.
   7. connect run writes .sv from aw-render. The browser session does not write.
      Same module scripts and aw-render as the page. Unchanged files are skipped.
+  8. Simulate with dtsim (help dtsim): list / groups / plan to read the
+     config, run <case> --plain or regr <group> --plain to run; on a failure
+     read error.txt in the failing compile / seed dir, then the log it names.
+
+Simulation (dtsim)
+  SoT: <project>/dt/config/*.ts (Workspace, Case, Group, grader, tool,
+  launcher, hooks). Outputs: dt/simout/ (generated). dt/config/.dtsim/dsl/ is
+  rewritten from the embedded DSL on every load: import from it, never edit it.
+  Status comes from the grader reading sim.log, never the exit code; exit 0 =
+  every seed PASS or PASS WITH ERRORS. Change waive / keywords in the grader,
+  not in the test. Rerun one step by hand with run_compile / run_sim.
 
 Rules of engagement
   Generated outputs are not sources. Do not edit rtl/gen/, fw/gen/, dv/ral/,
@@ -121,7 +132,8 @@ Rules of engagement
   Edit help/<topic>.txt when behavior changes; src/cli/help.ts only loads those files. Format constraints live in docs/.
   Bun only (bun / bun test / bunx). Do not invent finished commands — help status is truth.
   Windows: MSYS2 UCRT64 toolchain, ucrt64/bin on PATH, LF checkout (docs/dev/windows-msys2.md).
-  Release CI (0.9.1) publishes hdxml + autowire.js only (docs/dev/release.md):
-    no installer, no obscura binary; dev/CI stays Playwright + Chromium.
+  Release CI runs only on a pushed v* tag and publishes autowire.js + the pinned
+    hdxml binaries (docs/dev/release.md): no installer, no obscura binary;
+    dev/CI stays Playwright + Chromium.
   Connect authoring (docs/connect/html.md §3.5.5): same-name → identity (omit);
     rename batch → one aw-rewrite RegExp — never list identity ports one-by-one.

@@ -43,12 +43,15 @@ Commands above are the dev and test entry (`index.ts`). Do not tell a production
 
 `connect check` reports rules and does not write. `connect run` is the only writer of `.sv` and connect snapshots. `connect web` is a static session. `plugin wishbone run` is the plugin's own run; it does not call connect. Default writes are incremental; `--force` rewrites. Wishbone Excel is always rewritten.
 
-`dtsim` is the simulation runner ([`docs/dtsim/README.md`](docs/dtsim/README.md), `help dtsim`). A project (RTL design dir) keeps its testbench in `dt/`, the TypeScript config in `dt/config/dtsim.config.ts` (found upward from CWD), and outputs in `dt/simout/`. Filelist entries are relative to the project root. `ln -s autowire.js dtsim` (or a link to `out/autowire`) runs the same subcommands without the `autowire dtsim` prefix. `demo/dtsim` runs on the fake tools in `demo/dtsim/dt/bin`, which `test/dtsim/` also uses.
+`dtsim` is the simulation runner ([`docs/dtsim/README.md`](docs/dtsim/README.md), `help dtsim`). A project (RTL design dir) keeps its testbench in `dt/`, the TypeScript config in `dt/config/dtsim.config.ts` (found upward from CWD; `--config` picks another), and outputs in `dt/simout/`. Filelist entries are relative to the project root. `ln -s autowire.js dtsim` (or a link to `out/autowire`) runs the same subcommands without the `autowire dtsim` prefix. `demo/dtsim` runs on the fake tools in `demo/dtsim/dt/bin`, which `test/dtsim/` also uses.
+
+Driving dtsim as an agent: `dtsim list`, `groups`, `plan <group>` read the config without running. `dtsim run <case> --plain` and `dtsim regr <group> --plain` print one line per step; exit 0 means every seed is `PASS` or `PASS WITH ERRORS`. On a failure read `error.txt` in the failing compile or seed dir first (status, phase, grader rows, log excerpt), then the log it names. `run_compile` / `run_sim` in those dirs rerun one step by hand. `results --dir <dir>` (or the `dresults` script in a regression dir) re-reads statuses; `--recheck` re-grades with the current grader. The status comes from the grader reading `sim.log`, never the tool exit code.
 
 ## Sources of truth
 
 - Author HTML: `[connect.<id>]` / `[sim.<id>]` `html=` in `autowire.toml`. One toml per workspace. `deps` are direct edges only.
 - Wishbone SoT: TypeScript `Regfile(...)` / `Bus(...)`. Excel, C, and `uvm_reg` are exports, not sources.
+- Simulation SoT: `dt/config/*.ts` (`Workspace`, `Case`, `Group`, grader, tool, launcher, hooks). `dt/config/.dtsim/dsl/` is rewritten from the embedded DSL on every dtsim load; import from it, do not edit it.
 - Leaf ports: RtlIndex under `.autowire/hdxml/`. Do not reparse RTL in the page.
 - Printer input: `aw-render` only. Do not treat `aw-content` as the netlist.
 

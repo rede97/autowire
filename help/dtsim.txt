@@ -1,71 +1,79 @@
-dtsim — simulation runner (docs/dtsim/README.md)
-
-Layout
-  <project>/               RTL design dir; filelists and ${workspace} resolve here
-  <project>/dt/            testbench code
-  <project>/dt/config/     dtsim.config.ts (TypeScript), filelists, hook modules
-  <project>/dt/simout/     outputs (git-ignored)
+dtsim — simulation runner (full reference: docs/dtsim/README.md)
 
 Entry
-  autowire dtsim <cmd>     same as: ln -s autowire.js dtsim; ./dtsim <cmd>
+  autowire dtsim <cmd>       ln -s autowire.js dtsim (or out/autowire) → ./dtsim <cmd>
   dev: bun index.ts dtsim <cmd>
+  Config is found upward from the CWD: <project>/dt/config/dtsim.config.ts.
+  --config <file> picks another one (e.g. dt/config/vcs.config.ts).
 
+Layout
+  <project>/                 RTL design dir; filelists and ${workspace} resolve here
+  <project>/dt/              testbench code
+  <project>/dt/config/       dtsim.config.ts and case modules (TypeScript SoT), file.lst
+  <project>/dt/config/.dtsim/dsl/   DSL copy, rewritten on every run (generated)
+  <project>/dt/simout/       outputs (generated, git-ignored)
+    <case>/                  run: compile dir (run_compile, compile log, error.txt)
+    <case>/<seed>/           run_sim, sim.log, .result → STATUS, error.txt, grade.log
+    regression/              regr ([<label>/]regression with -d): compile_<build>/,
+                             <case>/<seed>/, regression.txt (plan), result.txt,
+                             dresults (forwards to dtsim results)
 Commands
-  run <case>               compile + simulate (--compile-only, --sim-only, --interactive)
-  regr [group]             regression, default group all
-  plan [group]             compile-group plan, no run
-  list | groups            cases / groups
-  results --dir <dir>      read or --recheck results
-  env --case <id>          environment a case would get (--phase, --show-values)
-  common: --config <file> (default dt/config/dtsim.config.ts upward from CWD),
-          -s, --num-seeds, -d <label>, -v, --plain, --cov, --no-wave
-  output: plans, tables and result trees on stdout; progress on stderr
-          (live panel on a TTY, one line per event with --plain or a pipe).
-          run: "[spinner|status] [elapsed] [phase] <log> <size>" lines, the
-          submitted command in a box titled cmd, size + last line of the
-          compile and sim logs ("-" until a log is on disk). run -v on a TTY
-          also prints the running log's new lines above the panel. No TTY:
-          concise start / end lines for compile, sim and grade only.
-          regr: Regression table, plan tree (compile <name> -> defines, one
-          per line; sim <case> -> seed, UVM test, plusargs, env), live build
-          trees on a TTY, a status line per finished compile / sim with log
-          path and size, then results and a Summary table. Builds are named
-          by SimTool.buildName (default first case id); dirs are
-          compile_<name>, each with run_compile (the full compile command)
+  run <case>                 compile + simulate one case (--compile-only, --sim-only,
+                             --interactive); case ids are dotted (base.sub.sub)
+  regr [group]               regression (default group all): shared compiles per build
+  plan [group]               the regression plan tree, no run
+  list | groups              case trees / groups
+  env --case <id>            the environment a case would get (--phase, --show-values)
+  results --dir <dir>        statuses under a dir (--recheck re-grades, --csv)
+  common flags: --config, -s <seed>, --seed-file, --num-seeds N, -d <label>,
+                -v (logs: above the live panel on a TTY), --plain, --cov,
+                --no-wave, --wave-depth, --wave-top
 
-Rules
-  Filelist entries are relative to the project root (nested -f too); dtsim
-  writes an absolute flat copy into each compile dir.
-  Placeholders are ${name}: ${workspace} ${verify} ${output_dir} ${case} ${seed}
-  ${tool}. Paths (output, filelist, cases, hooks) also take shell vars (${HOME});
-  unknown names fail. Workspace({ output }) moves dt/simout.
-  hooks: { preCompile: fn | [fn, ...], ... } TypeScript callbacks; one
-  HookContext for every stage (dir, log, seed, status, caseOpts, env,
-  expand, resolvePath, sh). ctx.sh runs bash with the phase env; a throw fails.
-  Cases: Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) derives
-  <id>.<suffix> at any depth; export only top-level cases. Function opts run
-  only when that case is used. c.descendants() lists the subtree.
-  Group(name, [caseObj, "id", "base.*.cosim", "base.**"]): * = one segment,
-  ** = any depth.
-  Hook stages: preCompile postCompile preSim postSim onResult;
-  demo/dtsim shows all five, demo/soc preCompile + preSim.
-  Graders decide each seed's status from sim.log, never the exit code.
-  Graders are values: Workspace({ grader }) (default DefaultGrader()), case
-  grader overrides and is inherited. DefaultGrader({ pass, error, expect,
-  waive: [WaiveRule(...)], uvm }) checks keywords and the UVM report;
-  g.extend({...}) appends. Custom: defineGrader({ name, grade(ctx) }) returns
-  a Status or { status, note, details, highlight }. Logs stream in a worker
-  (scanLog / streamLines). results --recheck reuses the grader.
-  Children get only passthrough-listed env vars.
-  Backends are values: tool: VcsTool({ ntbOpts, flags }) | VerilatorTool({ top,
-  mdir, main }) | defineTool({ name, ... }); case toolOptions override them.
-  Launchers: task.launcher: LocalLauncher() (default) | LsfLauncher({ queue,
-  args }) (bsub -I) | SlurmLauncher(...) (srun --pty) | defineLauncher({ name,
-  passthrough, wrap }). DTSIM_TASK_TYPE=local|lsf|slurm swaps in a built-in;
-  DTSIM_TASK_QUEUE sets ctx.queue.
+Agent workflow
+  1. dtsim list / dtsim groups / dtsim plan <group>: see what exists, no run.
+  2. Change behavior only in dt/config/*.ts (cases, groups, grader, tool,
+     launcher, hooks). Never edit dt/simout/ or dt/config/.dtsim/.
+  3. dtsim run <case> --plain: one line per step; exit 0 = PASS / PASS WITH ERRORS.
+  4. On a failure read <dir>/error.txt first (status, phase, grader rows,
+     excerpt), then the log it names. Rerun by hand: <case>/run_compile,
+     <case>/<seed>/run_sim [-s seed].
+  5. dtsim regr <group> --plain; the stdout ends with a results tree and a
+     Summary table; `results --dir dt/simout/regression` re-reads it later.
+  Statuses: PASS, PASS WITH ERRORS, FAIL, NO SIM LOG, ABORTED (from sim.log
+  via the grader, never the exit code).
+
+DSL (import from ./.dtsim/dsl/index.ts)
+  Workspace({ tool, filelist, output, grader, bareDefaults, env, task, hooks,
+              groups, cases })
+  tool      VcsTool({ ntbOpts, flags }) | VerilatorTool({ top, mdir, main })
+            | defineTool({ name, passthrough, compile, simulate, ... });
+            case toolOptions override the factory options per case
+  task      { launcher, maxSlots, maxCompiles }; launcher LocalLauncher() (default)
+            | LsfLauncher({ queue, args }) | SlurmLauncher(...) | defineLauncher(...)
+            DTSIM_TASK_TYPE=local|lsf|slurm swaps in a built-in; DTSIM_TASK_QUEUE
+  Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) → <id>.<suffix>;
+            export only top-level cases. opts: defines, compileArgs, simArgs, env
+            ({ value, scope: "sim" } keeps it out of the build), uvm, toolOptions,
+            filelist, grader, random, owner. Lists append, maps merge.
+  Group(name, [caseObj, "id", "base.*.cosim", "base.**"])
+  grader    DefaultGrader({ pass, error, expect, waive: [WaiveRule(n, p)], uvm })
+            (default; UVM report check on), g.extend({...}) appends; custom
+            defineGrader({ name, grade(ctx) }) → Status | { status, note,
+            details, highlight }; scanLog / streamLines read big logs in a worker
+  hooks     { preCompile, postCompile, preSim, postSim, onResult }: (ctx) => ...
+            or a list; ctx.sh(cmd) runs bash with the phase env; a throw fails
+  Placeholders ${workspace} ${verify} ${output_dir} ${case} ${seed} ${tool};
+  paths also take shell vars (${HOME}); unknown names fail.
+  Children get only passthrough-listed env vars (tool + launcher + env.passthrough).
+
+Output
+  stdout: Run / Regression tables, plan tree, results tree, Summary table.
+  stderr: progress. TTY: spinner panel ([spinner] [elapsed] [phase] <log> <size>,
+  "-" until a log is on disk), the submitted command in a box titled cmd, live
+  build trees for regr. No TTY / --plain: concise start / end lines only.
 
 Demos
-  demo/dtsim/run.sh <args>          fake tools in demo/dtsim/dt/bin
-  demo/soc/dt/verilator/run.sh      Verilator smokes (--regfile --sd --tb-mod --sv-reg)
+  demo/dtsim/run.sh <args>          fake tools in demo/dtsim/dt/bin, LSF launcher
+  demo/soc/dt/verilator/run.sh      Verilator (--regfile --sd --tb-mod --sv-reg; extra flags → dtsim run)
   demo/soc/dt/vcs/run.sh [case]     VCS tb_soc smokes
-  demo/hbm/dt/vcs/run.sh [test...]  VCS + UVM-1.2 regression
+  demo/hbm/dt/vcs/run.sh [test...]  VCS + UVM-1.2 regression (VCS_GCC_DIR for an older g++)

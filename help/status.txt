@@ -21,9 +21,9 @@ Landed
                             demo/dtsim (fake tools), demo/soc + demo/hbm smokes (docs/dtsim/README.md)
 
 Landed (release)
-  Release 0.9.1 CI          push to main publishes hdxml (linux-x64 glibc 2.17,
-                            macos arm64/x64) and single-file autowire.js
-                            (docs/dev/release.md).
+  Release CI                a pushed v* tag publishes single-file autowire.js and
+                            the pinned hdxml release binaries (linux-x64 glibc
+                            2.17, macos arm64/x64, windows x64; docs/dev/release.md).
                             Version + notes come from the top CHANGELOG.md entry.
   autowire --version        version / commit / build time (baked into the bundle)
   autowire init             also writes AGENTS-AUTOWIRE.md (copy of repo AGENTS.md)
