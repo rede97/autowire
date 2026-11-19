@@ -133,16 +133,6 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 			return JSON.stringify([base, ntbOpts(o), compileFlags(o)]);
 		},
 
-		// Plan view: the -ntb_opts library, defines and the case's own args.
-		buildArgs(c) {
-			const o = merged(c.toolOptions);
-			return [
-				...(ntbOpts(o) ? ["-ntb_opts", ntbOpts(o)] : []),
-				...c.defines.map((d) => `+define+${d}`),
-				...c.compileArgs,
-			];
-		},
-
 		writeAux(ctx) {
 			if (ctx.phase === "compile") {
 				writeFileSync(join(ctx.dir, "dump.tcl"), dumpTcl(ctx));

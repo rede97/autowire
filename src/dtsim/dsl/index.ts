@@ -303,9 +303,6 @@ export type SimTool = {
 	 *  group), shown in plans and progress and used for its directory
 	 *  (`compile_<name>`). Default: the case id. Duplicates get `-2`, `-3`. */
 	buildName?: (c: CompileKeyInput) => string;
-	/** The compile arguments worth showing under a build in a plan.
-	 *  Default: `+define+` defines, then compileArgs. */
-	buildArgs?: (c: CompileKeyInput) => readonly string[];
 	/** Write tool-specific helper files (dump.tcl, run_verdi, ...). */
 	writeAux?: (ctx: ToolContext) => void;
 	compile: (ctx: ToolContext) => Prepared;

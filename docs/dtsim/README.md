@@ -71,10 +71,21 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 1. **Regression 表**：group、仿真器、启动器（如 `lsf (queue normal, -R rusage[mem=4000])`，
    `$DTSIM_TASK_QUEUE` 也列出）、任务数（`3 compiles, 5 sims`）、slot 数、label、输出目录。
 2. **计划树**（`dtsim plan` 打印同一份，并写入 `regression.txt`）：每个编译节点
-   `compile <名字>  (N cases)`，下一行是编译参数，下面是它的 sim 用例，每个 sim
-   下一行是仿真参数（seed 或 seed 数、UVM test、simArgs、env 名字）。编译组名字与
-   参数由后端的 `buildName` / `buildArgs` 给出（默认是组内第一个用例 id，和
-   `+define+` + compileArgs），编译目录是 `compile_<名字>`，重名加 `-2`、`-3`。
+   `compile <名字>  (N cases)` 下面是 `defines` 节点（每行一个宏定义，没有宏时省略）
+   和它的 sim 用例；每个 sim 下面每行一个参数：seed（超过 8 个折叠）、UVM test、
+   simArgs（plusargs）、`env K=V`。完整的编译命令不进计划，见编译目录里的
+   `run_compile`。编译组名字由后端的 `buildName` 给出（默认组内第一个用例 id），
+   编译目录是 `compile_<名字>`，重名加 `-2`、`-3`。
+
+   ```text
+   compile test_full_chip  (1 case)
+   ├─ defines
+   │  ├─ NUM=1
+   │  └─ FULL_CHIP=1
+   └─ sim test_full_chip
+      ├─ seed 1553122393
+      └─ test full_chip_test
+   ```
 3. **运行中（TTY）**：stderr 上一行总计（`compile 1/3  sim 2/5  running 3  00:14`），
    下面每个仍在进行的编译组一棵树，多棵并列：编译节点 `[spinner|状态] [耗时]
    compile <名字> <日志> <大小>`，子节点是正在跑的 sim（同样的列），其余折叠成
@@ -280,14 +291,13 @@ leave them out). `sim`-scoped env, `simArgs`, `uvm` and seeds never split a
 build unless the backend puts them in the key. `dtsim plan` prints the groups.
 
 A build is named by the backend's optional `buildName(c)` (default: the id of
-its first case `c`) and shows `buildArgs(c)` under it in plans (default:
-`+define+` defines, then `compileArgs`). Its directory is `compile_<name>`,
-with unsafe characters turned into `_` and `-2`, `-3` added to repeats.
+its first case `c`). Its directory is `compile_<name>`, with unsafe
+characters turned into `_` and `-2`, `-3` added to repeats.
 
-| Backend | Key | Plan args |
-|---|---|---|
-| `VcsTool` | base + `ntbOpts` + compile `flags` | `-ntb_opts`, `+define+`, `compileArgs` |
-| `VerilatorTool` | base + `top` + `mdir` + `main` | `--top-module`, `--cc --exe` for a harness, `-D`, `compileArgs` |
+| Backend | Key |
+|---|---|
+| `VcsTool` | base + `ntbOpts` + compile `flags` |
+| `VerilatorTool` | base + `top` + `mdir` + `main` |
 
 ## Launchers
 
@@ -342,6 +352,9 @@ compilation and the compile key. `output_dir`, `verify`, `WORKSPACE`,
 
 Logs stay in files by default. Grading reads `sim.log`, not the exit code:
 `PASS`, `PASS WITH ERRORS` (exit 0), `FAIL`, `NO SIM LOG`, `ABORTED`.
+Every compile directory has `run_compile`: the compile env, the tool command,
+and as a comment the command as submitted through the launcher (`bsub ...`).
+It is a record to read or rerun by hand; dtsim runs the full command itself.
 Every seed directory has `run_sim`, `.result`, `git_rev` (revision of the
 repo holding `dt/config`), and, for any non-clean result, `error.txt` with
 the grader's report rows and a bounded excerpt (tool error lines, the lines

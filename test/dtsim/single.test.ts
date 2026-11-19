@@ -19,6 +19,10 @@ describe("single case", () => {
 		const caseDir = join(ws.out, "test_hello_world");
 		expect(await Bun.file(join(caseDir, "vcs.log")).exists()).toBe(true);
 		expect(await Bun.file(join(caseDir, "dump.tcl")).exists()).toBe(true);
+		// run_compile records the compile command with its env.
+		const runCompile = await Bun.file(join(caseDir, "run_compile")).text();
+		expect(runCompile).toContain("'+define+NUM=1'");
+		expect(runCompile).toContain("export DTSIM_PHASE='compile'");
 		const seeds = await seedDirs(caseDir);
 		expect(seeds.length).toBe(1);
 		const seedDir = seeds[0] as string;

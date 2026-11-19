@@ -112,7 +112,6 @@ const named = defineTool({
 	name: "named-sim", passthrough: [],
 	compileErrors: [], simErrors: [],
 	buildName: () => "top/a b",
-	buildArgs: (c) => ["--mode", c.defines.join(",")],
 	compile: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/c.log", logMode: "tee" }),
 	simulate: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/s.log", logMode: "tee" }),
 });`,
@@ -126,7 +125,6 @@ const named = defineTool({
 			"compile_top_a_b-2",
 			"compile_top_a_b-3",
 		]);
-		expect(groups.every((g) => g.args[0] === "--mode")).toBe(true);
 	});
 
 	test("deny list rejects a case assignment when that case is used", async () => {

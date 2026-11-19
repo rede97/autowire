@@ -26,11 +26,12 @@ Commands
           compile and sim logs ("-" until a log is on disk). run -v on a TTY
           also prints the running log's new lines above the panel. No TTY:
           concise start / end lines for compile, sim and grade only.
-          regr: Regression table, plan tree (compile <name>, its args, then
-          its sims and their args), live build trees on a TTY, a status line
-          per finished compile / sim with log path and size, then results
-          and a Summary table. Builds are named by SimTool.buildName
-          (default first case id); dirs are compile_<name>
+          regr: Regression table, plan tree (compile <name> -> defines, one
+          per line; sim <case> -> seed, UVM test, plusargs, env), live build
+          trees on a TTY, a status line per finished compile / sim with log
+          path and size, then results and a Summary table. Builds are named
+          by SimTool.buildName (default first case id); dirs are
+          compile_<name>, each with run_compile (the full compile command)
 
 Rules
   Filelist entries are relative to the project root (nested -f too); dtsim

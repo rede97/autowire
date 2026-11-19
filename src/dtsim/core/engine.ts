@@ -25,7 +25,12 @@ import { type Graded, runGrader } from "./grade.ts";
 import { type HookBase, runHooks } from "./hooks.ts";
 import { wrapCommand } from "./launch.ts";
 import { runProcess } from "./run.ts";
-import { writeGitRev, writeResultMarker, writeRunSim } from "./scripts.ts";
+import {
+	writeGitRev,
+	writeResultMarker,
+	writeRunCompile,
+	writeRunSim,
+} from "./scripts.ts";
 
 /** Steps of one case, reported to EngineOptions.monitor. */
 export type CasePhase =
@@ -327,6 +332,14 @@ export async function executeCompile(
 		caseId: c.id,
 		cwd: prepared.cwd,
 		interactive: false,
+	});
+	// A record of the command; dtsim still runs it itself below.
+	writeRunCompile({
+		dir: compileDir,
+		cwd: prepared.cwd,
+		exports: env.env,
+		argv: prepared.argv,
+		submitted: argv,
 	});
 	opts.monitor?.start("compile", { log: prepared.log, cmd: argv });
 	let code = await runProcess({

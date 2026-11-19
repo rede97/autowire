@@ -27,14 +27,12 @@ import {
 	writeResultMarker,
 } from "./scripts.ts";
 import { readSeeds, type SeedOptions, seedsFor } from "./single.ts";
-import { block, plain, status, tree } from "./ui.ts";
+import { block, plain, status, type TreeNode, tree } from "./ui.ts";
 
 export type CompileGroup = {
 	index: number;
 	/** Readable build name (SimTool.buildName, default the first case id). */
 	name: string;
-	/** Compile arguments shown in the plan (SimTool.buildArgs). */
-	args: readonly string[];
 	fingerprint: string;
 	representative: MergedCase;
 	cases: MergedCase[];
@@ -75,10 +73,6 @@ export function planGroups(
 		return {
 			index: i + 1,
 			name,
-			args: ws.tool.buildArgs?.(representative) ?? [
-				...representative.defines.map((d) => `+define+${d}`),
-				...representative.compileArgs,
-			],
 			fingerprint: fp,
 			representative,
 			cases,
@@ -87,20 +81,30 @@ export function planGroups(
 	});
 }
 
-/** What a sim node shows under itself: seeds, UVM test, sim args, env. */
-function simArgs(c: MergedCase, seeds: readonly string[]): string {
-	const env = Object.keys(c.env);
+/** How many seeds a sim node lists before folding the rest. */
+const SEEDS_SHOWN = 8;
+
+/** A sim node's children: seeds, UVM test, sim args, env; one per line. */
+function simNodes(c: MergedCase, seeds: readonly string[]): TreeNode[] {
+	const dim = (s: string): TreeNode => ({ label: chalk.dim(s) });
+	const env = Object.entries(c.env).map(
+		([k, v]) => `${k}=${typeof v === "string" ? v : v.value}`,
+	);
 	return [
-		seeds.length === 1 ? `seed ${seeds[0]}` : `${seeds.length} seeds`,
-		...(c.uvm?.test ? [`test ${c.uvm.test}`] : []),
-		...c.simArgs,
-		...(env.length ? [`env ${env.join(" ")}`] : []),
-	].join("  ");
+		...seeds.slice(0, SEEDS_SHOWN).map((s) => dim(`seed ${s}`)),
+		...(seeds.length > SEEDS_SHOWN
+			? [dim(`… ${seeds.length - SEEDS_SHOWN} more seeds`)]
+			: []),
+		...(c.uvm?.test ? [dim(`test ${c.uvm.test}`)] : []),
+		...c.simArgs.map(dim),
+		...env.map((e) => dim(`env ${e}`)),
+	];
 }
 
 /**
- * The plan as a tree: each compile node with its arguments on the next line,
- * then its sim cases, each with its sim arguments below it.
+ * The plan as a tree: each compile node with its defines (one per line)
+ * under a `defines` node, then its sim cases, each with its seeds and sim
+ * arguments. The full compile command is in `compile_<name>/run_compile`.
  */
 export function planText(
 	groups: readonly CompileGroup[],
@@ -116,14 +120,23 @@ export function planText(
 		lines.push(
 			`${chalk.bold.cyan("compile")} ${chalk.bold(g.name)}  ${chalk.dim(`(${g.cases.length} ${many})`)}`,
 		);
-		if (g.args.length) lines.push(`│     ${chalk.dim(g.args.join(" "))}`);
-		g.cases.forEach((c, i) => {
-			const last = i === g.cases.length - 1;
-			lines.push(`${last ? "└─" : "├─"} ${chalk.cyan("sim")} ${c.id}`);
-			lines.push(
-				`${last ? " " : "│"}       ${chalk.dim(simArgs(c, seedsOf(c)))}`,
-			);
-		});
+		const defines = g.representative.defines;
+		lines.push(
+			...tree([
+				...(defines.length
+					? [
+							{
+								label: chalk.cyan("defines"),
+								children: defines.map((d) => ({ label: chalk.dim(d) })),
+							},
+						]
+					: []),
+				...g.cases.map((c) => ({
+					label: `${chalk.cyan("sim")} ${c.id}`,
+					children: simNodes(c, seedsOf(c)),
+				})),
+			]),
+		);
 	}
 	return lines.join("\n");
 }
