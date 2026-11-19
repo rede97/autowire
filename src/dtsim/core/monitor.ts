@@ -15,7 +15,7 @@ import type logUpdate from "log-update";
 import { createLogUpdate } from "log-update";
 import type { CasePhase, PhaseObserver } from "./engine.ts";
 import { fmtElapsed } from "./scripts.ts";
-import { status as colour, fmtSize, titledBox } from "./ui.ts";
+import { status as colour, fmtSize, titledRules } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TAIL_BYTES = 4096;
@@ -73,11 +73,12 @@ function logCol(log: string | undefined, size: number | undefined): string {
 	return `${chalk.dim(basename(log).padEnd(LOG_W))} ${chalk.bold(showSize(size).padStart(SIZE_W))}`;
 }
 
-/** The submitted command in a box titled `cmd`: program bold cyan,
- *  options yellow, the rest dim. */
-function cmdBox(argv: readonly string[]): string {
+/** The submitted command between two full-width rules titled `cmd` (no side
+ *  borders, so it copies cleanly): program bold cyan, options yellow, the rest
+ *  dim. */
+function cmdRule(argv: readonly string[]): string {
 	const width = process.stderr.columns || 100;
-	return titledBox("cmd", argv, width, (piece, i) =>
+	return titledRules("cmd", argv, width, (piece, i) =>
 		i === 0
 			? chalk.bold.cyan(piece)
 			: /^[-+]/.test(argv[i] ?? "")
@@ -140,9 +141,9 @@ export class CaseMonitor implements PhaseObserver {
 				`${chalk.cyan(pad("▶", STATUS_W))} ${chalk.dim("start")}  ${chalk.bold(pad(this.name(this.current), PHASE_W))} ${chalk.dim(info.log)}`,
 			);
 		}
-		// TTY: the command in a titled box. Otherwise one plain line.
+		// TTY: the command between titled rules. Otherwise one plain line.
 		if (info.cmd?.length) {
-			this.line(this.live ? cmdBox(info.cmd) : `$ ${info.cmd.join(" ")}`);
+			this.line(this.live ? cmdRule(info.cmd) : `$ ${info.cmd.join(" ")}`);
 		}
 		this.render();
 	}

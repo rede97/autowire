@@ -112,27 +112,26 @@ export function fmtSize(bytes: number): string {
 }
 
 /**
- * Words in a grey box whose title sits in the top rule (`┌─ cmd ───┐`),
- * wrapped at spaces to fit `width` columns; a word longer than a row is
- * split. `paint` colours a piece of word `index`; widths use plain text.
+ * The words between a top and a bottom rule that each span `width` columns, the
+ * title sitting in the top rule (`── cmd ─────`). There are no side borders, so
+ * the command can be selected and copied verbatim. Words wrap at spaces to
+ * `width`; a word longer than a row is split. `paint` colours a piece of word
+ * `index`; widths use plain text.
  */
-export function titledBox(
+export function titledRules(
 	title: string,
 	words: readonly string[],
 	width: number,
 	paint: (piece: string, index: number) => string = (w) => w,
 ): string {
-	const inner = Math.min(
-		Math.max(title.length + 4, width - 4),
-		Math.max(title.length + 3, words.join(" ").length),
-	);
+	const wrapWidth = Math.max(1, width);
 	type Piece = { text: string; index: number };
 	const rows: Piece[][] = [[]];
 	let used = 0;
 	words.forEach((word, index) => {
-		for (let i = 0; i < Math.max(1, word.length); i += inner) {
-			const text = word.slice(i, i + inner);
-			if (used > 0 && used + 1 + text.length > inner) {
+		for (let i = 0; i < Math.max(1, word.length); i += wrapWidth) {
+			const text = word.slice(i, i + wrapWidth);
+			if (used > 0 && used + 1 + text.length > wrapWidth) {
 				rows.push([]);
 				used = 0;
 			}
@@ -141,11 +140,10 @@ export function titledBox(
 		}
 	});
 	const g = chalk.gray;
-	const top = `${g("┌─ ")}${chalk.bold(title)}${g(` ${"─".repeat(inner - title.length - 1)}┐`)}`;
-	const body = rows.map((row) => {
-		const len = row.reduce((n, p, i) => n + (i > 0 ? 1 : 0) + p.text.length, 0);
-		const text = row.map((p) => paint(p.text, p.index)).join(" ");
-		return `${g("│")} ${text}${" ".repeat(inner - len)} ${g("│")}`;
-	});
-	return [top, ...body, g(`└${"─".repeat(inner + 2)}┘`)].join("\n");
+	const fill = Math.max(0, width - (title.length + 4));
+	const top = `${g("── ")}${chalk.bold(title)}${g(` ${"─".repeat(fill)}`)}`;
+	const body = rows.map((row) =>
+		row.map((p) => paint(p.text, p.index)).join(" "),
+	);
+	return [top, ...body, g("─".repeat(wrapWidth))].join("\n");
 }
