@@ -97,7 +97,8 @@ DSL (import from ./.dtsim/dsl/index.ts)
   Children get only passthrough-listed env vars (tool + launcher + env.passthrough).
 
 Output
-  stdout: Run / Regression tables, plan tree, results tree, Summary table.
+  stdout: Run / Regression / Summary tables, plan tree, results tree; all tables
+  (incl. groups / env / results) fit the terminal width, a pipe/file uses 100.
   stderr: progress. TTY: spinner panel ([spinner] [elapsed] [phase] <log> <size>,
   "-" until a log is on disk), the submitted command between two full-width
   rules titled cmd (no side borders, so it copies cleanly). regr:

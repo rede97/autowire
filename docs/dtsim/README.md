@@ -61,8 +61,8 @@ Useful flags: `-s <seed>`, `--seed-file <f>`, `--num-seeds <n>`, `-d <label>`
 
 ### Output
 
-stdout 只放计划与结果：`run` 的 Run / Summary 键值表，`regr` 的 Regression 表、计划树、
-结果树与 Summary 表，`list` 的派生用例树，`groups` 与 `env` 的表格。`results` 打印
+stdout 只放计划与结果：`run` 的 Run / Summary 键值表,`regr` 的 Regression / Summary 键值表、计划树、
+结果树,`list` 的派生用例树,`groups` 与 `env` 的表格。`results` 打印
 Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 grep；`--csv`
 仍是 `dir,status` 行。进度只写 stderr。颜色跟随 chalk 的终端检测；写入
 `regression.txt` / `result.txt` 的文本去掉颜色。
@@ -138,8 +138,8 @@ stderr 不是终端（LSF 日志、管道）或 `--plain` 时输出精简：没�
 `dt/*/run.sh` 不强制 `--plain`，多余参数原样交给 `dtsim run`（如
 `./dt/verilator/run.sh -v`）。
 
-表格（Run / Summary、计划、结果、`groups`、`env`）的框线为灰色，表头粗体青色，
-键值表的键为青色，状态粗体着色。
+所有表格(Run / Summary、Regression、`results`、`groups`、`env`)按当前终端宽度排版:
+最宽的列自动折行使整表不超宽(列不窄于表头),非终端(管道/文件)回退 100 列;框线灰色,表头粗体青色,键值表的键青色,状态粗体着色。
 
 每个回归根目录里生成的 `dresults` 只是转发：用生成它的那个 dtsim（`bun <entry>
 dtsim` 或编译版 `autowire dtsim`）执行 `results --dir <该目录>`，参数原样传递

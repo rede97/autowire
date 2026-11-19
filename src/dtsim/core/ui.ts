@@ -9,19 +9,56 @@ import Table from "cli-table3";
 export type Row = readonly string[];
 
 /** Bordered table with grey rules and bold cyan header names. `head` is
- *  optional; columns wrap at `maxWidth`. */
+ *  optional. The table fits the current terminal width: the widest column
+ *  wraps so the whole row never exceeds it, capped no wider than `maxWidth`
+ *  when given. Not a TTY (pipe, file) falls back to 100 columns. A column is
+ *  never shrunk below its header, so a tiny terminal overflows gracefully. */
 export function table(
 	rows: readonly Row[],
 	head?: Row,
-	maxWidth = 100,
+	maxWidth?: number,
 ): string {
+	const all = head ? [head, ...rows] : rows;
+	const cols = Math.max(0, ...all.map((r) => r.length));
+	const widthOf = (c: string | undefined) =>
+		Math.max(
+			0,
+			...plain(c ?? "")
+				.split("\n")
+				.map((l) => l.length),
+		);
+	// Natural content width of each column (header included, colour stripped).
+	const widths = Array.from({ length: cols }, (_, i) =>
+		Math.max(1, ...all.map((r) => widthOf(r[i]))),
+	);
+	const floor = Array.from({ length: cols }, (_, i) =>
+		Math.max(1, head ? widthOf(head[i]) : 1),
+	);
+	// cli-table3 adds 2 padding + 1 border per column plus a trailing border.
+	const term = process.stdout.columns || 100;
+	const budget = Math.min(maxWidth ?? term, term) - (cols * 3 + 1);
+	// Shrink the widest shrinkable column a step at a time until the row fits.
+	while (widths.reduce((a, b) => a + b, 0) > budget) {
+		let i = -1;
+		let best = -1;
+		for (let j = 0; j < cols; j++) {
+			const w = widths[j] ?? 0;
+			if (w > (floor[j] ?? 0) && w > best) {
+				best = w;
+				i = j;
+			}
+		}
+		if (i < 0) break;
+		widths[i] = (widths[i] ?? 0) - 1;
+	}
 	const t = new Table({
 		...(head ? { head: head.map((h) => chalk.bold.cyan(h)) } : {}),
 		style: { head: [], border: [] },
 		// No rule between body rows; a header still gets its own rule.
 		chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" },
 	});
-	for (const r of rows) t.push(r.map((cell) => wrap(cell, maxWidth)));
+	for (const r of rows)
+		t.push(r.map((cell, i) => wrap(cell, widths[i] ?? 100)));
 	const lines = t.toString().split("\n");
 	// Header names are single-line: draw the top border again under them.
 	if (head && lines[0]) {
@@ -34,7 +71,8 @@ export function table(
 	return lines.join("\n").replace(/[─│┌┐└┘├┤┬┴┼]+/g, (m) => chalk.gray(m));
 }
 
-/** Titled key/value block, e.g. the Run and Summary blocks of `dtsim run`. */
+/** Titled key/value block, e.g. the Run and Summary blocks of `dtsim run`.
+ *  A two-column table, so it fits the terminal width like every other table. */
 export function block(
 	title: string,
 	rows: ReadonlyArray<readonly [string, string]>,
