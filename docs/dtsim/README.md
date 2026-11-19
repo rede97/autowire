@@ -46,7 +46,7 @@ dtsim run test_hello_world --compile-only
 dtsim run test_hello_world --sim-only -d nightly
 dtsim plan [group]                    # compile-group plan only
 dtsim regr [group]                    # execute a regression (default: * = top-level cases)
-dtsim list
+dtsim list [case] [-L n] [--all]      # case trees (default 2 levels; a case scopes)
 dtsim groups
 dtsim results --dir dt/simout/regression [--recheck] [--csv]
 dtsim env --case test_bar_basic.cosim [--phase compile] [--show-values]

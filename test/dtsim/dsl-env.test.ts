@@ -289,15 +289,16 @@ export default Workspace({ tools: [VcsTool()], groups: [
 		);
 	});
 
-	test("dtsim list prints derived ids under their parent", async () => {
-		const result = await runDtsim(await makeWorkspace(TREE), ["list"]);
-		expect(result.code).toBe(0);
-		expect(result.stdout.split("\n").slice(0, 4)).toEqual([
-			"t",
-			"├─ t.fast",
-			"│  └─ t.fast.ss",
-			"└─ t.slow",
-		]);
+	test("dtsim list shows 2 levels by default, --all goes deeper", async () => {
+		const ws = await makeWorkspace(TREE);
+		const def = await runDtsim(ws, ["list"]);
+		expect(def.code).toBe(0);
+		expect(def.stdout).toContain("t.fast");
+		expect(def.stdout).toContain("t.slow");
+		// t.fast.ss is level 3: hidden at the default depth of 2.
+		expect(def.stdout).not.toContain("t.fast.ss");
+		const all = await runDtsim(ws, ["list", "--all"]);
+		expect(all.stdout).toContain("t.fast.ss");
 	});
 
 	test("a tool option that is not a tool fails at load", async () => {

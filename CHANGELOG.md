@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.8.5] - 2026-11-19
+
+- **`dtsim list` 默认展开 2 层**：`list` 不再一次展开到底，默认只显示 2 层（根加直接子用例）。`-L <n>` / `--depth <n>` 指定展开层数，`-a` / `--all` 全部展开。`list <case>` 只列出该用例（或基）及其子树，层数规则相同。
+
 ## [2.8.4] - 2026-11-19
 
 - **抽象基用例**：Case 新增 `abstract: true`（像 C++ 虚类，只用于派生）。dtsim 不运行它：`run` / `env` 报错，`*` 与 `<base>.*` 等分组模式不收它，分组里直接写基名或用模式命中基时，展开成它派生出的具体用例。该标记是节点级的，派生用例继承基的选项但本身是具体用例，不继承 `abstract`。

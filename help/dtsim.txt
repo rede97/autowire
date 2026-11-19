@@ -23,7 +23,8 @@ Commands
                              --interactive); case ids are dotted (base.sub.sub)
   regr [group]               regression (default *): shared compiles per build
   plan [group]               the regression plan tree, no run
-  list | groups              case trees / groups
+  list [case]                case trees (default 2 levels; -L <n>, --all; a case scopes)
+  groups                     regression groups
   env --case <id>            the environment a case would get (--phase, --show-values)
   results --dir <dir>        statuses under a dir (--recheck re-grades, --csv)
   common flags: --config, --tool <name>, -s <seed>, --seed-file, --num-seeds N,

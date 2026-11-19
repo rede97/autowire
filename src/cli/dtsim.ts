@@ -8,6 +8,7 @@ import { basename, join } from "node:path";
 import chalk from "chalk";
 import { Command } from "commander";
 import {
+	findCase,
 	loadWorkspace,
 	mergeCase,
 	resolveGroup,
@@ -175,30 +176,68 @@ function addDtsimCommands(cmd: Command): Command {
 	});
 
 	cmd
-		.command("list")
-		.description("list testcases as trees of derived cases")
+		.command("list [case]")
+		.description(
+			"list testcases as trees (default 2 levels; a case limits to its subtree)",
+		)
 		.option("--config <path>", CONFIG_HELP)
 		.option("--tool <name>", TOOL_HELP)
-		.action(async (opts: { config?: string; tool?: string }) => {
-			const ws = await load(opts);
-			// Top-level cases show seq, owner and a `tools` limit; derived ids are
-			// listed without evaluating their (possibly lazy) options.
-			const nodes = (node: CaseDef): TreeNode[] =>
-				node.children.map((c) => ({ label: c.id, children: nodes(c) }));
-			for (const [id, node] of [...ws.cases.entries()].sort()) {
-				const c = mergeCase(ws, id);
-				const info = [
-					node.abstract ? "abstract" : "",
-					c.uvm?.seq,
-					c.owner,
-					c.tools ? `tools ${c.tools.join(",")}` : "",
-				]
-					.filter(Boolean)
-					.join(" · ");
-				console.log(`${chalk.bold(id)}${info ? `  ${chalk.dim(info)}` : ""}`);
-				for (const line of tree(nodes(node))) console.log(line);
-			}
-		});
+		.option("-L, --depth <n>", "levels to expand (root is 1; default 2)", (v) =>
+			Number(v),
+		)
+		.option("-a, --all", "expand every level")
+		.action(
+			async (
+				caseId: string | undefined,
+				opts: {
+					config?: string;
+					tool?: string;
+					depth?: number;
+					all?: boolean;
+				},
+			) => {
+				if (
+					opts.depth !== undefined &&
+					(!Number.isInteger(opts.depth) || opts.depth < 1)
+				) {
+					throw new Error("dtsim: --depth must be a positive integer");
+				}
+				const ws = await load(opts);
+				const limit = opts.all ? Number.POSITIVE_INFINITY : (opts.depth ?? 2);
+				let roots: CaseDef[];
+				if (caseId === undefined) {
+					roots = [...ws.cases.values()];
+				} else {
+					const node = findCase(ws, caseId);
+					if (!node) throw new Error(`dtsim: testcase "${caseId}" not found`);
+					roots = [node];
+				}
+				roots.sort((a, b) => a.id.localeCompare(b.id));
+				// Root is level 1; stop expanding children past `limit` levels.
+				const nodes = (node: CaseDef, lvl: number): TreeNode[] =>
+					lvl >= limit
+						? []
+						: node.children.map((c) => ({
+								label: c.id,
+								children: nodes(c, lvl + 1),
+							}));
+				for (const node of roots) {
+					const c = mergeCase(ws, node.id);
+					const info = [
+						node.abstract ? "abstract" : "",
+						c.uvm?.seq,
+						c.owner,
+						c.tools ? `tools ${c.tools.join(",")}` : "",
+					]
+						.filter(Boolean)
+						.join(" · ");
+					console.log(
+						`${chalk.bold(node.id)}${info ? `  ${chalk.dim(info)}` : ""}`,
+					);
+					for (const line of tree(nodes(node, 1))) console.log(line);
+				}
+			},
+		);
 
 	cmd
 		.command("groups")
