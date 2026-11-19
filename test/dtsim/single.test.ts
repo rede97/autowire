@@ -394,7 +394,7 @@ export default Workspace({`,
 		const run = await runDtsim(ws, ["run", "vcs_only", "--tool", "verilator"]);
 		expect(run.code).not.toBe(0);
 		expect(run.stderr).toContain("vcs_only does not run on verilator");
-		const plan = await runDtsim(ws, ["plan", "all", "--tool", "verilator"]);
+		const plan = await runDtsim(ws, ["plan", "*", "--tool", "verilator"]);
 		expect(plan.code).toBe(0);
 		expect(plan.stdout).toContain("Skipped (not for verilator): vcs_only");
 		const bad = await runDtsim(ws, ["list", "--tool", "xcelium"]);

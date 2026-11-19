@@ -6,6 +6,7 @@ import { join } from "node:path";
 import chalk from "chalk";
 import { waveFromEnv } from "../dsl/env.ts";
 import {
+	assertConcrete,
 	assertRunsOn,
 	type MergedCase,
 	mergeCase,
@@ -100,6 +101,7 @@ export async function runSingle(
 		);
 	}
 	const c = mergeCase(ws, caseId);
+	assertConcrete(c);
 	assertRunsOn(c, ws.tool);
 	const seeds = seedsFor(c, await readSeeds(opts));
 	const compileDir = caseOutputDir(ws, c.id, opts.label);
@@ -219,6 +221,7 @@ export function printCaseEnv(
 	showValues: boolean,
 ): void {
 	const c = mergeCase(ws, caseId);
+	assertConcrete(c);
 	assertRunsOn(c, ws.tool);
 	const dir = caseOutputDir(ws, c.id);
 	const built = childEnv(ws, c, phase, dir, phase === "sim" ? "0" : undefined);

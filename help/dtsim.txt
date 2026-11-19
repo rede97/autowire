@@ -21,7 +21,7 @@ Layout
 Commands
   run <case>                 compile + simulate one case (--compile-only, --sim-only,
                              --interactive); case ids are dotted (base.sub.sub)
-  regr [group]               regression (default group all): shared compiles per build
+  regr [group]               regression (default *): shared compiles per build
   plan [group]               the regression plan tree, no run
   list | groups              case trees / groups
   env --case <id>            the environment a case would get (--phase, --show-values)
@@ -77,10 +77,14 @@ DSL (import from ./.dtsim/dsl/index.ts)
             export top-level cases (alone or in an exported array / Set / Map).
             opts: defines, compileArgs, simArgs, env
             ({ value, scope: "sim" } keeps it out of the build), uvm, toolOptions,
-            filelists, grader, random, owner, tools: ["verilator"] (runs only
-            there; regr / plan skip it elsewhere), byTool: { vcs: {...} }
-            (merged on top when that tool is selected). Lists append, maps merge.
-  Group(name, [caseObj, "id", "base.*.cosim", "base.**"])
+            filelists, grader, random, owner, abstract (base used only for
+            derivation; never run, left out of * and <base>.* hits), tools:
+            ["verilator"] (runs only there; regr / plan skip it elsewhere),
+            byTool: { vcs: {...} } (merged on top when that tool is selected).
+            Lists append, maps merge.
+  Group(name, [caseObj, "id", "base", "base.*", "base.**"]); no reserved "all"
+            group — the group arg may be a pattern: * = top-level cases (the old
+            all), ** = every depth. An abstract base expands to its leaves.
   grader    DefaultGrader({ pass, error, expect, waive: [WaiveRule(n, p)], uvm })
             (default; UVM report check on), g.extend({...}) appends; custom
             defineGrader({ name, grade(ctx) }) → Status | { status, note,

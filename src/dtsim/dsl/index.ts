@@ -44,13 +44,18 @@ export type CaseOpts = {
 	grader?: Grader;
 	/** Tools this case runs on (default: every Workspace tool). Inherited. */
 	tools?: readonly string[];
+	/** Base used only for derivation, like a C++ abstract/virtual class: dtsim
+	 *  never runs it. Excluded from `all` and from `<base>.*` group pattern
+	 *  hits; naming it to run errors. Not inherited by derived cases; set it
+	 *  with object options, not a function. */
+	abstract?: boolean;
 	/** Options merged on top of this level's options when that tool is
 	 *  selected: `byTool: { vcs: { filelists: ["vcs.f"] }, verilator: { ... } }`. */
 	byTool?: Readonly<Record<string, ToolCaseOpts>>;
 };
 
 /** Case options for one tool (`byTool.<tool>`): no nested tools / byTool. */
-export type ToolCaseOpts = Omit<CaseOpts, "tools" | "byTool">;
+export type ToolCaseOpts = Omit<CaseOpts, "tools" | "byTool" | "abstract">;
 
 /** Case options, or a function computing them from the parent's merged
  *  options. Functions run only when that case is used (run, regr, env, plan)
@@ -66,6 +71,8 @@ export type CaseDef = {
 	/** Full id: root.suffix.suffix... */
 	id: string;
 	parent?: CaseDef;
+	/** Abstract base (derivation only); never run. Not inherited. */
+	abstract: boolean;
 	opts: CaseOptsInput;
 	/** Derived cases, in declaration order. */
 	readonly children: readonly CaseDef[];
@@ -389,6 +396,9 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 			throw new Error(`dtsim: ${what}.${key} entries must be strings`);
 		}
 	}
+	if (opts.abstract !== undefined && typeof opts.abstract !== "boolean") {
+		throw new Error(`dtsim: ${what}.abstract must be a boolean`);
+	}
 	if (opts.grader !== undefined) needGrader(`${what}.grader`, opts.grader);
 	if (opts.env) {
 		for (const [k, v] of Object.entries(opts.env)) {
@@ -409,7 +419,11 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 		}
 		for (const [name, sub] of Object.entries(opts.byTool)) {
 			const inner = sub as CaseOpts;
-			if (inner?.tools !== undefined || inner?.byTool !== undefined) {
+			if (
+				inner?.tools !== undefined ||
+				inner?.byTool !== undefined ||
+				inner?.abstract !== undefined
+			) {
 				throw new Error(
 					`dtsim: ${what}.byTool.${name} cannot set tools or byTool`,
 				);
@@ -468,15 +482,27 @@ function caseNode(
 	opts: CaseOptsInput,
 	parent: CaseDef | undefined,
 ): CaseDef {
-	// Object options validate now; functions validate when evaluated.
-	if (typeof opts !== "function") needOpts(id, opts);
+	// Object options validate now; functions validate when evaluated. The
+	// node-level `abstract` flag is pulled off here so it never inherits.
+	let abstract = false;
+	let effectiveOpts = opts;
+	if (typeof opts !== "function") {
+		needOpts(id, opts);
+		if (opts.abstract !== undefined) {
+			abstract = opts.abstract === true;
+			const rest: CaseOpts = { ...opts };
+			delete rest.abstract;
+			effectiveOpts = rest;
+		}
+	}
 	const children: CaseDef[] = [];
 	const node: CaseDef = {
 		kind: "dtsim-case",
 		name,
 		id,
+		abstract,
 		...(parent === undefined ? {} : { parent }),
-		opts,
+		opts: effectiveOpts,
 		children,
 		SubCase(suffix: string, sub: CaseOptsInput = {}): CaseDef {
 			needString(`subcase suffix of ${id}`, suffix);

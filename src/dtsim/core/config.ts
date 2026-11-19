@@ -29,6 +29,8 @@ import { resolveLauncher } from "./launch.ts";
 
 export type MergedCase = {
 	id: string;
+	/** Abstract base (abstract: true): derivation only, never run. */
+	abstract: boolean;
 	/** Top-level case name (first id segment). */
 	base: string;
 	/** Last id segment of a derived case. */
@@ -256,6 +258,7 @@ export function mergeCase(ws: CaseSource, id: string): MergedCase {
 	const suffix = node.parent ? node.name : undefined;
 	return {
 		id,
+		abstract: node.abstract,
 		base: baseName,
 		...(suffix === undefined ? {} : { suffix }),
 		owner: opts.owner ?? "",
@@ -282,6 +285,15 @@ export function assertRunsOn(c: MergedCase, tool: SimTool): void {
 	if (!runsOn(c, tool)) {
 		throw new Error(
 			`dtsim: case ${c.id} does not run on ${tool.name} (tools: ${c.tools?.join(", ")}); pick one with --tool`,
+		);
+	}
+}
+
+/** An abstract base used by mistake as a run target: the error for run / env. */
+export function assertConcrete(c: MergedCase): void {
+	if (c.abstract) {
+		throw new Error(
+			`dtsim: ${c.id} is an abstract base case (abstract: true); run a derived case`,
 		);
 	}
 }
@@ -322,17 +334,38 @@ function idPattern(pattern: string): RegExp {
 	return new RegExp(`^${body}$`);
 }
 
-/** Member ids of a group, in member order, duplicates dropped. Patterns and
- *  case objects are expanded against the loaded trees without evaluating any
- *  options; the members themselves are then merged so bad ids fail early. */
+/** Runnable cases under a node: descend through abstract bases and stop at the
+ *  first concrete case (which may still carry its own derived variants). */
+function concreteFrontier(node: CaseDef): string[] {
+	return node.abstract ? node.children.flatMap(concreteFrontier) : [node.id];
+}
+
+/** Member ids of a group, in member order, duplicates dropped. A group name
+ *  that contains `*` is itself a pattern (`*` = top-level cases, `**` = every
+ *  depth), so there is no reserved `all` group. Patterns and case objects are
+ *  expanded against the loaded trees; an abstract base (named directly, matched
+ *  by a pattern, or passed as an object) expands to the concrete cases it
+ *  fronts. The members are merged so bad ids fail early. */
 export function resolveGroup(ws: ResolvedWorkspace, group: string): string[] {
-	if (group === "all") return [...ws.cases.keys()].sort();
-	const members = ws.groups.get(group);
-	if (!members) {
-		const known = ["all", ...ws.groups.keys()].sort().join(", ");
-		throw new Error(`dtsim: unknown group "${group}" (groups: ${known})`);
+	let members: readonly GroupMember[];
+	if (group.includes("*")) {
+		members = [group];
+	} else {
+		const named = ws.groups.get(group);
+		if (!named) {
+			const known = [...ws.groups.keys()].sort().join(", ");
+			throw new Error(
+				`dtsim: unknown group "${group}" (groups: ${known || "none"}; or a pattern such as "*" or "sb.*")`,
+			);
+		}
+		members = named;
 	}
 	const ids: string[] = [];
+	const add = (id: string): void => {
+		const node = findCase(ws, id);
+		if (node?.abstract) ids.push(...concreteFrontier(node));
+		else ids.push(id);
+	};
 	for (const m of members) {
 		if (typeof m !== "string") {
 			if (findCase(ws, m.id) !== m) {
@@ -340,7 +373,7 @@ export function resolveGroup(ws: ResolvedWorkspace, group: string): string[] {
 					`dtsim: group "${group}": case ${m.id} is not part of an exported case tree`,
 				);
 			}
-			ids.push(m.id);
+			add(m.id);
 		} else if (m.includes("*")) {
 			const re = idPattern(m);
 			const hits = allIds(ws).filter((id) => re.test(id));
@@ -349,9 +382,9 @@ export function resolveGroup(ws: ResolvedWorkspace, group: string): string[] {
 					`dtsim: group "${group}": pattern "${m}" matches no case`,
 				);
 			}
-			ids.push(...hits);
+			for (const id of hits) add(id);
 		} else {
-			ids.push(m);
+			add(m);
 		}
 	}
 	const unique = [...new Set(ids)];

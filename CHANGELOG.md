@@ -2,6 +2,12 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.8.4] - 2026-11-19
+
+- **抽象基用例**：Case 新增 `abstract: true`（像 C++ 虚类，只用于派生）。dtsim 不运行它：`run` / `env` 报错，`*` 与 `<base>.*` 等分组模式不收它，分组里直接写基名或用模式命中基时，展开成它派生出的具体用例。该标记是节点级的，派生用例继承基的选项但本身是具体用例，不继承 `abstract`。
+- **分组去掉保留字 `all`**：不再有特殊的 `all` 组。分组参数本身可以是模式：`*` = 顶层用例（原 `all` 的含义），`**` = 任意层级；`regr` / `plan` 默认组改为 `*`。`groups` 表的首行也改成 `*`。`Group(name, members)` 的成员可混用用例对象、精确 id、基名、以及 `*` / `**` 模式。
+- **文档/demo**：`docs/dtsim/README.md`、`help/dtsim.txt` 补充 `abstract`、`*` / `**` 分组、以及“派生只继承选项、是否共享编译完全由 compileKey 决定（与父子关系正交）”；`demo/dtsim` 用抽象基 `chip`（`chip.rtl` / `chip.gate`）演示。
+
 ## [2.8.3] - 2026-11-19
 
 - **dtsim 不再解析 filelist**（#3）：`Workspace({ filelist })` / Case `filelist` 改为 `filelists: [...]`，按列表追加（workspace 的在前，然后是 `bareDefaults`、根用例、各级派生，每层之后是该层的 `byTool`），workspace 不再默认 `file.lst`。每个 filelist 原样作为 `-f <绝对路径>` 交给仿真器，编译在项目根目录下运行：相对路径、嵌套 `-f`、`-F`（相对文件自身目录）与 `$VAR` 都由仿真器按标准处理；展开器与编译目录里的 `filelist.f` 删除，启动前只检查列出的 filelist 存在（在 `preCompile` 之后）。VCS 加 `-Mdir=<编译目录>/csrc -o <编译目录>/simv`，Verilator 的 `-Mdir` 改为编译目录下的绝对路径，项目根不落文件；`run_verdi` 先 cd 到项目根。`ToolContext.filelist` 改为 `filelists`，新增 `interactive`。

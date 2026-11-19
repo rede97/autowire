@@ -45,7 +45,7 @@ dtsim run test_bar_basic --num-seeds 5
 dtsim run test_hello_world --compile-only
 dtsim run test_hello_world --sim-only -d nightly
 dtsim plan [group]                    # compile-group plan only
-dtsim regr [group]                    # execute a regression (default group: all)
+dtsim regr [group]                    # execute a regression (default: * = top-level cases)
 dtsim list
 dtsim groups
 dtsim results --dir dt/simout/regression [--recheck] [--csv]
@@ -192,6 +192,11 @@ hello.SubCase("timing", { grader: helloGrader.extend({ error: ["re:ERROR:.*timin
 
 - A case file exports only its top-level cases; dtsim walks `children`.
   Exporting a derived case too is harmless (it registers its root).
+- `abstract: true` marks a base used only for derivation, like a C++ virtual
+  class: dtsim never runs it, it is left out of `*` and `<base>.*` group hits
+  (a base you name in a group expands to its derived cases instead), and naming
+  it to run errors. The flag is node-level — derived cases inherit the base's
+  options but are concrete themselves.
 - Each level merges onto its parent's merged options with the list / map /
   scalar rules above.
 - Options may be a function of the parent's merged options. dtsim calls it
@@ -203,13 +208,15 @@ hello.SubCase("timing", { grader: helloGrader.extend({ error: ["re:ERROR:.*timin
   unique under its parent (checked when `SubCase` is called).
 - `case.descendants()` returns every derived case below it, depth-first in
   declaration order, without evaluating options.
-- `group "all"` is the top-level cases. `Group(name, members)` takes, in any
-  mix: case objects (`Group("cosim", [aCosim, bCosim])`), exact ids, and id
-  patterns where `*` stays inside one id segment and `**` crosses segments
-  (`"hello_world_base.*.cosim"`, `"hello_world_base.**"`). Members keep their
-  order, patterns expand in tree order, duplicates are dropped. A pattern
-  matching nothing, an unknown id, or a case object that is not in an
-  exported tree fails when the group is used.
+- There is no reserved `all` group. A group argument that contains `*` is a
+  pattern itself: `*` = the top-level cases (the former `all`), `**` = every
+  depth. `Group(name, members)` takes, in any mix: case objects
+  (`Group("cosim", [aCosim, bCosim])`), exact ids, bare base names, and id
+  patterns (`*` stays inside one id segment, `**` crosses). An abstract base —
+  named directly, matched by a pattern, or passed as an object — expands to the
+  concrete cases it fronts, never the base. Members keep their order, patterns
+  expand in tree order, duplicates drop. A pattern matching nothing, an unknown
+  id, or a case object outside an exported tree fails when the group is used.
 
 A family of small cases that share modifiers is plain TypeScript:
 
@@ -218,7 +225,8 @@ const withCosim = (c: CaseDef) => {
 	const co = c.SubCase("cosim", { compileArgs: ["-ad=${verify}/abc"], env: { INPUT: { value: "input.spf", scope: "sim" } } });
 	for (const k of ["ss", "ff"]) co.SubCase(k, { env: { INPUT: { value: `input_${k}.spf`, scope: "sim" } } });
 };
-export const base = Case("hello_world_base", { defines: ["NUM=1"] });
+// `abstract: true`: a base only derived from, never run (excluded from `*`).
+export const base = Case("hello_world_base", { abstract: true, defines: ["NUM=1"] });
 for (const [name, opts] of Object.entries({ a: { simArgs: ["+A"] }, b: { simArgs: ["+B"] } }))
 	withCosim(base.SubCase(name, opts));
 export default Workspace({ tools: [VcsTool()], groups: [Group("cosim_all", ["hello_world_base.*.cosim"])] });
@@ -365,6 +373,11 @@ plus what else its build depends on, or a key of its own when the simulator
 knows better (for example a backend whose defines are runtime parameters can
 leave them out). `sim`-scoped env, `simArgs`, `uvm` and seeds never split a
 build unless the backend puts them in the key. `dtsim plan` prints the groups.
+
+Compile grouping is independent of the case tree: derivation only inherits
+options. Whether a derived case reuses its parent's build is decided purely by
+the key, so a subcase that adds a define compiles separately, and two unrelated
+cases with equal keys share one build.
 
 A build is named by the backend's optional `buildName(c)` (default: the id of
 its first case `c`). Its directory is `compile_<name>`, with unsafe

@@ -144,12 +144,14 @@ function addDtsimCommands(cmd: Command): Command {
 		);
 
 	addCommon(
-		cmd.command("regr [group]").description("run a regression group"),
+		cmd
+			.command("regr [group]")
+			.description("run a regression group or pattern (default: *)"),
 	).action(async (group: string | undefined, opts: CommonOpts) => {
 		const ws = await load(opts);
 		const controller = new AbortController();
 		process.once("SIGINT", () => controller.abort());
-		process.exitCode = await runRegression(ws, group ?? "all", {
+		process.exitCode = await runRegression(ws, group ?? "*", {
 			...engineOpts(opts, false),
 			regression: true,
 			abort: controller.signal,
@@ -160,11 +162,11 @@ function addDtsimCommands(cmd: Command): Command {
 		cmd.command("plan [group]").description("print the compile-group plan"),
 	).action(async (group: string | undefined, opts: CommonOpts) => {
 		const ws = await load(opts);
-		const groups = planGroups(ws, group ?? "all", opts.label);
+		const groups = planGroups(ws, group ?? "*", opts.label);
 		const seeds = await readSeeds(opts);
 		const text = planText(groups, (c) => seedsFor(c, seeds), {
 			tool: ws.tool.name,
-			ids: skippedCases(ws, group ?? "all"),
+			ids: skippedCases(ws, group ?? "*"),
 		});
 		console.log(text);
 		const dir = regressionDir(ws, opts.label);
@@ -186,6 +188,7 @@ function addDtsimCommands(cmd: Command): Command {
 			for (const [id, node] of [...ws.cases.entries()].sort()) {
 				const c = mergeCase(ws, id);
 				const info = [
+					node.abstract ? "abstract" : "",
 					c.uvm?.seq,
 					c.owner,
 					c.tools ? `tools ${c.tools.join(",")}` : "",
@@ -205,7 +208,7 @@ function addDtsimCommands(cmd: Command): Command {
 		.action(async (opts: { config?: string; tool?: string }) => {
 			const ws = await load(opts);
 			// Cases the selected tool runs; the rest are counted as skipped.
-			const rows = ["all", ...ws.groups.keys()].map((name) => {
+			const rows = ["*", ...ws.groups.keys()].map((name) => {
 				const all = resolveGroup(ws, name).length;
 				const skipped = skippedCases(ws, name).length;
 				return [
