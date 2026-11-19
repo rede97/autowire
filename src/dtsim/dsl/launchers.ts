@@ -24,6 +24,14 @@ function needArgs(name: string, opts: ClusterOpts): readonly string[] {
 	return args;
 }
 
+/** "queue normal, -R rusage[mem=4000]" for the regression header. */
+function clusterSummary(opts: ClusterOpts, args: readonly string[]): string {
+	return [
+		...(opts.queue ? [`queue ${opts.queue}`] : []),
+		...(args.length ? [args.join(" ")] : []),
+	].join(", ");
+}
+
 /** Run the command directly on this host. */
 export function LocalLauncher(): Launcher {
 	return {
@@ -41,6 +49,7 @@ export function LsfLauncher(opts: ClusterOpts = {}): Launcher {
 		kind: "dtsim-launcher",
 		name: "lsf",
 		passthrough: ["LSF_*", "LSB_*"],
+		summary: clusterSummary(opts, args),
 		wrap(argv, ctx) {
 			const queue = ctx.queue || opts.queue;
 			return [
@@ -63,6 +72,7 @@ export function SlurmLauncher(opts: ClusterOpts = {}): Launcher {
 		kind: "dtsim-launcher",
 		name: "slurm",
 		passthrough: ["SLURM_*"],
+		summary: clusterSummary(opts, args),
 		wrap(argv, ctx) {
 			const queue = ctx.queue || opts.queue;
 			return [

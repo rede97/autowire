@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
 	compileKey,
 	loadWorkspace,
@@ -102,6 +102,31 @@ const shared = defineTool({
 		const plan = await runDtsim(ws, ["plan", "base"]);
 		expect(plan.code).toBe(0);
 		expect(plan.stdout).toContain("in 1 compile group\n");
+	});
+
+	test("a backend names its builds; unsafe characters and repeats are fixed", async () => {
+		const body = CASES_TS.replace(
+			'import { Case, Group, WaiveRule, Workspace } from "./.dtsim/dsl/index.ts";',
+			`import { Case, Group, WaiveRule, Workspace, defineTool } from "./.dtsim/dsl/index.ts";
+const named = defineTool({
+	name: "named-sim", passthrough: [],
+	compileErrors: [], simErrors: [],
+	buildName: () => "top/a b",
+	buildArgs: (c) => ["--mode", c.defines.join(",")],
+	compile: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/c.log", logMode: "tee" }),
+	simulate: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/s.log", logMode: "tee" }),
+});`,
+		).replace("tool: VcsTool(),", "tool: named,");
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(body)).config,
+		});
+		const groups = planGroups(ws, "base");
+		expect(groups.map((g) => basename(g.dir))).toEqual([
+			"compile_top_a_b",
+			"compile_top_a_b-2",
+			"compile_top_a_b-3",
+		]);
+		expect(groups.every((g) => g.args[0] === "--mode")).toBe(true);
 	});
 
 	test("deny list rejects a case assignment when that case is used", async () => {

@@ -46,6 +46,18 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 			return JSON.stringify([base, top, mdir, main]);
 		},
 
+		// Plan view: top, harness mode, defines and the case's own args.
+		buildArgs(c) {
+			const { top, main } = resolved(c.toolOptions);
+			return [
+				"--top-module",
+				top,
+				...(main ? [] : ["--cc", "--exe"]),
+				...c.defines.map((d) => `-D${d}`),
+				...c.compileArgs,
+			];
+		},
+
 		compile(ctx) {
 			const { top, mdir, main } = resolved(ctx.caseOpts.toolOptions);
 			return {

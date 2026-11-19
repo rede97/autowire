@@ -19,7 +19,12 @@ import {
 	runRegression,
 } from "../dtsim/core/regression.ts";
 import { resultsCommand } from "../dtsim/core/results.ts";
-import { printCaseEnv, runSingle } from "../dtsim/core/single.ts";
+import {
+	printCaseEnv,
+	readSeeds,
+	runSingle,
+	seedsFor,
+} from "../dtsim/core/single.ts";
 import { plain, type TreeNode, table, tree } from "../dtsim/core/ui.ts";
 import type { CaseDef } from "../dtsim/dsl/index.ts";
 import { formatRelease } from "./version.ts";
@@ -134,13 +139,12 @@ function addDtsimCommands(cmd: Command): Command {
 	).action(async (group: string | undefined, opts: CommonOpts) => {
 		const ws = await loadWorkspace({ config: opts.config });
 		const groups = planGroups(ws, group ?? "all", opts.label);
-		console.log(planText(groups));
+		const seeds = await readSeeds(opts);
+		const text = planText(groups, (c) => seedsFor(c, seeds));
+		console.log(text);
 		const dir = regressionDir(ws, opts.label);
 		await mkdir(dir, { recursive: true });
-		await writeFile(
-			join(dir, "regression.txt"),
-			`${plain(planText(groups))}\n`,
-		);
+		await writeFile(join(dir, "regression.txt"), `${plain(text)}\n`);
 	});
 
 	cmd

@@ -1,5 +1,7 @@
 // Regression: group cases by compile key (SimTool.compileKey), share one
 // compile per group, and pipeline compile -> sim behind a shared slot pool.
+// Output: a header table, the plan tree, live build trees on stderr, then
+// the results tree and a summary table.
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
@@ -17,7 +19,7 @@ import {
 	executeSim,
 	type SeedResult,
 } from "./engine.ts";
-import { Progress } from "./progress.ts";
+import { type BuildNode, Progress, type TaskNode } from "./progress.ts";
 import { runProcess } from "./run.ts";
 import {
 	elapsedLine,
@@ -25,10 +27,14 @@ import {
 	writeResultMarker,
 } from "./scripts.ts";
 import { readSeeds, type SeedOptions, seedsFor } from "./single.ts";
-import { plain, status, table, tree } from "./ui.ts";
+import { block, plain, status, tree } from "./ui.ts";
 
 export type CompileGroup = {
 	index: number;
+	/** Readable build name (SimTool.buildName, default the first case id). */
+	name: string;
+	/** Compile arguments shown in the plan (SimTool.buildArgs). */
+	args: readonly string[];
 	fingerprint: string;
 	representative: MergedCase;
 	cases: MergedCase[];
@@ -56,44 +62,102 @@ export function planGroups(
 		if (a[1].length !== b[1].length) return b[1].length - a[1].length;
 		return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
 	});
+	const used = new Set<string>();
 	return sorted.map(([fp, cases], i) => {
 		const representative = cases[0];
 		if (!representative) throw new Error("dtsim: empty compile group");
+		const raw = ws.tool.buildName?.(representative) ?? representative.id;
+		// A directory name: unsafe characters become "_", repeats get -2, -3.
+		const base = raw.replace(/[^A-Za-z0-9_.-]/g, "_") || "build";
+		let name = base;
+		for (let n = 2; used.has(name); n++) name = `${base}-${n}`;
+		used.add(name);
 		return {
 			index: i + 1,
+			name,
+			args: ws.tool.buildArgs?.(representative) ?? [
+				...representative.defines.map((d) => `+define+${d}`),
+				...representative.compileArgs,
+			],
 			fingerprint: fp,
 			representative,
 			cases,
-			dir: join(regressionDir(ws, label), `compile_g${i + 1}`),
+			dir: join(regressionDir(ws, label), `compile_${name}`),
 		};
 	});
 }
 
-/** Plan header plus one table row per compile group. */
-export function planText(groups: readonly CompileGroup[]): string {
+/** What a sim node shows under itself: seeds, UVM test, sim args, env. */
+function simArgs(c: MergedCase, seeds: readonly string[]): string {
+	const env = Object.keys(c.env);
+	return [
+		seeds.length === 1 ? `seed ${seeds[0]}` : `${seeds.length} seeds`,
+		...(c.uvm?.test ? [`test ${c.uvm.test}`] : []),
+		...c.simArgs,
+		...(env.length ? [`env ${env.join(" ")}`] : []),
+	].join("  ");
+}
+
+/**
+ * The plan as a tree: each compile node with its arguments on the next line,
+ * then its sim cases, each with its sim arguments below it.
+ */
+export function planText(
+	groups: readonly CompileGroup[],
+	seedsOf: (c: MergedCase) => readonly string[],
+): string {
 	const total = groups.reduce((n, g) => n + g.cases.length, 0);
-	const rows = groups.map((g) => {
-		const rep = g.representative;
-		return [
-			`g${g.index}`,
-			g.cases
-				.map((c) => `${c.id}${c.random ? "" : chalk.dim(" (no-random)")}`)
-				.join("\n"),
-			rep.defines.join(" "),
-			rep.compileArgs.join(" "),
-			Object.keys(rep.env).join(" "),
-		];
-	});
 	const n = groups.length;
-	return `${chalk.bold("Regression plan")}: ${total} cases in ${n} compile group${n === 1 ? "" : "s"}\n${table(
-		rows,
-		["Group", "Cases", "Defines", "Compile args", "Env"],
-		60,
-	)}`;
+	const lines = [
+		`${chalk.bold("Plan")}: ${total} cases in ${n} compile group${n === 1 ? "" : "s"}`,
+	];
+	for (const g of groups) {
+		const many = g.cases.length === 1 ? "case" : "cases";
+		lines.push(
+			`${chalk.bold.cyan("compile")} ${chalk.bold(g.name)}  ${chalk.dim(`(${g.cases.length} ${many})`)}`,
+		);
+		if (g.args.length) lines.push(`│     ${chalk.dim(g.args.join(" "))}`);
+		g.cases.forEach((c, i) => {
+			const last = i === g.cases.length - 1;
+			lines.push(`${last ? "└─" : "├─"} ${chalk.cyan("sim")} ${c.id}`);
+			lines.push(
+				`${last ? " " : "│"}       ${chalk.dim(simArgs(c, seedsOf(c)))}`,
+			);
+		});
+	}
+	return lines.join("\n");
 }
 
 export type RegressionOptions = EngineOptions &
 	SeedOptions & { label?: string; plain: boolean };
+
+/** Header block: what a regression is about to run, and where. */
+function headerRows(
+	ws: ResolvedWorkspace,
+	group: string,
+	groups: readonly CompileGroup[],
+	sims: number,
+	regDir: string,
+	opts: RegressionOptions,
+): Array<[string, string]> {
+	const l = ws.task.launcher;
+	const queue = process.env.DTSIM_TASK_QUEUE ?? process.env.DSIM_TASK_QUEUE;
+	const launcher = [
+		l.summary,
+		queue ? `queue ${queue} ($DTSIM_TASK_QUEUE)` : "",
+	]
+		.filter(Boolean)
+		.join(", ");
+	return [
+		["Group", group],
+		["Tool", ws.tool.name],
+		["Launcher", launcher ? `${l.name} (${launcher})` : l.name],
+		["Tasks", `${groups.length} compiles, ${sims} sims`],
+		["Slots", `${ws.task.maxSlots} (compile ${ws.task.maxCompiles})`],
+		["Label", opts.label ?? ""],
+		["Output", regDir],
+	];
+}
 
 export async function runRegression(
 	ws: ResolvedWorkspace,
@@ -103,47 +167,58 @@ export async function runRegression(
 	const t0 = Date.now();
 	const groups = planGroups(ws, group, opts.label);
 	const regDir = regressionDir(ws, opts.label);
-	await mkdir(regDir, { recursive: true });
-	await writeFile(
-		join(regDir, "regression.txt"),
-		`${plain(planText(groups))}\n`,
-	);
-	console.log(planText(groups));
-
 	const seeds = await readSeeds(opts);
+	const seedsOf = (c: MergedCase) => seedsFor(c, seeds);
 	const simCount = groups.reduce(
-		(n, g) => n + g.cases.reduce((m, c) => m + seedsFor(c, seeds).length, 0),
+		(n, g) => n + g.cases.reduce((m, c) => m + seedsOf(c).length, 0),
 		0,
 	);
-	const progress = new Progress(opts.plain);
-	progress.plan(groups.length, simCount);
+	await mkdir(regDir, { recursive: true });
+	const plan = planText(groups, seedsOf);
+	await writeFile(join(regDir, "regression.txt"), `${plain(plan)}\n`);
+	console.log(
+		block("Regression", headerRows(ws, group, groups, simCount, regDir, opts)),
+	);
+	console.log(plan);
+
+	// One display node per compile and per (case, seed); a case with several
+	// seeds names the seed, a single-seed case does not.
+	const simLabel = (c: MergedCase, seed: string) =>
+		seedsOf(c).length > 1 ? `${c.id} seed ${seed}` : c.id;
+	const progress = new Progress(
+		groups.map((g) => ({
+			name: g.name,
+			sims: g.cases.flatMap((c) => seedsOf(c).map((s) => simLabel(c, s))),
+		})),
+		opts.plain,
+	);
 	const results: SeedResult[] = [];
 	const task = ws.task;
 	const running = new Set<Promise<void>>();
 	const simQueue: Array<() => void> = [];
 	let nextCompile = 0;
 	let activeCompiles = 0;
+	let compilesFailed = 0;
 
-	const record = (result: SeedResult): void => {
-		results.push(result);
-		progress.done(
-			"sim",
-			`${result.caseId}/${result.seed}`,
-			result.status,
-			result.log,
-		);
-	};
-
-	const launchSim = (c: MergedCase, compileDir: string, seed: string): void => {
+	const launchSim = (
+		c: MergedCase,
+		compileDir: string,
+		seed: string,
+		node: TaskNode,
+	): void => {
 		const seedDir = join(regDir, c.id, seed);
 		const p = (async () => {
-			progress.start("sim", `${c.id}/${seed}`, join(seedDir, "sim.log"));
+			progress.begin(node);
+			let result: SeedResult;
 			try {
-				record(await executeSim(ws, c, compileDir, seedDir, seed, opts));
+				result = await executeSim(ws, c, compileDir, seedDir, seed, {
+					...opts,
+					monitor: progress.observer(node),
+				});
 			} catch (error) {
 				// A worker exception must fail the task, not hang the pipeline.
 				writeResultMarker(seedDir, "FAIL");
-				record({
+				result = {
 					caseId: c.id,
 					seed,
 					dir: seedDir,
@@ -151,32 +226,35 @@ export async function runRegression(
 					status: "FAIL",
 					code: 1,
 					note: error instanceof Error ? error.message : String(error),
-				});
+				};
 			}
+			results.push(result);
+			progress.finish(node, result.status, result.log);
 		})().finally(() => running.delete(p));
 		running.add(p);
 	};
 
-	const launchCompile = (g: CompileGroup): void => {
+	const launchCompile = (g: CompileGroup, build: BuildNode): void => {
 		nextCompile += 1;
 		activeCompiles += 1;
 		const p = (async () => {
-			progress.start("compile", `g${g.index}`, join(g.dir, "vcs.log"));
+			progress.begin(build);
 			try {
-				const outcome = await executeCompile(ws, g.representative, g.dir, opts);
-				progress.done(
-					"compile",
-					`g${g.index}`,
-					outcome.ok ? "OK" : "FAIL",
-					outcome.log,
-				);
+				const outcome = await executeCompile(ws, g.representative, g.dir, {
+					...opts,
+					monitor: progress.observer(build),
+				});
+				if (!outcome.ok) compilesFailed += 1;
+				progress.finish(build, outcome.ok ? "OK" : "FAIL", outcome.log);
+				const nodes = [...build.sims];
 				for (const c of g.cases) {
-					for (const seed of seedsFor(c, seeds)) {
+					for (const seed of seedsOf(c)) {
+						const node = nodes.shift() as TaskNode;
 						if (!outcome.ok) {
 							const seedDir = join(regDir, c.id, seed);
 							await mkdir(seedDir, { recursive: true });
 							writeResultMarker(seedDir, "FAIL");
-							record({
+							results.push({
 								caseId: c.id,
 								seed,
 								dir: seedDir,
@@ -185,8 +263,14 @@ export async function runRegression(
 								code: outcome.code,
 								note: "skipped: compile failed",
 							});
+							progress.finish(
+								node,
+								"FAIL",
+								undefined,
+								"skipped: compile failed",
+							);
 						} else {
-							simQueue.push(() => launchSim(c, g.dir, seed));
+							simQueue.push(() => launchSim(c, g.dir, seed, node));
 						}
 					}
 				}
@@ -205,7 +289,8 @@ export async function runRegression(
 		while (running.size < task.maxSlots && !opts.abort?.aborted) {
 			if (nextCompile < groups.length && activeCompiles < task.maxCompiles) {
 				const g = groups[nextCompile];
-				if (g) launchCompile(g);
+				const build = progress.builds[nextCompile];
+				if (g && build) launchCompile(g, build);
 				continue;
 			}
 			const job = simQueue.shift();
@@ -225,9 +310,10 @@ export async function runRegression(
 	await Promise.all([...running]);
 	progress.stop();
 
-	const exitCode = await finishRegression(ws, groups, regDir, results, opts);
-	console.log(chalk.dim(elapsedLine(t0)));
-	return exitCode;
+	return finishRegression(ws, groups, regDir, results, opts, {
+		t0,
+		compilesFailed,
+	});
 }
 
 /** Results as a case → seed tree, then one count per status. */
@@ -263,11 +349,35 @@ async function finishRegression(
 	regDir: string,
 	results: readonly SeedResult[],
 	opts: RegressionOptions,
+	run: { t0: number; compilesFailed: number },
 ): Promise<number> {
 	const text = resultTree(results);
 	console.log(text);
 	await writeFile(join(regDir, "result.txt"), `${plain(text)}\n`);
-	writeDresultsScript(regDir);
+	const dresults = writeDresultsScript(regDir);
+
+	const counts = new Map<string, number>();
+	for (const r of results) {
+		counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
+	}
+	const ok = groups.length - run.compilesFailed;
+	const compiles = `${status("OK")} ${ok}${run.compilesFailed ? `  ${status("FAIL")} ${run.compilesFailed}` : ""}`;
+	console.log(
+		block("Summary", [
+			["Compiles", compiles],
+			[
+				"Sims",
+				[...counts.entries()]
+					.sort()
+					.map(([s, n]) => `${status(s)} ${n}`)
+					.join("  "),
+			],
+			["Total", `${results.length} sims`],
+			["Elapsed", elapsedLine(run.t0).replace(/^elapsed /, "")],
+			["Results", join(regDir, "result.txt")],
+			["Recheck", `${dresults} [--recheck]`],
+		]),
+	);
 
 	let covOk = true;
 	if (opts.cov.enabled) {
@@ -296,7 +406,7 @@ async function finishRegression(
 		const dcov = join(regDir, "dcov");
 		await writeFile(
 			dcov,
-			'#!/bin/bash\n# Cross-group coverage merge. Different +define configs must not\n# be merged automatically; run this explicitly.\nurg -dir compile_g*/simv.vdb -dbname merge.vdb -report urgReport "$@"\n',
+			'#!/bin/bash\n# Cross-group coverage merge. Different +define configs must not\n# be merged automatically; run this explicitly.\nurg -dir compile_*/simv.vdb -dbname merge.vdb -report urgReport "$@"\n',
 		);
 		await chmod(dcov, 0o755);
 	}

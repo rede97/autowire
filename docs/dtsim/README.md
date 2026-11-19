@@ -60,17 +60,31 @@ Useful flags: `-s <seed>`, `--seed-file <f>`, `--num-seeds <n>`, `-d <label>`
 
 ### Output
 
-stdout 只放计划与结果：`plan` / `regr` 的编译组表（Group / Cases / Defines /
-Compile args / Env），`run` 的 Run / Summary 键值表，`regr` 的
-用例 → seed 结果树（`├─` / `└─`）加各状态计数，`list` 的派生用例树，`groups`
-与 `env` 的表格，结束时一行 `elapsed MM:SS (start → end)`。`results` 打印
+stdout 只放计划与结果：`run` 的 Run / Summary 键值表，`regr` 的 Regression 表、计划树、
+结果树与 Summary 表，`list` 的派生用例树，`groups` 与 `env` 的表格。`results` 打印
 Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 grep；`--csv`
-仍是 `dir,status` 行。
+仍是 `dir,status` 行。进度只写 stderr。颜色跟随 chalk 的终端检测；写入
+`regression.txt` / `result.txt` 的文本去掉颜色。
 
-进度只写 stderr：终端（TTY）上是 log-update 刷新的面板（编译 / 仿真进度与
-正在运行的任务表），完成的任务打印在面板上方；`--plain`、管道、LSF / CI 日志
-则每个事件一行（`compile g1 started`、`compile g1 OK 00:17 <log> (12K)`）。
-颜色跟随 chalk 的终端检测；写入 `regression.txt` / `result.txt` 的文本去掉颜色。
+`dtsim regr` 的输出顺序：
+
+1. **Regression 表**：group、仿真器、启动器（如 `lsf (queue normal, -R rusage[mem=4000])`，
+   `$DTSIM_TASK_QUEUE` 也列出）、任务数（`3 compiles, 5 sims`）、slot 数、label、输出目录。
+2. **计划树**（`dtsim plan` 打印同一份，并写入 `regression.txt`）：每个编译节点
+   `compile <名字>  (N cases)`，下一行是编译参数，下面是它的 sim 用例，每个 sim
+   下一行是仿真参数（seed 或 seed 数、UVM test、simArgs、env 名字）。编译组名字与
+   参数由后端的 `buildName` / `buildArgs` 给出（默认是组内第一个用例 id，和
+   `+define+` + compileArgs），编译目录是 `compile_<名字>`，重名加 `-2`、`-3`。
+3. **运行中（TTY）**：stderr 上一行总计（`compile 1/3  sim 2/5  running 3  00:14`），
+   下面每个仍在进行的编译组一棵树，多棵并列：编译节点 `[spinner|状态] [耗时]
+   compile <名字> <日志> <大小>`，子节点是正在跑的 sim（同样的列），其余折叠成
+   `… N waiting, M done`；超过终端高度时只画前面几组并注明还有几组。
+4. 每个 compile / sim 完成或失败时在上方留一行：`<状态> <耗时> <compile|sim 名字>
+   <日志路径> (<大小>)`；编译失败跳过的 sim 写 `skipped: compile failed`。
+   非 TTY（`--plain`、管道、LSF / CI 日志）只有这些行。一个用例有多个 seed 时 sim
+   名字带 `seed N`。
+5. 全部完成后：结果树（用例 → seed → 状态）和 **Summary 表**（编译 OK / FAIL 数、各
+   状态的 sim 数、总数、耗时、`result.txt` 与 `dresults` 路径）。
 
 `dtsim run` 在 stderr 上实时显示当前用例的状态，各列对齐：
 
@@ -265,10 +279,15 @@ knows better (for example a backend whose defines are runtime parameters can
 leave them out). `sim`-scoped env, `simArgs`, `uvm` and seeds never split a
 build unless the backend puts them in the key. `dtsim plan` prints the groups.
 
-| Backend | Key |
-|---|---|
-| `VcsTool` | base + `ntbOpts` + compile `flags` |
-| `VerilatorTool` | base + `top` + `mdir` + `main` |
+A build is named by the backend's optional `buildName(c)` (default: the id of
+its first case `c`) and shows `buildArgs(c)` under it in plans (default:
+`+define+` defines, then `compileArgs`). Its directory is `compile_<name>`,
+with unsafe characters turned into `_` and `-2`, `-3` added to repeats.
+
+| Backend | Key | Plan args |
+|---|---|---|
+| `VcsTool` | base + `ntbOpts` + compile `flags` | `-ntb_opts`, `+define+`, `compileArgs` |
+| `VerilatorTool` | base + `top` + `mdir` + `main` | `--top-module`, `--cc --exe` for a harness, `-D`, `compileArgs` |
 
 ## Launchers
 
@@ -301,6 +320,8 @@ the job's exit code (interactive / blocking submission). `ctx` carries
 `phase`, `jobName` (`compile_<base>` or `<case>_<seed>`), `caseId`, `seed`,
 `cwd`, `queue` and `interactive` (`run --interactive`). The launcher's
 `passthrough` names are copied into the child environment like a backend's.
+An optional `summary` string (built-ins: queue and args) is shown next to
+the launcher name in the regression header.
 
 `DTSIM_TASK_TYPE=local|lsf|slurm` replaces the configured launcher with that
 built-in (default options) unless it equals the configured launcher's name,

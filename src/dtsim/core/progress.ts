@@ -1,55 +1,122 @@
-// Regression progress on stderr; stdout stays clean for plans and results.
-// A TTY gets a live dashboard (log-update) above which finished tasks are
-// printed; anything else (--plain, pipes, LSF logs) gets one line per event.
+// Regression progress on stderr as trees: one per compile group still in
+// flight (compile node, then its running sims and a count of the rest), so
+// several builds show side by side. Each finished compile or sim also leaves
+// a line with its status, time and log path (size). Not a TTY (--plain,
+// pipes, LSF logs): only those lines.
+import { statSync } from "node:fs";
+import { basename } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import type logUpdate from "log-update";
 import { createLogUpdate } from "log-update";
+import type { PhaseObserver } from "./engine.ts";
 import { fmtElapsed } from "./scripts.ts";
-import { status as colour, fmtSize, table } from "./ui.ts";
+import { status as colour, fmtSize } from "./ui.ts";
 
-export type TaskKind = "compile" | "sim";
+const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+/** Column widths: status (or spinner), task label, log name, log size. */
+const STATUS_W = 6;
+const LABEL_W = 34;
+const LOG_W = 12;
+const SIZE_W = 10;
 
-type Running = { kind: TaskKind; label: string; log: string; t0: number };
+type State = "waiting" | "running" | "done";
+
+/** One compile or sim task as the display tracks it. */
+export type TaskNode = {
+	/** "compile <name>" or "sim <case>". */
+	label: string;
+	state: State;
+	status?: string;
+	t0?: number;
+	t1?: number;
+	log?: string;
+};
+
+export type BuildNode = TaskNode & { sims: TaskNode[] };
+
+/** What the display needs from the plan: builds and their sims, in order. */
+export type PlannedBuild = { name: string; sims: readonly string[] };
+
+function sizeOf(path: string | undefined): number | undefined {
+	if (!path) return undefined;
+	try {
+		return statSync(path).size;
+	} catch {
+		return undefined;
+	}
+}
+
+function pad(text: string, width: number): string {
+	const n = stripVTControlCharacters(text).length;
+	return text + " ".repeat(Math.max(0, width - n));
+}
+
+function elapsed(n: TaskNode): string {
+	if (n.t0 === undefined) return "--:--";
+	return fmtElapsed(((n.t1 ?? Date.now()) - n.t0) / 1000);
+}
+
+/** `sim.log    3.0 KiB` ("-" while the log is not on disk). */
+function logCol(log: string | undefined): string {
+	if (!log) return "";
+	const size = sizeOf(log);
+	const shown = size === undefined ? "-" : fmtSize(size);
+	return `${chalk.dim(basename(log).padEnd(LOG_W))} ${chalk.bold(shown.padStart(SIZE_W))}`;
+}
 
 export class Progress {
-	private running = new Map<string, Running>();
-	private counts = { compileDone: 0, compileTotal: 0, simDone: 0, simTotal: 0 };
+	readonly builds: BuildNode[];
+	private readonly t0 = Date.now();
+	private frame = 0;
 	private timer?: Timer;
 	private readonly live?: typeof logUpdate;
 
-	constructor(plain: boolean) {
+	constructor(plan: readonly PlannedBuild[], plain: boolean) {
+		this.builds = plan.map((b) => ({
+			label: `compile ${b.name}`,
+			state: "waiting",
+			sims: b.sims.map((s) => ({ label: `sim ${s}`, state: "waiting" })),
+		}));
 		if (!plain && process.stderr.isTTY) {
 			this.live = createLogUpdate(process.stderr, { showCursor: true });
+			this.timer = setInterval(() => this.render(), 100);
 		}
 	}
 
-	plan(compiles: number, sims: number): void {
-		this.counts.compileTotal = compiles;
-		this.counts.simTotal = sims;
-		if (this.live && !this.timer) {
-			this.timer = setInterval(() => this.render(), 250);
-		}
+	/** Engine observer for one task: remembers the log its step writes. */
+	observer(node: TaskNode): PhaseObserver {
+		return {
+			start: (phase, info) => {
+				if (info.log && (phase === "compile" || phase === "sim")) {
+					node.log = info.log;
+				}
+			},
+			end: () => {},
+		};
 	}
 
-	start(kind: TaskKind, label: string, log: string): void {
-		this.running.set(`${kind}:${label}`, { kind, label, log, t0: Date.now() });
-		if (!this.live) process.stderr.write(`${kind} ${label} started\n`);
+	begin(node: TaskNode): void {
+		node.state = "running";
+		node.t0 = Date.now();
+		this.render();
 	}
 
-	done(kind: TaskKind, label: string, status: string, log: string): void {
-		const key = `${kind}:${label}`;
-		const task = this.running.get(key);
-		this.running.delete(key);
-		if (kind === "compile") this.counts.compileDone += 1;
-		else this.counts.simDone += 1;
-		const elapsed = task ? fmtElapsed((Date.now() - task.t0) / 1000) : "--:--";
+	/** A task ended: one permanent line with status, time and log path. */
+	finish(node: TaskNode, status: string, log?: string, note?: string): void {
+		node.state = "done";
+		node.status = status;
+		node.t1 = Date.now();
+		if (log && !node.log) node.log = log;
+		const size = sizeOf(node.log);
+		const where = note
+			? chalk.dim(note)
+			: node.log
+				? `${chalk.dim(node.log)} ${chalk.bold(`(${size === undefined ? "-" : fmtSize(size)})`)}`
+				: "";
 		this.line(
-			`${kind} ${label} ${colour(status)} ${elapsed} ${chalk.dim(`${log} (${fmtSize(Bun.file(log).size)})`)}`,
+			`${pad(colour(status), STATUS_W)} ${elapsed(node)}  ${chalk.bold(pad(node.label, LABEL_W))} ${where}`.trimEnd(),
 		);
-	}
-
-	note(text: string): void {
-		this.line(text);
 	}
 
 	stop(): void {
@@ -59,28 +126,66 @@ export class Progress {
 		this.live?.done();
 	}
 
-	/** A permanent line: persisted above the dashboard, which is then redrawn. */
 	private line(text: string): void {
-		if (!this.live) {
-			process.stderr.write(`${text}\n`);
-			return;
+		if (this.live) {
+			this.live.persist(text);
+			this.render();
+		} else {
+			process.stderr.write(`${stripVTControlCharacters(text)}\n`);
 		}
-		this.live.persist(text);
-		this.render();
+	}
+
+	private row(first: string, n: TaskNode, labelWidth: number): string {
+		return `${pad(first, STATUS_W)} ${elapsed(n)}  ${chalk.bold(pad(n.label, labelWidth))} ${logCol(n.log)}`.trimEnd();
 	}
 
 	private render(): void {
 		if (!this.live) return;
-		const c = this.counts;
-		const head = `compile ${c.compileDone}/${c.compileTotal}  sim ${c.simDone}/${c.simTotal}  running ${this.running.size}`;
-		const rows = [...this.running.values()].map((t) => [
-			t.kind,
-			t.label,
-			fmtElapsed((Date.now() - t.t0) / 1000),
-			fmtSize(Bun.file(t.log).size),
-		]);
-		this.live(
-			rows.length ? `${chalk.bold(head)}\n${table(rows)}` : chalk.bold(head),
+		this.frame = (this.frame + 1) % FRAMES.length;
+		const spin = chalk.cyan(FRAMES[this.frame] ?? "");
+		const sims = this.builds.flatMap((b) => b.sims);
+		const count = (list: readonly TaskNode[], s: State) =>
+			list.filter((n) => n.state === s).length;
+		const running = count(this.builds, "running") + count(sims, "running");
+		const head = `${chalk.bold("compile")} ${count(this.builds, "done")}/${this.builds.length}  ${chalk.bold("sim")} ${count(sims, "done")}/${sims.length}  ${chalk.dim(`running ${running}  ${fmtElapsed((Date.now() - this.t0) / 1000)}`)}`;
+		const lines = [head];
+		const max = Math.max(4, (process.stderr.rows || 40) - 2);
+		// Trees for builds still in flight: compiling, or with sims left.
+		const active = this.builds.filter(
+			(b) =>
+				b.state === "running" ||
+				(b.state === "done" && b.sims.some((s) => s.state !== "done")),
 		);
+		let shown = 0;
+		for (const b of active) {
+			const tree = [
+				this.row(
+					b.state === "running" ? spin : colour(b.status ?? ""),
+					b,
+					LABEL_W,
+				),
+			];
+			const kids = b.sims.filter((s) => s.state === "running");
+			const waiting = count(b.sims, "waiting");
+			const done = count(b.sims, "done");
+			const rest = [
+				...(waiting ? [`${waiting} waiting`] : []),
+				...(done ? [`${done} done`] : []),
+			].join(", ");
+			const children = [
+				...kids.map((s) => this.row(spin, s, LABEL_W - 3)),
+				...(rest ? [chalk.dim(`… ${rest}`)] : []),
+			];
+			children.forEach((text, i) => {
+				tree.push(`${i === children.length - 1 ? "└─" : "├─"} ${text}`);
+			});
+			if (lines.length + tree.length > max) break;
+			lines.push(...tree);
+			shown += 1;
+		}
+		if (shown < active.length) {
+			lines.push(chalk.dim(`… ${active.length - shown} more builds in flight`));
+		}
+		this.live(lines.join("\n"));
 	}
 }

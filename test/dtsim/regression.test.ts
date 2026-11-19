@@ -19,22 +19,23 @@ describe("regression", () => {
 		const result = await runDtsim(ws, ["regr", "base"]);
 		expect(result.code).toBe(0);
 		const regDir = join(ws.out, "regression");
-		expect(await Bun.file(join(regDir, "compile_g1", "simv")).exists()).toBe(
-			true,
-		);
+		// Builds are named after their first case.
+		expect(
+			await Bun.file(join(regDir, "compile_test_hello_world", "simv")).exists(),
+		).toBe(true);
 		expect(await Bun.file(join(regDir, "result.txt")).exists()).toBe(true);
 		expect(result.stdout).toContain("Results");
 		// smoke has no defines; hello and bar share NUM=1 but bar adds env.
 		const groups = (
 			await Bun.file(join(regDir, "regression.txt")).text()
-		).match(/│ g\d+ /g);
+		).match(/^compile /gm);
 		expect(groups?.length).toBe(3);
 		const helloSeeds = await seedDirs(join(regDir, "test_hello_world"));
 		expect(helloSeeds.length).toBe(1);
 		const runSim = await Bun.file(
 			join(helloSeeds[0] as string, "run_sim"),
 		).text();
-		expect(runSim).toContain(join(regDir, "compile_g"));
+		expect(runSim).toContain(join(regDir, "compile_test_hello_world"));
 		expect(runSim).not.toContain("../simv");
 		const barSeeds = await seedDirs(join(regDir, "test_bar_basic"));
 		const barLog = await Bun.file(
@@ -88,7 +89,9 @@ describe("regression", () => {
 		expect(link).toBe(true);
 		expect(result.stdout).toContain("compile failed");
 		expect(
-			await Bun.file(join(regDir, "compile_g1", "error.txt")).text(),
+			await Bun.file(
+				join(regDir, "compile_test_hello_world", "error.txt"),
+			).text(),
 		).toContain("Error-[COMPFAIL]");
 	});
 
@@ -99,10 +102,12 @@ describe("regression", () => {
 		const regDir = join(ws.out, "regression");
 		expect(
 			await Bun.file(
-				join(regDir, "compile_g1", "urgReport", "dashboard.html"),
+				join(regDir, "compile_test_hello_world", "urgReport", "dashboard.html"),
 			).exists(),
 		).toBe(true);
-		expect(existsSync(join(regDir, "compile_g1", "merge.vdb"))).toBe(true);
+		expect(
+			existsSync(join(regDir, "compile_test_hello_world", "merge.vdb")),
+		).toBe(true);
 		expect(await Bun.file(join(regDir, "dcov")).exists()).toBe(true);
 		const helloSeeds = await seedDirs(join(regDir, "test_hello_world"));
 		const runSim = await Bun.file(

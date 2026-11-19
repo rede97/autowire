@@ -299,6 +299,13 @@ export type SimTool = {
 	 * compiles from. Default: `base`.
 	 */
 	compileKey?: (c: CompileKeyInput, base: string) => string;
+	/** Readable name of the build `c` stands for (the first case of a compile
+	 *  group), shown in plans and progress and used for its directory
+	 *  (`compile_<name>`). Default: the case id. Duplicates get `-2`, `-3`. */
+	buildName?: (c: CompileKeyInput) => string;
+	/** The compile arguments worth showing under a build in a plan.
+	 *  Default: `+define+` defines, then compileArgs. */
+	buildArgs?: (c: CompileKeyInput) => readonly string[];
 	/** Write tool-specific helper files (dump.tcl, run_verdi, ...). */
 	writeAux?: (ctx: ToolContext) => void;
 	compile: (ctx: ToolContext) => Prepared;
@@ -335,6 +342,8 @@ export type Launcher = {
 	passthrough: readonly string[];
 	/** Return the argv that runs `argv` (already tool-resolved) under this launcher. */
 	wrap: (argv: readonly string[], ctx: LaunchContext) => string[];
+	/** One line for the regression header, e.g. "queue normal, -R rusage[...]". */
+	summary?: string;
 };
 
 // --- constructors ------------------------------------------------------------
