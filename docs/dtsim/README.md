@@ -55,8 +55,9 @@ dtsim env --case test_bar_basic.cosim [--phase compile] [--show-values]
 Useful flags: `-s <seed>`, `--seed-file <f>`, `--num-seeds <n>`, `-d <label>`
 (outputs under `dt/simout/<label>/`), `-v/--verbose` (stream logs),
 `--interactive` (UCLI terminal, single case only), `--plain` (no dashboard),
-`--cov`, `--no-cov-merge`, `--no-wave`, `--wave-depth`, `--wave-top`,
-`--config <path>` (another config file, e.g. `dt/config/vcs.config.ts`).
+`--tool <name>`（选仿真器，见 [多仿真器](#多仿真器)）, `--wave`, `--wave-depth`,
+`--wave-top`, `--cov`, `--cov-metrics`, `--no-cov-merge`（见 [运行开关](#运行开关环境变量)）,
+`--config <path>` (another config file).
 
 ### Output
 
@@ -158,9 +159,9 @@ SoT), so DSL edits reach them without a regenerate step; `docs unpack`
 rewrites those imports to the `.dtsim/dsl` copy. No symlink is used: Windows
 symlinks need extra privileges and Bun does not follow MSYS ones.
 
-- `Workspace({ tool, filelist, output, grader, bareDefaults, env, task, hooks, groups, cases })`.
-  `tool`, `task.launcher` and `grader` are values (`VcsTool(...)`, `LsfLauncher(...)`,
-  `DefaultGrader(...)`), not ids.
+- `Workspace({ tools, filelist, output, grader, bareDefaults, env, task, hooks, groups, cases })`.
+  `tools` (non-empty list), `task.launcher` and `grader` are values
+  (`VcsTool(...)`, `LsfLauncher(...)`, `DefaultGrader(...)`), not ids.
 - `Case(name, opts)` / `case.SubCase(suffix, opts)` / `Group(name, ids)`
 - List fields (`defines`, `compileArgs`, `simArgs`) append.
   `env` maps merge per key; `grader` is replaced (use `.extend()` to append keywords).
@@ -215,7 +216,7 @@ const withCosim = (c: CaseDef) => {
 export const base = Case("hello_world_base", { defines: ["NUM=1"] });
 for (const [name, opts] of Object.entries({ a: { simArgs: ["+A"] }, b: { simArgs: ["+B"] } }))
 	withCosim(base.SubCase(name, opts));
-export default Workspace({ tool: VcsTool(), groups: [Group("cosim_all", ["hello_world_base.*.cosim"])] });
+export default Workspace({ tools: [VcsTool()], groups: [Group("cosim_all", ["hello_world_base.*.cosim"])] });
 ```
 
 Keep sim-only inputs (`INPUT` above) at `scope: "sim"` so corners share the
@@ -252,10 +253,11 @@ file as `ctx.filelist`.
 
 ## Simulator backends
 
-`tool` is a backend value. Built in: `VcsTool(opts)` and
-`VerilatorTool(opts)`. A case's `toolOptions` overrides the factory options
-for that case (for example a different Verilator `top`), merged per key. A
-custom backend is `defineTool(...)`:
+`tools` lists backend values; the first is the default. Built in:
+`VcsTool(opts)` and `VerilatorTool(opts)`. A case's `toolOptions` overrides
+the factory options for that case (for example a different Verilator `top`),
+merged per key; with several tools, put it under `byTool.<tool>`. A custom
+backend is `defineTool(...)`:
 
 ```ts
 const xcelium = defineTool({
@@ -266,7 +268,7 @@ const xcelium = defineTool({
 	compile: (ctx) => ({ argv: [...], cwd: ctx.dir, log: `${ctx.dir}/compile.log`, logMode: "tee" }),
 	simulate: (ctx) => ({ argv: [...], cwd: ctx.dir, log: `${ctx.dir}/sim.log`, logMode: "tee" }),
 });
-export default Workspace({ tool: xcelium, ... });
+export default Workspace({ tools: [xcelium], ... });
 ```
 
 Built-in options (factory argument, or case `toolOptions`):
@@ -284,6 +286,58 @@ supplies argv, log locations, excerpt regexes, optional helper files
 (`writeAux`), its `compileKey`, and how it reads `toolOptions`. `name` is
 `${tool}`, `$DTSIM_TOOL` and part of the compile key; `interactive` (default
 `false`) forwards the first Ctrl+C of `run --interactive` to the child.
+Waveform / coverage switches are not in the context: a backend reads them
+with `waveFromEnv()` / `covFromEnv()` when it is constructed (next sections).
+
+### 多仿真器
+
+`tools: [VerilatorTool(), VcsTool(...)]` 配几个后端，第一个是默认。`--tool vcs`
+（或 `$DTSIM_TOOL=vcs`）在所有子命令上选另一个；名字不在 `tools` 里时加载即报错。
+
+- **Case `tools: ["verilator"]`**：该用例只能跑在这些仿真器上（派生用例继承，
+  `bareDefaults.tools` 是裸顶层用例的缺省）。`run` / `env` 选了不支持的仿真器直接报错；
+  `regr` / `plan` 跳过并打印 `Skipped (not for vcs): ...`；一组里没有可跑的用例时
+  `regr` 报错；`groups` 列出每组可跑与跳过的数量；`list` 显示 `tools ...`。
+- **`byTool: { vcs: {...}, verilator: {...} }`**：选中某个仿真器时，在这一层的选项之上
+  再合并对应的那份（列表追加、map 合并、标量覆盖，和派生同样的规则），可写
+  `filelist`、`compileArgs`、`grader`、`toolOptions` 等，不能再写 `tools` / `byTool`。
+  每一层（根、各级派生、`bareDefaults`）都可以有自己的 `byTool`。键名必须是配置里的
+  仿真器名。
+- **输出**：配置了多个仿真器时输出放到 `dt/simout/<tool>/`（`<tool>/<case>/`、
+  `<tool>/regression/`），切换仿真器不会互相覆盖。只有一个时仍是 `dt/simout/`。
+  回归目录的 `dresults` 记下该次的仿真器，`--recheck` 用它的 grader。
+
+demo/soc 用一份配置跑 Verilator（C++ harness）与 VCS（纯 SV `tb_soc`）：差异在
+`basic_smoke` / `regfile_smoke` 的 `byTool.verilator` 与 `bareDefaults.byTool`，
+`sd_sha256` / `tb_mod` / `sv_reg_smoke` 写 `tools: ["verilator"]`。
+
+### 运行开关（环境变量）
+
+波形和覆盖率开关就是环境变量。CLI 只负责在加载配置之前设置它们；后端在构造时
+（`VcsTool()`、`VerilatorTool()`、`defineTool` 里自己调用）用 `waveFromEnv()` /
+`covFromEnv()` 读取，所以只有一个来源。compile / sim 子进程拿到同样的变量，
+`run_compile` / `run_sim` 也记下它们，手工重跑行为一致。没给参数时沿用 shell 里已
+export 的值。需要在配置里固定时写 `process.env.DTSIM_WAVE ??= "1"`。
+
+| 参数 | 变量 | 缺省 | 含义 |
+|---|---|---|---|
+| `--tool <name>` | `DTSIM_TOOL` | `tools[0]` | 选仿真器 |
+| `--wave` | `DTSIM_WAVE=1` | 关 | dump 波形 |
+| `--wave-depth <n>` | `DTSIM_WAVE_DEPTH` | `0`（全部层级） | dump 深度 |
+| `--wave-top <scope>` | `DTSIM_WAVE_TOP` | 后端的 top | dump 范围（层次路径） |
+| `--cov` | `DTSIM_COV=1` | 关 | 收集覆盖率（VCS） |
+| `--cov-metrics <m>` | `DTSIM_COV_METRICS` | `line+cond+fsm+tgl+branch+assert` | `-cm` 指标 |
+| `--no-cov-merge` | `DTSIM_COV_MERGE=0` | 开 | 回归结束不做每组 urg 合并 |
+
+各后端的波形：
+
+- **VCS**：`-ucli -i dump.tcl`，`fsdbDumpvars <depth> [<scope>] "+all"`，每个 seed 目录写
+  `verilog.fsdb`（`run_verdi` 打开它）；不给 `--wave-top` 时 dump 整个设计。
+- **Verilator**：编译加 `--trace-fst`，并生成 `dtsim_wave.sv`（`bind <top> dtsim_wave`，
+  内含 `$dumpfile("wave.fst")` 与 `$dumpvars(<depth>, <scope 或 top>)`），每个 seed 目录写
+  `wave.fst`，TB 不用改。波形是编译进去的：开 / 关要重新编译，`--sim-only` 沿用已有
+  build。C++ harness（`main: false`）要在 `commandArgs` 之后调用
+  `ctx->traceEverOn(true)`（demo/soc `tb_main.cpp` 用 `#if VM_TRACE` 包住）。
 
 ### Which cases share a build
 
@@ -327,7 +381,7 @@ const grid = defineLauncher({
 	passthrough: ["GRID_*"],
 	wrap: (argv, ctx) => ["grid_run", "--name", ctx.jobName, "--pool", ctx.queue || "eda", "--", ...argv],
 });
-export default Workspace({ tool: VcsTool(), task: { launcher: grid, maxSlots: 16, maxCompiles: 4 }, ... });
+export default Workspace({ tools: [VcsTool()], task: { launcher: grid, maxSlots: 16, maxCompiles: 4 }, ... });
 ```
 
 `wrap(argv, ctx)` receives the already-built tool argv (`bash <seed dir>/run_sim`
@@ -504,7 +558,7 @@ the child, and `run_sim` exports `PATH` in MSYS form.
 | Demo | Config | Wrapper | Tools |
 |---|---|---|---|
 | `demo/dtsim` | `dt/config/dtsim.config.ts` (VCS + LSF, cases, groups, waive, hooks for every stage in `hooks.ts`) | `demo/dtsim/run.sh <dtsim args>` | fake `vcs` / `simv` / `urg` / `verdi` / `verilator` / `bsub` / `srun` in `dt/bin/` |
-| `demo/soc` | `dt/config/dtsim.config.ts` (Verilator: `basic_smoke`, `regfile_smoke`, `sd_sha256`, `tb_mod`, `sv_reg_smoke`; groups `smoke`, `sd`) and `dt/config/vcs.config.ts` (VCS: `basic_smoke`, `regfile_smoke`) | `dt/verilator/run.sh [--regfile\|--sd\|--tb-mod\|--sv-reg]`, `dt/vcs/run.sh [case]` | Verilator 5 + RISC-V GCC; VCS |
+| `demo/soc` | `dt/config/dtsim.config.ts`, `tools: [VerilatorTool(), VcsTool(...)]`: `basic_smoke`, `regfile_smoke` on both (`byTool`), `sd_sha256`, `tb_mod`, `sv_reg_smoke` Verilator-only (`tools`); groups `smoke`, `sd` | `dt/verilator/run.sh [--regfile\|--sd\|--tb-mod\|--sv-reg]`, `dt/vcs/run.sh [case]` (`--tool vcs`) | Verilator 5 + RISC-V GCC; VCS |
 | `demo/hbm` | `dt/config/dtsim.config.ts` (VCS + UVM-1.2, six `hbm_*_test` cases, graded by the default grader's UVM report check) | `dt/vcs/run.sh [test ...]` | VCS |
 
 Both VCS configs pass `VcsTool({ flags })` with the flags of the old `run.sh`

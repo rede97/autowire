@@ -4,7 +4,9 @@ import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
+import { waveFromEnv } from "../dsl/env.ts";
 import {
+	assertRunsOn,
 	type MergedCase,
 	mergeCase,
 	type ResolvedWorkspace,
@@ -98,6 +100,7 @@ export async function runSingle(
 		);
 	}
 	const c = mergeCase(ws, caseId);
+	assertRunsOn(c, ws.tool);
 	const seeds = seedsFor(c, await readSeeds(opts));
 	const compileDir = caseOutputDir(ws, c.id, opts.label);
 	const tool = ws.tool;
@@ -118,6 +121,7 @@ export async function runSingle(
 		["WORKSPACE", ws.root],
 		["Verify", ws.verify],
 		["Tool", tool.name],
+		["Wave", waveLabel()],
 		["Test Name", c.id],
 		["Test Seq", c.uvm?.seq ?? ""],
 		["Seeds", seeds.join(",") + (c.random ? "" : " (no-random)")],
@@ -215,6 +219,7 @@ export function printCaseEnv(
 	showValues: boolean,
 ): void {
 	const c = mergeCase(ws, caseId);
+	assertRunsOn(c, ws.tool);
 	const dir = caseOutputDir(ws, c.id);
 	const built = childEnv(ws, c, phase, dir, phase === "sim" ? "0" : undefined);
 	console.log(chalk.dim(envStatsLine(built.stats)));
@@ -226,4 +231,11 @@ export function printCaseEnv(
 	console.log(
 		table(rows, showValues ? ["Source", "Name", "Value"] : ["Source", "Name"]),
 	);
+}
+
+/** "off", or "on (depth N[, scope S])" from $DTSIM_WAVE*. */
+export function waveLabel(): string {
+	const w = waveFromEnv();
+	if (!w.enabled) return "off";
+	return `on (depth ${w.depth}${w.top ? `, scope ${w.top}` : ""})`;
 }

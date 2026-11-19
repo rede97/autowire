@@ -76,7 +76,7 @@ import { DefaultGrader, Group, VcsTool, Workspace } from "./.dtsim/dsl/index.ts"
 import { smoke } from "./cases/smoke.ts";
 
 export default Workspace({
-	tool: VcsTool({ ntbOpts: "uvm-1.2" }),
+	tools: [VcsTool({ ntbOpts: "uvm-1.2" })], // several: --tool picks one
 	filelist: "file.lst", // entries relative to <project>/
 	grader: DefaultGrader({ pass: ["TEST PASSED"] }),
 	groups: [Group("nightly", [smoke, "smoke.**"])],
@@ -90,6 +90,7 @@ ln -s autowire.js dtsim               # or call `bun autowire.js dtsim <cmd>`
 ./dtsim plan nightly                  # compile groups, defines, seeds; no run
 ./dtsim run smoke                     # compile + simulate one case
 ./dtsim regr nightly --num-seeds 4    # shared compiles, parallel sims, Summary table
+./dtsim run smoke --wave              # waveform dump (VCS fsdb, Verilator fst)
 ./dtsim results --dir dt/simout/regression
 ```
 

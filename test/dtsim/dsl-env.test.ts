@@ -95,7 +95,7 @@ const shared = defineTool({
 	compile: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/c.log", logMode: "tee" }),
 	simulate: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/s.log", logMode: "tee" }),
 });`,
-		).replace("tool: VcsTool(),", "tool: shared,");
+		).replace("tools: [VcsTool()],", "tools: [shared],");
 		const ws = await makeWorkspace(body);
 		const vcsPlan = await runDtsim(await makeWorkspace(), ["plan", "base"]);
 		expect(vcsPlan.stdout).toContain("in 3 compile groups");
@@ -115,7 +115,7 @@ const named = defineTool({
 	compile: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/c.log", logMode: "tee" }),
 	simulate: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/s.log", logMode: "tee" }),
 });`,
-		).replace("tool: VcsTool(),", "tool: named,");
+		).replace("tools: [VcsTool()],", "tools: [named],");
 		const ws = await loadWorkspace({
 			config: (await makeWorkspace(body)).config,
 		});
@@ -161,7 +161,7 @@ top.SubCase("slow", () => {
 	calls.push("slow");
 	throw new Error("slow opts should never be evaluated");
 });
-export default Workspace({ tool: VcsTool() });
+export default Workspace({ tools: [VcsTool()] });
 `;
 
 	test("multi-level SubCase merges every level; only the root is exported", async () => {
@@ -202,9 +202,9 @@ export default Workspace({ tool: VcsTool() });
 				"return {};",
 			)
 			.replace(
-				"export default Workspace({ tool: VcsTool() });",
+				"export default Workspace({ tools: [VcsTool()] });",
 				`const extra = top.SubCase("extra");
-export default Workspace({ tool: VcsTool(), groups: [
+export default Workspace({ tools: [VcsTool()], groups: [
 	Group("objs", [extra, fast]),
 	Group("one", ["t.*"]),
 	Group("deep", ["t.**", "t.fast"]),
@@ -268,7 +268,7 @@ export default Workspace({ tool: VcsTool(), groups: [
 	});
 
 	test("a tool option that is not a tool fails at load", async () => {
-		const body = CASES_TS.replace("tool: VcsTool(),", 'tool: "xcelium",');
+		const body = CASES_TS.replace("tools: [VcsTool()],", 'tools: ["xcelium"],');
 		const ws = await makeWorkspace(body);
 		await expect(loadWorkspace({ config: ws.config })).rejects.toThrow(
 			"must be a tool",

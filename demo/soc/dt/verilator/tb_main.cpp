@@ -41,6 +41,11 @@ int main(int argc, char **argv)
 	const std::unique_ptr<VerilatedContext> ctx{new VerilatedContext};
 	ctx->threads(1);
 	ctx->commandArgs(argc, argv);
+#if VM_TRACE
+	// dtsim --wave builds with --trace-fst; its bound dtsim_wave module calls
+	// $dumpfile / $dumpvars, which a custom main must allow.
+	ctx->traceEverOn(true);
+#endif
 
 	const char *firmware = nullptr;
 	const char *sdcard = nullptr;

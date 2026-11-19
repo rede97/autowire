@@ -4,10 +4,12 @@
 // ntbOpts picks the -ntb_opts value (default "uvm", e.g. "uvm-1.2"; "" leaves
 // -ntb_opts out for a non-UVM bench). flags replaces DEFAULT_FLAGS (older VCS
 // releases reject some of them, e.g. O-2018.09 reads "-xlrm nettype_array"
-// as a source file).
+// as a source file). Waveform and coverage come from $DTSIM_WAVE* /
+// $DTSIM_COV*, read when the tool is constructed.
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SimTool, ToolContext } from "../index.ts";
+import { covFromEnv, waveFromEnv } from "../env.ts";
+import type { SimTool, ToolContext, WaveSpec } from "../index.ts";
 
 export type VcsOpts = { ntbOpts?: string; flags?: readonly string[] };
 
@@ -59,18 +61,18 @@ function compileFlags(opts: Record<string, unknown>): readonly string[] {
 	return flags;
 }
 
-function dumpTcl(ctx: ToolContext): string {
-	const en = ctx.wave.enabled ? 1 : 0;
-	const { depth, top } = ctx.wave;
-	return `set dump_enable ${en}
+/** fsdb dump through -ucli. No $DTSIM_WAVE_TOP: the whole design. */
+function dumpTcl(wave: WaveSpec): string {
+	const scope = wave.top ? ` ${wave.top}` : "";
+	return `set dump_enable ${wave.enabled ? 1 : 0}
 if { $dump_enable } {
     fsdbDumpfile verilog.fsdb
-    fsdbDumpvars ${depth} ${top} "+all"
+    fsdbDumpvars ${wave.depth}${scope} "+all"
     fsdbDumpSVA
     fsdbDumpon
     run
 } else {
-    # waveform disabled (--no-wave): same command shape, dump ops skipped
+    # waveform off (no --wave): same command shape, dump ops skipped
     run
 }
 `;
@@ -96,6 +98,8 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 	// Validate now: a bad option fails at config load, not at first compile.
 	ntbOpts(opts);
 	compileFlags(opts);
+	const wave = waveFromEnv();
+	const cov = covFromEnv();
 	const merged = (caseOpts: Record<string, unknown>) => ({
 		...opts,
 		...caseOpts,
@@ -135,8 +139,8 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 
 		writeAux(ctx) {
 			if (ctx.phase === "compile") {
-				writeFileSync(join(ctx.dir, "dump.tcl"), dumpTcl(ctx));
-				if (ctx.cov.enabled) {
+				writeFileSync(join(ctx.dir, "dump.tcl"), dumpTcl(wave));
+				if (cov.enabled) {
 					const viewer = join(ctx.dir, "verdi_cov");
 					writeFileSync(
 						viewer,
@@ -163,8 +167,8 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 				join(ctx.dir, "vcs.log"),
 				...ctx.caseOpts.defines.map((d) => `+define+${d}`),
 				...ctx.caseOpts.compileArgs,
-				...(ctx.cov.enabled
-					? ["-cm", ctx.cov.metrics, "-cm_dir", join(ctx.dir, "simv.vdb")]
+				...(cov.enabled
+					? ["-cm", cov.metrics, "-cm_dir", join(ctx.dir, "simv.vdb")]
 					: []),
 			].map((a) => ctx.expand(a));
 			return {
@@ -202,14 +206,14 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 				if (uvm.seq) argv.push(`+user_seq_type=${uvm.seq}`);
 			}
 			argv.push(...ctx.caseOpts.simArgs);
-			if (ctx.cov.enabled && ctx.seed !== undefined) {
+			if (cov.enabled && ctx.seed !== undefined) {
 				const cmName = `${ctx.caseId}_${ctx.seed}`.replace(
 					/[^A-Za-z0-9_]/g,
 					"_",
 				);
 				argv.push(
 					"-cm",
-					ctx.cov.metrics,
+					cov.metrics,
 					"-cm_dir",
 					join(ctx.compileDir, "simv.vdb"),
 					"-cm_name",

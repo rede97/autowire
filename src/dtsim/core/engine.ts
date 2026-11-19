@@ -3,13 +3,12 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { RUN_ENV } from "../dsl/env.ts";
 import type {
 	CaseContext,
-	CovSpec,
 	HookStage,
 	Status,
 	ToolContext,
-	WaveSpec,
 } from "../dsl/index.ts";
 import {
 	type ExpandVars,
@@ -71,8 +70,6 @@ export type EngineOptions = {
 	interactive: boolean;
 	/** true only for `regr`: shared compile dirs, absolute paths in run_sim. */
 	regression: boolean;
-	wave: WaveSpec;
-	cov: CovSpec;
 	abort?: AbortSignal;
 	monitor?: PhaseObserver;
 };
@@ -158,8 +155,6 @@ export function toolContext(
 		verify: ws.verify,
 		workspace: ws.root,
 		filelist: toolPath(flatFilelist(compileDir)),
-		wave: opts.wave,
-		cov: opts.cov,
 		regression: opts.regression,
 		expand: expandFor(ws, c.id, dir, seed),
 		resolvePath: (text) => resolvePath(text, varsFor(ws, c.id, dir, seed)),
@@ -187,12 +182,23 @@ export function childEnv(
 			verify: ws.verify,
 			output_dir: dir,
 			DTSIM_TOOL: ws.tool.name,
+			// Run switches (--wave, --cov, ...) as the backend read them.
+			...runSwitches(),
 			DTSIM_CASE: c.id,
 			DTSIM_PHASE: phase,
 			...(seed === undefined ? {} : { DTSIM_SEED: seed }),
 		},
 		expand: expandFor(ws, c.id, dir, seed),
 	});
+}
+
+function runSwitches(): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const name of RUN_ENV) {
+		const v = process.env[name];
+		if (v !== undefined) out[name] = v;
+	}
+	return out;
 }
 
 /** Fields hooks and graders share for one case directory (no `sh`). */

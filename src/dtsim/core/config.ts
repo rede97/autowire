@@ -45,6 +45,8 @@ export type MergedCase = {
 	filelist?: string;
 	/** Case grader, else bareDefaults' (bare top-level cases), else the workspace's. */
 	grader: Grader;
+	/** Tools the case runs on; undefined = every Workspace tool. */
+	tools?: string[];
 };
 
 export type ResolvedWorkspace = {
@@ -53,9 +55,12 @@ export type ResolvedWorkspace = {
 	root: string;
 	/** Config dir (<project>/dt/config). `${verify}`. */
 	verify: string;
-	/** Output root: <project>/dt/simout. */
+	/** Output root: <project>/dt/simout, plus /<tool> when several tools exist. */
 	out: string;
+	/** Selected backend (--tool, $DTSIM_TOOL, else the first of `tools`). */
 	tool: SimTool;
+	/** Every configured backend, in config order. */
+	tools: SimTool[];
 	filelist: string;
 	bareDefaults?: CaseOpts;
 	passthrough: string[];
@@ -171,13 +176,32 @@ function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
 	if (overlay.random !== undefined) out.random = overlay.random;
 	if (overlay.filelist !== undefined) out.filelist = overlay.filelist;
 	if (overlay.grader !== undefined) out.grader = overlay.grader;
+	if (overlay.tools !== undefined) out.tools = overlay.tools;
 	return out;
 }
 
 type CaseSource = Pick<
 	ResolvedWorkspace,
-	"cases" | "resolved" | "bareDefaults" | "deny" | "grader"
+	"cases" | "resolved" | "bareDefaults" | "deny" | "grader" | "tool" | "tools"
 >;
+
+/** One level's options for the selected tool: its `byTool.<tool>` merged on
+ *  top, `byTool` dropped. Tool names in `tools` / `byTool` must exist. */
+function forTool(ws: CaseSource, what: string, opts: CaseOpts): CaseOpts {
+	const known = ws.tools.map((t) => t.name);
+	const check = (name: string, where: string) => {
+		if (!known.includes(name)) {
+			throw new Error(
+				`dtsim: ${what}.${where}: no tool "${name}" (tools: ${known.join(", ")})`,
+			);
+		}
+	};
+	for (const name of opts.tools ?? []) check(name, "tools");
+	for (const name of Object.keys(opts.byTool ?? {})) check(name, "byTool");
+	const { byTool, ...rest } = opts;
+	const extra = byTool?.[ws.tool.name];
+	return extra ? mergeOpts(rest, extra) : rest;
+}
 
 /** Case node by id: root name, then one child per `.suffix`. */
 export function findCase(
@@ -198,10 +222,13 @@ function treeOpts(ws: CaseSource, node: CaseDef): CaseOpts {
 	const cached = ws.resolved.get(node.id);
 	if (cached) return cached;
 	const parent = node.parent ? treeOpts(ws, node.parent) : {};
-	const own =
+	const own = forTool(
+		ws,
+		node.id,
 		typeof node.opts === "function"
 			? checkCaseOpts(node.id, node.opts(parent))
-			: node.opts;
+			: node.opts,
+	);
 	const opts = node.parent ? mergeOpts(parent, own) : own;
 	assertNoDeniedAssignments(node.id, opts.env ?? {}, ws.deny);
 	ws.resolved.set(node.id, opts);
@@ -214,10 +241,18 @@ export function mergeCase(ws: CaseSource, id: string): MergedCase {
 	const tree = treeOpts(ws, node);
 	// A bare top-level case gets bareDefaults; derived cases do not. Its own
 	// grader still beats bareDefaults' (which would win as a plain scalar).
-	const bare = !node.parent && ws.bareDefaults !== undefined;
-	const opts = bare ? mergeOpts(tree, ws.bareDefaults ?? {}) : tree;
-	const grader =
-		tree.grader ?? (bare ? ws.bareDefaults?.grader : undefined) ?? ws.grader;
+	const bareDefaults =
+		!node.parent && ws.bareDefaults !== undefined
+			? forTool(ws, "bareDefaults", ws.bareDefaults)
+			: undefined;
+	// The case's `tools` beats bareDefaults' (a plain scalar overlay would win).
+	const opts = bareDefaults
+		? {
+				...mergeOpts(tree, bareDefaults),
+				tools: tree.tools ?? bareDefaults.tools,
+			}
+		: tree;
+	const grader = tree.grader ?? bareDefaults?.grader ?? ws.grader;
 	const baseName = id.split(".")[0] as string;
 	const suffix = node.parent ? node.name : undefined;
 	return {
@@ -234,7 +269,22 @@ export function mergeCase(ws: CaseSource, id: string): MergedCase {
 		toolOptions: { ...opts.toolOptions },
 		...(opts.filelist === undefined ? {} : { filelist: opts.filelist }),
 		grader,
+		...(opts.tools === undefined ? {} : { tools: [...opts.tools] }),
 	};
+}
+
+/** Whether a merged case runs on the selected tool (its `tools`, if set). */
+export function runsOn(c: MergedCase, tool: SimTool): boolean {
+	return c.tools === undefined || c.tools.includes(tool.name);
+}
+
+/** A case the selected tool cannot run: the error for run / env. */
+export function assertRunsOn(c: MergedCase, tool: SimTool): void {
+	if (!runsOn(c, tool)) {
+		throw new Error(
+			`dtsim: case ${c.id} does not run on ${tool.name} (tools: ${c.tools?.join(", ")}); pick one with --tool`,
+		);
+	}
 }
 
 /** Compile identity of a case; equal keys share one build. The generic key
@@ -350,6 +400,8 @@ async function importModule(path: string): Promise<Record<string, unknown>> {
 export async function loadWorkspace(opts: {
 	config?: string;
 	cwd?: string;
+	/** Tool name; default $DTSIM_TOOL, else the first Workspace tool. */
+	tool?: string;
 }): Promise<ResolvedWorkspace> {
 	const cwd = opts.cwd ?? process.cwd();
 	const configPath = opts.config
@@ -407,15 +459,28 @@ export async function loadWorkspace(opts: {
 		maxCompiles: o.task?.maxCompiles ?? 4,
 	};
 
+	const tools = [...o.tools];
+	const wanted = opts.tool ?? process.env.DTSIM_TOOL;
+	const tool = wanted
+		? tools.find((t) => t.name === wanted)
+		: (tools[0] as SimTool);
+	if (!tool) {
+		const from = opts.tool ? "--tool" : "$DTSIM_TOOL";
+		throw new Error(
+			`dtsim: ${from} ${wanted}: not a Workspace tool (tools: ${tools.map((t) => t.name).join(", ")})`,
+		);
+	}
+	const outRoot =
+		o.output === undefined ? join(dt, "simout") : resolvePath(o.output, paths);
+
 	return {
 		configPath,
 		root,
 		verify,
-		out:
-			o.output === undefined
-				? join(dt, "simout")
-				: resolvePath(o.output, paths),
-		tool: o.tool,
+		// Several tools: one output tree each, so switching never overwrites.
+		out: tools.length > 1 ? join(outRoot, tool.name) : outRoot,
+		tool,
+		tools,
 		filelist: resolvePath(o.filelist ?? "file.lst", paths),
 		cases,
 		resolved: new Map(),

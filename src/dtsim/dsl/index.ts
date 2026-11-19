@@ -2,6 +2,7 @@
 // objects tagged with `kind`. Never use instanceof: the bundle and the
 // materialized .dtsim/dsl copy may both be loaded in one process.
 
+export { covFromEnv, RUN_ENV, waveFromEnv } from "./env.ts";
 export {
 	type ClusterOpts,
 	LocalLauncher,
@@ -32,13 +33,22 @@ export type CaseOpts = {
 	env?: Record<string, EnvValue>;
 	uvm?: UvmCfg;
 	/** Per-case options the tool reads on top of its factory options
-	 *  (e.g. VerilatorTool `top`, VcsTool `flags`); objects merge per key. */
+	 *  (e.g. VerilatorTool `top`, VcsTool `flags`); objects merge per key.
+	 *  With several tools, put them under `byTool.<tool>`. */
 	toolOptions?: Record<string, unknown>;
 	/** Filelist for this case instead of the workspace one (relative to dt/config). */
 	filelist?: string;
 	/** Grader for this case and its derived cases (default: Workspace.grader). */
 	grader?: Grader;
+	/** Tools this case runs on (default: every Workspace tool). Inherited. */
+	tools?: readonly string[];
+	/** Options merged on top of this level's options when that tool is
+	 *  selected: `byTool: { vcs: { filelist: "vcs.f" }, verilator: { ... } }`. */
+	byTool?: Readonly<Record<string, ToolCaseOpts>>;
 };
+
+/** Case options for one tool (`byTool.<tool>`): no nested tools / byTool. */
+export type ToolCaseOpts = Omit<CaseOpts, "tools" | "byTool">;
 
 /** Case options, or a function computing them from the parent's merged
  *  options. Functions run only when that case is used (run, regr, env, plan)
@@ -206,8 +216,9 @@ export type Grader = {
 };
 
 export type WorkspaceOpts = {
-	/** Simulator backend: VcsTool(...), VerilatorTool(...) or defineTool(...). */
-	tool: SimTool;
+	/** Simulator backends: VcsTool(...), VerilatorTool(...) or defineTool(...).
+	 *  The first is the default; `--tool <name>` or $DTSIM_TOOL picks another. */
+	tools: readonly SimTool[];
 	/** Filelist path (`${...}` allowed; relative to dt/config). Default "file.lst". */
 	filelist?: string;
 	/** Output root (`${...}` allowed; relative to dt/config). Default "${workspace}/dt/simout". */
@@ -240,7 +251,10 @@ export type Prepared = {
 	executable?: string;
 };
 
-export type WaveSpec = { enabled: boolean; depth: number; top: string };
+/** Waveform switch ($DTSIM_WAVE*; read with waveFromEnv()). `top`: dump
+ *  scope (default: the backend's top). */
+export type WaveSpec = { enabled: boolean; depth: number; top?: string };
+/** Coverage switch ($DTSIM_COV*; read with covFromEnv()). */
 export type CovSpec = { enabled: boolean; metrics: string; merge: boolean };
 
 export type ToolContext = {
@@ -261,8 +275,6 @@ export type ToolContext = {
 	workspace: string;
 	/** Flat filelist in the compile dir: nested -f inlined, paths absolute. */
 	filelist: string;
-	wave: WaveSpec;
-	cov: CovSpec;
 	regression: boolean;
 	/** Expand ${verify}/${workspace}/${output_dir}/... placeholders. */
 	expand: (text: string) => string;
@@ -357,7 +369,7 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 	if (typeof opts !== "object" || opts === null) {
 		throw new Error(`dtsim: ${what} options must be an object`);
 	}
-	for (const key of ["defines", "compileArgs", "simArgs"] as const) {
+	for (const key of ["defines", "compileArgs", "simArgs", "tools"] as const) {
 		const list = opts[key];
 		if (list !== undefined && !Array.isArray(list)) {
 			throw new Error(`dtsim: ${what}.${key} must be an array`);
@@ -380,6 +392,20 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 					`dtsim: ${what}.env.${k} must be a string or { value, scope }`,
 				);
 			}
+		}
+	}
+	if (opts.byTool !== undefined) {
+		if (typeof opts.byTool !== "object" || opts.byTool === null) {
+			throw new Error(`dtsim: ${what}.byTool must be { <tool>: options }`);
+		}
+		for (const [name, sub] of Object.entries(opts.byTool)) {
+			const inner = sub as CaseOpts;
+			if (inner?.tools !== undefined || inner?.byTool !== undefined) {
+				throw new Error(
+					`dtsim: ${what}.byTool.${name} cannot set tools or byTool`,
+				);
+			}
+			needOpts(`${what}.byTool.${name}`, inner);
 		}
 	}
 	return opts;
@@ -570,7 +596,19 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 	if (typeof opts !== "object" || opts === null) {
 		throw new Error("dtsim: Workspace options must be an object");
 	}
-	needTool("workspace tool", opts.tool);
+	if (!Array.isArray(opts.tools) || opts.tools.length === 0) {
+		throw new Error(
+			"dtsim: Workspace tools must be a non-empty array, e.g. tools: [VcsTool()]",
+		);
+	}
+	const names = new Set<string>();
+	for (const [i, t] of opts.tools.entries()) {
+		const tool = needTool(`workspace tools[${i}]`, t);
+		if (names.has(tool.name)) {
+			throw new Error(`dtsim: two Workspace tools are named "${tool.name}"`);
+		}
+		names.add(tool.name);
+	}
 	if (opts.task?.launcher !== undefined) {
 		needLauncher("task.launcher", opts.task.launcher);
 	}

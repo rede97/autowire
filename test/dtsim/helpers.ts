@@ -73,7 +73,7 @@ export const base = Group("base", ["test_quick_smoke", "test_hello_world", "test
 export const cosim = Group("cosim", ["test_hello_world.cosim", "test_bar_basic.cosim"]);
 
 export default Workspace({
-	tool: VcsTool(),
+	tools: [VcsTool()],
 	filelist: "file.lst",
 	bareDefaults: { compileArgs: ["+nospecify", "+notimingcheck"] },
 	env: { passthrough: ["DTSIM_MOCK_*"], deny: ["LD_PRELOAD"] },

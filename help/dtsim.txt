@@ -4,14 +4,15 @@ Entry
   autowire dtsim <cmd>       ln -s autowire.js dtsim (or out/autowire) → ./dtsim <cmd>
   dev: bun index.ts dtsim <cmd>
   Config is found upward from the CWD: <project>/dt/config/dtsim.config.ts.
-  --config <file> picks another one (e.g. dt/config/vcs.config.ts).
+  --config <file> picks another one.
 
 Layout
   <project>/                 RTL design dir; filelists and ${workspace} resolve here
   <project>/dt/              testbench code
   <project>/dt/config/       dtsim.config.ts and case modules (TypeScript SoT), file.lst
   <project>/dt/config/.dtsim/dsl/   DSL copy, rewritten on every run (generated)
-  <project>/dt/simout/       outputs (generated, git-ignored)
+  <project>/dt/simout/       outputs (generated, git-ignored); with several tools
+                             one tree per tool: dt/simout/<tool>/...
     <case>/                  run: compile dir (run_compile, compile log, error.txt)
     <case>/<seed>/           run_sim, sim.log, .result → STATUS, error.txt, grade.log
     regression/              regr ([<label>/]regression with -d): compile_<build>/,
@@ -25,9 +26,23 @@ Commands
   list | groups              case trees / groups
   env --case <id>            the environment a case would get (--phase, --show-values)
   results --dir <dir>        statuses under a dir (--recheck re-grades, --csv)
-  common flags: --config, -s <seed>, --seed-file, --num-seeds N, -d <label>,
-                -v (logs: above the live panel on a TTY), --plain, --cov,
-                --no-wave, --wave-depth, --wave-top
+  common flags: --config, --tool <name>, -s <seed>, --seed-file, --num-seeds N,
+                -d <label>, -v (logs: above the live panel on a TTY), --plain,
+                --wave, --wave-depth, --wave-top, --cov, --cov-metrics,
+                --no-cov-merge (list / groups / env / results take --tool too)
+
+Tools and run switches
+  --tool picks a Workspace tool (default the first). Switches are env vars:
+  the CLI sets them before the config loads, backends read them when built
+  (waveFromEnv() / covFromEnv()), children and run_compile / run_sim get them.
+    --tool <name>       DTSIM_TOOL
+    --wave              DTSIM_WAVE=1 (default off)
+    --wave-depth <n>    DTSIM_WAVE_DEPTH (0 = every level)
+    --wave-top <scope>  DTSIM_WAVE_TOP (default: the tool's top)
+    --cov / --cov-metrics / --no-cov-merge   DTSIM_COV / _METRICS / _MERGE=0
+  VCS: dump.tcl → <seed>/verilog.fsdb. Verilator: --trace-fst plus a bound
+  dtsim_wave module → <seed>/wave.fst (compiled in; a C++ harness calls
+  traceEverOn(true)).
 
 Agent workflow
   1. dtsim list / dtsim groups / dtsim plan <group>: see what exists, no run.
@@ -43,10 +58,10 @@ Agent workflow
   via the grader, never the exit code).
 
 DSL (import from ./.dtsim/dsl/index.ts)
-  Workspace({ tool, filelist, output, grader, bareDefaults, env, task, hooks,
+  Workspace({ tools, filelist, output, grader, bareDefaults, env, task, hooks,
               groups, cases })
-  tool      VcsTool({ ntbOpts, flags }) | VerilatorTool({ top, mdir, main })
-            | defineTool({ name, passthrough, compile, simulate, ... });
+  tools     [VcsTool({ ntbOpts, flags }) | VerilatorTool({ top, mdir, main })
+            | defineTool({ name, passthrough, compile, simulate, ... }), ...];
             case toolOptions override the factory options per case
   task      { launcher, maxSlots, maxCompiles }; launcher LocalLauncher() (default)
             | LsfLauncher({ queue, args }) | SlurmLauncher(...) | defineLauncher(...)
@@ -54,7 +69,9 @@ DSL (import from ./.dtsim/dsl/index.ts)
   Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) → <id>.<suffix>;
             export only top-level cases. opts: defines, compileArgs, simArgs, env
             ({ value, scope: "sim" } keeps it out of the build), uvm, toolOptions,
-            filelist, grader, random, owner. Lists append, maps merge.
+            filelist, grader, random, owner, tools: ["verilator"] (runs only
+            there; regr / plan skip it elsewhere), byTool: { vcs: {...} }
+            (merged on top when that tool is selected). Lists append, maps merge.
   Group(name, [caseObj, "id", "base.*.cosim", "base.**"])
   grader    DefaultGrader({ pass, error, expect, waive: [WaiveRule(n, p)], uvm })
             (default; UVM report check on), g.extend({...}) appends; custom
@@ -79,5 +96,5 @@ Output
 Demos
   demo/dtsim/run.sh <args>          fake tools in demo/dtsim/dt/bin, LSF launcher
   demo/soc/dt/verilator/run.sh      Verilator (--regfile --sd --tb-mod --sv-reg; extra flags → dtsim run)
-  demo/soc/dt/vcs/run.sh [case]     VCS tb_soc smokes
+  demo/soc/dt/vcs/run.sh [case]     VCS tb_soc smokes (dtsim run <case> --tool vcs)
   demo/hbm/dt/vcs/run.sh [test...]  VCS + UVM-1.2 regression (VCS_GCC_DIR for an older g++)

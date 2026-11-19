@@ -1,13 +1,17 @@
-// demo/soc Verilator smokes (primary DV path). Run from demo/soc:
-//   bun ../../index.ts dtsim run basic_smoke     (or ./dt/verilator/run.sh)
-//   bun ../../index.ts dtsim regr smoke
-// VCS: dt/config/vcs.config.ts (./dt/vcs/run.sh).
+// demo/soc smokes on two simulators. Run from demo/soc:
+//   bun ../../index.ts dtsim run basic_smoke             (Verilator, the default)
+//   bun ../../index.ts dtsim run basic_smoke --tool vcs  (or ./dt/vcs/run.sh)
+//   bun ../../index.ts dtsim regr smoke [--tool vcs]
 // Filelists are relative to the project root (demo/soc); dtsim flattens them
-// into each compile dir. Outputs: dt/simout/<case>/.
+// into each compile dir. Outputs: dt/simout/<tool>/<case>/.
+// Verilator runs a C++ harness (tb_main.cpp), VCS the pure-SV aw-tb-mod
+// tb_soc top; byTool holds what differs. The SD, tb_mod and sv_reg cases are
+// Verilator-only (sdspisim is a C++ model).
 import {
 	Case,
 	DefaultGrader,
 	Group,
+	VcsTool,
 	VerilatorTool,
 	Workspace,
 } from "../../../../src/dtsim/dsl/index.ts";
@@ -54,20 +58,21 @@ function harness(sd: boolean) {
 
 export const basicSmoke = Case("basic_smoke", {
 	owner: "soc",
-	...harness(false),
 	env: { FW: { value: "basic_smoke", scope: "sim" } },
 	simArgs: [firmware("basic_smoke")],
+	byTool: { verilator: harness(false) },
 });
 
 export const regfileSmoke = Case("regfile_smoke", {
 	owner: "soc",
-	...harness(false),
 	env: { FW: { value: "regfile_smoke", scope: "sim" } },
 	simArgs: [firmware("regfile_smoke")],
+	byTool: { verilator: harness(false) },
 });
 
 export const sdSha256 = Case("sd_sha256", {
 	owner: "soc",
+	tools: ["verilator"],
 	...harness(true),
 	env: {
 		FW: { value: "sd_sha256", scope: "sim" },
@@ -79,6 +84,7 @@ export const sdSha256 = Case("sd_sha256", {
 // aw-tb-mod dump top (rtl/gen/sim/tb_soc.sv): basic_smoke + SV JTAG host.
 export const tbMod = Case("tb_mod", {
 	owner: "soc",
+	tools: ["verilator"],
 	filelist: "tb_mod.f",
 	toolOptions: { top: "tb_soc" },
 	grader: smoke.extend({ pass: ["SMOKE PASS: tb_soc"] }),
@@ -90,6 +96,7 @@ export const tbMod = Case("tb_mod", {
 // Generated sv_reg packages only: no firmware, no bus RTL.
 export const svRegSmoke = Case("sv_reg_smoke", {
 	owner: "soc",
+	tools: ["verilator"],
 	filelist: "sv_reg.f",
 	toolOptions: { top: "sv_reg_smoke" },
 	compileArgs: ["--timescale", "1ns/1ps", "-Wno-lint", "-Wno-style"],
@@ -97,11 +104,29 @@ export const svRegSmoke = Case("sv_reg_smoke", {
 });
 
 export default Workspace({
-	tool: VerilatorTool(),
+	tools: [
+		VerilatorTool(),
+		// Flags of the original VCS run.sh (pure SV, no UVM): the backend
+		// defaults target newer VCS than O-2018.09. -debug_access+all lets
+		// -ucli run dump.tcl.
+		VcsTool({
+			ntbOpts: "",
+			flags: ["-full64", "-sverilog", "-timescale=1ns/1ps", "-debug_access+all"],
+		}),
+	],
 	filelist: "harness.f",
 	bareDefaults: {
 		random: false,
-		compileArgs: ["-j", "0", ...VL_WARN],
+		byTool: {
+			verilator: { compileArgs: ["-j", "0", ...VL_WARN] },
+			// --no-as-needed: VCS O-2018.09 on binutils >= 2.34 drops its own
+			// shared libs.
+			vcs: {
+				filelist: "vcs.f",
+				compileArgs: ["-top", "tb_soc", "-LDFLAGS", "-Wl,--no-as-needed"],
+				grader: smoke.extend({ pass: ["SMOKE PASS: tb_soc"] }),
+			},
+		},
 	},
 	// MAKE / MAKEFLAGS reach verilator --build and the firmware hook (e.g.
 	// MAKEFLAGS=OPT_FAST=-O2); CROSS picks the RISC-V toolchain prefix.

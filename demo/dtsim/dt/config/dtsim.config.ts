@@ -19,7 +19,7 @@ import {
 } from "./hooks.ts";
 
 export default Workspace({
-	tool: VcsTool(),
+	tools: [VcsTool()],
 	filelist: "file.lst",
 	bareDefaults: {
 		compileArgs: ["+nospecify", "+notimingcheck"],

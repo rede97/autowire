@@ -173,33 +173,42 @@ describe("single case", () => {
 		expect(await Bun.file(join(caseDir, "61", "git_rev")).exists()).toBe(true);
 	});
 
-	test("no-wave keeps the command shape and disables dump", async () => {
+	test("waves are off by default; --wave turns them on for tool and children", async () => {
 		const ws = await makeWorkspace();
-		const result = await runDtsim(ws, [
+		const off = await runDtsim(ws, ["run", "test_hello_world", "-s", "8"]);
+		expect(off.code).toBe(0);
+		const dir = join(ws.out, "test_hello_world");
+		expect(await Bun.file(join(dir, "dump.tcl")).text()).toContain(
+			"set dump_enable 0",
+		);
+		const on = await runDtsim(ws, [
 			"run",
 			"test_hello_world",
-			"--no-wave",
 			"-s",
 			"8",
+			"--wave",
+			"--wave-depth",
+			"2",
 		]);
-		expect(result.code).toBe(0);
-		const tcl = await Bun.file(
-			join(ws.out, "test_hello_world", "dump.tcl"),
-		).text();
-		expect(tcl).toContain("set dump_enable 0");
-		const runSim = await Bun.file(
-			join(ws.out, "test_hello_world", "8", "run_sim"),
-		).text();
-		expect(runSim).toContain("-ucli");
-		expect(runSim).not.toContain("+DUMP_FSDB");
+		expect(on.code).toBe(0);
+		const tcl = await Bun.file(join(dir, "dump.tcl")).text();
+		expect(tcl).toContain("set dump_enable 1");
+		expect(tcl).toContain('fsdbDumpvars 2 "+all"');
+		// The switch is an env var: the sim child sees it, run_sim replays it.
+		expect(await Bun.file(join(dir, "8", "sim.log")).text()).toContain(
+			"DTSIM_WAVE=1",
+		);
+		expect(await Bun.file(join(dir, "8", "run_sim")).text()).toContain(
+			"DTSIM_WAVE",
+		);
 	});
 });
 
 describe("verilator backend", () => {
 	test("compile produces an executable, sim grades its stdout log", async () => {
 		const body = CASES_TS.replace(
-			"tool: VcsTool(),",
-			'tool: VerilatorTool({ top: "tb_top" }),',
+			"tools: [VcsTool()],",
+			'tools: [VerilatorTool({ top: "tb_top" })],',
 		).replace(
 			'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
 			'import { DefaultGrader, VerilatorTool } from "./.dtsim/dsl/index.ts";',
@@ -221,6 +230,74 @@ describe("verilator backend", () => {
 	});
 });
 
+describe("several tools", () => {
+	const body = CASES_TS.replace(
+		'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
+		'import { DefaultGrader, VcsTool, VerilatorTool } from "./.dtsim/dsl/index.ts";',
+	)
+		.replace(
+			"tools: [VcsTool()],",
+			'tools: [VcsTool(), VerilatorTool({ top: "tb_top" })],',
+		)
+		.replace(
+			"export default Workspace({",
+			`export const vcsOnly = Case("vcs_only", { tools: ["vcs"] });
+export const split = Case("split", {
+	simArgs: ["+both"],
+	byTool: { verilator: { simArgs: ["+vl_only"] } },
+});
+export default Workspace({`,
+		);
+
+	test("--tool picks the backend, byTool adds its options, outputs split per tool", async () => {
+		const ws = await makeWorkspace(body);
+		const vcs = await runDtsim(ws, ["run", "split", "-s", "3"]);
+		expect(vcs.code).toBe(0);
+		const vcsLog = await Bun.file(
+			join(ws.out, "vcs", "split", "3", "sim.log"),
+		).text();
+		expect(vcsLog).toContain("mock simv");
+		expect(vcsLog).toContain("+both");
+		expect(vcsLog).not.toContain("+vl_only");
+
+		const vl = await runDtsim(ws, [
+			"run",
+			"split",
+			"-s",
+			"3",
+			"--tool",
+			"verilator",
+			"--wave",
+		]);
+		expect(vl.code).toBe(0);
+		const dir = join(ws.out, "verilator", "split");
+		const vlLog = await Bun.file(join(dir, "3", "sim.log")).text();
+		expect(vlLog).toContain("mock verilator sim");
+		expect(vlLog).toContain("+both");
+		expect(vlLog).toContain("+vl_only");
+		// --wave on Verilator: --trace-fst plus a dump module bound into the top.
+		expect(await Bun.file(join(dir, "run_compile")).text()).toContain(
+			"--trace-fst",
+		);
+		const dump = await Bun.file(join(dir, "dtsim_wave.sv")).text();
+		expect(dump).toContain("$dumpvars(0, tb_top)");
+		expect(dump).toContain("bind tb_top dtsim_wave");
+	});
+
+	test("a case limited by tools is refused by run and skipped by plan", async () => {
+		const ws = await makeWorkspace(body);
+		const run = await runDtsim(ws, ["run", "vcs_only", "--tool", "verilator"]);
+		expect(run.code).not.toBe(0);
+		expect(run.stderr).toContain("vcs_only does not run on verilator");
+		const plan = await runDtsim(ws, ["plan", "all", "--tool", "verilator"]);
+		expect(plan.code).toBe(0);
+		expect(plan.stdout).toContain("Skipped (not for verilator): vcs_only");
+		const bad = await runDtsim(ws, ["list", "--tool", "xcelium"]);
+		expect(bad.code).not.toBe(0);
+		expect(bad.stderr).toContain("not a Workspace tool");
+	});
+});
+
 describe("user-registered backend", () => {
 	test("a workspace can ship its own simulator plugin", async () => {
 		const body = CASES_TS.replace(
@@ -238,7 +315,7 @@ const echoTool = defineTool({
 		return { argv: ["bash", "-c", "echo TEST PASSED"], cwd: ctx.dir, log: ctx.dir + "/sim.log", logMode: "tee" };
 	},
 });`,
-		).replace("tool: VcsTool(),", "tool: echoTool,");
+		).replace("tools: [VcsTool()],", "tools: [echoTool],");
 		const ws = await makeWorkspace(body);
 		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "21"]);
 		expect(result.code).toBe(0);

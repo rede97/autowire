@@ -17,10 +17,10 @@ else
 fi
 
 if [[ $# -eq 0 ]]; then
-	exec "${CMD[@]}" regr --no-wave
+	exec "${CMD[@]}" regr
 fi
 fail=0
 for t in "$@"; do
-	"${CMD[@]}" run "$t" --no-wave || fail=1
+	"${CMD[@]}" run "$t" || fail=1
 done
 exit $fail

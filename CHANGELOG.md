@@ -2,6 +2,13 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.8.2] - 2026-11-19
+
+- **dtsim 多仿真器**：`Workspace({ tool })` 改为 `Workspace({ tools: [...] })`（非空列表，第一个是默认，名字不能重复）；`--tool <name>`（`$DTSIM_TOOL`）在 `run` / `regr` / `plan` / `list` / `groups` / `env` / `results` 上选择仿真器，不在 `tools` 里时加载即报错。Case 新增 `tools: ["verilator"]`（只在这些仿真器上跑，派生用例继承；`run` / `env` 报错，`regr` / `plan` 跳过并打印 `Skipped (not for <tool>): ...`，`groups` 显示每组可跑 / 跳过数）与 `byTool: { <tool>: opts }`（选中该仿真器时在这一层之上合并，`bareDefaults` 同样支持）。配置了多个仿真器时输出改到 `dt/simout/<tool>/`；回归目录的 `dresults` 记下仿真器供 `--recheck` 使用。
+- **运行开关改为环境变量**：`--wave` / `--wave-depth` / `--wave-top` / `--cov` / `--cov-metrics` / `--no-cov-merge` 只负责在加载配置前设置 `DTSIM_WAVE` / `DTSIM_WAVE_DEPTH` / `DTSIM_WAVE_TOP` / `DTSIM_COV` / `DTSIM_COV_METRICS` / `DTSIM_COV_MERGE`；后端在构造时用新导出的 `waveFromEnv()` / `covFromEnv()` 读取，`ToolContext.wave` / `ToolContext.cov` 删除。这些变量传给 compile / sim 子进程并记在 `run_compile` / `run_sim` 里。
+- **波形默认关**：`--no-wave` 删除，`--wave` 打开；`--wave-top` 不再写死 `tb_top`（VCS 不给时 dump 整个设计，Verilator 用后端的 `top`）。Verilator 后端支持波形：编译加 `--trace-fst` 并绑定生成的 `dtsim_wave` 模块，每个 seed 目录写 `wave.fst`，TB 不用改；C++ harness 需调用 `traceEverOn(true)`。Run / Regression 表新增 `Wave` 行。
+- demo/soc 的 `vcs.config.ts` 并入 `dtsim.config.ts`（`tools: [VerilatorTool(), VcsTool(...)]`，`basic_smoke` / `regfile_smoke` 两边都跑，其余三个只在 Verilator），`dt/vcs/run.sh` 改为 `--tool vcs`；`tb_main.cpp` 在 `VM_TRACE` 下开启 trace。demo/hbm 去掉 `--no-wave`。
+
 ## [2.8.1] - 2026-11-19
 
 - **`dtsim regr` 进度条**：TTY 上实时面板的最后一行改为 `<进度条>  compile x/N  sim y/M  running n  MM:SS`（原来的总计行从树上方移到这里）。进度条分两层：每个编译组占 1/N，组内每个 sim 占 1/(N·k)，一组 sim 全部跑完正好盖满该组长度。编译层从左到右为已编译蓝 `█`、编译失败灰 `█`（这一段作废，跳过的 sim 不画）、编译中 `░`（默认前景色）、待编译灰 `░`；跑完的 sim 从左边盖在已编译区上：PASS 绿、PASS WITH ERRORS 黄、其他状态红（`█`），未跑完处露出编译层。宽度取终端剩余列数，10 到 60 格。
