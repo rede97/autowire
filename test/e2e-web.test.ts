@@ -166,8 +166,8 @@ describe("autowire web e2e", () => {
 		expect(after).toBe(before);
 	});
 
-	test("?run=1 on soc_tb shows tb_soc in the page and writes nothing", async () => {
-		const simPath = join(ws.simDir, "tb_soc.sv");
+	test("?run=1 on soc_tb shows tb_top in the page and writes nothing", async () => {
+		const simPath = join(ws.simDir, "tb_top.sv");
 		const before = existsSync(simPath) ? await readFile(simPath, "utf8") : null;
 		const page = await ctx.newPage();
 		await page.goto(pageUrl("unit=soc_tb&run=1"));
@@ -175,7 +175,7 @@ describe("autowire web e2e", () => {
 		expect(status.state).toBe("done");
 		expect(status.text).toContain(".sv in view");
 		const shown = (await page.locator("#aw-generated").textContent()) ?? "";
-		expect(shown).toContain("module tb_soc");
+		expect(shown).toContain("module tb_top");
 		await page.close();
 		expect(existsSync(join(DEMO, ".autowire", "connect", "soc_tb.xml"))).toBe(
 			false,
