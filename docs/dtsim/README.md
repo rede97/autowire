@@ -138,8 +138,8 @@ stderr 不是终端（LSF 日志、管道）或 `--plain` 时输出精简：没�
 `dt/*/run.sh` 不强制 `--plain`，多余参数原样交给 `dtsim run`（如
 `./dt/verilator/run.sh -v`）。
 
-所有表格(Run / Summary、Regression、`results`、`groups`、`env`)按当前终端宽度排版:
-最宽的列自动折行使整表不超宽(列不窄于表头),非终端(管道/文件)回退 100 列;框线灰色,表头粗体青色,键值表的键青色,状态粗体着色。
+所有框线表格(Run / Summary、Regression、`results`、`groups`、`env`)按当前终端宽度排版:
+窄了把空余宽度给最宽的列、整表填满终端宽,宽了最宽的列自动折行使整表不超宽(列不窄于表头);非终端(管道/文件)保持自然宽度(100 列封顶、不补空格);框线灰色,表头粗体青色,键值表的键青色,状态粗体着色。
 
 每个回归根目录里生成的 `dresults` 只是转发：用生成它的那个 dtsim（`bun <entry>
 dtsim` 或编译版 `autowire dtsim`）执行 `results --dir <该目录>`，参数原样传递
