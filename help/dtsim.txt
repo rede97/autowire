@@ -73,7 +73,10 @@ DSL (import from ./.dtsim/dsl/index.ts)
   bareDefaults  base of every top-level case; derived cases inherit it.
   task      { launcher, maxSlots, maxCompiles }; launcher LocalLauncher() (default)
             | LsfLauncher({ queue, args }) | SlurmLauncher(...) | defineLauncher(...)
-            DTSIM_TASK_TYPE=local|lsf|slurm swaps in a built-in; DTSIM_TASK_QUEUE
+            | a probe list [Lsf, Slurm, Local] tried in order, first on PATH wins
+            (probed concurrently). DTSIM_TASK_TYPE=local|lsf|slurm forces one;
+            DTSIM_TASK_QUEUE sets the queue. Cluster launchers also write
+            bjob_*/srun_* submit wrappers beside run_sim/run_compile/run_verdi.
   Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) → <id>.<suffix>;
             export top-level cases (alone or in an exported array / Set / Map).
             opts: defines, compileArgs, simArgs, env

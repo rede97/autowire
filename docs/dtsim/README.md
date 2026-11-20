@@ -392,7 +392,10 @@ characters turned into `_` and `-2`, `-3` added to repeats.
 
 A launcher decides how a compile or sim command runs; the scheduler decides
 when (`task.maxSlots`, `task.maxCompiles` never reach the launcher).
-`task.launcher` is a launcher value, default `LocalLauncher()`. Built in:
+`task.launcher` is one launcher (default `LocalLauncher()`), or a **probe list**
+tried left to right: the first launcher whose `probe` executables are all on
+PATH wins, and the probes run concurrently so a slow filesystem does not
+serialise. A single launcher is an explicit choice and is not probed. Built in:
 
 | Launcher | Wraps as | `passthrough` |
 |---|---|---|
@@ -401,16 +404,21 @@ when (`task.maxSlots`, `task.maxCompiles` never reach the launcher).
 | `SlurmLauncher({ queue, args })` | `srun --pty [--qos <queue>] --job-name <job> <args> <cmd>` | `SLURM_*` |
 
 `args` is a string array, e.g. `["-R", "rusage[mem=8000]"]` or
-`["--partition", "eda"]`. A site wrapper is `defineLauncher(...)`:
+`["--partition", "eda"]`. `LsfLauncher` probes `bsub` and writes `bjob_*`
+wrappers; `SlurmLauncher` probes `srun` and writes `srun_*`; `LocalLauncher`
+has neither, so it is always available and writes no wrapper. A site wrapper
+is `defineLauncher(...)`:
 
 ```ts
 // Blocks until the job ends and returns its exit code.
 const grid = defineLauncher({
 	name: "grid",
 	passthrough: ["GRID_*"],
+	probe: ["grid_run"], // on PATH => usable in a probe list
+	scriptPrefix: "gjob", // writes gjob_sim / gjob_compile / gjob_verdi backups
 	wrap: (argv, ctx) => ["grid_run", "--name", ctx.jobName, "--pool", ctx.queue || "eda", "--", ...argv],
 });
-export default Workspace({ tools: [VcsTool()], task: { launcher: grid, maxSlots: 16, maxCompiles: 4 }, ... });
+export default Workspace({ tools: [VcsTool()], task: { launcher: [grid, LocalLauncher()], maxSlots: 16, maxCompiles: 4 }, ... });
 ```
 
 `wrap(argv, ctx)` receives the already-built tool argv (`bash <seed dir>/run_sim`
@@ -422,11 +430,17 @@ the job's exit code (interactive / blocking submission). `ctx` carries
 An optional `summary` string (built-ins: queue and args) is shown next to
 the launcher name in the regression header.
 
-`DTSIM_TASK_TYPE=local|lsf|slurm` replaces the configured launcher with that
-built-in (default options) unless it equals the configured launcher's name,
-which keeps it; any other value fails before an output directory is created.
+`DTSIM_TASK_TYPE=local|lsf|slurm` forces that launcher (a matching list entry,
+else the built-in with default options) and skips the probe; any other value
+fails before an output directory is created.
 `DTSIM_TASK_QUEUE` reaches the launcher as `ctx.queue` and wins over the
 built-ins' own `queue`; it is `""` when unset.
+
+Next to `run_sim`, `run_compile` and (VCS) `run_verdi`, a cluster launcher also
+writes a submit wrapper — `bjob_*` for LSF, `srun_*` for Slurm — that submits
+that script through the launcher (`bash <prefix>_sim`). They are backups to
+resubmit by hand; dtsim submits inline and does not run them. `LocalLauncher`
+writes none.
 
 ## Environment isolation
 

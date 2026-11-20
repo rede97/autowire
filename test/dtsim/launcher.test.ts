@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveLauncher } from "../../src/dtsim/core/launch.ts";
+import {
+	LocalLauncher,
+	LsfLauncher,
+	SlurmLauncher,
+} from "../../src/dtsim/dsl/launchers.ts";
 import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 
 // Launchers run through the demo/dtsim fake bsub / srun, which log their argv
@@ -100,5 +107,90 @@ const tagged = defineLauncher({
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain('unknown task type "pbs"');
 		expect(existsSync(ws.out)).toBe(false);
+	});
+
+	test("lsf writes bjob_ submit wrappers next to the run scripts", async () => {
+		const ws = await makeWorkspace(
+			withTask(
+				'{ launcher: LsfLauncher({ queue: "normal" }), maxSlots: 2, maxCompiles: 1 }',
+			),
+		);
+		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "5"], {
+			DTSIM_TASK_TYPE: "lsf",
+			DTSIM_MOCK_LAUNCH_LOG: join(ws.dir, "launch.log"),
+		});
+		expect(result.code).toBe(0);
+		const found = [...new Bun.Glob("**/bjob_*").scanSync(ws.dir)];
+		expect(found.some((f) => f.endsWith("bjob_compile"))).toBe(true);
+		expect(found.some((f) => f.endsWith("bjob_sim"))).toBe(true);
+		expect(found.some((f) => f.endsWith("bjob_verdi"))).toBe(true);
+		const sim = found.find((f) => f.endsWith("bjob_sim")) as string;
+		const text = await Bun.file(join(ws.dir, sim)).text();
+		expect(text).toContain(
+			"exec 'bsub' '-I' '-J' 'test_hello_world_5' '-q' 'normal' 'bash' '",
+		);
+		// the submitted run script is an absolute path, not the bare name
+		expect(text).toMatch(/'bash' '[^']*\/run_sim'/);
+	});
+
+	test("local bypasses the wrapper scripts", async () => {
+		const ws = await makeWorkspace();
+		const result = await runDtsim(
+			ws,
+			["run", "test_hello_world", "-s", "5"],
+			{},
+		);
+		expect(result.code).toBe(0);
+		const wrappers = [
+			...new Bun.Glob("**/bjob_*").scanSync(ws.dir),
+			...new Bun.Glob("**/srun_*").scanSync(ws.dir),
+		];
+		expect(wrappers).toHaveLength(0);
+	});
+});
+
+describe("launcher probe", () => {
+	test("a probe list falls back when the submit tool is absent, else picks it", async () => {
+		const savedPath = process.env.PATH;
+		const savedType = process.env.DTSIM_TASK_TYPE;
+		delete process.env.DTSIM_TASK_TYPE;
+		try {
+			const dir = mkdtempSync(join(tmpdir(), "dtsim-probe-"));
+			process.env.PATH = dir;
+			// No bsub/srun on this PATH: the list falls back to local.
+			expect(
+				(
+					await resolveLauncher([
+						LsfLauncher(),
+						SlurmLauncher(),
+						LocalLauncher(),
+					])
+				).name,
+			).toBe("local");
+			// A single launcher is an explicit choice, not probed.
+			expect((await resolveLauncher(LsfLauncher())).name).toBe("lsf");
+			// With bsub on PATH the list now picks lsf first.
+			writeFileSync(join(dir, "bsub"), "#!/bin/sh\n", { mode: 0o755 });
+			expect(
+				(await resolveLauncher([LsfLauncher(), LocalLauncher()])).name,
+			).toBe("lsf");
+		} finally {
+			process.env.PATH = savedPath;
+			if (savedType === undefined) delete process.env.DTSIM_TASK_TYPE;
+			else process.env.DTSIM_TASK_TYPE = savedType;
+		}
+	});
+
+	test("DTSIM_TASK_TYPE forces a launcher and skips the probe", async () => {
+		const saved = process.env.DTSIM_TASK_TYPE;
+		process.env.DTSIM_TASK_TYPE = "slurm";
+		try {
+			expect(
+				(await resolveLauncher([LsfLauncher(), LocalLauncher()])).name,
+			).toBe("slurm");
+		} finally {
+			if (saved === undefined) delete process.env.DTSIM_TASK_TYPE;
+			else process.env.DTSIM_TASK_TYPE = saved;
+		}
 	});
 });

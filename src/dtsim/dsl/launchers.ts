@@ -50,6 +50,8 @@ export function LsfLauncher(opts: ClusterOpts = {}): Launcher {
 		name: "lsf",
 		passthrough: ["LSF_*", "LSB_*"],
 		summary: clusterSummary(opts, args),
+		probe: ["bsub"],
+		scriptPrefix: "bjob",
 		wrap(argv, ctx) {
 			const queue = ctx.queue || opts.queue;
 			return [
@@ -73,6 +75,8 @@ export function SlurmLauncher(opts: ClusterOpts = {}): Launcher {
 		name: "slurm",
 		passthrough: ["SLURM_*"],
 		summary: clusterSummary(opts, args),
+		probe: ["srun"],
+		scriptPrefix: "srun",
 		wrap(argv, ctx) {
 			const queue = ctx.queue || opts.queue;
 			return [

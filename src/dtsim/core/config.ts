@@ -497,7 +497,7 @@ export async function loadWorkspace(opts: {
 	const deny = [...(o.env?.deny ?? [])];
 	// An unknown DTSIM_TASK_TYPE fails here, before any output dir exists.
 	const task: TaskSpec = {
-		launcher: resolveLauncher(o.task?.launcher ?? LocalLauncher()),
+		launcher: await resolveLauncher(o.task?.launcher ?? LocalLauncher()),
 		maxSlots: o.task?.maxSlots ?? 8,
 		maxCompiles: o.task?.maxCompiles ?? 4,
 	};

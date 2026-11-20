@@ -6,6 +6,8 @@
 
 - **表格填满终端宽度**:所有框线表格(单条用例的 Run / Summary、回归的 Regression / Summary、`results`、`groups`、`env`)像 `cmd` 分割线一样按当前终端宽度排版——窄了把空余宽度加给最宽的列、整表填满终端宽;宽了最宽的列自动折行使整表不超宽(列不窄于表头)。非终端(管道/文件)保持内容自然宽度(100 列封顶、不补空格)。此前固定 100/120 列,窄终端会被软换行而错位、宽终端又填不满。单步日志行(`▶ start <phase> <log>`)仍是普通一行,长路径由终端换行。
 - **日志路径改为纯文本整行**:回归里每个 compile / sim 完成后的行,日志路径和大小直接接在 `<状态> <耗时> <名字>` 同一行末尾(`OK 00:01 compile sd_sha256  <path> (147.1 KiB)`),不再用 `└─` 另起一行;长路径交给终端换行,与单步日志行 `▶ start <phase> <log>` 一致。
+- **作业后端探测与顺序 fallback**:`task.launcher` 可以给一个列表,dtsim 并发探测每个 launcher 的提交工具是否在 PATH 上(LSF→`bsub`、Slurm→`srun`、local 永远可用),按列表顺序选中第一个有效的(`[LsfLauncher(), SlurmLauncher(), LocalLauncher()]`)。单个 launcher 仍是显式选择、不探测;`DTSIM_TASK_TYPE` 可强制某一个并跳过探测。并发探测避免慢文件系统上逐个串行拖慢启动。
+- **作业后端生成提交备份脚本**:选中的 cluster launcher 在 `run_sim` / `run_compile` / VCS `run_verdi` 旁各写一份提交脚本(LSF `bjob_*`、Slurm `srun_*`,内容 `<bsub|srun> … bash <run 脚本>`)供手动重投;dtsim 仍内联提交、不执行这些备份,local 不生成(bypass)。`defineLauncher` 新增可选 `probe`(需在 PATH 上的可执行文件)和 `scriptPrefix`(备份脚本前缀)。
 
 ## [2.8.6] - 2026-11-19
 

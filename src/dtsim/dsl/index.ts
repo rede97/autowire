@@ -130,6 +130,15 @@ export type TaskSpec = {
 	maxCompiles: number;
 };
 
+/** `Workspace({ task })` options. `launcher` is one launcher or a probe list
+ *  tried left to right: the first whose `probe` executables are all on PATH
+ *  wins (local, with no probe, always matches). Probes run concurrently. */
+export type TaskOpts = {
+	launcher?: Launcher | readonly Launcher[];
+	maxSlots?: number;
+	maxCompiles?: number;
+};
+
 /** What hooks and graders see for one case directory. */
 export type CaseContext = {
 	caseId: string;
@@ -236,7 +245,7 @@ export type WorkspaceOpts = {
 	grader?: Grader;
 	bareDefaults?: CaseOpts;
 	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
-	task?: Partial<TaskSpec>;
+	task?: TaskOpts;
 	hooks?: Hooks;
 	groups?: readonly GroupDef[];
 	cases?: readonly string[];
@@ -293,6 +302,9 @@ export type ToolContext = {
 	/** Same placeholders plus shell variables (${HOME}), then absolute against
 	 *  dt/config; unknown names throw. For paths a backend reads or writes. */
 	resolvePath: (text: string) => string;
+	/** Write a cluster submit wrapper (bjob_ / srun_ prefix) next to a run script a
+	 *  backend generated, e.g. submitScript("run_verdi"); no-op on local. */
+	submitScript: (scriptName: string) => void;
 };
 
 /** The merged case options a compile key is computed from (placeholders intact). */
@@ -365,6 +377,13 @@ export type Launcher = {
 	wrap: (argv: readonly string[], ctx: LaunchContext) => string[];
 	/** One line for the regression header, e.g. "queue normal, -R rusage[...]". */
 	summary?: string;
+	/** Executables that must all be on PATH for this launcher to count as
+	 *  available when `task.launcher` is a probe list. Empty/absent = always
+	 *  available (local). */
+	probe?: readonly string[];
+	/** Prefix for the backup submit scripts dtsim writes next to run_sim /
+	 *  run_verdi / run_compile (`bjob`, `srun`). Absent = none (local). */
+	scriptPrefix?: string;
 };
 
 // --- constructors ------------------------------------------------------------
@@ -606,6 +625,23 @@ export function defineLauncher(spec: Omit<Launcher, "kind">): Launcher {
 	if (!Array.isArray(spec.passthrough)) {
 		throw new Error(`dtsim: launcher ${spec.name} needs a passthrough array`);
 	}
+	if (
+		spec.probe !== undefined &&
+		(!Array.isArray(spec.probe) ||
+			spec.probe.some((p) => typeof p !== "string"))
+	) {
+		throw new Error(
+			`dtsim: launcher ${spec.name} probe must be a string array`,
+		);
+	}
+	if (
+		spec.scriptPrefix !== undefined &&
+		typeof spec.scriptPrefix !== "string"
+	) {
+		throw new Error(
+			`dtsim: launcher ${spec.name} scriptPrefix must be a string`,
+		);
+	}
 	return { ...spec, kind: "dtsim-launcher" };
 }
 
@@ -646,7 +682,9 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 	}
 	needList("Workspace filelists", opts.filelists);
 	if (opts.task?.launcher !== undefined) {
-		needLauncher("task.launcher", opts.task.launcher);
+		const ls = opts.task.launcher;
+		for (const l of Array.isArray(ls) ? ls : [ls])
+			needLauncher("task.launcher", l);
 	}
 	if (opts.grader !== undefined) needGrader("workspace grader", opts.grader);
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);

@@ -11,6 +11,7 @@ import {
 	readSync,
 	statSync,
 } from "node:fs";
+import { stat } from "node:fs/promises";
 import { delimiter, extname, isAbsolute, resolve } from "node:path";
 
 const WIN_EXE = [".exe", ".com", ".cmd", ".bat"];
@@ -34,6 +35,31 @@ function winLookup(
 		}
 	}
 	return undefined;
+}
+
+/** Is `name` an executable on PATH? Probes every PATH candidate (and Windows
+ *  extensions) concurrently, so launcher detection does not serialise stat
+ *  latency on a slow or networked filesystem. A path with a separator is
+ *  checked as-is (against the cwd when relative). */
+export async function onPath(name: string): Promise<boolean> {
+	const env = process.env as Record<string, string>;
+	const exts = extname(name) ? [""] : [...WIN_EXE, ""];
+	const dirs =
+		name.includes("/") || name.includes("\\")
+			? [isAbsolute(name) ? "" : process.cwd()]
+			: (env.PATH ?? env.Path ?? "").split(delimiter).filter(Boolean);
+	const candidates = dirs.flatMap((dir) =>
+		exts.map((ext) => (dir ? resolve(dir, name + ext) : name + ext)),
+	);
+	const hits = await Promise.all(
+		candidates.map((c) =>
+			stat(c).then(
+				(s) => s.isFile(),
+				() => false,
+			),
+		),
+	);
+	return hits.some(Boolean);
 }
 
 /**

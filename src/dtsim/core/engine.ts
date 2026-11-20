@@ -2,7 +2,7 @@
 // assembly, tool invocation, hooks, grading, and per-directory artifacts.
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { RUN_ENV } from "../dsl/env.ts";
 import type {
 	CaseContext,
@@ -28,6 +28,7 @@ import {
 	writeResultMarker,
 	writeRunCompile,
 	writeRunSim,
+	writeSubmitScript,
 } from "./scripts.ts";
 
 /** Steps of one case, reported to EngineOptions.monitor. */
@@ -160,6 +161,27 @@ export function toolContext(
 		interactive: opts.interactive,
 		expand: expandFor(ws, c.id, dir, seed),
 		resolvePath: (text) => resolvePath(text, varsFor(ws, c.id, dir, seed)),
+		submitScript: (scriptName) => {
+			const launcher = ws.task.launcher;
+			if (!launcher.scriptPrefix) return;
+			const argv = wrapCommand(
+				["bash", toolPath(resolve(dir, scriptName))],
+				launcher,
+				{
+					phase,
+					jobName: phase === "sim" ? `${c.id}_${seed}` : `compile_${c.base}`,
+					caseId: c.id,
+					...(seed === undefined ? {} : { seed }),
+					cwd: dir,
+					interactive: phase === "sim" ? opts.interactive : false,
+				},
+			);
+			writeSubmitScript(
+				dir,
+				`${launcher.scriptPrefix}_${scriptName.replace(/^run_/, "")}`,
+				argv,
+			);
+		},
 	};
 }
 
@@ -348,6 +370,7 @@ export async function executeCompile(
 		argv: prepared.argv,
 		submitted: argv,
 	});
+	ctx.submitScript("run_compile");
 	opts.monitor?.start("compile", { log: prepared.log, cmd: argv });
 	let code = await runProcess({
 		argv,
@@ -416,6 +439,7 @@ export async function executeSim(
 		exports: env.env,
 		argv: prepared.argv,
 	});
+	ctx.submitScript("run_sim");
 
 	const base: Omit<SeedResult, "status" | "code"> = {
 		caseId: c.id,

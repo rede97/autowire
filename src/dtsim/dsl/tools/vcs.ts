@@ -193,6 +193,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 				const script = join(ctx.dir, "run_verdi");
 				writeFileSync(script, verdiScript(ctx, top));
 				chmodSync(script, 0o755);
+				ctx.submitScript("run_verdi");
 			}
 		},
 
