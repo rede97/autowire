@@ -6,10 +6,13 @@ import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import chalk from "chalk";
-import { Command } from "commander";
+import { Command, Option } from "commander";
+import type { WorkspaceEnv } from "../dtsim/core/config.ts";
 import {
+	applyEnvOptions,
 	findCase,
 	loadWorkspace,
+	loadWorkspaceEnv,
 	mergeCase,
 	resolveGroup,
 } from "../dtsim/core/config.ts";
@@ -32,20 +35,18 @@ import type { CaseDef } from "../dtsim/dsl/index.ts";
 import { formatRelease } from "./version.ts";
 
 type CommonOpts = {
-	config?: string;
-	seed?: string;
-	seedFile?: string;
-	numSeeds?: number;
 	label?: string;
 	verbose: boolean;
 	plain: boolean;
 };
 
-const CONFIG_HELP =
-	"dtsim.config.ts path (default: dt/config/ upward from CWD)";
+type ConfigEnv = WorkspaceEnv;
 
-function load(opts: Partial<CommonOpts>, mode: "run" | "regr" = "run") {
-	return loadWorkspace({ config: opts.config, mode });
+const DESCRIPTION =
+	"Simulation runner: <project>/dt/ holds the testbench, [dtsim] config in autowire.toml selects the cases";
+
+function load(mode: "run" | "regr" = "run") {
+	return loadWorkspace({ mode });
 }
 
 function engineOpts(opts: CommonOpts, interactive: boolean) {
@@ -54,19 +55,25 @@ function engineOpts(opts: CommonOpts, interactive: boolean) {
 		interactive,
 		plain: opts.plain,
 		regression: false,
-		...(opts.seed === undefined ? {} : { seed: opts.seed }),
-		...(opts.seedFile === undefined ? {} : { seedFile: opts.seedFile }),
-		...(opts.numSeeds === undefined ? {} : { numSeeds: opts.numSeeds }),
 		...(opts.label === undefined ? {} : { label: opts.label }),
 	};
 }
 
-function addCommon(cmd: Command): Command {
-	return cmd
-		.option("--config <path>", CONFIG_HELP)
-		.option("-s, --seed <seed>", "explicit random seed")
-		.option("--seed-file <file>", "one seed per line")
-		.option("--num-seeds <n>", "generate N seeds", (v) => Number(v))
+function addConfigOptions(cmd: Command, env: ConfigEnv): Command {
+	const registered = env.vars.flatMap((v) => {
+		if (!v.flags) return [];
+		const option = new Option(v.flags, v.desc ?? `config option for ${v.name}`);
+		return [{ env: v, attribute: option.attributeName(), option }];
+	});
+	for (const { option } of registered) cmd.addOption(option);
+	cmd.hook("preAction", (_this, action) =>
+		applyEnvOptions(registered, action.opts()),
+	);
+	return cmd;
+}
+
+function addCommon(cmd: Command, env: ConfigEnv): Command {
+	return addConfigOptions(cmd, env)
 		.option("-d, --label <label>", "output label under dt/simout/")
 		.option(
 			"-v, --verbose",
@@ -77,9 +84,10 @@ function addCommon(cmd: Command): Command {
 }
 
 /** Attach the dtsim subcommands to `cmd` (autowire's `dtsim` or a bare program). */
-function addDtsimCommands(cmd: Command): Command {
+function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 	addCommon(
 		cmd.command("run <case>").description("compile and simulate one case"),
+		env,
 	)
 		.option("--compile-only", "compile only", false)
 		.option("--sim-only", "reuse an existing build", false)
@@ -93,7 +101,7 @@ function addDtsimCommands(cmd: Command): Command {
 					interactive: boolean;
 				},
 			) => {
-				const ws = await load(opts);
+				const ws = await load();
 				const controller = new AbortController();
 				process.once("SIGINT", () => controller.abort());
 				process.exitCode = await runSingle(ws, caseId, {
@@ -109,8 +117,9 @@ function addDtsimCommands(cmd: Command): Command {
 		cmd
 			.command("regr [group]")
 			.description("run a regression group or pattern (default: *)"),
+		env,
 	).action(async (group: string | undefined, opts: CommonOpts) => {
-		const ws = await load(opts, "regr");
+		const ws = await load("regr");
 		const controller = new AbortController();
 		process.once("SIGINT", () => controller.abort());
 		process.exitCode = await runRegression(ws, group ?? "*", {
@@ -122,10 +131,11 @@ function addDtsimCommands(cmd: Command): Command {
 
 	addCommon(
 		cmd.command("plan [group]").description("print the compile-group plan"),
+		env,
 	).action(async (group: string | undefined, opts: CommonOpts) => {
-		const ws = await load(opts);
+		const ws = await load();
 		const groups = planGroups(ws, group ?? "*", opts.label);
-		const seeds = await readSeeds(opts, ws.seeds);
+		const seeds = readSeeds(ws.seeds);
 		const text = planText(groups, (c) => seedsFor(c, seeds), {
 			tool: ws.tool.name,
 			ids: skippedCases(ws, group ?? "*"),
@@ -141,7 +151,6 @@ function addDtsimCommands(cmd: Command): Command {
 		.description(
 			"list testcases as trees (default 2 levels; a case limits to its subtree)",
 		)
-		.option("--config <path>", CONFIG_HELP)
 		.option("-L, --depth <n>", "levels to expand (root is 1; default 2)", (v) =>
 			Number(v),
 		)
@@ -150,7 +159,6 @@ function addDtsimCommands(cmd: Command): Command {
 			async (
 				caseId: string | undefined,
 				opts: {
-					config?: string;
 					depth?: number;
 					all?: boolean;
 				},
@@ -161,7 +169,7 @@ function addDtsimCommands(cmd: Command): Command {
 				) {
 					throw new Error("dtsim: --depth must be a positive integer");
 				}
-				const ws = await load(opts);
+				const ws = await load();
 				const limit = opts.all ? Number.POSITIVE_INFINITY : (opts.depth ?? 2);
 				let roots: CaseDef[];
 				if (caseId === undefined) {
@@ -201,9 +209,8 @@ function addDtsimCommands(cmd: Command): Command {
 	cmd
 		.command("groups")
 		.description("list regression groups")
-		.option("--config <path>", CONFIG_HELP)
-		.action(async (opts: { config?: string }) => {
-			const ws = await load(opts);
+		.action(async () => {
+			const ws = await load();
 			// Cases the selected tool runs; the rest are counted as skipped.
 			const rows = ["*", ...ws.groups.keys()].map((name) => {
 				const all = resolveGroup(ws, name).length;
@@ -223,17 +230,9 @@ function addDtsimCommands(cmd: Command): Command {
 		.requiredOption("--dir <dir>", "regression or case output directory")
 		.option("--recheck", "re-grade from sim.log", false)
 		.option("--csv", "machine-readable rows", false)
-		.option("--config <path>", CONFIG_HELP)
-		.action(
-			async (opts: {
-				dir: string;
-				recheck: boolean;
-				csv: boolean;
-				config?: string;
-			}) => {
-				process.exitCode = await resultsCommand(opts);
-			},
-		);
+		.action(async (opts: { dir: string; recheck: boolean; csv: boolean }) => {
+			process.exitCode = await resultsCommand(opts);
+		});
 
 	cmd
 		.command("env")
@@ -241,15 +240,9 @@ function addDtsimCommands(cmd: Command): Command {
 		.requiredOption("--case <id>", "case id")
 		.option("--phase <phase>", "compile or sim", "sim")
 		.option("--show-values", "print values, not just names", false)
-		.option("--config <path>", CONFIG_HELP)
 		.action(
-			async (opts: {
-				case: string;
-				phase: string;
-				showValues: boolean;
-				config?: string;
-			}) => {
-				const ws = await load(opts);
+			async (opts: { case: string; phase: string; showValues: boolean }) => {
+				const ws = await load();
 				printCaseEnv(
 					ws,
 					opts.case,
@@ -275,11 +268,17 @@ function addDtsimCommands(cmd: Command): Command {
 	return cmd;
 }
 
-const DESCRIPTION =
-	"Simulation runner: <project>/dt/ holds the testbench, dt/config/dtsim.config.ts the cases";
-
-export function registerDtsim(program: Command): void {
-	addDtsimCommands(program.command("dtsim").description(DESCRIPTION));
+export async function registerDtsim(program: Command): Promise<void> {
+	let env: ConfigEnv = { configPath: "", vars: [] };
+	try {
+		env = await loadWorkspaceEnv({});
+	} catch (error) {
+		// The top-level `autowire` command must still register outside a project;
+		// a dtsim command will report the missing config when it is invoked.
+		if (process.argv[2] === "dtsim" && !process.argv.includes("--help"))
+			throw error;
+	}
+	addDtsimCommands(program.command("dtsim").description(DESCRIPTION), env);
 }
 
 /** true when this process was started as `dtsim` (symlink or copy of autowire.js / autowire). */
@@ -307,10 +306,12 @@ export function invokedAsDtsim(): boolean {
 
 /** Multi-call entry: `dtsim <subcommand>` parses exactly like `autowire dtsim <subcommand>`. */
 export async function runDtsimMain(argv: readonly string[]): Promise<void> {
-	const program = addDtsimCommands(
-		new Command("dtsim").description(DESCRIPTION).version(formatRelease()),
-	);
 	try {
+		const env = await loadWorkspaceEnv({});
+		const program = addDtsimCommands(
+			new Command("dtsim").description(DESCRIPTION).version(formatRelease()),
+			env,
+		);
 		await program.parseAsync([...argv]);
 	} catch (error) {
 		console.error(error instanceof Error ? error.message : String(error));

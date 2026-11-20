@@ -1,6 +1,7 @@
 // Built-in VCS backend. Everything VCS-shaped (simv, +UVM_*, fsdb, urg,
 // verdi) lives here; the core engine never mentions these flags.
-// VcsTool({ ntbOpts, flags }); a case's toolOptions may override either.
+// VcsTool({ ntbOpts, flags }); a case's toolOptions may override flags and
+// ntbOpts, but never the workspace-wide top.
 // ntbOpts picks the -ntb_opts value (default "uvm", e.g. "uvm-1.2"; "" leaves
 // -ntb_opts out for a non-UVM bench). flags replaces DEFAULT_FLAGS (older VCS
 // releases reject some of them, e.g. O-2018.09 reads "-xlrm nettype_array"
@@ -19,8 +20,7 @@ export type VcsOpts = {
 	/** Waveform dump: `true`, or `{ depth, top }` to bound it. Off by default.
 	 *  Set per case via `toolOptions.wave`. */
 	wave?: WaveOpt;
-	/** -top (default: VCS finds the top); also the default wave scope and
-	 *  run_verdi's -top. */
+	/** -top (default: tb_top); also the default wave scope and run_verdi's -top. */
 	top?: string;
 	/** The compiler to run (default "vcs"), e.g. a wrapper or a full path. */
 	command?: string;
@@ -29,11 +29,11 @@ export type VcsOpts = {
 	casePlusarg?: string | false;
 };
 
-function topOf(opts: Record<string, unknown>): string | undefined {
+function topOf(opts: Record<string, unknown>): string {
 	if (opts.top !== undefined && typeof opts.top !== "string") {
 		throw new Error("dtsim: vcs top must be a module name");
 	}
-	return opts.top;
+	return (opts.top as string | undefined) ?? "tb_top";
 }
 
 const DEFAULT_FLAGS = [
@@ -134,10 +134,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 	command(opts);
 	casePlusarg(opts);
 	topOf(opts);
-	const merged = (caseOpts: Record<string, unknown>) => ({
-		...opts,
-		...caseOpts,
-	});
+	const top = topOf(opts);
 	return {
 		kind: "dtsim-tool",
 		name: "vcs",
@@ -169,15 +166,14 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 
 		// simv depends on the -ntb_opts library, the flag set and -top too.
 		compileKey(c, base) {
-			const o = merged(c.toolOptions);
-			return JSON.stringify([base, ntbOpts(o), compileFlags(o), topOf(o)]);
+			const o = { ...opts, ...c.toolOptions };
+			return JSON.stringify([base, ntbOpts(o), compileFlags(o)]);
 		},
 
 		writeAux(ctx) {
-			const o = merged(ctx.caseOpts.toolOptions);
+			const o = { ...opts, ...ctx.caseOpts.toolOptions };
 			const wave = waveSpec(o.wave);
 			const cov = covFromEnv();
-			const top = topOf(o);
 			if (ctx.phase === "compile") {
 				if (wave.enabled) {
 					writeFileSync(join(ctx.dir, "dump.tcl"), dumpTcl(wave, top));
@@ -203,9 +199,8 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		// and -F are VCS's own business. Every output goes to the compile dir.
 		compile(ctx) {
 			const cov = covFromEnv();
-			const o = merged(ctx.caseOpts.toolOptions);
+			const o = { ...opts, ...ctx.caseOpts.toolOptions };
 			const wave = waveSpec(o.wave);
-			const top = topOf(o);
 			// dtsim's UCLI fsdb dump (dump.tcl) needs debug access, unless the
 			// config already set a -debug_access level (e.g. via vcsBaseFlags).
 			const debugSet = [...compileFlags(o), ...ctx.caseOpts.compileArgs].some(
@@ -245,7 +240,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		},
 
 		simulate(ctx) {
-			const o = merged(ctx.caseOpts.toolOptions);
+			const o = { ...opts, ...ctx.caseOpts.toolOptions };
 			const wave = waveSpec(o.wave);
 			const cov = covFromEnv();
 			const uvm = ctx.caseOpts.uvm;

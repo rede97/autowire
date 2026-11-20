@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 
 // A Workspace factory computes the options from the mode: it enables the wave
@@ -25,7 +26,7 @@ const withFactory = CASES_TS.replace(
 describe("Workspace factory", () => {
 	test("run mode defaults wave on, so the VCS backend writes dump.tcl", async () => {
 		const ws = await makeWorkspace(withFactory);
-		const r = await runDtsim(ws, ["run", "test_hello_world", "-s", "1"], {});
+		const r = await runDtsim(ws, ["run", "test_hello_world"], {});
 		expect(r.code).toBe(0);
 		expect(
 			[...new Bun.Glob("**/dump.tcl").scanSync(ws.dir)].length,
@@ -51,5 +52,27 @@ describe("Workspace factory", () => {
 		const r = await runDtsim(ws, ["regr", "base", "--plain"], {});
 		expect(r.code).toBe(0);
 		expect(r.stdout).toContain("7 (compile 2)");
+	});
+	test("a registered wave option is parsed before the workspace factory", async () => {
+		const body = CASES_TS.replace(
+			"export default Workspace({",
+			`export default Workspace(
+	[{ name: "WAVE", flags: "--wave", set: (v) => (v ? "1" : undefined) }],
+	(mode) => ({`,
+		)
+			.replace(
+				"tools: [VcsTool()],",
+				'tools: [VcsTool({ wave: process.env.WAVE === "1" })],',
+			)
+			.replace(
+				"\tgroups: [base, cosim],\n});",
+				"\tgroups: [base, cosim],\n\t})\n);",
+			);
+		const ws = await makeWorkspace(body);
+		const on = await runDtsim(ws, ["run", "test_hello_world", "--wave"]);
+		expect(on.code).toBe(0);
+		expect(
+			await Bun.file(join(ws.out, "test_hello_world", "dump.tcl")).exists(),
+		).toBe(true);
 	});
 });

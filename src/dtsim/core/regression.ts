@@ -28,7 +28,7 @@ import {
 	writeDresultsScript,
 	writeResultMarker,
 } from "./scripts.ts";
-import { readSeeds, type SeedOptions, seedsFor, waveLabel } from "./single.ts";
+import { readSeeds, seedsFor, waveLabel } from "./single.ts";
 import { block, plain, status, type TreeNode, tree } from "./ui.ts";
 
 export type CompileGroup = {
@@ -160,8 +160,10 @@ export function planText(
 	return lines.join("\n");
 }
 
-export type RegressionOptions = EngineOptions &
-	SeedOptions & { label?: string; plain: boolean };
+export type RegressionOptions = EngineOptions & {
+	label?: string;
+	plain: boolean;
+};
 
 /** Header block: what a regression is about to run, and where. */
 function headerRows(
@@ -206,7 +208,7 @@ export async function runRegression(
 		);
 	}
 	const regDir = regressionDir(ws, opts.label);
-	const seeds = await readSeeds(opts, ws.seeds);
+	const seeds = readSeeds(ws.seeds);
 	const seedsOf = (c: MergedCase) => seedsFor(c, seeds);
 	const simCount = groups.reduce(
 		(n, g) => n + g.cases.reduce((m, c) => m + seedsOf(c).length, 0),

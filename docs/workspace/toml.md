@@ -77,6 +77,10 @@ SYNTHESIS = "1"
 
 [workspace.dump]
 # 产物目录三分（DE / DV / 插件）；相对工作区根。
+[dtsim]
+# dtsim 的 TypeScript 配置入口（相对 autowire.toml 所在目录解析）；
+# 默认 dt/config/dtsim.config.ts。dtsim 启动时先读这里，再注册配置声明的 CLI 选项。
+config = "dt/config/dtsim.config.ts"
 # 现状实现仍认单一 dir=（兼容）；迁移后以三分目录为准（见 §4.0）。
 connect_dir = "gen/connect"
 sim_dir     = "gen/sim"

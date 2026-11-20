@@ -32,6 +32,7 @@ describe("workspace", () => {
 		expect(cfg.dumpDir).toBe(join(dir, "rtl/gen/connect"));
 		expect(cfg.connectDir).toBe(join(dir, "rtl/gen/connect"));
 		expect(cfg.simDir).toBe(join(dir, "rtl/gen/sim"));
+		expect(cfg.dtsimConfig).toBe(join(dir, "dt/config/dtsim.config.ts"));
 		expect(cfg.pluginsDir).toBe(join(dir, "rtl/gen/plugins"));
 		expect(cfg.wishboneRegfileDir).toBe(
 			join(dir, "rtl/gen/plugins/wishbone/regfile"),
@@ -91,6 +92,14 @@ sim_dir = "gen/sim"
 		]);
 		expect(cfg.connectDir).toBe(join(dir, "gen/connect"));
 		expect(cfg.simDir).toBe(join(dir, "gen/sim"));
+	});
+
+	test("[dtsim] config resolves relative to autowire.toml", async () => {
+		const dir = tempWorkspace(`[dtsim]
+config = "verification/config.ts"
+`);
+		const cfg = await loadWorkspace(join(dir, "autowire.toml"));
+		expect(cfg.dtsimConfig).toBe(join(dir, "verification/config.ts"));
 	});
 
 	test("connect deps must not include sim ids", async () => {

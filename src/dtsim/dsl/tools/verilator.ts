@@ -1,7 +1,6 @@
 // Built-in Verilator backend. No UVM plusargs, no fsdb/urg: it compiles an
-// executable and runs it. VerilatorTool({ top, mdir, main, command }); a
-// case's toolOptions may override any of them. No `top`: Verilator picks the
-// design's single top itself. main=false builds a C++ harness (--cc --exe
+// executable and runs it. VerilatorTool({ top, mdir, main, command }); case
+// toolOptions may override mdir/main/command, not top. The default top is tb_top. main=false builds a C++ harness (--cc --exe
 // --build; the .cpp files and --timing come from compileArgs) instead of
 // --binary. The executable is <mdir>/V<top> (Vsim without a top).
 // $DTSIM_WAVE (read when the tool is constructed) compiles with --trace-fst
@@ -15,7 +14,7 @@ import type { SimTool, WaveOpt, WaveSpec } from "../index.ts";
 import { waveSpec } from "../index.ts";
 
 export type VerilatorOpts = {
-	/** --top-module (default: Verilator finds the single top). */
+	/** --top-module (default: tb_top). */
 	top?: string;
 	mdir?: string;
 	main?: boolean;
@@ -38,7 +37,7 @@ function verilatorOpts(opts: Record<string, unknown>): Resolved {
 		throw new Error("dtsim: verilator top must be a module name");
 	}
 	return {
-		...(opts.top === undefined ? {} : { top: opts.top }),
+		top: typeof opts.top === "string" ? opts.top : "tb_top",
 		mdir: typeof opts.mdir === "string" ? opts.mdir : "obj_dir",
 		main: opts.main !== false,
 		command,
@@ -70,9 +69,12 @@ bind ${top} dtsim_wave dtsim_wave_i();
 }
 
 export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
-	const resolved = (caseOpts: Record<string, unknown>) =>
-		verilatorOpts({ ...opts, ...caseOpts });
-	resolved({}); // a bad option fails at config load
+	const resolved = (caseOpts: Record<string, unknown>) => {
+		const o = { ...opts, ...caseOpts };
+		delete o.top;
+		return verilatorOpts(o);
+	};
+	const top = verilatorOpts(opts).top;
 	return {
 		kind: "dtsim-tool",
 		name: "verilator",
@@ -98,14 +100,14 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 
 		// The binary also depends on its top, -Mdir and --binary vs C++ harness.
 		compileKey(c, base) {
-			const { top, mdir, main } = resolved(c.toolOptions);
+			const { mdir, main } = resolved(c.toolOptions);
 			return JSON.stringify([base, top, mdir, main]);
 		},
 
 		writeAux(ctx) {
 			const wave = waveSpec({ ...opts, ...ctx.caseOpts.toolOptions }.wave);
 			if (ctx.phase !== "compile" || !wave.enabled) return;
-			const { top } = resolved(ctx.caseOpts.toolOptions);
+			const top = verilatorOpts(opts).top;
 			if (!top) {
 				throw new Error(
 					`dtsim: ${ctx.caseId}: --wave on Verilator binds a dump module into the top; set VerilatorTool({ top }) or toolOptions.top`,
@@ -118,7 +120,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 		// and -F are Verilator's own business. -Mdir is under the compile dir.
 		compile(ctx) {
 			const wave = waveSpec({ ...opts, ...ctx.caseOpts.toolOptions }.wave);
-			const { top, mdir, main, command } = resolved(ctx.caseOpts.toolOptions);
+			const { mdir, main, command } = resolved(ctx.caseOpts.toolOptions);
 			return {
 				argv: [
 					command,
@@ -147,7 +149,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 		},
 
 		simulate(ctx) {
-			const { top, mdir } = resolved(ctx.caseOpts.toolOptions);
+			const { mdir } = resolved(ctx.caseOpts.toolOptions);
 			return {
 				argv: [
 					join(ctx.compileDir, mdir, exeName(top)),

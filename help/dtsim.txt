@@ -3,8 +3,8 @@ dtsim — simulation runner (full reference: docs/dtsim/README.md)
 Entry
   autowire dtsim <cmd>       ln -s autowire.js dtsim (or out/autowire) → ./dtsim <cmd>
   dev: bun index.ts dtsim <cmd>
-  Config is found upward from the CWD: <project>/dt/config/dtsim.config.ts.
-  --config <file> picks another one.
+  Config is selected by [dtsim] config in autowire.toml, default
+  <project>/dt/config/dtsim.config.ts. No --config flag.
 
 Layout
   <project>/                 RTL design dir; filelists and ${workspace} resolve here
@@ -27,8 +27,10 @@ Commands
   groups                     regression groups
   env --case <id>            the environment a case would get (--phase, --show-values)
   results --dir <dir>        statuses under a dir (--recheck re-grades, --csv)
-  common flags: --config, -s <seed>, --seed-file, --num-seeds N,
-                -d <label>, -v (logs: above the live panel on a TTY), --plain
+  common flags: -d <label>, -v (logs: above the live panel on a TTY), --plain
+  The config is selected by [dtsim] config in autowire.toml (default
+  dt/config/dtsim.config.ts). Config EnvVarDoc.flags are registered as real
+  Commander options before parsing; seed knobs are config-owned.
 
 Tools, wave and coverage (config-owned)
   Tool selection: no --tool / $DTSIM_TOOL. Each tool has a probe (executables on
@@ -56,14 +58,16 @@ Agent workflow
 
 DSL (import from ./.dtsim/dsl/index.ts)
   Workspace(regEnv, opts | ((mode:"run"|"regr") => opts)); or Workspace({...}).
-            regEnv: registered env vars [{name, values?, default?, desc?}],
-            listed by `dtsim env`. The factory computes the opts from the mode:
-            read env, default DTSIM_WAVE, choose tools, set slots.
+            regEnv: registered env vars [{name, values?, default?, desc?, flags?, set?}],
+            listed by `dtsim env`; flags are Commander option specs registered
+            before parsing. `set(value)` maps the parsed value to the env var.
+            The factory computes the opts from the mode:
+            read env, default DTSIM_WAVE, choose tools, set slots and seeds.
   tools     [VcsTool({ top, ntbOpts, flags, command, casePlusarg })
             | VerilatorTool({ top, mdir, main, command })
             | defineTool({ name, passthrough, compile, simulate, ... }), ...];
-            top unset: the simulator finds it. casePlusarg (default "TEST")
-            sends +TEST=<case>; false sends none. Case toolOptions override.
+            top default: tb_top. casePlusarg (default "TEST")
+            sends +TEST=<case>; false sends none. Case toolOptions cannot override top.
   filelists dtsim never reads them: each is -f <abs path>, compiled with the
             project root as cwd (relative entries, nested -f, -F, $VAR are the
             simulator's); case filelists append to the workspace's.
@@ -118,5 +122,5 @@ Output
 Demos
   demo/dtsim/run.sh <args>          fake tools in demo/dtsim/dt/bin, LSF launcher
   demo/soc/dt/verilator/run.sh      Verilator (--regfile --sd --tb-mod --sv-reg; extra flags → dtsim run)
-  demo/soc/dt/vcs/run.sh [case]     VCS tb_soc smokes (DTSIM_TOOL=vcs dtsim run <case>)
+  demo/soc/dt/vcs/run.sh [case]     VCS tb_soc smokes (SIM_TOOL=vcs dtsim run <case>)
   demo/hbm/dt/vcs/run.sh [test...]  VCS + UVM-1.2 regression (VCS_GCC_DIR for an older g++)

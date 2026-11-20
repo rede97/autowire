@@ -41,7 +41,7 @@ directly from a shell.
 ```bash
 dtsim run test_hello_world            # compile + simulate one case
 dtsim run test_hello_world.cosim      # subcase: base + suffix overlay
-dtsim run test_bar_basic --num-seeds 5
+dtsim run test_bar_basic --random 5       # config-registered seed option
 dtsim run test_hello_world --compile-only
 dtsim run test_hello_world --sim-only -d nightly
 dtsim plan [group]                    # compile-group plan only
@@ -52,10 +52,12 @@ dtsim results --dir dt/simout/regression [--recheck] [--csv]
 dtsim env --case test_bar_basic.cosim [--phase compile] [--show-values]
 ```
 
-Useful flags: `-s <seed>`, `--seed-file <f>`, `--num-seeds <n>`, `-d <label>`
-(outputs under `dt/simout/<label>/`), `-v/--verbose` (stream logs),
-`--interactive` (UCLI terminal, single case only), `--plain` (no dashboard),
-`--config <path>` (another config file). 选仿真器、波形、覆盖率不再用 CLI flag,
+Useful flags: `-d <label>` (outputs under `dt/simout/<label>/`),
+`-v/--verbose` (stream logs), `--interactive` (UCLI terminal, single case
+only), `--plain` (no dashboard). The TypeScript config path comes from
+`[dtsim] config` in `autowire.toml` (default `dt/config/dtsim.config.ts`).
+dtsim has no built-in seed flags: configs register their own options with
+`EnvVarDoc.flags` and construct `WorkspaceOpts.seeds`. 选仿真器、波形、覆盖率不再用 CLI flag,
 由 config 决定（见 [多仿真器](#多仿真器)、[运行开关](#运行开关环境变量)）。
 
 ### Output
@@ -147,9 +149,11 @@ dtsim` 或编译版 `autowire dtsim`）执行 `results --dir <该目录>`，参�
 
 ## Configuration
 
-Default config: `<project>/dt/config/dtsim.config.ts`, searched upward from the
-CWD (stops at a `.git` directory). `--config` selects another file; the project
-is always the parent of the config file's `dt/` directory. User configs are
+Default config: `dt/config/dtsim.config.ts`, selected by `[dtsim] config` in
+`autowire.toml` (searched upward from CWD). The project is the parent of the
+config file's `dt/` directory. dtsim reads this registry before parsing its
+commands, so `EnvVarDoc.flags` become real Commander options; `--config` and
+built-in seed flags are not provided. User configs are
 loaded at runtime; the DSL (`index.ts` plus the built-in tools and launchers
 it re-exports) is written to `dt/config/.dtsim/dsl/` on every run and config
 files import `.dtsim/dsl/index.ts`. Inside this repository the demo configs
@@ -346,7 +350,7 @@ compileArgs: [...verilatorBaseFlags({ timing: true, jobs: 8 }), "-Wno-WIDTHEXPAN
 `tools: [VerilatorTool(), VcsTool(...)]` 配几个后端。每个后端有 `probe`（需在 PATH 上的
 可执行文件，VCS→`vcs`、Verilator→`verilator`），dtsim 并发探测、按 `tools` 顺序自动选中
 第一个可用的（没有 `--tool` / `$DTSIM_TOOL`）。要强制某个后端，在 config 工厂回调里调整
-`tools` 顺序或过滤（例如按 `DTSIM_TOOL` 环境变量把某个提到最前）。
+`tools` 顺序或过滤（例如按 `SIM_TOOL` 环境变量把某个提到最前）。
 
 - **Case `tools: ["verilator"]`**：该用例只能跑在这些仿真器上（派生用例继承，
   `bareDefaults.tools` 是裸顶层用例的缺省）。`run` / `env` 选了不支持的仿真器直接报错；
@@ -636,7 +640,7 @@ the child, and `run_sim` exports `PATH` in MSYS form.
 | Demo | Config | Wrapper | Tools |
 |---|---|---|---|
 | `demo/dtsim` | `dt/config/dtsim.config.ts` (VCS + LSF, cases, groups, waive, hooks for every stage in `hooks.ts`) | `demo/dtsim/run.sh <dtsim args>` | fake `vcs` / `simv` / `urg` / `verdi` / `verilator` / `bsub` / `srun` in `dt/bin/` |
-| `demo/soc` | `dt/config/dtsim.config.ts`, `tools: [VerilatorTool(), VcsTool(...)]`: `basic_smoke`, `regfile_smoke` on both (`byTool`), `sd_sha256`, `tb_mod`, `sv_reg_smoke` Verilator-only (`tools`); groups `smoke`, `sd` | `dt/verilator/run.sh [--regfile\|--sd\|--tb-mod\|--sv-reg]`, `dt/vcs/run.sh [case]` (`DTSIM_TOOL=vcs`) | Verilator 5 + RISC-V GCC; VCS |
+| `demo/soc` | `dt/config/dtsim.config.ts`, `tools: [VerilatorTool(), VcsTool(...)]`: `basic_smoke`, `regfile_smoke` on both (`byTool`), `sd_sha256`, `tb_mod`, `sv_reg_smoke` Verilator-only (`tools`); groups `smoke`, `sd` | `dt/verilator/run.sh [--regfile\|--sd\|--tb-mod\|--sv-reg]`, `dt/vcs/run.sh [case]` (`SIM_TOOL=vcs`) | Verilator 5 + RISC-V GCC; VCS |
 | `demo/hbm` | `dt/config/dtsim.config.ts` (VCS + UVM-1.2, six `hbm_*_test` cases, graded by the default grader's UVM report check) | `dt/vcs/run.sh [test ...]` | VCS |
 
 Both VCS configs pass `VcsTool({ flags })` with the flags of the old `run.sh`

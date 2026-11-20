@@ -190,8 +190,8 @@ describe("single case", () => {
 	});
 	test("workspace seeds drive a run when no -s is given", async () => {
 		const body = CASES_TS.replace(
-			"task: { maxSlots: 4, maxCompiles: 2 },",
-			'task: { maxSlots: 4, maxCompiles: 2 },\n\tseeds: ["0", "1"],',
+			"\tgrader,\n\tgroups: [base, cosim],",
+			'\tseeds: ["0", "1"],\n\tgrader,\n\tgroups: [base, cosim],',
 		);
 		const ws = await makeWorkspace(body);
 		const run = await runDtsim(ws, ["run", "test_bar_basic"]);
@@ -239,7 +239,7 @@ describe("single case", () => {
 		expect(r.code).toBe(0);
 		const onDir = join(on.out, "test_hello_world");
 		const tcl = await Bun.file(join(onDir, "dump.tcl")).text();
-		expect(tcl).toContain('fsdbDumpvars 2 "+all"');
+		expect(tcl).toContain('fsdbDumpvars 2 tb_top "+all"');
 		expect(await Bun.file(join(onDir, "8", "sim.log")).text()).toContain(
 			"-ucli -i",
 		);
@@ -344,7 +344,7 @@ describe("vcs options", () => {
 });
 
 describe("verilator backend", () => {
-	test("no top: Verilator finds it and the binary is Vsim", async () => {
+	test("default top is tb_top", async () => {
 		const body = CASES_TS.replace(
 			"tools: [VcsTool()],",
 			"tools: [VerilatorTool()],",
@@ -356,13 +356,13 @@ describe("verilator backend", () => {
 		const run = await runDtsim(ws, ["run", "test_hello_world", "-s", "2"]);
 		expect(run.code).toBe(0);
 		const dir = join(ws.out, "test_hello_world");
-		expect(await Bun.file(join(dir, "obj_dir", "Vsim")).exists()).toBe(true);
-		expect(await Bun.file(join(dir, "run_compile")).text()).not.toContain(
-			"--top-module",
+		expect(await Bun.file(join(dir, "obj_dir", "Vtb_top")).exists()).toBe(true);
+		expect(await Bun.file(join(dir, "run_compile")).text()).toContain(
+			"'--top-module' 'tb_top'",
 		);
 	});
 
-	test("wave without a top fails: the dump module needs a bind target", async () => {
+	test("wave uses the default tb_top bind target", async () => {
 		const body = CASES_TS.replace(
 			"tools: [VcsTool()],",
 			"tools: [VerilatorTool({ wave: true })],",
@@ -372,8 +372,10 @@ describe("verilator backend", () => {
 		);
 		const ws = await makeWorkspace(body);
 		const wave = await runDtsim(ws, ["run", "test_hello_world"]);
-		expect(wave.code).not.toBe(0);
-		expect(wave.stderr).toContain("set VerilatorTool({ top })");
+		expect(wave.code).toBe(0);
+		expect(
+			await Bun.file(join(ws.out, "test_hello_world", "dtsim_wave.sv")).text(),
+		).toContain("bind tb_top");
 	});
 
 	test("compile produces an executable, sim grades its stdout log", async () => {

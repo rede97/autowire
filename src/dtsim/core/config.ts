@@ -5,6 +5,10 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+	findWorkspace,
+	loadWorkspace as loadTomlWorkspace,
+} from "../../workspace.ts";
 import { DSL_FILES } from "../dsl/embedded.generated.ts";
 import {
 	type CaseDef,
@@ -12,6 +16,7 @@ import {
 	checkCaseOpts,
 	DefaultGrader,
 	type EnvValue,
+	type EnvVarDoc,
 	type Grader,
 	type GroupDef,
 	type GroupMember,
@@ -55,6 +60,50 @@ export type MergedCase = {
 };
 
 export type { ResolvedWorkspace } from "../dsl/index.ts";
+
+export type WorkspaceEnv = {
+	configPath: string;
+	vars: readonly EnvVarDoc[];
+};
+
+export type RegisteredEnvOption = {
+	env: EnvVarDoc;
+	attribute: string;
+};
+
+/** Apply values already parsed by Commander for registered config options. */
+export function applyEnvOptions(
+	options: readonly { env: EnvVarDoc; attribute: string }[],
+	values: Readonly<Record<string, unknown>>,
+): void {
+	for (const { env, attribute } of options) {
+		const value = values[attribute];
+		if (value === undefined) continue;
+		const raw: string | boolean =
+			typeof value === "boolean" ? value : String(value);
+		const out = env.set ? env.set(raw) : raw === true ? "1" : String(raw);
+		if (out !== undefined) process.env[env.name] = out;
+	}
+}
+
+/** Load only the config registry, without evaluating workspace options. */
+export async function loadWorkspaceEnv(opts: {
+	config?: string;
+	cwd?: string;
+}): Promise<WorkspaceEnv> {
+	const cwd = opts.cwd ?? process.cwd();
+	const configPath = opts.config
+		? resolve(cwd, opts.config)
+		: await findConfig(cwd);
+	const verify = dirname(configPath);
+	await ensureDsl(verify);
+	const configModule = await importModule(configPath);
+	const wsDef = configModule.default as WorkspaceDef | undefined;
+	if (!isWorkspace(wsDef)) {
+		throw new Error(`dtsim: ${configPath} must default-export Workspace(...)`);
+	}
+	return { configPath, vars: [...wsDef.env] };
+}
 
 export type ExpandVars = {
 	verify: string;
@@ -382,6 +431,8 @@ export async function ensureDsl(configDir: string): Promise<string> {
 export const CONFIG_REL = join("dt", "config", "dtsim.config.ts");
 
 async function findConfig(start: string): Promise<string> {
+	const tomlPath = findWorkspace(start);
+	if (tomlPath) return (await loadTomlWorkspace(tomlPath)).dtsimConfig;
 	let dir = resolve(start);
 	for (let i = 0; i < 16; i++) {
 		const candidate = join(dir, CONFIG_REL);
@@ -392,7 +443,7 @@ async function findConfig(start: string): Promise<string> {
 		dir = parent;
 	}
 	throw new Error(
-		`dtsim: no dt/config/dtsim.config.ts found upward from ${start} (use --config)`,
+		`dtsim: no config found from ${start}: set [dtsim] config in autowire.toml`,
 	);
 }
 
@@ -426,6 +477,7 @@ export async function loadWorkspace(opts: {
 	if (!isWorkspace(wsDef)) {
 		throw new Error(`dtsim: ${configPath} must default-export Workspace(...)`);
 	}
+	// Registered CLI options are parsed by Commander before this factory runs.
 	const o =
 		typeof wsDef.opts === "function"
 			? wsDef.opts(opts.mode ?? "run")

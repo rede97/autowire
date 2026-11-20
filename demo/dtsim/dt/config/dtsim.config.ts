@@ -30,6 +30,16 @@ export default Workspace(
 	// Environment knobs documented for users, shown by `dtsim env`.
 	[
 		{ name: "WAVE", values: "0|1", default: "run=1 regr=0", desc: "dump waveforms" },
+		{
+			name: "SEEDS",
+			flags: "--seeds <list>",
+			desc: "comma-separated explicit seeds",
+		},
+		{
+			name: "RANDOM",
+			flags: "--random <n>",
+			desc: "generate N random seeds",
+		},
 		{ name: "DTSIM_SLOTS", default: "8", desc: "max concurrent sims" },
 	],
 	(mode) => {
@@ -38,9 +48,16 @@ export default Workspace(
 		// at compile/sim time.
 		if (process.env.WAVE === undefined && process.env.DTSIM_WAVE === undefined)
 			process.env.DTSIM_WAVE = mode === "run" ? "1" : "0";
+		const seeds = process.env.SEEDS
+			? process.env.SEEDS.split(",").map((s) => s.trim()).filter(Boolean)
+			: process.env.RANDOM
+				? Array.from({ length: Number(process.env.RANDOM) }, () =>
+						String(Math.floor(Math.random() * 2 ** 31)),
+					)
+				: ["0"];
 		return {
-			// vcsBaseFlags() is the portable baseline; spread project flags after it.
 			tools: [VcsTool({ flags: vcsBaseFlags({ timescale: "1ns/1ps" }) })],
+			seeds,
 			filelists: ["file.lst"],
 			bareDefaults: {
 				compileArgs: ["+nospecify", "+notimingcheck"],

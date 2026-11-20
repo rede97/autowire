@@ -59,16 +59,11 @@ describe("regression", () => {
 		expect(bad.stderr).toContain("unknown group");
 	});
 
-	test("seed file: shared seeds, random=false still runs once", async () => {
+	test("workspace seeds: shared seeds, random=false still runs once", async () => {
 		const ws = await makeWorkspace();
-		const seedFile = join(ws.dir, "seeds.txt");
-		await Bun.write(seedFile, "111\n222\n");
-		const result = await runDtsim(ws, [
-			"regr",
-			"base",
-			"--seed-file",
-			seedFile,
-		]);
+		const result = await runDtsim(ws, ["regr", "base"], {
+			DTSIM_TEST_SEEDS: "111,222",
+		});
 		expect(result.code).toBe(0);
 		const regDir = join(ws.out, "regression");
 		expect((await seedDirs(join(regDir, "test_hello_world"))).length).toBe(1);

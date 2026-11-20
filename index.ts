@@ -61,7 +61,7 @@ if (invokedAsDtsim()) {
 	registerPlugin(program);
 	registerDocs(program);
 	registerUpdate(program);
-	registerDtsim(program);
+	await registerDtsim(program);
 
 	if (process.argv.slice(2).length === 0) {
 		// Command index first, then who/what/where (version + project link).

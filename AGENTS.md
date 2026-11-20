@@ -66,7 +66,7 @@ Generated and MUST NOT be hand-edited: `out/web/aw.js`, `out/web/page.js` (`bun 
 - The page and its GET APIs MUST NOT write the workspace. Saving is a browser download or the driver storing `#aw-generated`.
 - Do not implement parked work: the installer and the production-browser (obscura) .mcp.json switch, HTML node-edit MCP, plugin type B, extra Wishbone policies in `docs/plugins/wishbone-bus.md` section 8, or a second `autowire.toml`. Dev and CI stay on Playwright Chromium. The two autowire artifacts in section 1.1 are already specified.
 
-hdxml is its own repo (`rede97/hdxml`, own `AGENTS.md`); this repo only pins `hdxml-version.txt`. Demo smoke details: [`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md). Run these from `demo/soc` after `plugin wishbone run` when the Wishbone SoT changed. The scripts are thin wrappers over `dtsim` (one `dt/config/dtsim.config.ts` with Verilator first and VCS second; `dt/vcs/run.sh` sets `DTSIM_TOOL=vcs`); outputs land in `dt/simout/verilator/` and `dt/simout/vcs/`.
+hdxml is its own repo (`rede97/hdxml`, own `AGENTS.md`); this repo only pins `hdxml-version.txt`. Demo smoke details: [`docs/skills/autowire-soc-integration.md`](docs/skills/autowire-soc-integration.md). Run these from `demo/soc` after `plugin wishbone run` when the Wishbone SoT changed. The scripts are thin wrappers over `dtsim` (one `dt/config/dtsim.config.ts` with Verilator first and VCS second; `dt/vcs/run.sh` sets `SIM_TOOL=vcs`); outputs land in `dt/simout/verilator/` and `dt/simout/vcs/`.
 
 Verilator (`dt/verilator/run.sh`; `verilator` on PATH; `--timing` needs a C++ compiler with `-fcoroutines`, GCC 10+):
 

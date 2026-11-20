@@ -40,7 +40,8 @@ export type CaseOpts = {
 	env?: Record<string, EnvValue>;
 	uvm?: UvmCfg;
 	/** Per-case options the tool reads on top of its factory options
-	 *  (e.g. VerilatorTool `top`, VcsTool `flags`); objects merge per key.
+	 *  (e.g. VerilatorTool `main`, VcsTool `flags`); objects merge per key.
+	 *  Top-level module selection belongs to the workspace tool, not a case.
 	 *  With several tools, put them under `byTool.<tool>`. */
 	toolOptions?: Record<string, unknown>;
 	/** Filelists (paths relative to dt/config), appended to the workspace's
@@ -289,6 +290,13 @@ export type EnvVarDoc = {
 	default?: string;
 	/** One-line description. */
 	desc?: string;
+	/** Optional CLI option spec, e.g. "-v, --wave" (a switch) or "--jobs <n>"
+	 *  (a value option). When the flag is passed, dtsim sets the variable. */
+	flags?: string;
+	/** Map the CLI value to the env value: a switch passes `true`, a value
+	 *  option passes the string. Return undefined to leave it unset. Without
+	 *  `set`, a switch sets "1" and a value option sets the raw string. */
+	set?: (value: string | boolean) => string | undefined;
 };
 
 export type WorkspaceOpts = {
@@ -301,10 +309,9 @@ export type WorkspaceOpts = {
 	filelists?: readonly string[];
 	/** Output root (`${...}` allowed; relative to dt/config). Default "${workspace}/dt/simout". */
 	output?: string;
-	/** Seed set for this workspace, default `["0"]`. A run or regression uses
-	 *  it unless `-s` / `--seed-file` / `--num-seeds` overrides. A case with
-	 *  `random: false` uses only the first. Configs often build it from
-	 *  `SEEDS=0,1` (a list) or `RANDOM=N` (N random seeds). */
+	/** Seed set for this workspace, default `["0"]`. Configs build it from
+	 *  their own registered SEEDS / RANDOM options; dtsim has no seed flags.
+	 *  A case with `random: false` uses only the first. */
 	seeds?: readonly string[];
 	/** Default grader. Default `DefaultGrader()`. */
 	grader?: Grader;

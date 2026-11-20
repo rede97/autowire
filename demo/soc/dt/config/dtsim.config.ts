@@ -1,7 +1,7 @@
 // demo/soc smokes on two simulators. Run from demo/soc:
 //   bun ../../index.ts dtsim run basic_smoke             (Verilator, the default)
-//   DTSIM_TOOL=vcs bun ../../index.ts dtsim run basic_smoke  (or ./dt/vcs/run.sh)
-//   bun ../../index.ts dtsim regr smoke            (DTSIM_TOOL=vcs for the farm)
+//   SIM_TOOL=vcs bun ../../index.ts dtsim run basic_smoke  (or ./dt/vcs/run.sh)
+//   bun ../../index.ts dtsim regr smoke            (SIM_TOOL=vcs for the farm)
 // Filelists are relative to the project root (demo/soc); dtsim flattens them
 // into each compile dir. Outputs: dt/simout/<tool>/<case>/.
 // Verilator runs a C++ harness (tb_main.cpp), VCS the pure-SV aw-tb-mod

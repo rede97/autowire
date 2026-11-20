@@ -1,7 +1,7 @@
 // Single-case orchestration: compile once into dt/simout/<case>/, then run each
 // seed in its own subdirectory. Quiet by default; failures leave error.txt.
 import { existsSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
 import type { SimTool } from "../dsl/index.ts";
@@ -25,40 +25,9 @@ import { CaseMonitor } from "./monitor.ts";
 import { elapsedLine, fmtElapsed } from "./scripts.ts";
 import { block, status, table } from "./ui.ts";
 
-export type SeedOptions = {
-	seed?: string;
-	seedFile?: string;
-	numSeeds?: number;
-};
-
-export async function readSeeds(
-	opts: SeedOptions,
-	defaults?: readonly string[],
-): Promise<string[]> {
-	if (opts.seedFile !== undefined && opts.numSeeds !== undefined) {
-		throw new Error(
-			"dtsim: --seed-file and --num-seeds are mutually exclusive",
-		);
-	}
-	if (opts.seedFile !== undefined) {
-		const text = await readFile(opts.seedFile, "utf8");
-		const seeds = text
-			.split("\n")
-			.map((l) => l.trim())
-			.filter((l) => l.length > 0);
-		if (seeds.length === 0) throw new Error("dtsim: empty seed file");
-		return seeds;
-	}
-	if (opts.numSeeds !== undefined) {
-		if (!Number.isInteger(opts.numSeeds) || opts.numSeeds < 1) {
-			throw new Error("dtsim: --num-seeds must be a positive integer");
-		}
-		return Array.from({ length: opts.numSeeds }, () => randomSeed());
-	}
-	// No CLI override: the workspace's seed set (default ["0"]).
-	return opts.seed !== undefined
-		? [opts.seed]
-		: [...(defaults ?? [randomSeed()])];
+export function readSeeds(defaults: readonly string[]): string[] {
+	if (defaults.length === 0) throw new Error("dtsim: no seeds");
+	return [...defaults];
 }
 
 export function randomSeed(): string {
@@ -86,14 +55,13 @@ function printBlock(
 	console.log(block(title, rows));
 }
 
-export type SingleOptions = EngineOptions &
-	SeedOptions & {
-		label?: string;
-		compileOnly: boolean;
-		simOnly: boolean;
-		/** No live panel: one line per step (also when stderr is no TTY). */
-		plain: boolean;
-	};
+export type SingleOptions = EngineOptions & {
+	label?: string;
+	compileOnly: boolean;
+	simOnly: boolean;
+	/** No live panel: one line per step (also when stderr is no TTY). */
+	plain: boolean;
+};
 
 export async function runSingle(
 	ws: ResolvedWorkspace,
@@ -109,7 +77,7 @@ export async function runSingle(
 	const c = mergeCase(ws, caseId);
 	assertConcrete(c);
 	assertRunsOn(c, ws.tool);
-	const seeds = seedsFor(c, await readSeeds(opts, ws.seeds));
+	const seeds = seedsFor(c, readSeeds(ws.seeds));
 	const compileDir = caseOutputDir(ws, c.id, opts.label);
 	const tool = ws.tool;
 	// -v on a TTY prints the running log above the live panel (the monitor
