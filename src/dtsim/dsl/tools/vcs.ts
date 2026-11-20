@@ -201,6 +201,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		// and -F are VCS's own business. Every output goes to the compile dir.
 		compile(ctx) {
 			const cov = covFromEnv();
+			const wave = waveFromEnv();
 			const o = merged(ctx.caseOpts.toolOptions);
 			const top = topOf(o);
 			const argv = [
@@ -216,6 +217,8 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 				join(ctx.dir, "vcs.log"),
 				...ctx.caseOpts.defines.map((d) => `+define+${d}`),
 				...ctx.caseOpts.compileArgs,
+				// dtsim's UCLI fsdb dump (dump.tcl) needs debug access.
+				...(wave.enabled ? ["-debug_access+all"] : []),
 				...(cov.enabled
 					? ["-cm", cov.metrics, "-cm_dir", join(ctx.dir, "simv.vdb")]
 					: []),

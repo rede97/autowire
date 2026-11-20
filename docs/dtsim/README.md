@@ -176,12 +176,14 @@ symlinks need extra privileges and Bun does not follow MSYS ones.
 - `output` moves the output root (default `<project>/dt/simout`), e.g.
   `output: "${workspace}/temp/output"` or `"${SCRATCH}/dtsim"`.
 - `uvm` is only interpreted by the VCS backend; other backends ignore it.
-- `onResolve(ctx)` runs once after the tool and launcher are chosen
-  (`ctx = { mode: "run" | "regr", tool, launcher }`), before any compile or
-  sim. It may read and modify `process.env` (e.g. default `DTSIM_WAVE` from the
-  mode — dump for a single `run`, not for a `regr`) and return
-  `{ maxSlots, maxCompiles }` to override `task`. `--wave` already set
-  `DTSIM_WAVE`, so check it before defaulting if you want `--wave` to win.
+- `onResolve(ctx)` runs once after the tool and launcher are chosen, before any
+  compile or sim. It patches `ctx` in place — there is no return value — and may
+  read and modify `process.env`:
+  `ctx` = `{ mode: "run" | "regr", tool, launcher, workspace, verify, task }`,
+  where `task` (`{ maxSlots, maxCompiles }`) is mutable. Typical use: default
+  `DTSIM_WAVE` from `ctx.mode` (dump a single `run`, not a `regr`) and set
+  `ctx.task.maxSlots`. `--wave` already set `DTSIM_WAVE`, so check it first if
+  you want `--wave` to win.
 
 ### Case trees
 
@@ -330,10 +332,10 @@ VcsTool({ flags: [...vcsBaseFlags({ timescale: "1ns/1ps", jobs: 8 }), "+notiming
 compileArgs: [...verilatorBaseFlags({ timing: true, jobs: 8 }), "-Wno-WIDTHEXPAND"]
 ```
 
-`vcsBaseFlags` → `-full64 -sverilog` plus `-timescale=`, `-j<jobs>`, and
-`-debug_access+all` only when `debugAccessOnWave` is set and `DTSIM_WAVE=1`.
+`vcsBaseFlags` → `-full64 -sverilog` plus `-timescale=` and `-j<jobs>`.
 `verilatorBaseFlags` → `--sv` plus `--timing`, `--timescale`, `-j <jobs>`.
-`--wave` needs no flag here — dtsim binds the dump itself.
+`--wave` needs no flag here — dtsim binds the dump itself (VCS also adds
+`-debug_access+all` at compile time when wave is on).
 
 ### 多仿真器
 

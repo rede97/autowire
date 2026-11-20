@@ -16,23 +16,6 @@ describe("base flags", () => {
 		]);
 	});
 
-	test("vcsBaseFlags: debugAccessOnWave is gated by DTSIM_WAVE", () => {
-		const saved = process.env.DTSIM_WAVE;
-		try {
-			process.env.DTSIM_WAVE = "1";
-			expect(vcsBaseFlags({ debugAccessOnWave: true })).toContain(
-				"-debug_access+all",
-			);
-			process.env.DTSIM_WAVE = "0";
-			expect(vcsBaseFlags({ debugAccessOnWave: true })).not.toContain(
-				"-debug_access+all",
-			);
-		} finally {
-			if (saved === undefined) delete process.env.DTSIM_WAVE;
-			else process.env.DTSIM_WAVE = saved;
-		}
-	});
-
 	test("verilatorBaseFlags: baseline plus options", () => {
 		expect(verilatorBaseFlags()).toEqual(["--sv"]);
 		expect(

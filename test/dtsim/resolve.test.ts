@@ -3,14 +3,14 @@ import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 
 // onResolve runs after the tool and launcher are resolved: it mutates
 // process.env (DTSIM_WAVE here, from the mode) which the VCS backend reads at
-// invocation (dump.tcl is written only when wave is on), and returns a slot
-// override that lands in the regression header.
+// invocation (dump.tcl is written only when wave is on), and patches
+// ctx.task.maxSlots, which lands in the regression header.
 const withOnResolve = CASES_TS.replace(
 	"task: { maxSlots: 4, maxCompiles: 2 },",
 	`task: { maxSlots: 4, maxCompiles: 2 },
-	onResolve: ({ mode }) => {
-		process.env.DTSIM_WAVE = mode === "run" ? "1" : "0";
-		return { maxSlots: mode === "regr" ? 7 : 3 };
+	onResolve: (ctx) => {
+		process.env.DTSIM_WAVE = ctx.mode === "run" ? "1" : "0";
+		ctx.task.maxSlots = ctx.mode === "regr" ? 7 : 3;
 	},`,
 );
 

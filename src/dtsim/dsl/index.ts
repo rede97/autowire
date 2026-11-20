@@ -238,7 +238,8 @@ export type Grader = {
 	) => GradeStatus | GradeOutcome | Promise<GradeStatus | GradeOutcome>;
 };
 
-/** Passed to `Workspace.onResolve` once the tool and launcher are chosen. */
+/** Passed to `Workspace.onResolve` once the tool and launcher are chosen. The
+ *  callback patches it in place (and `process.env`); there is no return. */
 export type ResolveContext = {
 	/** `run` for a single case, `regr` for a regression. */
 	mode: "run" | "regr";
@@ -246,10 +247,13 @@ export type ResolveContext = {
 	tool: string;
 	/** Resolved launcher name (after the probe list / DTSIM_TASK_TYPE). */
 	launcher: string;
+	/** Project root (the RTL design dir that owns dt/). */
+	workspace: string;
+	/** Config dir: <project>/dt/config. */
+	verify: string;
+	/** Slot limits, mutable: assign to override them. */
+	task: { maxSlots: number; maxCompiles: number };
 };
-
-/** What `onResolve` may return to override `task`. */
-export type ResolveResult = { maxSlots?: number; maxCompiles?: number };
 
 export type WorkspaceOpts = {
 	/** Simulator backends: VcsTool(...), VerilatorTool(...) or defineTool(...).
@@ -266,10 +270,9 @@ export type WorkspaceOpts = {
 	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
 	task?: TaskOpts;
 	/** Runs once after the tool and launcher are resolved, before any compile
-	 *  or sim. May read and modify `process.env` (e.g. default `DTSIM_WAVE`
-	 *  from `mode`) and return `{ maxSlots, maxCompiles }` to override `task`. */
-	// biome-ignore lint/suspicious/noConfusingVoidType: a hook that returns overrides or nothing
-	onResolve?: (ctx: ResolveContext) => void | ResolveResult;
+	 *  or sim. Patches `ctx` in place (e.g. `ctx.task.maxSlots`) and may read
+	 *  and modify `process.env` (e.g. default `DTSIM_WAVE` from `ctx.mode`). */
+	onResolve?: (ctx: ResolveContext) => void;
 	hooks?: Hooks;
 	groups?: readonly GroupDef[];
 	cases?: readonly string[];

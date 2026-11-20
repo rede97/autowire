@@ -77,9 +77,10 @@ DSL (import from ./.dtsim/dsl/index.ts)
             (probed concurrently). DTSIM_TASK_TYPE=local|lsf|slurm forces one;
             DTSIM_TASK_QUEUE sets the queue. Cluster launchers also write
             bjob_*/srun_* submit wrappers beside run_sim/run_compile/run_verdi.
-  onResolve ({ mode:"run"|"regr", tool, launcher }) => void|{maxSlots,maxCompiles};
-            runs after tool+launcher resolved, before any run. May set
-            process.env (e.g. default DTSIM_WAVE by mode) and override slots.
+  onResolve (ctx) => void; ctx = { mode:"run"|"regr", tool, launcher, workspace,
+            verify, task:{maxSlots,maxCompiles} }. Runs after tool+launcher
+            resolved, before any run. Patch ctx in place (ctx.task.maxSlots) and
+            process.env (e.g. default DTSIM_WAVE by mode). No return value.
   Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) → <id>.<suffix>;
             export top-level cases (alone or in an exported array / Set / Map).
             opts: defines, compileArgs, simArgs, env
