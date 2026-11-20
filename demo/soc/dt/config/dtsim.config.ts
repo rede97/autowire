@@ -128,6 +128,16 @@ export default Workspace(
 			byTool: {
 				verilator: {
 					compileArgs: verilatorBaseFlags({ jobs: 0, add: VL_WARN }),
+					// MSYS2 UCRT64 GCC 16.2 at Verilator's default -Os calls a
+					// std::string constructor libstdc++-6.dll does not export, so
+					// verilated.o fails to link; build the C++ at -O2 instead. Any
+					// MAKEFLAGS of the caller (-j ...) is kept.
+					env: {
+						MAKEFLAGS: {
+							value: `${process.env.MAKEFLAGS ?? ""} OPT_FAST=-O2 OPT_GLOBAL=-O2`.trim(),
+							scope: "compile",
+						},
+					},
 				},
 				// --no-as-needed: VCS O-2018.09 on binutils >= 2.34 drops its own
 				// shared libs.
@@ -138,8 +148,8 @@ export default Workspace(
 				},
 			},
 		},
-		// MAKE / MAKEFLAGS reach verilator --build and the firmware hook (e.g.
-		// MAKEFLAGS=OPT_FAST=-O2); CROSS picks the RISC-V toolchain prefix.
+		// MAKE / MAKEFLAGS reach the firmware hook; CROSS picks the RISC-V
+		// toolchain prefix.
 		env: { passthrough: ["MAKE", "MAKEFLAGS", "CROSS", "MSYSTEM"] },
 		task: { maxSlots: 4, maxCompiles: 2 },
 		hooks: { preCompile: applyIpPatch, preSim: buildFirmware },
