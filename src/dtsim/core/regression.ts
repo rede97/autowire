@@ -393,7 +393,7 @@ async function finishRegression(
 	const text = resultTree(results);
 	console.log(text);
 	await writeFile(join(regDir, "result.txt"), `${plain(text)}\n`);
-	const dresults = writeDresultsScript(regDir, ws.tool.name);
+	const dresults = writeDresultsScript(regDir);
 
 	const counts = new Map<string, number>();
 	for (const r of results) {

@@ -140,12 +140,12 @@ export default Workspace([], (mode) => {
 	],
 	};
 	// Tool selection is config-owned: sort the requested backend first so the
-	// auto-fallback picks it (default Verilator, DTSIM_TOOL=vcs for the farm).
-	if (process.env.DTSIM_TOOL) {
+	// auto-fallback picks it (default Verilator, SIM_TOOL=vcs for the farm).
+	if (process.env.SIM_TOOL) {
 		opts.tools.sort(
 			(a, b) =>
-				Number(b.name === process.env.DTSIM_TOOL) -
-				Number(a.name === process.env.DTSIM_TOOL),
+				Number(b.name === process.env.SIM_TOOL) -
+				Number(a.name === process.env.SIM_TOOL),
 		);
 	}
 	return opts;

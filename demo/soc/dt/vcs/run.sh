@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VCS SoC smoke (aw-tb-mod tb_soc top): thin wrapper over
-# `DTSIM_TOOL=vcs dtsim run <case>` (dt/config/dtsim.config.ts). Usage (from anywhere):
+# `SIM_TOOL=vcs dtsim run <case>` (dt/config/dtsim.config.ts). Usage (from anywhere):
 #   ./dt/vcs/run.sh                # basic_smoke: cascade MMIO + smoke CSR + JTAG
 #   ./dt/vcs/run.sh regfile_smoke  # wishbone-regfile MMIO smoke
 # sd_sha256 / tb_mod / sv_reg_smoke are Verilator-only (Case tools).
@@ -20,6 +20,6 @@ elif [[ -f ../../index.ts ]]; then
 else
 	CMD=(dtsim)
 fi
-# The config's factory puts vcs first when DTSIM_TOOL=vcs, so the farm runs VCS.
-export DTSIM_TOOL=vcs
+# The config's factory puts vcs first when SIM_TOOL=vcs, so the farm runs VCS.
+export SIM_TOOL=vcs
 exec "${CMD[@]}" run "$CASE" "$@"

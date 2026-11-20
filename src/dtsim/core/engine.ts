@@ -207,8 +207,7 @@ export function childEnv(
 			project_home: ws.root,
 			verify: ws.verify,
 			output_dir: dir,
-			DTSIM_TOOL: ws.tool.name,
-			// Run switches (--wave, --cov, ...) as the backend read them.
+			// Run switches as the backend read them.
 			...runSwitches(),
 			DTSIM_CASE: c.id,
 			DTSIM_PHASE: phase,
