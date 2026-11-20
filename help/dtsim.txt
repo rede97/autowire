@@ -27,24 +27,19 @@ Commands
   groups                     regression groups
   env --case <id>            the environment a case would get (--phase, --show-values)
   results --dir <dir>        statuses under a dir (--recheck re-grades, --csv)
-  common flags: --config, --tool <name>, -s <seed>, --seed-file, --num-seeds N,
-                -d <label>, -v (logs: above the live panel on a TTY), --plain,
-                --wave, --wave-depth, --wave-top, --cov, --cov-metrics,
-                --no-cov-merge (list / groups / env / results take --tool too)
+  common flags: --config, -s <seed>, --seed-file, --num-seeds N,
+                -d <label>, -v (logs: above the live panel on a TTY), --plain
 
-Tools and run switches
-  --tool picks a Workspace tool (default the first). Switches are env vars:
-  the CLI sets them before the config loads, backends read them when built
-  (waveFromEnv() / covFromEnv()), children and run_compile / run_sim get them.
-    --tool <name>       DTSIM_TOOL
-    --wave              DTSIM_WAVE=1 (default off)
-    --wave-depth <n>    DTSIM_WAVE_DEPTH (0 = every level)
-    --wave-top <scope>  DTSIM_WAVE_TOP (default: the tool's top)
-    --cov / --cov-metrics / --no-cov-merge   DTSIM_COV / _METRICS / _MERGE=0
-  VCS: --wave writes dump.tcl and runs simv -ucli -i dump.tcl → <seed>/verilog.fsdb
-  (no --wave: plain simv). Verilator: --trace-fst plus a bound dtsim_wave
-  module → <seed>/wave.fst (compiled in; needs top; a C++ harness calls
-  traceEverOn(true)). A TB that dumps itself: simArgs from $DTSIM_WAVE.
+Tools, wave and coverage (config-owned)
+  Tool selection: no --tool / $DTSIM_TOOL. Each tool has a probe (executables on
+  PATH: vcs, verilator); dtsim auto-fallbacks to the first available, in tools
+  order. A config factory can order/filter tools to force one.
+  Wave / coverage: no --wave / --cov flags. The config sets DTSIM_WAVE /
+  DTSIM_COV (and _DEPTH/_TOP/_METRICS/_MERGE) itself, typically in its factory;
+  backends read them at compile/sim time. VCS writes dump.tcl and runs simv
+  -ucli -i dump.tcl → <seed>/verilog.fsdb (and adds -debug_access+all unless
+  set). Verilator: --trace-fst plus a bound dtsim_wave module → <seed>/wave.fst
+  (needs top; a C++ harness calls traceEverOn(true)).
 
 Agent workflow
   1. dtsim list / dtsim groups / dtsim plan <group>: see what exists, no run.
@@ -60,8 +55,10 @@ Agent workflow
   via the grader, never the exit code).
 
 DSL (import from ./.dtsim/dsl/index.ts)
-  Workspace({ tools, filelists, output, grader, bareDefaults, env, task,
-              onResolve, hooks, groups, cases })
+  Workspace(regEnv, opts | ((mode:"run"|"regr") => opts)); or Workspace({...}).
+            regEnv: registered env vars [{name, values?, default?, desc?}],
+            listed by `dtsim env`. The factory computes the opts from the mode:
+            read env, default DTSIM_WAVE, choose tools, set slots.
   tools     [VcsTool({ top, ntbOpts, flags, command, casePlusarg })
             | VerilatorTool({ top, mdir, main, command })
             | defineTool({ name, passthrough, compile, simulate, ... }), ...];
@@ -77,10 +74,11 @@ DSL (import from ./.dtsim/dsl/index.ts)
             (probed concurrently). DTSIM_TASK_TYPE=local|lsf|slurm forces one;
             DTSIM_TASK_QUEUE sets the queue. Cluster launchers also write
             bjob_*/srun_* submit wrappers beside run_sim/run_compile/run_verdi.
-  onResolve (ctx) => void; ctx = { mode:"run"|"regr", tool, launcher, workspace,
-            verify, task:{maxSlots,maxCompiles} }. Runs after tool+launcher
-            resolved, before any run. Patch ctx in place (ctx.task.maxSlots) and
-            process.env (e.g. default DTSIM_WAVE by mode). No return value.
+  vcsBaseFlags({ timescale?, jobs?, debugaccess?, add? }) → [-full64, -sverilog,
+            ...] (SV and -full64 always on; debugaccess "all"|"pp"|"r"|"w"|"f"|
+            "drivers" optional). verilatorBaseFlags({ jobs?, timing?, timescale?,
+            add? }) → [--sv, ...]. Spread and extend for a tool's flags or a
+            case's compileArgs.
   Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) → <id>.<suffix>;
             export top-level cases (alone or in an exported array / Set / Map).
             opts: defines, compileArgs, simArgs, env
@@ -118,5 +116,5 @@ Output
 Demos
   demo/dtsim/run.sh <args>          fake tools in demo/dtsim/dt/bin, LSF launcher
   demo/soc/dt/verilator/run.sh      Verilator (--regfile --sd --tb-mod --sv-reg; extra flags → dtsim run)
-  demo/soc/dt/vcs/run.sh [case]     VCS tb_soc smokes (dtsim run <case> --tool vcs)
+  demo/soc/dt/vcs/run.sh [case]     VCS tb_soc smokes (DTSIM_TOOL=vcs dtsim run <case>)
   demo/hbm/dt/vcs/run.sh [test...]  VCS + UVM-1.2 regression (VCS_GCC_DIR for an older g++)

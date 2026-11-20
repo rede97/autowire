@@ -227,6 +227,30 @@ describe("vcs options", () => {
 		);
 	});
 
+	test("run_verdi runs in its own dir, exports the env, defaults -top", async () => {
+		const ws = await makeWorkspace(
+			CASES_TS.replace(
+				"tools: [VcsTool()],",
+				'tools: [VcsTool({ top: "tb_x" })],',
+			),
+		);
+		const run = await runDtsim(ws, ["run", "test_hello_world", "-s", "1"]);
+		expect(run.code).toBe(0);
+		const script = [
+			...new Bun.Glob("**/run_verdi").scanSync(
+				join(ws.out, "test_hello_world"),
+			),
+		][0] as string;
+		const text = await Bun.file(
+			join(ws.out, "test_hello_world", script),
+		).text();
+		expect(text).toContain('cd "$(dirname "$0")"');
+		expect(text).toContain("-top tb_x");
+		expect(text).toContain("export DTSIM_CASE=");
+		expect(text).toContain("-dbdir");
+		expect(text).toContain("simv.daidir");
+	});
+
 	test("casePlusarg renames or drops the case plusarg", async () => {
 		const renamed = await makeWorkspace(
 			CASES_TS.replace(

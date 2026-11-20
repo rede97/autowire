@@ -139,6 +139,7 @@ export function toolContext(
 	compileDir: string,
 	seed: string | undefined,
 	opts: EngineOptions,
+	env: Record<string, string>,
 ): ToolContext {
 	return {
 		phase,
@@ -159,6 +160,7 @@ export function toolContext(
 		filelists: caseFilelists(ws, c, compileDir),
 		regression: opts.regression,
 		interactive: opts.interactive,
+		env,
 		expand: expandFor(ws, c.id, dir, seed),
 		resolvePath: (text) => resolvePath(text, varsFor(ws, c.id, dir, seed)),
 		submitScript: (scriptName) => {
@@ -322,6 +324,7 @@ export async function executeCompile(
 	opts: EngineOptions,
 ): Promise<CompileOutcome> {
 	const tool = ws.tool;
+	const env = childEnv(ws, c, "compile", compileDir);
 	const ctx = toolContext(
 		ws,
 		c,
@@ -330,10 +333,10 @@ export async function executeCompile(
 		compileDir,
 		undefined,
 		opts,
+		env.env,
 	);
 	await mkdir(compileDir, { recursive: true });
 	tool.writeAux?.(ctx);
-	const env = childEnv(ws, c, "compile", compileDir);
 	if (opts.verbose) process.stderr.write(`${envStatsLine(env.stats)}\n`);
 	// Preparing argv is pure; it gives preCompile the compile log path.
 	const prepared = tool.compile(ctx);
@@ -426,13 +429,22 @@ export async function executeSim(
 	opts: EngineOptions,
 ): Promise<SeedResult> {
 	const tool = ws.tool;
-	const ctx = toolContext(ws, c, "sim", seedDir, compileDir, seed, opts);
+	const env = childEnv(ws, c, "sim", seedDir, seed);
+	const ctx = toolContext(
+		ws,
+		c,
+		"sim",
+		seedDir,
+		compileDir,
+		seed,
+		opts,
+		env.env,
+	);
 	await mkdir(seedDir, { recursive: true });
 	tool.writeAux?.(ctx);
 	writeGitRev(seedDir, ws.verify);
 
 	const prepared = tool.simulate(ctx);
-	const env = childEnv(ws, c, "sim", seedDir, seed);
 	const runSim = writeRunSim({
 		dir: seedDir,
 		seed,

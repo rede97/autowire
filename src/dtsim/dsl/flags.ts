@@ -1,31 +1,35 @@
 // Default simulator compile flags: a portable baseline a config extends instead
 // of re-listing. vcsBaseFlags() / verilatorBaseFlags() return arrays for a
-// tool's `flags` or a case's `compileArgs`. The structured options override the
-// defaults (`sv: false` drops SystemVerilog, etc.) and `add` appends project
-// flags, so one call does base-plus-overlay. dtsim's --wave owns every wave
-// flag (VCS binds dump.tcl and adds -debug_access+all at compile time,
-// Verilator binds its dump module and --trace-fst), so none belongs here.
+// tool's `flags` or a case's `compileArgs`. SystemVerilog is mandatory
+// (-sverilog / --sv) and VCS is always -full64; the structured options cover
+// timescale, jobs and debug access, and `add` appends project flags, so one
+// call does base-plus-overlay. dtsim's --wave owns the dump itself (VCS binds
+// dump.tcl and adds -debug_access+all at compile time, Verilator binds its
+// dump module and --trace-fst).
+
+/** VCS -debug_access level. */
+export type VcsDebugAccess = "all" | "pp" | "r" | "w" | "f" | "drivers";
 
 export type VcsBaseOpts = {
 	/** -timescale=<ts>, e.g. "1ns/1ps". */
 	timescale?: string;
 	/** -j<jobs> parallel compile. */
 	jobs?: number | string;
-	/** -sverilog (SystemVerilog); default true. */
-	sv?: boolean;
-	/** -full64; default true. */
-	full64?: boolean;
+	/** Optional -debug_access+<level> (e.g. "all"). dtsim's --wave adds
+	 *  -debug_access+all on its own, so this is for explicit control. */
+	debugaccess?: VcsDebugAccess;
 	/** Extra flags appended after the baseline. */
 	add?: readonly string[];
 };
 
-/** Portable VCS compile baseline: -full64 -sverilog, plus the options given. */
+/** VCS compile baseline: -full64 -sverilog (always), plus the options given. */
 export function vcsBaseFlags(opts: VcsBaseOpts = {}): string[] {
 	return [
-		...(opts.full64 === false ? [] : ["-full64"]),
-		...(opts.sv === false ? [] : ["-sverilog"]),
+		"-full64",
+		"-sverilog",
 		...(opts.timescale ? [`-timescale=${opts.timescale}`] : []),
 		...(opts.jobs === undefined ? [] : [`-j${opts.jobs}`]),
+		...(opts.debugaccess ? [`-debug_access+${opts.debugaccess}`] : []),
 		...(opts.add ?? []),
 	];
 }
@@ -33,8 +37,6 @@ export function vcsBaseFlags(opts: VcsBaseOpts = {}): string[] {
 export type VerilatorBaseOpts = {
 	/** -j <jobs> parallel verilation and build. */
 	jobs?: number | string;
-	/** --sv (SystemVerilog); default true. */
-	sv?: boolean;
 	/** --timing (event and delay control); default false. */
 	timing?: boolean;
 	/** --timescale <ts>, e.g. "1ns/1ps". */
@@ -43,10 +45,10 @@ export type VerilatorBaseOpts = {
 	add?: readonly string[];
 };
 
-/** Portable Verilator compile baseline: --sv, plus the options given. */
+/** Verilator compile baseline: --sv (always), plus the options given. */
 export function verilatorBaseFlags(opts: VerilatorBaseOpts = {}): string[] {
 	return [
-		...(opts.sv === false ? [] : ["--sv"]),
+		"--sv",
 		...(opts.timing ? ["--timing"] : []),
 		...(opts.timescale ? ["--timescale", opts.timescale] : []),
 		...(opts.jobs === undefined ? [] : ["-j", String(opts.jobs)]),

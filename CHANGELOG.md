@@ -12,7 +12,7 @@
 - **破坏性:工具选择交给 config + 自动 fallback**:删除 `--tool` 和 `$DTSIM_TOOL` 选择入口。每个 `SimTool` 新增 `probe`(需在 PATH 上的可执行文件,VCS→`vcs`、Verilator→`verilator`),dtsim 并发探测、按 `tools` 顺序自动选中第一个可用的;要强制某个 tool,config 在回调里调整 `tools` 顺序或过滤。
 - **破坏性:删除 `--wave` / `--cov` 等运行开关 flag**:CLI 不再注入 `DTSIM_WAVE` / `DTSIM_COV`。wave / coverage 完全由 config 决定(在回调里设置 `DTSIM_WAVE` 等),backend 在用时读取。`--wave-depth/--wave-top/--cov-metrics/--cov-merge` 一并移除。
 - **环境变量注册表**:`Workspace` 第一个参数登记 config 支持的环境变量(`{ name, values?, default?, desc? }`),`dtsim env` 末尾列出"Config environment variables"表,便于发现项目级旋钮(如 `WAVE`/`JOBS`/`DTSIM_SLOTS`)。
-- **DSL 默认 flags 构造器**:新增 `vcsBaseFlags(opts)` / `verilatorBaseFlags(opts)`,返回可移植的编译基线(VCS `-full64 -sverilog`、Verilator `--sv`),config 展开后再追加项目特有项,不必从头写一遍。选项覆盖默认(`sv:false` 去掉 SV)、`timescale`/`jobs` 即辅助参数、`add` 追加,一次调用完成"基线 + overlay"。`--wave` 本身无需 flag(dtsim 自绑 dump,VCS 后端在 wave 打开时编译期自动加 `-debug_access+all`)。
+- **DSL 默认 flags 构造器**:新增 `vcsBaseFlags(opts)` / `verilatorBaseFlags(opts)`,返回可移植的编译基线,config 展开后再追加项目特有项,不必从头写一遍。**SystemVerilog 强制**(`-sverilog` / `--sv`)、**VCS 强制 `-full64`**(均不可关);`timescale`/`jobs` 为辅助参数,`debugaccess` 为可选 string 枚举(`"all"|"pp"|"r"|"w"|"f"|"drivers"` → `-debug_access+<level>`),`add` 追加,一次调用完成"基线 + overlay"。`--wave` 无需 flag(dtsim 自绑 dump,VCS 在 wave 打开且未显式设置 debug access 时自动加 `-debug_access+all`)。
 
 ## [2.8.6] - 2026-11-19
 

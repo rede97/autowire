@@ -167,6 +167,7 @@ export async function runSingle(
 			compileDir,
 			undefined,
 			opts,
+			childEnv(ws, c, "compile", compileDir).env,
 		);
 		const exe = tool.compile(ctx).executable;
 		if (exe && !existsSync(exe)) {

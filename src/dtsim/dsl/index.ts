@@ -5,6 +5,7 @@
 export { covFromEnv, RUN_ENV, waveFromEnv } from "./env.ts";
 export {
 	type VcsBaseOpts,
+	type VcsDebugAccess,
 	type VerilatorBaseOpts,
 	vcsBaseFlags,
 	verilatorBaseFlags,
@@ -359,6 +360,9 @@ export type ToolContext = {
 	regression: boolean;
 	/** `run --interactive`: the terminal is attached to the simulator. */
 	interactive: boolean;
+	/** The resolved child environment (passthrough + case env + injected), so a
+	 *  backend can write it into a helper script (e.g. run_verdi). */
+	env: Record<string, string>;
 	/** Expand ${verify}/${workspace}/${output_dir}/... placeholders. */
 	expand: (text: string) => string;
 	/** Same placeholders plus shell variables (${HOME}), then absolute against
