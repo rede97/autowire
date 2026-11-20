@@ -39,4 +39,16 @@ describe("Workspace factory", () => {
 		// the factory's maxSlots (7) reaches the Regression header
 		expect(r.stdout).toContain("7 (compile 2)");
 	});
+
+	test("maxSlots as a callback is evaluated from the resolved launcher", async () => {
+		const body = CASES_TS.replace(
+			"task: { maxSlots: 4, maxCompiles: 2 },",
+			'task: { maxSlots: ({ launcher }) => (launcher === "local" ? 7 : 2), maxCompiles: 2 },',
+		);
+		const ws = await makeWorkspace(body);
+		// mockEnv forces DTSIM_TASK_TYPE=local, so the callback yields 7.
+		const r = await runDtsim(ws, ["regr", "base", "--plain"], {});
+		expect(r.code).toBe(0);
+		expect(r.stdout).toContain("7 (compile 2)");
+	});
 });

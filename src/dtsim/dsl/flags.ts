@@ -18,6 +18,8 @@ export type VcsBaseOpts = {
 	/** Optional -debug_access+<level> (e.g. "all"). dtsim's --wave adds
 	 *  -debug_access+all on its own, so this is for explicit control. */
 	debugaccess?: VcsDebugAccess;
+	/** -kdb: write simv.daidir for verdi (run_verdi loads it). Default true. */
+	kdb?: boolean;
 	/** Extra flags appended after the baseline. */
 	add?: readonly string[];
 };
@@ -27,6 +29,7 @@ export function vcsBaseFlags(opts: VcsBaseOpts = {}): string[] {
 	return [
 		"-full64",
 		"-sverilog",
+		...(opts.kdb === false ? [] : ["-kdb"]),
 		...(opts.timescale ? [`-timescale=${opts.timescale}`] : []),
 		...(opts.jobs === undefined ? [] : [`-j${opts.jobs}`]),
 		...(opts.debugaccess ? [`-debug_access+${opts.debugaccess}`] : []),

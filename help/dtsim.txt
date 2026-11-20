@@ -74,6 +74,8 @@ DSL (import from ./.dtsim/dsl/index.ts)
             (probed concurrently). DTSIM_TASK_TYPE=local|lsf|slurm forces one;
             DTSIM_TASK_QUEUE sets the queue. Cluster launchers also write
             bjob_*/srun_* submit wrappers beside run_sim/run_compile/run_verdi.
+            maxSlots/maxCompiles: a number, or (ctx:{tool,launcher})=>number,
+            evaluated after tool+launcher resolve (no manual probe needed).
   vcsBaseFlags({ timescale?, jobs?, debugaccess?, add? }) → [-full64, -sverilog,
             ...] (SV and -full64 always on; debugaccess "all"|"pp"|"r"|"w"|"f"|
             "drivers" optional). verilatorBaseFlags({ jobs?, timing?, timescale?,

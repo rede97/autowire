@@ -307,7 +307,7 @@ Built-in options (factory argument, or case `toolOptions`):
 | `VerilatorTool` | `command` | `verilator` | the compiler to run, e.g. `verilator_bin` or a full path |
 | `VcsTool` | `top` | none: VCS finds the top | `-top`; the default `--wave` scope and `run_verdi -t`'s `-top` |
 | `VcsTool` | `ntbOpts` | `uvm` | `-ntb_opts` value, e.g. `uvm-1.2`; `""` leaves `-ntb_opts` out |
-| `VcsTool` | `flags` | built-in list | replaces the built-in compile flags (`-xlrm nettype_array -lca -kdb ...`, written for a newer VCS); `-f`, `-Mdir`, `-o`, `-l`, defines and `compileArgs` still follow |
+| `VcsTool` | `flags` | built-in list | a string array (e.g. from `vcsBaseFlags(...)`). Replaces the built-in compile flags (`-xlrm nettype_array -lca -kdb ...`); `-f`, `-Mdir`, `-o`, `-l`, defines and `compileArgs` still follow |
 | `VcsTool` | `command` | `vcs` | the compiler to run, e.g. a wrapper or a full path; `process.env.VCS ?? "vcs"` reads an env var |
 | `VcsTool` | `casePlusarg` | `"TEST"` | `+<name>=<case id>` on every simv run; `false` sends none (the child always has `$DTSIM_CASE`) |
 
@@ -334,12 +334,12 @@ VcsTool({ flags: [...vcsBaseFlags({ timescale: "1ns/1ps", jobs: 8 }), "+notiming
 compileArgs: [...verilatorBaseFlags({ timing: true, jobs: 8 }), "-Wno-WIDTHEXPAND"]
 ```
 
-`vcsBaseFlags` → `-full64 -sverilog` plus `-timescale=`, `-j<jobs>`, and an
-optional `debugaccess: "all" | "pp" | "r" | "w" | "f" | "drivers"` →
-`-debug_access+<level>`. `verilatorBaseFlags` → `--sv` plus `--timing`,
-`--timescale`, `-j <jobs>`. `--wave` needs no flag here — dtsim binds the dump
-itself (and adds `-debug_access+all` at compile time when wave is on, unless
-the config already set a debug-access level).
+`vcsBaseFlags` → `-full64 -sverilog` plus `-kdb`（默认开，`kdb:false` 可关）、
+`-timescale=`、`-j<jobs>`、可选 `debugaccess: "all" | "pp" | "r" | "w" | "f" | "drivers"`
+→ `-debug_access+<level>`。`verilatorBaseFlags` → `--sv` plus `--timing`、`--timescale`、
+`-j <jobs>`。用展开把返回值传给 `VcsTool({ flags })` 或 case 的 `compileArgs`。
+`--wave` 无需 flag —— dtsim 自绑 dump（wave 打开且未显式设置 debug access 时加
+`-debug_access+all`）。
 
 ### 多仿真器
 

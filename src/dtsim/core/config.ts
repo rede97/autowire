@@ -490,8 +490,14 @@ export async function loadWorkspace(opts: {
 	);
 	const fallback = tools.find((_, i) => available[i]) ?? (tools[0] as SimTool);
 	const slots = {
-		maxSlots: o.task?.maxSlots ?? 8,
-		maxCompiles: o.task?.maxCompiles ?? 4,
+		maxSlots:
+			typeof o.task?.maxSlots === "function"
+				? o.task.maxSlots({ tool: fallback.name, launcher: launcher.name })
+				: (o.task?.maxSlots ?? 8),
+		maxCompiles:
+			typeof o.task?.maxCompiles === "function"
+				? o.task.maxCompiles({ tool: fallback.name, launcher: launcher.name })
+				: (o.task?.maxCompiles ?? 4),
 	};
 	const task: TaskSpec = { launcher, ...slots };
 	const outRoot =

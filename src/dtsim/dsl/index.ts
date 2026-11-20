@@ -139,11 +139,14 @@ export type TaskSpec = {
 
 /** `Workspace({ task })` options. `launcher` is one launcher or a probe list
  *  tried left to right: the first whose `probe` executables are all on PATH
- *  wins (local, with no probe, always matches). Probes run concurrently. */
+ *  wins (local, with no probe, always matches). Probes run concurrently.
+ *  `maxSlots` / `maxCompiles` are a number, or a callback evaluated after the
+ *  tool and launcher are resolved — so the config can size slots from the
+ *  resolved launcher instead of probing the environment itself. */
 export type TaskOpts = {
 	launcher?: Launcher | readonly Launcher[];
-	maxSlots?: number;
-	maxCompiles?: number;
+	maxSlots?: number | ((ctx: { tool: string; launcher: string }) => number);
+	maxCompiles?: number | ((ctx: { tool: string; launcher: string }) => number);
 };
 
 /** What hooks and graders see for one case directory. */
