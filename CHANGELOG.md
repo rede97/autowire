@@ -2,6 +2,12 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.2] - 2026-11-20
+
+- **编译组改名为 `build<序号>_<top>`**：回归的编译组（`compile_<名字>` 目录、plan / 进度里的名字）不再借用组内第一个用例的 id，默认是本次计划中的序号加该组的顶层模块，如 `compile_build01_tb_top`、`compile_build04_tb_chip`（序号按成员多少排序，至少两位）；后端的 `buildName` 仍可覆盖。LSF / Slurm 的编译作业名改为同一个 `compile_<名字>`（原来是 `compile_<顶层用例名>`，与目录不一致），单条 `run` 的作业名是 `compile_<case id>`。
+- **完成行原样输出**：TTY 上回归的 compile / sim 完成行、`run` 的开始 / 结束行和 `-v` 跟随的日志行像 `echo` 一样整行写出，不再被 log-update 按当时的终端宽度硬插换行；长路径交给终端软换行，调整窗口大小后会重新排版，复制路径也不会断开。
+- demo/soc：Verilator 编译阶段的 `MAKEFLAGS` 由配置追加 `OPT_FAST=-O2 OPT_GLOBAL=-O2`（MSYS2 UCRT64 GCC 16.2 在默认 `-Os` 下链接 `verilated.o` 失败），不需要再手动 export。
+
 ## [2.9.1] - 2026-11-20
 
 - **破坏性：顶层模块与波形改为 Workspace / Case 选项**：`VcsTool({ top, wave })` / `VerilatorTool({ top, wave })` 删除，改为 `Workspace({ top, wave, waveDepth, waveScope })` 默认值加 Case 同名选项，规则和其他标量一样：派生用例继承父用例，case 自己写的值覆盖，`bareDefaults` / `byTool` 也可写。默认 `top: "tb_top"`、`wave: false`、`waveDepth: 0`（全部层级）、`waveScope` 为该 case 的 `top`；case 只写 `waveScope` / `waveDepth` 时开关仍沿用 workspace 的 `wave`。常规 bench 只有一个 `tb_top`，不用写；UVM 等场景里某些 case 用另一个顶层时在 case 上写 `top`。`toolOptions.wave` 与 wave 的 `{ depth, top }` 对象形式一并删除，`waveSpec` / `WaveOpt` / `SimTool.wave` 不再导出。

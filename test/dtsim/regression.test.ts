@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { makeWorkspace, runDtsim, seedDirs } from "./helpers.ts";
+import { buildDirOf, makeWorkspace, runDtsim, seedDirs } from "./helpers.ts";
 
 describe("regression", () => {
 	test("plan writes regression.txt without results", async () => {
@@ -19,10 +19,10 @@ describe("regression", () => {
 		const result = await runDtsim(ws, ["regr", "base"]);
 		expect(result.code).toBe(0);
 		const regDir = join(ws.out, "regression");
-		// Builds are named after their first case.
-		expect(
-			await Bun.file(join(regDir, "compile_test_hello_world", "simv")).exists(),
-		).toBe(true);
+		// Builds are named build<NN>_<top>, never after one of their cases.
+		const helloBuild = await buildDirOf(regDir, "test_hello_world");
+		expect(helloBuild).toMatch(/compile_build0[1-3]_tb_top$/);
+		expect(await Bun.file(join(helloBuild, "simv")).exists()).toBe(true);
 		expect(await Bun.file(join(regDir, "result.txt")).exists()).toBe(true);
 		expect(result.stdout).toContain("Results");
 		// smoke has no defines; hello and bar share NUM=1 but bar adds env.
@@ -35,7 +35,7 @@ describe("regression", () => {
 		const runSim = await Bun.file(
 			join(helloSeeds[0] as string, "run_sim"),
 		).text();
-		expect(runSim).toContain(join(regDir, "compile_test_hello_world"));
+		expect(runSim).toContain(helloBuild);
 		expect(runSim).not.toContain("../simv");
 		const barSeeds = await seedDirs(join(regDir, "test_bar_basic"));
 		const barLog = await Bun.file(
@@ -85,7 +85,7 @@ describe("regression", () => {
 		expect(result.stdout).toContain("compile failed");
 		expect(
 			await Bun.file(
-				join(regDir, "compile_test_hello_world", "error.txt"),
+				join(await buildDirOf(regDir, "test_hello_world"), "error.txt"),
 			).text(),
 		).toContain("Error-[COMPFAIL]");
 	});
@@ -95,14 +95,11 @@ describe("regression", () => {
 		const result = await runDtsim(ws, ["regr", "base"], { DTSIM_COV: "1" });
 		expect(result.code).toBe(0);
 		const regDir = join(ws.out, "regression");
+		const helloBuild = await buildDirOf(regDir, "test_hello_world");
 		expect(
-			await Bun.file(
-				join(regDir, "compile_test_hello_world", "urgReport", "dashboard.html"),
-			).exists(),
+			await Bun.file(join(helloBuild, "urgReport", "dashboard.html")).exists(),
 		).toBe(true);
-		expect(
-			existsSync(join(regDir, "compile_test_hello_world", "merge.vdb")),
-		).toBe(true);
+		expect(existsSync(join(helloBuild, "merge.vdb"))).toBe(true);
 		expect(await Bun.file(join(regDir, "dcov")).exists()).toBe(true);
 		const helloSeeds = await seedDirs(join(regDir, "test_hello_world"));
 		const runSim = await Bun.file(

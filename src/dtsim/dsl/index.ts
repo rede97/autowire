@@ -420,8 +420,9 @@ export type SimTool = {
 	 */
 	compileKey?: (c: CompileKeyInput, base: string) => string;
 	/** Readable name of the build `c` stands for (the first case of a compile
-	 *  group), shown in plans and progress and used for its directory
-	 *  (`compile_<name>`). Default: the case id. Duplicates get `-2`, `-3`. */
+	 *  group), shown in plans and progress and used for its directory and
+	 *  cluster job name (`compile_<name>`). Default: `build<NN>_<top>`.
+	 *  Duplicates get `-2`, `-3`. */
 	buildName?: (c: CompileKeyInput) => string;
 	/** Write tool-specific helper files (dump.tcl, run_verdi, ...). */
 	writeAux?: (ctx: ToolContext) => void;

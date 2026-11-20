@@ -2,7 +2,7 @@
 // assembly, tool invocation, hooks, grading, and per-directory artifacts.
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { RUN_ENV } from "../dsl/env.ts";
 import type {
 	CaseContext,
@@ -118,6 +118,16 @@ export function toolPath(path: string): string {
 	return process.platform === "win32" ? path.replaceAll("\\", "/") : path;
 }
 
+/** Cluster job name of a compile: the regression build dir's name
+ *  (`compile_build01_tb_top`), or `compile_<case>` for a single run. */
+function compileJobName(
+	c: MergedCase,
+	compileDir: string,
+	regression: boolean,
+): string {
+	return regression ? basename(compileDir) : `compile_${c.id}`;
+}
+
 /** A case's filelists, absolute: the workspace's, then the case's in merge
  *  order. dtsim never reads them; the tool gets each as -f. */
 export function caseFilelists(
@@ -173,7 +183,10 @@ export function toolContext(
 				launcher,
 				{
 					phase,
-					jobName: phase === "sim" ? `${c.id}_${seed}` : `compile_${c.base}`,
+					jobName:
+						phase === "sim"
+							? `${c.id}_${seed}`
+							: compileJobName(c, compileDir, opts.regression),
 					caseId: c.id,
 					...(seed === undefined ? {} : { seed }),
 					cwd: dir,
@@ -363,7 +376,7 @@ export async function executeCompile(
 	let hookFailed = false;
 	const argv = wrapCommand(prepared.argv, ws.task.launcher, {
 		phase: "compile",
-		jobName: `compile_${c.base}`,
+		jobName: compileJobName(c, compileDir, opts.regression),
 		caseId: c.id,
 		cwd: prepared.cwd,
 		interactive: false,

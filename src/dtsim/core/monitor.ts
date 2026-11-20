@@ -15,7 +15,7 @@ import type logUpdate from "log-update";
 import { createLogUpdate } from "log-update";
 import type { CasePhase, PhaseObserver } from "./engine.ts";
 import { fmtElapsed } from "./scripts.ts";
-import { status as colour, fmtSize, titledRules } from "./ui.ts";
+import { status as colour, fmtSize, persistAbove, titledRules } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TAIL_BYTES = 4096;
@@ -177,7 +177,7 @@ export class CaseMonitor implements PhaseObserver {
 
 	/** A permanent line above the panel (or a plain line). */
 	private line(text: string): void {
-		if (this.live) this.live.persist(text);
+		if (this.live) persistAbove(this.live, text);
 		else process.stderr.write(`${stripVTControlCharacters(text)}\n`);
 	}
 
@@ -220,11 +220,11 @@ export class CaseMonitor implements PhaseObserver {
 			const text = f.decoder.decode(buf.subarray(0, got), { stream: true });
 			const lines = (f.rest + text).split(/\r?\n/);
 			f.rest = lines.pop() ?? "";
-			if (lines.length > 0) this.live.persist(lines.join("\n"));
+			if (lines.length > 0) persistAbove(this.live, lines.join("\n"));
 			if (!final) break;
 		}
 		if (final) {
-			if (f.rest) this.live.persist(f.rest);
+			if (f.rest) persistAbove(this.live, f.rest);
 			this.followed = undefined;
 		}
 	}

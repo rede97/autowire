@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { CASES_TS, makeWorkspace, runDtsim, seedDirs } from "./helpers.ts";
+import {
+	buildDirOf,
+	CASES_TS,
+	makeWorkspace,
+	runDtsim,
+	seedDirs,
+} from "./helpers.ts";
 
 describe("single case", () => {
 	test("compile and simulate: quiet logs, artifacts, summary", async () => {
@@ -279,9 +285,10 @@ describe("vcs options", () => {
 		);
 		const plan = await runDtsim(ws, ["plan", "base"]);
 		expect(plan.code).toBe(0);
-		// test_quick_smoke has its own top, so it is its own compile group.
+		// test_quick_smoke has its own top, so it is its own compile group,
+		// named after its position and top, not after the case.
 		expect(plan.stdout).toMatch(
-			/compile test_quick_smoke\s+top tb_quick, wave on/,
+			/compile build\d\d_tb_quick\s+top tb_quick, wave on \(depth 0, scope tb_quick\.dut\), 1 case\n└─ sim test_quick_smoke/,
 		);
 		expect(plan.stdout).toMatch(/top tb_top, wave on/);
 		const run = await runDtsim(ws, ["run", "test_quick_smoke"]);
@@ -305,10 +312,13 @@ describe("vcs options", () => {
 		const r = await runDtsim(ws, ["regr", "base", "--plain"]);
 		expect(r.code).toBe(0);
 		// The wave-on case got its own build, with dump.tcl next to its simv.
-		const tcl = [
-			...new Bun.Glob("regression/compile_*/dump.tcl").scanSync(ws.out),
-		].map((p) => p.replaceAll("\\", "/"));
-		expect(tcl).toEqual(["regression/compile_test_quick_smoke/dump.tcl"]);
+		const regDir = join(ws.out, "regression");
+		const tcl = [...new Bun.Glob("compile_*/dump.tcl").scanSync(regDir)].map(
+			(p) => join(regDir, p),
+		);
+		expect(tcl).toEqual([
+			join(await buildDirOf(regDir, "test_quick_smoke"), "dump.tcl"),
+		]);
 	});
 
 	test("run_verdi runs in its own dir, exports the env, defaults -top", async () => {

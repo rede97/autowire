@@ -173,3 +173,22 @@ export async function seedDirs(caseDir: string): Promise<string[]> {
 		)
 		.map((e) => join(caseDir, e.name));
 }
+
+/** The compile dir of the build that runs `caseId`, read from the plan in
+ *  `<regDir>/regression.txt` (build names are positional). */
+export async function buildDirOf(
+	regDir: string,
+	caseId: string,
+): Promise<string> {
+	let build = "";
+	for (const line of (
+		await Bun.file(join(regDir, "regression.txt")).text()
+	).split("\n")) {
+		const head = /^compile (\S+)/.exec(line);
+		if (head) build = head[1] as string;
+		else if (line.endsWith(`sim ${caseId}`)) {
+			return join(regDir, `compile_${build}`);
+		}
+	}
+	throw new Error(`no build for ${caseId} in ${regDir}/regression.txt`);
+}

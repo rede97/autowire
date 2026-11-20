@@ -5,6 +5,17 @@
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import Table from "cli-table3";
+import type logUpdate from "log-update";
+
+/** Print `text` above a live panel as one plain write, like `echo`: the panel
+ *  is erased, the text goes out unchanged and the panel's next frame redraws
+ *  below it. The terminal soft-wraps a long line, so a resize reflows it and
+ *  a copied path stays whole (log-update's persist() hard-wraps at the
+ *  current width). */
+export function persistAbove(live: typeof logUpdate, text: string): void {
+	live.clear();
+	process.stderr.write(`${text}\n`);
+}
 
 export type Row = readonly string[];
 

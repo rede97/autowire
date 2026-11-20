@@ -12,7 +12,7 @@ import type logUpdate from "log-update";
 import { createLogUpdate } from "log-update";
 import type { PhaseObserver } from "./engine.ts";
 import { fmtElapsed } from "./scripts.ts";
-import { status as colour, fmtSize } from "./ui.ts";
+import { status as colour, fmtSize, persistAbove } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 /** Column widths: status (or spinner), task label, log name, log size. */
@@ -216,7 +216,7 @@ export class Progress {
 
 	private line(text: string): void {
 		if (this.live) {
-			this.live.persist(text);
+			persistAbove(this.live, text);
 			this.render();
 		} else {
 			process.stderr.write(`${stripVTControlCharacters(text)}\n`);

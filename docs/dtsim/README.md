@@ -73,18 +73,19 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 1. **Regression 表**：group、仿真器、启动器（如 `lsf (queue normal, -R rusage[mem=4000])`，
    `$DTSIM_TASK_QUEUE` 也列出）、任务数（`3 compiles, 5 sims`）、slot 数、label、输出目录。
 2. **计划树**（`dtsim plan` 打印同一份，并写入 `regression.txt`）：每个编译节点
-   `compile <名字>  (N cases)` 下面是 `defines` 节点（每行一个宏定义，没有宏时省略）
+   `compile <名字>  top <top>, wave <...>, N cases` 下面是 `defines` 节点（每行一个宏定义，没有宏时省略）
    和它的 sim 用例；每个 sim 下面每行一个参数：seed（超过 8 个折叠）、UVM test、
    simArgs（plusargs）、`env K=V`。完整的编译命令不进计划，见编译目录里的
-   `run_compile`。编译组名字由后端的 `buildName` 给出（默认组内第一个用例 id），
-   编译目录是 `compile_<名字>`，重名加 `-2`、`-3`。
+   `run_compile`。编译组名字默认是 `build<序号>_<top>`（序号按本次计划的顺序：成员多的在前，
+   位数随组数，至少两位），后端的 `buildName` 可以另给；编译目录与集群作业名都是
+   `compile_<名字>`，重名加 `-2`、`-3`。
 
    ```text
-   compile test_full_chip  (1 case)
+   compile build04_tb_chip  top tb_chip, wave off, 1 case
    ├─ defines
    │  ├─ NUM=1
    │  └─ FULL_CHIP=1
-   └─ sim test_full_chip
+   └─ sim chip.rtl
       ├─ seed 1553122393
       └─ test full_chip_test
    ```
@@ -97,8 +98,8 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
    编译中默认前景色 `░`、待编译灰 `░`。sim 层从左边盖在已编译区上：PASS 绿 `█`、
    PASS WITH ERRORS 黄 `█`、其他状态红 `█`，未跑完的地方露出编译层。编译失败而跳过的
    sim 不画。宽度取终端剩余列数，10 到 60 格。
-4. 每个 compile / sim 完成或失败时在上方留一行:`<状态> <耗时> <compile|sim 名字>  <日志路径> (大小)`,
-   日志路径直接接在同一行、长了由终端换行(不再用 `└─` 另起一行);编译失败跳过的 sim 写 `skipped: compile failed`。
+4. 每个 compile / sim 完成或失败时在上方留一行：`<状态> <耗时> <compile|sim 名字>  <日志路径> (大小)`，
+   像 `echo` 一样整行写出，dtsim 不插换行：长路径由终端软换行，调整窗口后会重新排版，复制时路径完整；编译失败跳过的 sim 写 `skipped: compile failed`。
    非 TTY（`--plain`、管道、LSF / CI 日志）只有这些行。一个用例有多个 seed 时 sim
    名字带 `seed N`。
 5. 全部完成后：结果树（用例 → seed → 状态）和 **Summary 表**：Compiles 一格先 `FAIL`
@@ -425,8 +426,10 @@ options. Whether a derived case reuses its parent's build is decided purely by
 the key, so a subcase that adds a define compiles separately, and two unrelated
 cases with equal keys share one build.
 
-A build is named by the backend's optional `buildName(c)` (default: the id of
-its first case `c`). Its directory is `compile_<name>`, with unsafe
+A build is named `build<NN>_<top>` by default: its position in this plan
+(larger groups first, at least two digits) and its top module, so a build
+never reads as one of its cases. A backend may supply `buildName(c)` instead.
+The directory and the cluster job name are `compile_<name>`, with unsafe
 characters turned into `_` and `-2`, `-3` added to repeats.
 
 | Backend | Key |

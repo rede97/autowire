@@ -33,7 +33,7 @@ import { block, plain, status, type TreeNode, tree } from "./ui.ts";
 
 export type CompileGroup = {
 	index: number;
-	/** Readable build name (SimTool.buildName, default the first case id). */
+	/** Build name: SimTool.buildName, else `build<NN>_<top>`. */
 	name: string;
 	fingerprint: string;
 	representative: MergedCase;
@@ -72,10 +72,15 @@ export function planGroups(
 		return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
 	});
 	const used = new Set<string>();
+	const width = Math.max(2, String(sorted.length).length);
 	return sorted.map(([fp, cases], i) => {
 		const representative = cases[0];
 		if (!representative) throw new Error("dtsim: empty compile group");
-		const raw = ws.tool.buildName?.(representative) ?? representative.id;
+		// Default: the build's position in this plan plus its top module, so
+		// the name never reads as one of its cases.
+		const raw =
+			ws.tool.buildName?.(representative) ??
+			`build${String(i + 1).padStart(width, "0")}_${representative.top}`;
 		// A directory name: unsafe characters become "_", repeats get -2, -3.
 		const base = raw.replace(/[^A-Za-z0-9_.-]/g, "_") || "build";
 		let name = base;
