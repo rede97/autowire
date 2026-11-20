@@ -69,7 +69,6 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 	const resolved = (caseOpts: Record<string, unknown>) =>
 		verilatorOpts({ ...opts, ...caseOpts });
 	resolved({}); // a bad option fails at config load
-	const wave = waveFromEnv();
 	return {
 		kind: "dtsim-tool",
 		name: "verilator",
@@ -98,6 +97,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 		},
 
 		writeAux(ctx) {
+			const wave = waveFromEnv();
 			if (ctx.phase !== "compile" || !wave.enabled) return;
 			const { top } = resolved(ctx.caseOpts.toolOptions);
 			if (!top) {
@@ -111,6 +111,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 		// Runs in the project root: the filelists' relative entries, $VARs
 		// and -F are Verilator's own business. -Mdir is under the compile dir.
 		compile(ctx) {
+			const wave = waveFromEnv();
 			const { top, mdir, main, command } = resolved(ctx.caseOpts.toolOptions);
 			return {
 				argv: [

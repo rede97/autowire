@@ -136,8 +136,6 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 	command(opts);
 	casePlusarg(opts);
 	topOf(opts);
-	const wave = waveFromEnv();
-	const cov = covFromEnv();
 	const merged = (caseOpts: Record<string, unknown>) => ({
 		...opts,
 		...caseOpts,
@@ -176,6 +174,8 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		},
 
 		writeAux(ctx) {
+			const wave = waveFromEnv();
+			const cov = covFromEnv();
 			const top = topOf(merged(ctx.caseOpts.toolOptions));
 			if (ctx.phase === "compile") {
 				if (wave.enabled) {
@@ -200,6 +200,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		// Runs in the project root: the filelists' relative entries, $VARs
 		// and -F are VCS's own business. Every output goes to the compile dir.
 		compile(ctx) {
+			const cov = covFromEnv();
 			const o = merged(ctx.caseOpts.toolOptions);
 			const top = topOf(o);
 			const argv = [
@@ -229,6 +230,8 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		},
 
 		simulate(ctx) {
+			const wave = waveFromEnv();
+			const cov = covFromEnv();
 			const o = merged(ctx.caseOpts.toolOptions);
 			const uvm = ctx.caseOpts.uvm;
 			const plusarg = casePlusarg(o);

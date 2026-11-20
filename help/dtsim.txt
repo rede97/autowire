@@ -60,8 +60,8 @@ Agent workflow
   via the grader, never the exit code).
 
 DSL (import from ./.dtsim/dsl/index.ts)
-  Workspace({ tools, filelists, output, grader, bareDefaults, env, task, hooks,
-              groups, cases })
+  Workspace({ tools, filelists, output, grader, bareDefaults, env, task,
+              onResolve, hooks, groups, cases })
   tools     [VcsTool({ top, ntbOpts, flags, command, casePlusarg })
             | VerilatorTool({ top, mdir, main, command })
             | defineTool({ name, passthrough, compile, simulate, ... }), ...];
@@ -77,6 +77,9 @@ DSL (import from ./.dtsim/dsl/index.ts)
             (probed concurrently). DTSIM_TASK_TYPE=local|lsf|slurm forces one;
             DTSIM_TASK_QUEUE sets the queue. Cluster launchers also write
             bjob_*/srun_* submit wrappers beside run_sim/run_compile/run_verdi.
+  onResolve ({ mode:"run"|"regr", tool, launcher }) => void|{maxSlots,maxCompiles};
+            runs after tool+launcher resolved, before any run. May set
+            process.env (e.g. default DTSIM_WAVE by mode) and override slots.
   Case(name, opts); c.SubCase(suffix, opts | (parent) => opts) → <id>.<suffix>;
             export top-level cases (alone or in an exported array / Set / Map).
             opts: defines, compileArgs, simArgs, env

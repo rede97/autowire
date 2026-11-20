@@ -232,6 +232,19 @@ export type Grader = {
 	) => GradeStatus | GradeOutcome | Promise<GradeStatus | GradeOutcome>;
 };
 
+/** Passed to `Workspace.onResolve` once the tool and launcher are chosen. */
+export type ResolveContext = {
+	/** `run` for a single case, `regr` for a regression. */
+	mode: "run" | "regr";
+	/** Resolved tool name (after --tool / $DTSIM_TOOL). */
+	tool: string;
+	/** Resolved launcher name (after the probe list / DTSIM_TASK_TYPE). */
+	launcher: string;
+};
+
+/** What `onResolve` may return to override `task`. */
+export type ResolveResult = { maxSlots?: number; maxCompiles?: number };
+
 export type WorkspaceOpts = {
 	/** Simulator backends: VcsTool(...), VerilatorTool(...) or defineTool(...).
 	 *  The first is the default; `--tool <name>` or $DTSIM_TOOL picks another. */
@@ -246,6 +259,11 @@ export type WorkspaceOpts = {
 	bareDefaults?: CaseOpts;
 	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
 	task?: TaskOpts;
+	/** Runs once after the tool and launcher are resolved, before any compile
+	 *  or sim. May read and modify `process.env` (e.g. default `DTSIM_WAVE`
+	 *  from `mode`) and return `{ maxSlots, maxCompiles }` to override `task`. */
+	// biome-ignore lint/suspicious/noConfusingVoidType: a hook that returns overrides or nothing
+	onResolve?: (ctx: ResolveContext) => void | ResolveResult;
 	hooks?: Hooks;
 	groups?: readonly GroupDef[];
 	cases?: readonly string[];
@@ -687,6 +705,9 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 			needLauncher("task.launcher", l);
 	}
 	if (opts.grader !== undefined) needGrader("workspace grader", opts.grader);
+	if (opts.onResolve !== undefined && typeof opts.onResolve !== "function") {
+		throw new Error("dtsim: Workspace onResolve must be a function");
+	}
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);
 	for (const [stage, value] of Object.entries(opts.hooks ?? {})) {
 		if (!HOOK_STAGES.includes(stage)) {

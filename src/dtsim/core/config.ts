@@ -434,6 +434,7 @@ export async function loadWorkspace(opts: {
 	cwd?: string;
 	/** Tool name; default $DTSIM_TOOL, else the first Workspace tool. */
 	tool?: string;
+	mode?: "run" | "regr";
 }): Promise<ResolvedWorkspace> {
 	const cwd = opts.cwd ?? process.cwd();
 	const configPath = opts.config
@@ -496,11 +497,7 @@ export async function loadWorkspace(opts: {
 	// use, not here: a load touches only the cases a command runs.
 	const deny = [...(o.env?.deny ?? [])];
 	// An unknown DTSIM_TASK_TYPE fails here, before any output dir exists.
-	const task: TaskSpec = {
-		launcher: await resolveLauncher(o.task?.launcher ?? LocalLauncher()),
-		maxSlots: o.task?.maxSlots ?? 8,
-		maxCompiles: o.task?.maxCompiles ?? 4,
-	};
+	const launcher = await resolveLauncher(o.task?.launcher ?? LocalLauncher());
 
 	const tools = [...o.tools];
 	const wanted = opts.tool ?? process.env.DTSIM_TOOL;
@@ -513,6 +510,18 @@ export async function loadWorkspace(opts: {
 			`dtsim: ${from} ${wanted}: not a Workspace tool (tools: ${tools.map((t) => t.name).join(", ")})`,
 		);
 	}
+	// onResolve sees the chosen tool and launcher: it may default DTSIM_WAVE
+	// from the mode (read later, before any compile/sim) and override slots.
+	const extra = o.onResolve?.({
+		mode: opts.mode ?? "run",
+		tool: tool.name,
+		launcher: launcher.name,
+	});
+	const task: TaskSpec = {
+		launcher,
+		maxSlots: extra?.maxSlots ?? o.task?.maxSlots ?? 8,
+		maxCompiles: extra?.maxCompiles ?? o.task?.maxCompiles ?? 4,
+	};
 	const outRoot =
 		o.output === undefined ? join(dt, "simout") : resolvePath(o.output, paths);
 

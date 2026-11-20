@@ -69,9 +69,9 @@ function applySwitches(opts: Partial<CommonOpts>): void {
 	set("DTSIM_COV_MERGE", opts.covMerge === false ? "0" : undefined);
 }
 
-function load(opts: Partial<CommonOpts>) {
+function load(opts: Partial<CommonOpts>, mode: "run" | "regr" = "run") {
 	applySwitches(opts);
-	return loadWorkspace({ config: opts.config });
+	return loadWorkspace({ config: opts.config, mode });
 }
 
 function engineOpts(opts: CommonOpts, interactive: boolean) {
@@ -149,7 +149,7 @@ function addDtsimCommands(cmd: Command): Command {
 			.command("regr [group]")
 			.description("run a regression group or pattern (default: *)"),
 	).action(async (group: string | undefined, opts: CommonOpts) => {
-		const ws = await load(opts);
+		const ws = await load(opts, "regr");
 		const controller = new AbortController();
 		process.once("SIGINT", () => controller.abort());
 		process.exitCode = await runRegression(ws, group ?? "*", {

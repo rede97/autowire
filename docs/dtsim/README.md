@@ -159,7 +159,7 @@ SoT), so DSL edits reach them without a regenerate step; `docs unpack`
 rewrites those imports to the `.dtsim/dsl` copy. No symlink is used: Windows
 symlinks need extra privileges and Bun does not follow MSYS ones.
 
-- `Workspace({ tools, filelists, output, grader, bareDefaults, env, task, hooks, groups, cases })`.
+- `Workspace({ tools, filelists, output, grader, bareDefaults, env, task, onResolve, hooks, groups, cases })`.
   `tools` (non-empty list), `task.launcher` and `grader` are values
   (`VcsTool(...)`, `LsfLauncher(...)`, `DefaultGrader(...)`), not ids.
 - `Case(name, opts)` / `case.SubCase(suffix, opts)` / `Group(name, ids)`
@@ -176,6 +176,12 @@ symlinks need extra privileges and Bun does not follow MSYS ones.
 - `output` moves the output root (default `<project>/dt/simout`), e.g.
   `output: "${workspace}/temp/output"` or `"${SCRATCH}/dtsim"`.
 - `uvm` is only interpreted by the VCS backend; other backends ignore it.
+- `onResolve(ctx)` runs once after the tool and launcher are chosen
+  (`ctx = { mode: "run" | "regr", tool, launcher }`), before any compile or
+  sim. It may read and modify `process.env` (e.g. default `DTSIM_WAVE` from the
+  mode — dump for a single `run`, not for a `regr`) and return
+  `{ maxSlots, maxCompiles }` to override `task`. `--wave` already set
+  `DTSIM_WAVE`, so check it before defaulting if you want `--wave` to win.
 
 ### Case trees
 
