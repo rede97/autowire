@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
-import { waveFromEnv } from "../dsl/env.ts";
+import type { SimTool } from "../dsl/index.ts";
 import {
 	assertConcrete,
 	assertRunsOn,
@@ -31,7 +31,10 @@ export type SeedOptions = {
 	numSeeds?: number;
 };
 
-export async function readSeeds(opts: SeedOptions): Promise<string[]> {
+export async function readSeeds(
+	opts: SeedOptions,
+	defaults?: readonly string[],
+): Promise<string[]> {
 	if (opts.seedFile !== undefined && opts.numSeeds !== undefined) {
 		throw new Error(
 			"dtsim: --seed-file and --num-seeds are mutually exclusive",
@@ -52,7 +55,10 @@ export async function readSeeds(opts: SeedOptions): Promise<string[]> {
 		}
 		return Array.from({ length: opts.numSeeds }, () => randomSeed());
 	}
-	return [opts.seed ?? randomSeed()];
+	// No CLI override: the workspace's seed set (default ["0"]).
+	return opts.seed !== undefined
+		? [opts.seed]
+		: [...(defaults ?? [randomSeed()])];
 }
 
 export function randomSeed(): string {
@@ -103,7 +109,7 @@ export async function runSingle(
 	const c = mergeCase(ws, caseId);
 	assertConcrete(c);
 	assertRunsOn(c, ws.tool);
-	const seeds = seedsFor(c, await readSeeds(opts));
+	const seeds = seedsFor(c, await readSeeds(opts, ws.seeds));
 	const compileDir = caseOutputDir(ws, c.id, opts.label);
 	const tool = ws.tool;
 	// -v on a TTY prints the running log above the live panel (the monitor
@@ -123,7 +129,7 @@ export async function runSingle(
 		["WORKSPACE", ws.root],
 		["Verify", ws.verify],
 		["Tool", tool.name],
-		["Wave", waveLabel()],
+		["Wave", waveLabel(ws.tool)],
 		["Test Name", c.id],
 		["Test Seq", c.uvm?.seq ?? ""],
 		["Seeds", seeds.join(",") + (c.random ? "" : " (no-random)")],
@@ -237,9 +243,9 @@ export function printCaseEnv(
 	);
 }
 
-/** "off", or "on (depth N[, scope S])" from $DTSIM_WAVE*. */
-export function waveLabel(): string {
-	const w = waveFromEnv();
-	if (!w.enabled) return "off";
+/** "off", or "on (depth N[, scope S])" from the backend's wave option. */
+export function waveLabel(tool: SimTool): string {
+	const w = tool.wave;
+	if (!w?.enabled) return "off";
 	return `on (depth ${w.depth}${w.top ? `, scope ${w.top}` : ""})`;
 }

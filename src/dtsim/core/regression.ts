@@ -183,7 +183,7 @@ function headerRows(
 	return [
 		["Group", group],
 		["Tool", ws.tool.name],
-		["Wave", waveLabel()],
+		["Wave", waveLabel(ws.tool)],
 		["Launcher", launcher ? `${l.name} (${launcher})` : l.name],
 		["Tasks", `${groups.length} compiles, ${sims} sims`],
 		["Slots", `${ws.task.maxSlots} (compile ${ws.task.maxCompiles})`],
@@ -206,7 +206,7 @@ export async function runRegression(
 		);
 	}
 	const regDir = regressionDir(ws, opts.label);
-	const seeds = await readSeeds(opts);
+	const seeds = await readSeeds(opts, ws.seeds);
 	const seedsOf = (c: MergedCase) => seedsFor(c, seeds);
 	const simCount = groups.reduce(
 		(n, g) => n + g.cases.reduce((m, c) => m + seedsOf(c).length, 0),

@@ -2,7 +2,7 @@
 // objects tagged with `kind`. Never use instanceof: the bundle and the
 // materialized .dtsim/dsl copy may both be loaded in one process.
 
-export { covFromEnv, RUN_ENV, waveFromEnv } from "./env.ts";
+export { covFromEnv, RUN_ENV } from "./env.ts";
 export {
 	type VcsBaseOpts,
 	type VcsDebugAccess,
@@ -258,6 +258,8 @@ export type ResolvedWorkspace = {
 	tool: SimTool;
 	/** Every configured backend, in config order. */
 	tools: SimTool[];
+	/** The workspace seed set (default ["0"]). */
+	seeds: string[];
 	/** Workspace filelists, absolute. */
 	filelists: string[];
 	bareDefaults?: CaseOpts;
@@ -299,6 +301,11 @@ export type WorkspaceOpts = {
 	filelists?: readonly string[];
 	/** Output root (`${...}` allowed; relative to dt/config). Default "${workspace}/dt/simout". */
 	output?: string;
+	/** Seed set for this workspace, default `["0"]`. A run or regression uses
+	 *  it unless `-s` / `--seed-file` / `--num-seeds` overrides. A case with
+	 *  `random: false` uses only the first. Configs often build it from
+	 *  `SEEDS=0,1` (a list) or `RANDOM=N` (N random seeds). */
+	seeds?: readonly string[];
 	/** Default grader. Default `DefaultGrader()`. */
 	grader?: Grader;
 	bareDefaults?: CaseOpts;
@@ -338,6 +345,24 @@ export type Prepared = {
 /** Waveform switch ($DTSIM_WAVE*; read with waveFromEnv()). `top`: dump
  *  scope (default: the backend's top). */
 export type WaveSpec = { enabled: boolean; depth: number; top?: string };
+
+/** A backend's `wave` option: `true` (depth 0 = all levels), or
+ *  `{ depth, top }` to bound depth and/or the dump scope. */
+export type WaveOpt = boolean | { depth?: number | string; top?: string };
+
+/** Resolve a backend's `wave` option to a WaveSpec. */
+export function waveSpec(opt: WaveOpt | undefined): WaveSpec {
+	if (opt === undefined || opt === false) return { enabled: false, depth: 0 };
+	if (opt === true) return { enabled: true, depth: 0 };
+	if (typeof opt === "object") {
+		const depth = Number(opt.depth ?? 0);
+		if (!Number.isInteger(depth) || depth < 0) {
+			throw new Error("dtsim: wave depth must be a whole number >= 0");
+		}
+		return { enabled: true, depth, ...(opt.top ? { top: opt.top } : {}) };
+	}
+	throw new Error("dtsim: wave must be a boolean or { depth, top }");
+}
 /** Coverage switch ($DTSIM_COV*; read with covFromEnv()). */
 export type CovSpec = { enabled: boolean; metrics: string; merge: boolean };
 
@@ -400,6 +425,9 @@ export type SimTool = {
 	passthrough: readonly string[];
 	/** true: first Ctrl+C is forwarded to the child (UCLI-style). */
 	interactive: boolean;
+	/** The backend's factory-level wave setting (for the Run/Regression header).
+	 *  A case's `toolOptions.wave` can override it per case. */
+	wave?: WaveSpec;
 	/**
 	 * Compile identity: cases whose keys are equal share one build in a
 	 * regression. `base` is dtsim's generic key (tool, defines as a set,

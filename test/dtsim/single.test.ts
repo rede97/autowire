@@ -162,6 +162,47 @@ describe("single case", () => {
 		expect(result.stderr).toContain("not found");
 	});
 
+	test("onResult can symlink sim.log to <case>.log after the sim", async () => {
+		const body = CASES_TS.replace(
+			"\tgrader,",
+			`\tgrader,
+	hooks: {
+		onResult: (ctx) => {
+			const dest = ctx.dir + "/" + ctx.caseId + ".log";
+			// Windows needs SeCreateSymbolicLinkPrivilege; fall back to a copy.
+			try {
+				symlinkSync("sim.log", dest);
+			} catch {
+				copyFileSync(ctx.dir + "/sim.log", dest);
+			}
+		},
+	},`,
+		).replace(
+			'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
+			'import { symlinkSync, copyFileSync } from "node:fs";\nimport { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
+		);
+		const ws = await makeWorkspace(body);
+		const run = await runDtsim(ws, ["run", "test_hello_world", "-s", "1"]);
+		expect(run.code).toBe(0);
+		const link = join(ws.out, "test_hello_world", "1", "test_hello_world.log");
+		expect(await Bun.file(link).exists()).toBe(true);
+		expect(await Bun.file(link).text()).toContain("TEST PASSED");
+	});
+	test("workspace seeds drive a run when no -s is given", async () => {
+		const body = CASES_TS.replace(
+			"task: { maxSlots: 4, maxCompiles: 2 },",
+			'task: { maxSlots: 4, maxCompiles: 2 },\n\tseeds: ["0", "1"],',
+		);
+		const ws = await makeWorkspace(body);
+		const run = await runDtsim(ws, ["run", "test_bar_basic"]);
+		expect(run.code).toBe(0);
+		// both workspace seeds ran, each with its own passing sim.log
+		for (const seed of ["0", "1"]) {
+			const log = join(ws.out, "test_bar_basic", seed, "sim.log");
+			expect(await Bun.file(log).text()).toContain("TEST PASSED");
+			expect(await Bun.file(log).text()).toContain(`+ntb_random_seed=${seed}`);
+		}
+	});
 	test("git_rev records the TB revision when verify is a git repo", async () => {
 		const ws = await makeWorkspace();
 		const git = (args: string[]) =>
@@ -180,7 +221,7 @@ describe("single case", () => {
 		expect(await Bun.file(join(caseDir, "61", "git_rev")).exists()).toBe(true);
 	});
 
-	test("waves are off by default; DTSIM_WAVE turns them on for tool and children", async () => {
+	test("waves are off by default; the wave option turns them on", async () => {
 		const ws = await makeWorkspace();
 		const off = await runDtsim(ws, ["run", "test_hello_world", "-s", "8"]);
 		expect(off.code).toBe(0);
@@ -188,23 +229,24 @@ describe("single case", () => {
 		const offLog = await Bun.file(join(dir, "8", "sim.log")).text();
 		expect(offLog).not.toContain("-ucli");
 		expect(offLog).toContain("+TEST=test_hello_world");
-		const on = await runDtsim(ws, ["run", "test_hello_world", "-s", "8"], {
-			DTSIM_WAVE: "1",
-			DTSIM_WAVE_DEPTH: "2",
-		});
-		expect(on.code).toBe(0);
-		const tcl = await Bun.file(join(dir, "dump.tcl")).text();
+		const on = await makeWorkspace(
+			CASES_TS.replace(
+				"tools: [VcsTool()],",
+				"tools: [VcsTool({ wave: { depth: 2 } })],",
+			),
+		);
+		const r = await runDtsim(on, ["run", "test_hello_world", "-s", "8"]);
+		expect(r.code).toBe(0);
+		const onDir = join(on.out, "test_hello_world");
+		const tcl = await Bun.file(join(onDir, "dump.tcl")).text();
 		expect(tcl).toContain('fsdbDumpvars 2 "+all"');
-		expect(await Bun.file(join(dir, "8", "sim.log")).text()).toContain(
+		expect(await Bun.file(join(onDir, "8", "sim.log")).text()).toContain(
 			"-ucli -i",
 		);
-		// The switch is an env var: the sim child sees it, run_sim replays it.
-		expect(await Bun.file(join(dir, "8", "sim.log")).text()).toContain(
-			"DTSIM_WAVE=1",
-		);
-		expect(await Bun.file(join(dir, "8", "run_sim")).text()).toContain(
-			"DTSIM_WAVE",
-		);
+		// run_verdi is generated only when wave is on.
+		expect(
+			[...new Bun.Glob("**/run_verdi").scanSync(onDir)].length,
+		).toBeGreaterThan(0);
 	});
 });
 
@@ -213,12 +255,10 @@ describe("vcs options", () => {
 		const ws = await makeWorkspace(
 			CASES_TS.replace(
 				"tools: [VcsTool()],",
-				'tools: [VcsTool({ top: "tb_x" })],',
+				'tools: [VcsTool({ top: "tb_x", wave: true })],',
 			),
 		);
-		const run = await runDtsim(ws, ["run", "test_hello_world", "-s", "1"], {
-			DTSIM_WAVE: "1",
-		});
+		const run = await runDtsim(ws, ["run", "test_hello_world", "-s", "1"]);
 		expect(run.code).toBe(0);
 		const dir = join(ws.out, "test_hello_world");
 		expect(await Bun.file(join(dir, "vcs.log")).text()).toContain("-top tb_x");
@@ -231,7 +271,7 @@ describe("vcs options", () => {
 		const ws = await makeWorkspace(
 			CASES_TS.replace(
 				"tools: [VcsTool()],",
-				'tools: [VcsTool({ top: "tb_x" })],',
+				'tools: [VcsTool({ top: "tb_x", wave: true })],',
 			),
 		);
 		const run = await runDtsim(ws, ["run", "test_hello_world", "-s", "1"]);
@@ -304,7 +344,7 @@ describe("vcs options", () => {
 });
 
 describe("verilator backend", () => {
-	test("no top: Verilator finds it and the binary is Vsim; --wave needs a top", async () => {
+	test("no top: Verilator finds it and the binary is Vsim", async () => {
 		const body = CASES_TS.replace(
 			"tools: [VcsTool()],",
 			"tools: [VerilatorTool()],",
@@ -320,9 +360,18 @@ describe("verilator backend", () => {
 		expect(await Bun.file(join(dir, "run_compile")).text()).not.toContain(
 			"--top-module",
 		);
-		const wave = await runDtsim(ws, ["run", "test_hello_world"], {
-			DTSIM_WAVE: "1",
-		});
+	});
+
+	test("wave without a top fails: the dump module needs a bind target", async () => {
+		const body = CASES_TS.replace(
+			"tools: [VcsTool()],",
+			"tools: [VerilatorTool({ wave: true })],",
+		).replace(
+			'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
+			'import { DefaultGrader, VerilatorTool } from "./.dtsim/dsl/index.ts";',
+		);
+		const ws = await makeWorkspace(body);
+		const wave = await runDtsim(ws, ["run", "test_hello_world"]);
 		expect(wave.code).not.toBe(0);
 		expect(wave.stderr).toContain("set VerilatorTool({ top })");
 	});
@@ -359,7 +408,7 @@ describe("several tools", () => {
 	)
 		.replace(
 			"tools: [VcsTool()],",
-			'tools: [VcsTool(), VerilatorTool({ top: "tb_top" })],',
+			'tools: [VcsTool(), VerilatorTool({ top: "tb_top", wave: true })],',
 		)
 		.replace(
 			"export default Workspace({",
@@ -377,8 +426,8 @@ export default Workspace([], (mode) => {
 	};
 	// Tool forcing is config-owned: put the requested backend first so the
 	// auto-fallback picks it.
-	if (process.env.DTSIM_TOOL) {
-		const i = opts.tools.findIndex((t) => t.name === process.env.DTSIM_TOOL);
+	if (process.env.SIM_TOOL) {
+		const i = opts.tools.findIndex((t) => t.name === process.env.SIM_TOOL);
 		if (i > 0) opts.tools = [opts.tools[i], ...opts.tools.filter((_, j) => j !== i)];
 	}
 	return opts;
@@ -397,8 +446,7 @@ export default Workspace([], (mode) => {
 		expect(vcsLog).not.toContain("+vl_only");
 
 		const vl = await runDtsim(ws, ["run", "split", "-s", "3"], {
-			DTSIM_TOOL: "verilator",
-			DTSIM_WAVE: "1",
+			SIM_TOOL: "verilator",
 		});
 		expect(vl.code).toBe(0);
 		const dir = join(ws.out, "verilator", "split");
@@ -418,18 +466,18 @@ export default Workspace([], (mode) => {
 	test("a case limited by tools is refused by run and skipped by plan", async () => {
 		const ws = await makeWorkspace(body);
 		const run = await runDtsim(ws, ["run", "vcs_only"], {
-			DTSIM_TOOL: "verilator",
+			SIM_TOOL: "verilator",
 		});
 		expect(run.code).not.toBe(0);
 		expect(run.stderr).toContain("vcs_only does not run on verilator");
 		const plan = await runDtsim(ws, ["plan", "*"], {
-			DTSIM_TOOL: "verilator",
+			SIM_TOOL: "verilator",
 		});
 		expect(plan.code).toBe(0);
 		expect(plan.stdout).toContain("Skipped (not for verilator): vcs_only");
 		// An unrecognized tool name is ignored by the config, so the
 		// auto-fallback (vcs) is used and the command still works.
-		const bad = await runDtsim(ws, ["list"], { DTSIM_TOOL: "xcelium" });
+		const bad = await runDtsim(ws, ["list"], { SIM_TOOL: "xcelium" });
 		expect(bad.code).toBe(0);
 	});
 });

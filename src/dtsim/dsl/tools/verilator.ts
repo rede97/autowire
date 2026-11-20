@@ -11,19 +11,23 @@
 // VerilatedContext::traceEverOn(true).
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { waveFromEnv } from "../env.ts";
-import type { SimTool, WaveSpec } from "../index.ts";
+import type { SimTool, WaveOpt, WaveSpec } from "../index.ts";
+import { waveSpec } from "../index.ts";
 
 export type VerilatorOpts = {
 	/** --top-module (default: Verilator finds the single top). */
 	top?: string;
 	mdir?: string;
 	main?: boolean;
+	/** Waveform dump: `true`, or `{ depth, top }` to bound it. Off by default. */
+	wave?: WaveOpt;
 	/** The compiler to run (default "verilator"), e.g. verilator_bin or a path. */
 	command?: string;
 };
 
-type Resolved = Required<Omit<VerilatorOpts, "top">> & { top?: string };
+type Resolved = Required<Omit<VerilatorOpts, "top" | "wave">> & {
+	top?: string;
+};
 
 function verilatorOpts(opts: Record<string, unknown>): Resolved {
 	const command = opts.command ?? "verilator";
@@ -74,6 +78,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 		name: "verilator",
 		probe: ["verilator"],
 		interactive: false,
+		wave: waveSpec(opts.wave),
 		passthrough: [
 			"PATH",
 			"HOME",
@@ -98,7 +103,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 		},
 
 		writeAux(ctx) {
-			const wave = waveFromEnv();
+			const wave = waveSpec({ ...opts, ...ctx.caseOpts.toolOptions }.wave);
 			if (ctx.phase !== "compile" || !wave.enabled) return;
 			const { top } = resolved(ctx.caseOpts.toolOptions);
 			if (!top) {
@@ -112,7 +117,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 		// Runs in the project root: the filelists' relative entries, $VARs
 		// and -F are Verilator's own business. -Mdir is under the compile dir.
 		compile(ctx) {
-			const wave = waveFromEnv();
+			const wave = waveSpec({ ...opts, ...ctx.caseOpts.toolOptions }.wave);
 			const { top, mdir, main, command } = resolved(ctx.caseOpts.toolOptions);
 			return {
 				argv: [

@@ -512,6 +512,7 @@ export async function loadWorkspace(opts: {
 		out: tools.length > 1 ? join(outRoot, fallback.name) : outRoot,
 		tool: fallback,
 		tools,
+		seeds: [...(o.seeds ?? ["0"])],
 		filelists: (o.filelists ?? []).map((f) => resolvePath(f, paths)),
 		cases,
 		resolved: new Map(),

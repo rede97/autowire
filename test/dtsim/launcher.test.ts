@@ -113,7 +113,7 @@ const tagged = defineLauncher({
 		const ws = await makeWorkspace(
 			withTask(
 				'{ launcher: LsfLauncher({ queue: "normal" }), maxSlots: 2, maxCompiles: 1 }',
-			),
+			).replace("tools: [VcsTool()],", "tools: [VcsTool({ wave: true })],"),
 		);
 		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "5"], {
 			DTSIM_TASK_TYPE: "lsf",

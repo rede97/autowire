@@ -125,7 +125,7 @@ function addDtsimCommands(cmd: Command): Command {
 	).action(async (group: string | undefined, opts: CommonOpts) => {
 		const ws = await load(opts);
 		const groups = planGroups(ws, group ?? "*", opts.label);
-		const seeds = await readSeeds(opts);
+		const seeds = await readSeeds(opts, ws.seeds);
 		const text = planText(groups, (c) => seedsFor(c, seeds), {
 			tool: ws.tool.name,
 			ids: skippedCases(ws, group ?? "*"),

@@ -8,12 +8,17 @@
 // $DTSIM_COV*, read when the tool is constructed.
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { covFromEnv, waveFromEnv } from "../env.ts";
-import type { SimTool, ToolContext, WaveSpec } from "../index.ts";
+import { covFromEnv } from "../env.ts";
+import { vcsBaseFlags } from "../flags.ts";
+import type { SimTool, ToolContext, WaveOpt, WaveSpec } from "../index.ts";
+import { waveSpec } from "../index.ts";
 
 export type VcsOpts = {
 	ntbOpts?: string;
 	flags?: readonly string[];
+	/** Waveform dump: `true`, or `{ depth, top }` to bound it. Off by default.
+	 *  Set per case via `toolOptions.wave`. */
+	wave?: WaveOpt;
 	/** -top (default: VCS finds the top); also the default wave scope and
 	 *  run_verdi's -top. */
 	top?: string;
@@ -32,20 +37,17 @@ function topOf(opts: Record<string, unknown>): string | undefined {
 }
 
 const DEFAULT_FLAGS = [
+	...vcsBaseFlags({ timescale: "1ns/1ps" }),
 	"-xlrm",
 	"nettype_array",
 	"+lint=TFIPC-L",
-	"-sverilog",
-	"-full64",
 	"+error+10000",
 	"-error=noMPD",
 	"-debug_acc+all",
 	"-debug_region+cell+encrypt",
-	"-timescale=1ns/1ps",
-	"-kdb",
 	"-lca",
 	"+v2k",
-	"-v2k_generate",
+	"+v2k_generate",
 	"+transport_path_delays",
 	"+pulse_e/0",
 	"+pulse_r/0",
@@ -141,6 +143,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		name: "vcs",
 		probe: ["vcs"],
 		interactive: true,
+		wave: waveSpec(opts.wave),
 		passthrough: [
 			"PATH",
 			"HOME",
@@ -171,9 +174,10 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		},
 
 		writeAux(ctx) {
-			const wave = waveFromEnv();
+			const o = merged(ctx.caseOpts.toolOptions);
+			const wave = waveSpec(o.wave);
 			const cov = covFromEnv();
-			const top = topOf(merged(ctx.caseOpts.toolOptions));
+			const top = topOf(o);
 			if (ctx.phase === "compile") {
 				if (wave.enabled) {
 					writeFileSync(join(ctx.dir, "dump.tcl"), dumpTcl(wave, top));
@@ -186,7 +190,8 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 					);
 					chmodSync(viewer, 0o755);
 				}
-			} else {
+			} else if (wave.enabled) {
+				// run_verdi opens the fsdb dump, so it only exists with waves on.
 				const script = join(ctx.dir, "run_verdi");
 				writeFileSync(script, verdiScript(ctx, top));
 				chmodSync(script, 0o755);
@@ -198,8 +203,8 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		// and -F are VCS's own business. Every output goes to the compile dir.
 		compile(ctx) {
 			const cov = covFromEnv();
-			const wave = waveFromEnv();
 			const o = merged(ctx.caseOpts.toolOptions);
+			const wave = waveSpec(o.wave);
 			const top = topOf(o);
 			// dtsim's UCLI fsdb dump (dump.tcl) needs debug access, unless the
 			// config already set a -debug_access level (e.g. via vcsBaseFlags).
@@ -240,9 +245,9 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		},
 
 		simulate(ctx) {
-			const wave = waveFromEnv();
-			const cov = covFromEnv();
 			const o = merged(ctx.caseOpts.toolOptions);
+			const wave = waveSpec(o.wave);
+			const cov = covFromEnv();
 			const uvm = ctx.caseOpts.uvm;
 			const plusarg = casePlusarg(o);
 			const simv = ctx.regression ? join(ctx.compileDir, "simv") : "../simv";
