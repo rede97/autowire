@@ -77,6 +77,10 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 		],
 		compileErrors: [/%Error/, /%Fatal/],
 		simErrors: [/%Error/, /%Fatal/],
+		// Verilator reads its own seed plusarg (a C++ harness must pass argv to
+		// contextp->commandArgs). An explicit +verilator+seed+0 means "pick a
+		// random seed", so dtsim seed 0 is sent as 1.
+		seedArg: '+verilator+seed+$([ "$SEED" = 0 ] && echo 1 || echo "$SEED")',
 
 		// The binary also depends on -Mdir and --binary vs C++ harness (the
 		// top is in `base`).

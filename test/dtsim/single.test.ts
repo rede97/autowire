@@ -430,6 +430,12 @@ describe("verilator backend", () => {
 		expect(
 			await Bun.file(join(ws.out, "test_hello_world", "dtsim_wave.sv")).text(),
 		).toContain("bind tb_top");
+		// Seed 0 would mean "pick a random seed" to Verilator: it is sent as 1.
+		const log = await Bun.file(
+			join(ws.out, "test_hello_world", "0", "sim.log"),
+		).text();
+		expect(log).toContain("+verilator+seed+1");
+		expect(log).not.toContain("ntb_random_seed");
 	});
 
 	test("compile produces an executable, sim grades its stdout log", async () => {
@@ -450,7 +456,8 @@ describe("verilator backend", () => {
 		const log = await Bun.file(join(caseDir, "11", "sim.log")).text();
 		expect(log).toContain("mock verilator sim");
 		expect(log).toContain("TEST PASSED");
-		expect(log).toContain("+ntb_random_seed=11");
+		expect(log).toContain("+verilator+seed+11");
+		expect(log).not.toContain("ntb_random_seed");
 		expect(log).toContain("SIM_TRACE=");
 		expect(log).toContain("UNRELATED_SECRET=");
 		expect(log).not.toContain("+UVM_TESTNAME");

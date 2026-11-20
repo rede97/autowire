@@ -331,6 +331,11 @@ supplies argv, log locations, excerpt regexes, optional helper files
 (`writeAux`), its `compileKey`, and how it reads `toolOptions`. `name` is part
 of the compile key and the per-tool output dir; `interactive` (default
 `false`) forwards the first Ctrl+C of `run --interactive` to the child.
+`seedArg` is the word `run_sim` appends to carry the seed, with `$SEED` for
+the value (`run_sim -s <seed>` overrides it); the default is
+`+ntb_random_seed=$SEED` (VCS). `VerilatorTool` sends `+verilator+seed+<seed>`,
+with seed 0 sent as 1 because Verilator reads 0 as "pick a random seed"; a
+C++ harness must hand argv to `contextp->commandArgs()` for it to apply.
 The context carries the case's `top` and `wave` (`ctx.caseOpts.top`,
 `ctx.caseOpts.wave` = `{ enabled, depth, scope }`); coverage is read with
 `covFromEnv()` at each compile and sim.

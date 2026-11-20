@@ -66,7 +66,7 @@ DSL (import from ./.dtsim/dsl/index.ts)
             seeds, grader, bareDefaults, env, task, hooks, groups, cases.
   tools     [VcsTool({ ntbOpts, flags, command, casePlusarg })
             | VerilatorTool({ mdir, main, command })
-            | defineTool({ name, passthrough, compile, simulate, ... }), ...];
+            | defineTool({ name, passthrough, compile, simulate, seedArg, ... }), ...];
             casePlusarg (default "TEST") sends +TEST=<case>; false sends none.
             Case toolOptions override these per key.
   filelists dtsim never reads them: each is -f <abs path>, compiled with the

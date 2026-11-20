@@ -466,6 +466,7 @@ export async function executeSim(
 		seed,
 		exports: env.env,
 		argv: prepared.argv,
+		seedArg: tool.seedArg ?? "+ntb_random_seed=$SEED",
 	});
 	ctx.submitScript("run_sim");
 

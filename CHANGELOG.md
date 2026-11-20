@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.3] - 2026-11-20
+
+- **Verilator 的 seed 生效**：之前 `run_sim` 一律给仿真加 VCS 的 `+ntb_random_seed=<seed>`，Verilator 不认，所以 `--seeds` / `--random` 的每个 seed 在 Verilator 上跑出完全相同的随机序列。`SimTool` 新增 `seedArg`（`run_sim` 追加的一个 bash 词，`$SEED` 是 seed，默认 `+ntb_random_seed=$SEED`）；`VerilatorTool` 改为 `+verilator+seed+<seed>`，seed 0 发成 1（显式的 `+verilator+seed+0` 表示“随机挑一个”，结果不可复现）。C++ harness 需把 argv 交给 `contextp->commandArgs()`。
+
 ## [2.9.2] - 2026-11-20
 
 - **编译组改名为 `build<序号>_<top>`**：回归的编译组（`compile_<名字>` 目录、plan / 进度里的名字）不再借用组内第一个用例的 id，默认是本次计划中的序号加该组的顶层模块，如 `compile_build01_tb_top`、`compile_build04_tb_chip`（序号按成员多少排序，至少两位）；后端的 `buildName` 仍可覆盖。LSF / Slurm 的编译作业名改为同一个 `compile_<名字>`（原来是 `compile_<顶层用例名>`，与目录不一致），单条 `run` 的作业名是 `compile_<case id>`。

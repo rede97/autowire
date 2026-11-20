@@ -25,7 +25,8 @@ function exportValue(key: string, value: string): string {
 
 /**
  * run_sim re-runs exactly what dtsim ran, including the resolved case env
- * and injected variables. -s <seed> overrides the seed at runtime.
+ * and injected variables. -s <seed> overrides the seed at runtime; `seedArg`
+ * (the tool's, e.g. `+ntb_random_seed=$SEED`) carries it to the simulator.
  * Timestamps are written around the sim command so elapsed time excludes
  * any cluster queue wait.
  */
@@ -34,6 +35,7 @@ export function writeRunSim(args: {
 	seed: string;
 	exports: Record<string, string>;
 	argv: string[];
+	seedArg: string;
 }): string {
 	const lines = [
 		"#!/bin/bash",
@@ -49,7 +51,7 @@ export function writeRunSim(args: {
 		"  esac",
 		"done",
 		"date +%s > .start_time",
-		`${args.argv.map(shellQuote).join(" ")} +ntb_random_seed=$SEED`,
+		`${args.argv.map(shellQuote).join(" ")} ${args.seedArg}`,
 		"rc=$?",
 		"date +%s > .end_time",
 		"exit $rc",

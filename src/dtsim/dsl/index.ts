@@ -424,6 +424,10 @@ export type SimTool = {
 	 *  cluster job name (`compile_<name>`). Default: `build<NN>_<top>`.
 	 *  Duplicates get `-2`, `-3`. */
 	buildName?: (c: CompileKeyInput) => string;
+	/** The seed argument run_sim appends to the sim command: one bash word in
+	 *  which `$SEED` is the seed (`run_sim -s <seed>` overrides it). Default
+	 *  `+ntb_random_seed=$SEED`. */
+	seedArg?: string;
 	/** Write tool-specific helper files (dump.tcl, run_verdi, ...). */
 	writeAux?: (ctx: ToolContext) => void;
 	compile: (ctx: ToolContext) => Prepared;
