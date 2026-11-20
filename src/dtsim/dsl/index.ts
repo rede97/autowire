@@ -238,26 +238,57 @@ export type Grader = {
 	) => GradeStatus | GradeOutcome | Promise<GradeStatus | GradeOutcome>;
 };
 
-/** Passed to `Workspace.onResolve` once the tool and launcher are chosen. The
- *  callback patches it in place (and `process.env`); there is no return. */
-export type ResolveContext = {
-	/** `run` for a single case, `regr` for a regression. */
-	mode: "run" | "regr";
-	/** Resolved tool name (after --tool / $DTSIM_TOOL). */
-	tool: string;
-	/** Resolved launcher name (after the probe list / DTSIM_TASK_TYPE). */
-	launcher: string;
-	/** Project root (the RTL design dir that owns dt/). */
-	workspace: string;
-	/** Config dir: <project>/dt/config. */
+/** The fully-resolved workspace, passed to `Workspace.onResolve` to patch in
+ *  place. Every field is mutable: reassign `tool`, adjust `task`, mutate
+ *  `cases`, `grader`, `hooks`, ... . Only DSL types appear here, so the DSL
+ *  stays self-contained; core/config.ts re-exports it. */
+export type ResolvedWorkspace = {
+	configPath: string;
+	/** Project root: the RTL design dir that owns dt/. `${workspace}` / $WORKSPACE. */
+	root: string;
+	/** Config dir (<project>/dt/config). `${verify}`. */
 	verify: string;
-	/** Slot limits, mutable: assign to override them. */
-	task: { maxSlots: number; maxCompiles: number };
+	/** Output root: <project>/dt/simout, plus /<tool> when several tools exist. */
+	out: string;
+	/** Selected backend (auto-fallback, or an onResolve override). */
+	tool: SimTool;
+	/** Every configured backend, in config order. */
+	tools: SimTool[];
+	/** Workspace filelists, absolute. */
+	filelists: string[];
+	bareDefaults?: CaseOpts;
+	passthrough: string[];
+	deny: string[];
+	/** Environment knobs the config documents, for `dtsim env`. */
+	vars: readonly EnvVarDoc[];
+	/** Launcher after the probe / DTSIM_TASK_TYPE override, plus slot limits. */
+	task: TaskSpec;
+	hooks: Hooks;
+	/** Default grader. */
+	grader: Grader;
+	groups: Map<string, GroupMember[]>;
+	/** Top-level cases by name; derived cases hang off `children`. */
+	cases: Map<string, CaseDef>;
+	/** Lazily merged options per case id (functions evaluated once). */
+	resolved: Map<string, CaseOpts>;
+};
+
+/** An environment knob the config understands, listed by `dtsim env`. */
+export type EnvVarDoc = {
+	/** Variable name, e.g. "WAVE". */
+	name: string;
+	/** Allowed values, e.g. "0|1". */
+	values?: string;
+	/** Documented default. */
+	default?: string;
+	/** One-line description. */
+	desc?: string;
 };
 
 export type WorkspaceOpts = {
 	/** Simulator backends: VcsTool(...), VerilatorTool(...) or defineTool(...).
-	 *  The first is the default; `--tool <name>` or $DTSIM_TOOL picks another. */
+	 *  The first available (by each tool's probe) is the default; `onResolve`
+	 *  may force another by reassigning `ws.tool`. */
 	tools: readonly SimTool[];
 	/** Filelists every case compiles (paths relative to dt/config, `${...}`
 	 *  allowed); cases append theirs. Default: none. */
@@ -267,12 +298,13 @@ export type WorkspaceOpts = {
 	/** Default grader. Default `DefaultGrader()`. */
 	grader?: Grader;
 	bareDefaults?: CaseOpts;
-	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
+	env?: {
+		passthrough?: readonly string[];
+		deny?: readonly string[];
+		/** Environment knobs this config understands, for `dtsim env` to list. */
+		vars?: readonly EnvVarDoc[];
+	};
 	task?: TaskOpts;
-	/** Runs once after the tool and launcher are resolved, before any compile
-	 *  or sim. Patches `ctx` in place (e.g. `ctx.task.maxSlots`) and may read
-	 *  and modify `process.env` (e.g. default `DTSIM_WAVE` from `ctx.mode`). */
-	onResolve?: (ctx: ResolveContext) => void;
 	hooks?: Hooks;
 	groups?: readonly GroupDef[];
 	cases?: readonly string[];
@@ -280,7 +312,10 @@ export type WorkspaceOpts = {
 
 export type WorkspaceDef = {
 	kind: "dtsim-workspace";
-	opts: WorkspaceOpts;
+	/** Registered environment variables, for `dtsim env` to list. */
+	env: readonly EnvVarDoc[];
+	/** Static options, or a callback invoked with the mode at load. */
+	opts: WorkspaceOpts | WorkspaceFactory;
 };
 
 // --- SimTool plugin contract -------------------------------------------------
@@ -348,8 +383,12 @@ export type CompileKeyInput = {
 
 export type SimTool = {
 	kind: "dtsim-tool";
-	/** `${tool}`, $DTSIM_TOOL and part of the compile key. */
+	/** Part of the compile key and the output dir name. */
 	name: string;
+	/** Executables that must all be on PATH for this tool to count as
+	 *  available in the automatic fallback (e.g. ["vcs"]). Empty/absent =
+	 *  always available. `onResolve` may still force it by name. */
+	probe?: readonly string[];
 	/** Parent-environment names this tool needs; copied only when present. */
 	passthrough: readonly string[];
 	/** true: first Ctrl+C is forwarded to the child (UCLI-style). */
@@ -636,6 +675,13 @@ export function defineTool(
 	if (!Array.isArray(spec.passthrough)) {
 		throw new Error(`dtsim: tool ${spec.name} needs a passthrough array`);
 	}
+	if (
+		spec.probe !== undefined &&
+		(!Array.isArray(spec.probe) ||
+			spec.probe.some((p) => typeof p !== "string"))
+	) {
+		throw new Error(`dtsim: tool ${spec.name} probe must be a string array`);
+	}
 	return {
 		...spec,
 		kind: "dtsim-tool",
@@ -690,7 +736,11 @@ export function defineGrader(spec: Omit<Grader, "kind">): Grader {
 	return { kind: "dtsim-grader", name: spec.name, grade: spec.grade };
 }
 
-export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
+export type WorkspaceFactory = (mode: "run" | "regr") => WorkspaceOpts;
+
+/** Validate a resolved WorkspaceOpts. Called by `Workspace()` for the static
+ *  form and by loadWorkspace after invoking a factory. */
+export function validateWorkspace(opts: WorkspaceOpts): void {
 	if (typeof opts !== "object" || opts === null) {
 		throw new Error("dtsim: Workspace options must be an object");
 	}
@@ -714,9 +764,6 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 			needLauncher("task.launcher", l);
 	}
 	if (opts.grader !== undefined) needGrader("workspace grader", opts.grader);
-	if (opts.onResolve !== undefined && typeof opts.onResolve !== "function") {
-		throw new Error("dtsim: Workspace onResolve must be a function");
-	}
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);
 	for (const [stage, value] of Object.entries(opts.hooks ?? {})) {
 		if (!HOOK_STAGES.includes(stage)) {
@@ -731,7 +778,39 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 			);
 		}
 	}
-	return { kind: "dtsim-workspace", opts };
+}
+
+/** Two forms:
+ *  - `Workspace(opts)`: static options; the env registry comes from
+ *    `opts.env.vars`.
+ *  - `Workspace(regEnv, opts | ((mode) => opts))`: the registered environment
+ *    variables first, then static options or a callback that computes them
+ *    from the mode (`run` / `regr`). The callback holds all the config's
+ *    logic — read env, default `DTSIM_WAVE`, choose tools, set slots. dtsim
+ *    still auto-fallbacks the tool (probe) and probes the launcher. */
+export function Workspace(
+	envOrOpts: readonly EnvVarDoc[] | WorkspaceOpts,
+	optsOrFn?: WorkspaceOpts | WorkspaceFactory,
+): WorkspaceDef {
+	if (optsOrFn === undefined) {
+		const opts = envOrOpts as WorkspaceOpts;
+		validateWorkspace(opts);
+		return {
+			kind: "dtsim-workspace",
+			env: [...(opts.env?.vars ?? [])],
+			opts,
+		};
+	}
+	if (!Array.isArray(envOrOpts)) {
+		throw new Error(
+			"dtsim: Workspace(regEnv, opts): the first argument must be the registered env var array",
+		);
+	}
+	if (typeof optsOrFn === "function") {
+		return { kind: "dtsim-workspace", env: [...envOrOpts], opts: optsOrFn };
+	}
+	validateWorkspace(optsOrFn);
+	return { kind: "dtsim-workspace", env: [...envOrOpts], opts: optsOrFn };
 }
 
 // --- DefaultGrader -----------------------------------------------------------

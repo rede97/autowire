@@ -72,6 +72,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 	return {
 		kind: "dtsim-tool",
 		name: "verilator",
+		probe: ["verilator"],
 		interactive: false,
 		passthrough: [
 			"PATH",

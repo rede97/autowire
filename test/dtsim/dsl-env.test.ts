@@ -369,6 +369,31 @@ describe("environment isolation", () => {
 		expect(result.stdout).toMatch(/│ inject\s+│ output_dir\s/);
 		expect(result.stdout).toMatch(/│ plugin\s+│ PATH\s/);
 	});
+
+	test("dtsim env lists the config's documented environment variables", async () => {
+		const body = CASES_TS.replace(
+			'env: { passthrough: ["DTSIM_MOCK_*"], deny: ["LD_PRELOAD"] },',
+			`env: {
+		passthrough: ["DTSIM_MOCK_*"],
+		deny: ["LD_PRELOAD"],
+		vars: [
+			{ name: "WAVE", values: "0|1", default: "run=1 regr=0", desc: "dump waveforms" },
+			{ name: "JOBS", default: "8", desc: "parallel compiles" },
+		],
+	},`,
+		);
+		const ws = await makeWorkspace(body);
+		const result = await runDtsim(ws, [
+			"env",
+			"--case",
+			"test_bar_basic.cosim",
+		]);
+		expect(result.code).toBe(0);
+		expect(result.stdout).toContain("Config environment variables");
+		expect(result.stdout).toContain("WAVE");
+		expect(result.stdout).toContain("dump waveforms");
+		expect(result.stdout).toContain("JOBS");
+	});
 });
 
 describe("materialized dsl", () => {

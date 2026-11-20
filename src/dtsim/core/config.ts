@@ -15,17 +15,19 @@ import {
 	type Grader,
 	type GroupDef,
 	type GroupMember,
-	type Hooks,
 	isCase,
 	isWorkspace,
 	LocalLauncher,
+	type ResolvedWorkspace,
 	type SimTool,
 	type TaskSpec,
 	type UvmCfg,
+	validateWorkspace,
 	type WorkspaceDef,
 } from "../dsl/index.ts";
 import { assertNoDeniedAssignments, compileEnvEntries } from "./env.ts";
 import { resolveLauncher } from "./launch.ts";
+import { onPath } from "./run.ts";
 
 export type MergedCase = {
 	id: string;
@@ -52,34 +54,7 @@ export type MergedCase = {
 	tools?: string[];
 };
 
-export type ResolvedWorkspace = {
-	configPath: string;
-	/** Project root: the RTL design dir that owns dt/. `${workspace}` / $WORKSPACE. */
-	root: string;
-	/** Config dir (<project>/dt/config). `${verify}`. */
-	verify: string;
-	/** Output root: <project>/dt/simout, plus /<tool> when several tools exist. */
-	out: string;
-	/** Selected backend (--tool, $DTSIM_TOOL, else the first of `tools`). */
-	tool: SimTool;
-	/** Every configured backend, in config order. */
-	tools: SimTool[];
-	/** Workspace filelists, absolute. */
-	filelists: string[];
-	bareDefaults?: CaseOpts;
-	passthrough: string[];
-	deny: string[];
-	/** Launcher after the DTSIM_TASK_TYPE override, plus slot limits. */
-	task: TaskSpec;
-	hooks: Hooks;
-	/** Default grader. */
-	grader: Grader;
-	groups: Map<string, GroupMember[]>;
-	/** Top-level cases by name; derived cases hang off `children`. */
-	cases: Map<string, CaseDef>;
-	/** Lazily merged options per case id (functions evaluated once). */
-	resolved: Map<string, CaseOpts>;
-};
+export type { ResolvedWorkspace } from "../dsl/index.ts";
 
 export type ExpandVars = {
 	verify: string;
@@ -284,7 +259,7 @@ export function runsOn(c: MergedCase, tool: SimTool): boolean {
 export function assertRunsOn(c: MergedCase, tool: SimTool): void {
 	if (!runsOn(c, tool)) {
 		throw new Error(
-			`dtsim: case ${c.id} does not run on ${tool.name} (tools: ${c.tools?.join(", ")}); pick one with --tool`,
+			`dtsim: case ${c.id} does not run on ${tool.name} (tools: ${c.tools?.join(", ")}); force another tool via onResolve`,
 		);
 	}
 }
@@ -432,8 +407,6 @@ async function importModule(path: string): Promise<Record<string, unknown>> {
 export async function loadWorkspace(opts: {
 	config?: string;
 	cwd?: string;
-	/** Tool name; default $DTSIM_TOOL, else the first Workspace tool. */
-	tool?: string;
 	mode?: "run" | "regr";
 }): Promise<ResolvedWorkspace> {
 	const cwd = opts.cwd ?? process.cwd();
@@ -453,7 +426,13 @@ export async function loadWorkspace(opts: {
 	if (!isWorkspace(wsDef)) {
 		throw new Error(`dtsim: ${configPath} must default-export Workspace(...)`);
 	}
-	const o = wsDef.opts;
+	const o =
+		typeof wsDef.opts === "function"
+			? wsDef.opts(opts.mode ?? "run")
+			: wsDef.opts;
+	// A factory's result is validated here (static opts were validated by
+	// Workspace() at import).
+	if (typeof wsDef.opts === "function") validateWorkspace(o);
 	// Only top-level cases need exporting, alone or inside an exported array,
 	// Set or Map (values). A derived case exported as well registers its root;
 	// the same root object exported twice is fine. Other objects (a Group's
@@ -499,43 +478,33 @@ export async function loadWorkspace(opts: {
 	// An unknown DTSIM_TASK_TYPE fails here, before any output dir exists.
 	const launcher = await resolveLauncher(o.task?.launcher ?? LocalLauncher());
 
+	// Tool auto-fallback: the first tool whose probe executables are all on
+	// PATH (a tool with no probe is always available). onResolve may override.
 	const tools = [...o.tools];
-	const wanted = opts.tool ?? process.env.DTSIM_TOOL;
-	const tool = wanted
-		? tools.find((t) => t.name === wanted)
-		: (tools[0] as SimTool);
-	if (!tool) {
-		const from = opts.tool ? "--tool" : "$DTSIM_TOOL";
-		throw new Error(
-			`dtsim: ${from} ${wanted}: not a Workspace tool (tools: ${tools.map((t) => t.name).join(", ")})`,
-		);
-	}
-	// onResolve sees the chosen tool and launcher and patches the context in
-	// place: it may default DTSIM_WAVE from the mode (read later, before any
-	// compile/sim) and reassign the slot limits.
+	const available = await Promise.all(
+		tools.map(async (t) => {
+			const probe = t.probe ?? [];
+			if (probe.length === 0) return true;
+			return (await Promise.all(probe.map((e) => onPath(e)))).every(Boolean);
+		}),
+	);
+	const fallback = tools.find((_, i) => available[i]) ?? (tools[0] as SimTool);
 	const slots = {
 		maxSlots: o.task?.maxSlots ?? 8,
 		maxCompiles: o.task?.maxCompiles ?? 4,
 	};
-	o.onResolve?.({
-		mode: opts.mode ?? "run",
-		tool: tool.name,
-		launcher: launcher.name,
-		workspace: root,
-		verify,
-		task: slots,
-	});
 	const task: TaskSpec = { launcher, ...slots };
 	const outRoot =
 		o.output === undefined ? join(dt, "simout") : resolvePath(o.output, paths);
 
-	return {
+	// The tool auto-fallback picks the backend; a factory may have ordered or
+	// filtered `tools` to steer it. Several tools: one output tree each.
+	const ws: ResolvedWorkspace = {
 		configPath,
 		root,
 		verify,
-		// Several tools: one output tree each, so switching never overwrites.
-		out: tools.length > 1 ? join(outRoot, tool.name) : outRoot,
-		tool,
+		out: tools.length > 1 ? join(outRoot, fallback.name) : outRoot,
+		tool: fallback,
 		tools,
 		filelists: (o.filelists ?? []).map((f) => resolvePath(f, paths)),
 		cases,
@@ -543,9 +512,11 @@ export async function loadWorkspace(opts: {
 		...(o.bareDefaults === undefined ? {} : { bareDefaults: o.bareDefaults }),
 		passthrough: [...(o.env?.passthrough ?? [])],
 		deny,
+		vars: [...wsDef.env],
 		task,
 		hooks: { ...o.hooks },
 		grader: o.grader ?? DefaultGrader(),
 		groups,
 	};
+	return ws;
 }

@@ -2,13 +2,16 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
-## [2.8.7] - 2026-11-19
+## [2.9.0] - 2026-11-20
 
 - **表格填满终端宽度**:所有框线表格(单条用例的 Run / Summary、回归的 Regression / Summary、`results`、`groups`、`env`)像 `cmd` 分割线一样按当前终端宽度排版——窄了把空余宽度加给最宽的列、整表填满终端宽;宽了最宽的列自动折行使整表不超宽(列不窄于表头)。非终端(管道/文件)保持内容自然宽度(100 列封顶、不补空格)。此前固定 100/120 列,窄终端会被软换行而错位、宽终端又填不满。单步日志行(`▶ start <phase> <log>`)仍是普通一行,长路径由终端换行。
 - **日志路径改为纯文本整行**:回归里每个 compile / sim 完成后的行,日志路径和大小直接接在 `<状态> <耗时> <名字>` 同一行末尾(`OK 00:01 compile sd_sha256  <path> (147.1 KiB)`),不再用 `└─` 另起一行;长路径交给终端换行,与单步日志行 `▶ start <phase> <log>` 一致。
 - **作业后端探测与顺序 fallback**:`task.launcher` 可以给一个列表,dtsim 并发探测每个 launcher 的提交工具是否在 PATH 上(LSF→`bsub`、Slurm→`srun`、local 永远可用),按列表顺序选中第一个有效的(`[LsfLauncher(), SlurmLauncher(), LocalLauncher()]`)。单个 launcher 仍是显式选择、不探测;`DTSIM_TASK_TYPE` 可强制某一个并跳过探测。并发探测避免慢文件系统上逐个串行拖慢启动。
 - **作业后端生成提交备份脚本**:选中的 cluster launcher 在 `run_sim` / `run_compile` / VCS `run_verdi` 旁各写一份提交脚本(LSF `bjob_*`、Slurm `srun_*`,内容 `<bsub|srun> … bash <run 脚本>`)供手动重投;dtsim 仍内联提交、不执行这些备份,local 不生成(bypass)。`defineLauncher` 新增可选 `probe`(需在 PATH 上的可执行文件)和 `scriptPrefix`(备份脚本前缀)。
-- **`Workspace({ onResolve })` 解析后回调**:tool 和 launcher 解析完、开跑之前调用一次,传入一个可变的 `ctx = { mode:"run"|"regr", tool, launcher, workspace, verify, task:{maxSlots,maxCompiles} }`。**就地 patch**(无返回值):改 `ctx.task.maxSlots` 覆盖并发数,改 `process.env`(典型:无 `--wave`/`WAVE` 时按 `ctx.mode` 默认 `DTSIM_WAVE`——单跑 dump、回归不 dump)。为支持这一点,VCS/Verilator 后端的 `waveFromEnv()`/`covFromEnv()` 读取从"构造时"挪到"用时",现有 config 行为不变。
+- **破坏性:`Workspace(regEnv, opts | ((mode) => opts)` 回调式配置**:`Workspace` 现在第一个参数是 config 注册的环境变量(见下),第二个参数是静态 opts 或一个 `(mode: "run"|"regr") => opts` 的回调。config 的全部逻辑(按 mode 默认 `DTSIM_WAVE`、算 slots、选 tool)都写在这个回调里,dtsim 在加载时以 mode 调用它。**`onResolve` 已移除**(此能力由该回调取代)。单参数 `Workspace({...})` 仍兼容。
+- **破坏性:工具选择交给 config + 自动 fallback**:删除 `--tool` 和 `$DTSIM_TOOL` 选择入口。每个 `SimTool` 新增 `probe`(需在 PATH 上的可执行文件,VCS→`vcs`、Verilator→`verilator`),dtsim 并发探测、按 `tools` 顺序自动选中第一个可用的;要强制某个 tool,config 在回调里调整 `tools` 顺序或过滤。
+- **破坏性:删除 `--wave` / `--cov` 等运行开关 flag**:CLI 不再注入 `DTSIM_WAVE` / `DTSIM_COV`。wave / coverage 完全由 config 决定(在回调里设置 `DTSIM_WAVE` 等),backend 在用时读取。`--wave-depth/--wave-top/--cov-metrics/--cov-merge` 一并移除。
+- **环境变量注册表**:`Workspace` 第一个参数登记 config 支持的环境变量(`{ name, values?, default?, desc? }`),`dtsim env` 末尾列出"Config environment variables"表,便于发现项目级旋钮(如 `WAVE`/`JOBS`/`DTSIM_SLOTS`)。
 - **DSL 默认 flags 构造器**:新增 `vcsBaseFlags(opts)` / `verilatorBaseFlags(opts)`,返回可移植的编译基线(VCS `-full64 -sverilog`、Verilator `--sv`),config 展开后再追加项目特有项,不必从头写一遍。选项覆盖默认(`sv:false` 去掉 SV)、`timescale`/`jobs` 即辅助参数、`add` 追加,一次调用完成"基线 + overlay"。`--wave` 本身无需 flag(dtsim 自绑 dump,VCS 后端在 wave 打开时编译期自动加 `-debug_access+all`)。
 
 ## [2.8.6] - 2026-11-19

@@ -97,7 +97,7 @@ describe("regression", () => {
 
 	test("coverage: per-group urg merge, dcov script, failure propagates", async () => {
 		const ws = await makeWorkspace();
-		const result = await runDtsim(ws, ["regr", "base", "--cov"]);
+		const result = await runDtsim(ws, ["regr", "base"], { DTSIM_COV: "1" });
 		expect(result.code).toBe(0);
 		const regDir = join(ws.out, "regression");
 		expect(
@@ -118,7 +118,8 @@ describe("regression", () => {
 		expect(runSim).toContain("-cm_dir");
 
 		const ws2 = await makeWorkspace();
-		const failed = await runDtsim(ws2, ["regr", "base", "--cov"], {
+		const failed = await runDtsim(ws2, ["regr", "base"], {
+			DTSIM_COV: "1",
 			DTSIM_MOCK_URG_FAIL: "1",
 		});
 		expect(failed.code).toBe(1);

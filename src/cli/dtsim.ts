@@ -33,44 +33,18 @@ import { formatRelease } from "./version.ts";
 
 type CommonOpts = {
 	config?: string;
-	tool?: string;
 	seed?: string;
 	seedFile?: string;
 	numSeeds?: number;
 	label?: string;
 	verbose: boolean;
 	plain: boolean;
-	cov?: boolean;
-	covMetrics?: string;
-	covMerge: boolean;
-	wave?: boolean;
-	waveDepth?: string;
-	waveTop?: string;
 };
 
 const CONFIG_HELP =
 	"dtsim.config.ts path (default: dt/config/ upward from CWD)";
-const TOOL_HELP =
-	"Workspace tool by name ($DTSIM_TOOL; default: the first in tools)";
-
-/** Run switches are environment variables: set them before the config is
- *  imported, so backends read them when constructed and children inherit
- *  them. A flag left out keeps whatever the shell already exported. */
-function applySwitches(opts: Partial<CommonOpts>): void {
-	const set = (name: string, value: string | undefined) => {
-		if (value !== undefined) process.env[name] = value;
-	};
-	set("DTSIM_TOOL", opts.tool);
-	set("DTSIM_WAVE", opts.wave ? "1" : undefined);
-	set("DTSIM_WAVE_DEPTH", opts.waveDepth);
-	set("DTSIM_WAVE_TOP", opts.waveTop);
-	set("DTSIM_COV", opts.cov ? "1" : undefined);
-	set("DTSIM_COV_METRICS", opts.covMetrics);
-	set("DTSIM_COV_MERGE", opts.covMerge === false ? "0" : undefined);
-}
 
 function load(opts: Partial<CommonOpts>, mode: "run" | "regr" = "run") {
-	applySwitches(opts);
 	return loadWorkspace({ config: opts.config, mode });
 }
 
@@ -90,7 +64,6 @@ function engineOpts(opts: CommonOpts, interactive: boolean) {
 function addCommon(cmd: Command): Command {
 	return cmd
 		.option("--config <path>", CONFIG_HELP)
-		.option("--tool <name>", TOOL_HELP)
 		.option("-s, --seed <seed>", "explicit random seed")
 		.option("--seed-file <file>", "one seed per line")
 		.option("--num-seeds <n>", "generate N seeds", (v) => Number(v))
@@ -100,19 +73,7 @@ function addCommon(cmd: Command): Command {
 			"show child logs (on a TTY: printed above the live status)",
 			false,
 		)
-		.option("--plain", "no dashboard; one line per task", false)
-		.option("--wave", "dump waveforms ($DTSIM_WAVE=1)")
-		.option(
-			"--wave-depth <n>",
-			"dump depth, 0 = all levels ($DTSIM_WAVE_DEPTH)",
-		)
-		.option(
-			"--wave-top <scope>",
-			"dump scope (default: the tool's top; $DTSIM_WAVE_TOP)",
-		)
-		.option("--cov", "collect coverage ($DTSIM_COV=1)")
-		.option("--cov-metrics <metrics>", "coverage metrics ($DTSIM_COV_METRICS)")
-		.option("--no-cov-merge", "skip per-group urg merge ($DTSIM_COV_MERGE=0)");
+		.option("--plain", "no dashboard; one line per task", false);
 }
 
 /** Attach the dtsim subcommands to `cmd` (autowire's `dtsim` or a bare program). */
@@ -181,7 +142,6 @@ function addDtsimCommands(cmd: Command): Command {
 			"list testcases as trees (default 2 levels; a case limits to its subtree)",
 		)
 		.option("--config <path>", CONFIG_HELP)
-		.option("--tool <name>", TOOL_HELP)
 		.option("-L, --depth <n>", "levels to expand (root is 1; default 2)", (v) =>
 			Number(v),
 		)
@@ -191,7 +151,6 @@ function addDtsimCommands(cmd: Command): Command {
 				caseId: string | undefined,
 				opts: {
 					config?: string;
-					tool?: string;
 					depth?: number;
 					all?: boolean;
 				},
@@ -243,8 +202,7 @@ function addDtsimCommands(cmd: Command): Command {
 		.command("groups")
 		.description("list regression groups")
 		.option("--config <path>", CONFIG_HELP)
-		.option("--tool <name>", TOOL_HELP)
-		.action(async (opts: { config?: string; tool?: string }) => {
+		.action(async (opts: { config?: string }) => {
 			const ws = await load(opts);
 			// Cases the selected tool runs; the rest are counted as skipped.
 			const rows = ["*", ...ws.groups.keys()].map((name) => {
@@ -266,16 +224,13 @@ function addDtsimCommands(cmd: Command): Command {
 		.option("--recheck", "re-grade from sim.log", false)
 		.option("--csv", "machine-readable rows", false)
 		.option("--config <path>", CONFIG_HELP)
-		.option("--tool <name>", "tool whose graders --recheck uses ($DTSIM_TOOL)")
 		.action(
 			async (opts: {
 				dir: string;
 				recheck: boolean;
 				csv: boolean;
 				config?: string;
-				tool?: string;
 			}) => {
-				applySwitches(opts);
 				process.exitCode = await resultsCommand(opts);
 			},
 		);
@@ -287,14 +242,12 @@ function addDtsimCommands(cmd: Command): Command {
 		.option("--phase <phase>", "compile or sim", "sim")
 		.option("--show-values", "print values, not just names", false)
 		.option("--config <path>", CONFIG_HELP)
-		.option("--tool <name>", TOOL_HELP)
 		.action(
 			async (opts: {
 				case: string;
 				phase: string;
 				showValues: boolean;
 				config?: string;
-				tool?: string;
 			}) => {
 				const ws = await load(opts);
 				printCaseEnv(
@@ -303,6 +256,20 @@ function addDtsimCommands(cmd: Command): Command {
 					opts.phase === "compile" ? "compile" : "sim",
 					opts.showValues,
 				);
+				if (ws.vars.length > 0) {
+					console.log(chalk.bold("Config environment variables"));
+					console.log(
+						table(
+							ws.vars.map((v) => [
+								v.name,
+								v.values ?? "",
+								v.default ?? "",
+								v.desc ?? "",
+							]),
+							["Name", "Values", "Default", "Description"],
+						),
+					);
+				}
 			},
 		);
 	return cmd;

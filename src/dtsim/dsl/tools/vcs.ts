@@ -143,6 +143,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 	return {
 		kind: "dtsim-tool",
 		name: "vcs",
+		probe: ["vcs"],
 		interactive: true,
 		passthrough: [
 			"PATH",

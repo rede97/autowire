@@ -1,7 +1,7 @@
 // demo/soc smokes on two simulators. Run from demo/soc:
 //   bun ../../index.ts dtsim run basic_smoke             (Verilator, the default)
-//   bun ../../index.ts dtsim run basic_smoke --tool vcs  (or ./dt/vcs/run.sh)
-//   bun ../../index.ts dtsim regr smoke [--tool vcs]
+//   DTSIM_TOOL=vcs bun ../../index.ts dtsim run basic_smoke  (or ./dt/vcs/run.sh)
+//   bun ../../index.ts dtsim regr smoke            (DTSIM_TOOL=vcs for the farm)
 // Filelists are relative to the project root (demo/soc); dtsim flattens them
 // into each compile dir. Outputs: dt/simout/<tool>/<case>/.
 // Verilator runs a C++ harness (tb_main.cpp), VCS the pure-SV aw-tb-mod
@@ -103,16 +103,17 @@ export const svRegSmoke = Case("sv_reg_smoke", {
 	grader: smoke.extend({ pass: ["SV_REG SMOKE PASS"] }),
 });
 
-export default Workspace({
+export default Workspace([], (mode) => {
+	const opts = {
 	tools: [
 		VerilatorTool(),
 		// Flags of the original VCS run.sh (pure SV, no UVM): the backend
-		// defaults target newer VCS than O-2018.09. -debug_access+all lets
-		// -ucli run dump.tcl.
+		// defaults target newer VCS than O-2018.09. -debug_access+all is added
+		// by the backend itself when wave is on.
 		VcsTool({
 			ntbOpts: "",
 			top: "tb_soc",
-			flags: ["-full64", "-sverilog", "-timescale=1ns/1ps", "-debug_access+all"],
+			flags: ["-full64", "-sverilog", "-timescale=1ns/1ps"],
 		}),
 	],
 	bareDefaults: {
@@ -137,4 +138,12 @@ export default Workspace({
 		Group("smoke", ["basic_smoke", "regfile_smoke", "tb_mod", "sv_reg_smoke"]),
 		Group("sd", ["sd_sha256"]),
 	],
+	};
+	// Tool selection is config-owned: put the requested backend first so the
+	// auto-fallback picks it (default Verilator, DTSIM_TOOL=vcs for the farm).
+	if (process.env.DTSIM_TOOL) {
+		const i = opts.tools.findIndex((t) => t.name === process.env.DTSIM_TOOL);
+		if (i > 0) opts.tools = [opts.tools[i], ...opts.tools.filter((_, j) => j !== i)];
+	}
+	return opts;
 });
