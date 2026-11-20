@@ -8,11 +8,10 @@ import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
-import type logUpdate from "log-update";
-import { createLogUpdate } from "log-update";
 import type { PhaseObserver } from "./engine.ts";
+import { LivePanel } from "./live.ts";
 import { fmtElapsed } from "./scripts.ts";
-import { status as colour, fmtSize, persistAbove } from "./ui.ts";
+import { status as colour, fmtSize } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 /** Column widths: status (or spinner), task label, log name, log size. */
@@ -157,7 +156,7 @@ export class Progress {
 	private readonly t0 = Date.now();
 	private frame = 0;
 	private timer?: Timer;
-	private readonly live?: typeof logUpdate;
+	private readonly live?: LivePanel;
 
 	constructor(plan: readonly PlannedBuild[], plain: boolean) {
 		this.builds = plan.map((b) => ({
@@ -166,7 +165,7 @@ export class Progress {
 			sims: b.sims.map((s) => ({ label: `sim ${s}`, state: "waiting" })),
 		}));
 		if (!plain && process.stderr.isTTY) {
-			this.live = createLogUpdate(process.stderr, { showCursor: true });
+			this.live = new LivePanel();
 			this.timer = setInterval(() => this.render(), 100);
 		}
 	}
@@ -210,13 +209,12 @@ export class Progress {
 	stop(): void {
 		clearInterval(this.timer);
 		this.timer = undefined;
-		this.live?.clear();
-		this.live?.done();
+		this.live?.stop();
 	}
 
 	private line(text: string): void {
 		if (this.live) {
-			persistAbove(this.live, text);
+			this.live.persist(text);
 			this.render();
 		} else {
 			process.stderr.write(`${stripVTControlCharacters(text)}\n`);
@@ -284,6 +282,6 @@ export class Progress {
 			lines.push(chalk.dim(`… ${active.length - shown} more builds in flight`));
 		}
 		lines.push(`${bar}  ${counts}`);
-		this.live(lines.join("\n"));
+		this.live.render(lines.join("\n"));
 	}
 }

@@ -5,6 +5,7 @@
 ## [2.9.3] - 2026-11-20
 
 - **Verilator 的 seed 生效**：之前 `run_sim` 一律给仿真加 VCS 的 `+ntb_random_seed=<seed>`，Verilator 不认，所以 `--seeds` / `--random` 的每个 seed 在 Verilator 上跑出完全相同的随机序列。`SimTool` 新增 `seedArg`（`run_sim` 追加的一个 bash 词，`$SEED` 是 seed，默认 `+ntb_random_seed=$SEED`）；`VerilatorTool` 改为 `+verilator+seed+<seed>`，seed 0 发成 1（显式的 `+verilator+seed+0` 表示“随机挑一个”，结果不可复现）。C++ harness 需把 argv 交给 `contextp->commandArgs()`。
+- **TTY 面板 resize 不再乱码**：实时面板（spinner、编译树、进度条）改用 dtsim 自己的 `LivePanel`，去掉 `log-update` 依赖。面板每行截到终端宽度减 1，自身永不折行；重画时光标上移到面板顶部再清到屏尾。终端变窄后旧的行会被终端重新折行，面板按新宽度重新算旧帧占的行数再擦，所以不留残影；resize 过程中暂停重画，停止约 100 ms 后按最终尺寸画一次。完成行仍整行原样输出。
 
 ## [2.9.2] - 2026-11-20
 

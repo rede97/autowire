@@ -11,11 +11,10 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
-import type logUpdate from "log-update";
-import { createLogUpdate } from "log-update";
 import type { CasePhase, PhaseObserver } from "./engine.ts";
+import { LivePanel } from "./live.ts";
 import { fmtElapsed } from "./scripts.ts";
-import { status as colour, fmtSize, persistAbove, titledRules } from "./ui.ts";
+import { status as colour, fmtSize, titledRules } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TAIL_BYTES = 4096;
@@ -93,7 +92,7 @@ export class CaseMonitor implements PhaseObserver {
 	private tailed?: Tail;
 	private frame = 0;
 	private timers: Timer[] = [];
-	private readonly live?: typeof logUpdate;
+	private readonly live?: LivePanel;
 	/** Follow mode: the running step's log, read up to `offset` so far. */
 	private followed?: {
 		path: string;
@@ -109,7 +108,7 @@ export class CaseMonitor implements PhaseObserver {
 		private readonly follow = false,
 	) {
 		if (!plain && process.stderr.isTTY) {
-			this.live = createLogUpdate(process.stderr, { showCursor: true });
+			this.live = new LivePanel();
 		}
 	}
 
@@ -161,7 +160,6 @@ export class CaseMonitor implements PhaseObserver {
 		for (const t of this.timers) clearInterval(t);
 		this.timers = [];
 		this.live?.clear();
-		this.live?.done();
 	}
 
 	/** The step name only: the seed is in the Run / Summary blocks. */
@@ -177,7 +175,7 @@ export class CaseMonitor implements PhaseObserver {
 
 	/** A permanent line above the panel (or a plain line). */
 	private line(text: string): void {
-		if (this.live) persistAbove(this.live, text);
+		if (this.live) this.live.persist(text);
 		else process.stderr.write(`${stripVTControlCharacters(text)}\n`);
 	}
 
@@ -220,11 +218,11 @@ export class CaseMonitor implements PhaseObserver {
 			const text = f.decoder.decode(buf.subarray(0, got), { stream: true });
 			const lines = (f.rest + text).split(/\r?\n/);
 			f.rest = lines.pop() ?? "";
-			if (lines.length > 0) persistAbove(this.live, lines.join("\n"));
+			if (lines.length > 0) this.live.persist(lines.join("\n"));
 			if (!final) break;
 		}
 		if (final) {
-			if (f.rest) persistAbove(this.live, f.rest);
+			if (f.rest) this.live.persist(f.rest);
 			this.followed = undefined;
 		}
 	}
@@ -237,15 +235,12 @@ export class CaseMonitor implements PhaseObserver {
 			return;
 		}
 		this.frame = (this.frame + 1) % FRAMES.length;
-		const width = (process.stderr.columns || 100) - 1;
 		const t = this.tailed;
 		const head = this.row(chalk.cyan(FRAMES[this.frame] ?? ""), c, t?.size);
 		// The head already names the log and its size; below it only the
-		// running log's last line, under the phase column.
-		const room = Math.max(0, width - INDENT.length);
+		// running log's last line, under the phase column (the panel cuts it
+		// to the terminal width).
 		const line = t?.line ?? "";
-		const text =
-			line.length > room ? `${line.slice(0, Math.max(0, room - 1))}…` : line;
-		this.live(text ? `${head}\n${INDENT}${chalk.dim(text)}` : head);
+		this.live.render(line ? `${head}\n${INDENT}${chalk.dim(line)}` : head);
 	}
 }

@@ -1,21 +1,10 @@
-// Terminal rendering for dtsim: tables (cli-table3), trees, status colours,
-// and a live dashboard on stderr (log-update). Colour follows chalk's
-// detection, so pipes, LSF logs and CI get plain text; `plain()` strips any
-// colour before text goes into a file.
+// Terminal rendering for dtsim: tables (cli-table3), trees and status
+// colours; the live panel is in live.ts. Colour follows chalk's detection,
+// so pipes, LSF logs and CI get plain text; `plain()` strips any colour
+// before text goes into a file.
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import Table from "cli-table3";
-import type logUpdate from "log-update";
-
-/** Print `text` above a live panel as one plain write, like `echo`: the panel
- *  is erased, the text goes out unchanged and the panel's next frame redraws
- *  below it. The terminal soft-wraps a long line, so a resize reflows it and
- *  a copied path stays whole (log-update's persist() hard-wraps at the
- *  current width). */
-export function persistAbove(live: typeof logUpdate, text: string): void {
-	live.clear();
-	process.stderr.write(`${text}\n`);
-}
 
 export type Row = readonly string[];
 
