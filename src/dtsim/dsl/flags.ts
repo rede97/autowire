@@ -3,9 +3,9 @@
 // tool's `flags` or a case's `compileArgs`. SystemVerilog is mandatory
 // (-sverilog / --sv) and VCS is always -full64; the structured options cover
 // timescale, jobs and debug access, and `add` appends project flags, so one
-// call does base-plus-overlay. dtsim's --wave owns the dump itself (VCS binds
-// dump.tcl and adds -debug_access+all at compile time, Verilator binds its
-// dump module and --trace-fst).
+// call does base-plus-overlay. With the Workspace / Case `wave` on, dtsim
+// owns the dump itself (VCS writes dump.tcl and adds -debug_access+all and
+// -kdb when missing; Verilator binds its dump module and --trace-fst).
 
 /** VCS -debug_access level. */
 export type VcsDebugAccess = "all" | "pp" | "r" | "w" | "f" | "drivers";
@@ -15,10 +15,11 @@ export type VcsBaseOpts = {
 	timescale?: string;
 	/** -j<jobs> parallel compile. */
 	jobs?: number | string;
-	/** Optional -debug_access+<level> (e.g. "all"). dtsim's --wave adds
-	 *  -debug_access+all on its own, so this is for explicit control. */
+	/** Optional -debug_access+<level> (e.g. "all"). With `wave` on the VCS
+	 *  backend adds -debug_access+all itself unless a level is given here. */
 	debugaccess?: VcsDebugAccess;
-	/** -kdb: write simv.daidir for verdi (run_verdi loads it). Default true. */
+	/** -kdb: write simv.daidir for verdi. Default true. With `wave` on the
+	 *  VCS backend adds it anyway (run_verdi loads simv.daidir). */
 	kdb?: boolean;
 	/** Extra flags appended after the baseline. */
 	add?: readonly string[];

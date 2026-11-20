@@ -3,8 +3,10 @@ dtsim — simulation runner (full reference: docs/dtsim/README.md)
 Entry
   autowire dtsim <cmd>       ln -s autowire.js dtsim (or out/autowire) → ./dtsim <cmd>
   dev: bun index.ts dtsim <cmd>
-  Config is selected by [dtsim] config in autowire.toml, default
-  <project>/dt/config/dtsim.config.ts. No --config flag.
+  Config: [dtsim] config in autowire.toml when set (or when the default
+  dt/config/dtsim.config.ts there exists), else searched upward from CWD;
+  it must live in <project>/dt/config/. No --config flag. --help / help /
+  --version / results --dir (no --recheck) work without a config.
 
 Layout
   <project>/                 RTL design dir; filelists and ${workspace} resolve here
@@ -28,17 +30,18 @@ Commands
   env --case <id>            the environment a case would get (--phase, --show-values)
   results --dir <dir>        statuses under a dir (--recheck re-grades, --csv)
   common flags: -d <label>, -v (logs: above the live panel on a TTY), --plain
-  The config is selected by [dtsim] config in autowire.toml (default
-  dt/config/dtsim.config.ts). Config EnvVarDoc.flags are registered as real
-  Commander options before parsing; seed knobs are config-owned.
+  Config EnvVarDoc.flags become real options of run / regr / plan / list /
+  groups / env; seed knobs are config-owned.
 
-Tools, wave and coverage (config-owned)
-  Tool selection: no --tool / $DTSIM_TOOL. Each tool has a probe (executables on
-  PATH: vcs, verilator); dtsim auto-fallbacks to the first available, in tools
-  order. A config factory can order/filter tools to force one.
-  Wave / coverage: no --wave / --cov flags. Config sets backend wave with
-  VcsTool({ wave }) / VerilatorTool({ wave }) (boolean or {depth, top}); coverage
-  uses DTSIM_COV / DTSIM_COV_METRICS / DTSIM_COV_MERGE.
+Tools, top, wave and coverage (config-owned)
+  Tool selection: each tool has a probe (executables on PATH: vcs, verilator);
+  dtsim picks the first available in tools order. A config factory orders or
+  filters tools to force one.
+  top (default "tb_top"), wave (default false), waveDepth (0 = all levels),
+  waveScope (default: the case's top) are Workspace defaults; a case sets its
+  own, derived cases inherit it. top, and with wave on also depth/scope, are in
+  the compile key. A --wave flag is a config's registered WAVE option.
+  Coverage: DTSIM_COV / DTSIM_COV_METRICS / DTSIM_COV_MERGE.
 
 Agent workflow
   1. dtsim list / dtsim groups / dtsim plan <group>: see what exists, no run.
@@ -54,21 +57,22 @@ Agent workflow
   via the grader, never the exit code).
 
 DSL (import from ./.dtsim/dsl/index.ts)
-  Workspace(regEnv, opts | ((mode:"run"|"regr") => opts)); or Workspace({...}).
+  Workspace(opts) or Workspace(regEnv, opts | ((mode:"run"|"regr") => opts)).
             regEnv: registered env vars [{name, values?, default?, desc?, flags?, set?}],
-            listed by `dtsim env`; flags are Commander option specs registered
-            before parsing. `set(value)` maps the parsed value to the env var.
-            The factory computes the opts from the mode:
-            read env, choose backend wave and tools, set slots and seeds.
-  tools     [VcsTool({ top, ntbOpts, flags, command, casePlusarg })
-            | VerilatorTool({ top, mdir, main, command })
+            listed by `dtsim env`; flags are Commander option specs, set
+            before the factory runs (read them inside it). `set(value)` maps
+            the parsed value to the env var.
+            opts: tools, top, wave, waveDepth, waveScope, filelists, output,
+            seeds, grader, bareDefaults, env, task, hooks, groups, cases.
+  tools     [VcsTool({ ntbOpts, flags, command, casePlusarg })
+            | VerilatorTool({ mdir, main, command })
             | defineTool({ name, passthrough, compile, simulate, ... }), ...];
-            top default: tb_top. casePlusarg (default "TEST")
-            sends +TEST=<case>; false sends none. Case toolOptions cannot override top.
+            casePlusarg (default "TEST") sends +TEST=<case>; false sends none.
+            Case toolOptions override these per key.
   filelists dtsim never reads them: each is -f <abs path>, compiled with the
             project root as cwd (relative entries, nested -f, -F, $VAR are the
             simulator's); case filelists append to the workspace's.
-  bareDefaults  base of every top-level case; derived cases inherit it.
+  bareDefaults  lowest-priority case options; every case inherits them.
   task      { launcher, maxSlots, maxCompiles }; launcher LocalLauncher() (default)
             | LsfLauncher({ queue, args }) | SlurmLauncher(...) | defineLauncher(...)
             | a probe list [Lsf, Slurm, Local] tried in order, first on PATH wins
@@ -77,7 +81,7 @@ DSL (import from ./.dtsim/dsl/index.ts)
             bjob_*/srun_* submit wrappers beside run_sim/run_compile/run_verdi.
             maxSlots/maxCompiles: a number, or (ctx:{tool,launcher})=>number,
             evaluated after tool+launcher resolve (no manual probe needed).
-  vcsBaseFlags({ timescale?, jobs?, debugaccess?, add? }) → [-full64, -sverilog,
+  vcsBaseFlags({ timescale?, jobs?, debugaccess?, kdb?, add? }) → [-full64, -sverilog,
             ...] (SV and -full64 always on; debugaccess "all"|"pp"|"r"|"w"|"f"|
             "drivers" optional). verilatorBaseFlags({ jobs?, timing?, timescale?,
             add? }) → [--sv, ...]. Spread and extend for a tool's flags or a
@@ -86,7 +90,8 @@ DSL (import from ./.dtsim/dsl/index.ts)
             export top-level cases (alone or in an exported array / Set / Map).
             opts: defines, compileArgs, simArgs, env
             ({ value, scope: "sim" } keeps it out of the build), uvm, toolOptions,
-            filelists, grader, random, owner, abstract (base used only for
+            top, wave, waveDepth, waveScope, filelists, grader, random, owner,
+            abstract (base used only for
             derivation; never run, left out of * and <base>.* hits), tools:
             ["verilator"] (runs only there; regr / plan skip it elsewhere),
             byTool: { vcs: {...} } (merged on top when that tool is selected).
@@ -119,5 +124,5 @@ Output
 Demos
   demo/dtsim/run.sh <args>          fake tools in demo/dtsim/dt/bin, LSF launcher
   demo/soc/dt/verilator/run.sh      Verilator (--regfile --sd --tb-mod --sv-reg; extra flags → dtsim run)
-  demo/soc/dt/vcs/run.sh [case]     VCS tb_soc smokes (SIM_TOOL=vcs dtsim run <case>)
+  demo/soc/dt/vcs/run.sh [case]     VCS smokes on the aw-tb-mod tb_top (SIM_TOOL=vcs dtsim run <case>)
   demo/hbm/dt/vcs/run.sh [test...]  VCS + UVM-1.2 regression (VCS_GCC_DIR for an older g++)

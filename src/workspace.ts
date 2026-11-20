@@ -46,6 +46,8 @@ export interface WorkspaceConfig {
 	simDir: string;
 	/** dtsim TypeScript config path ([dtsim] config, default dt/config/dtsim.config.ts). */
 	dtsimConfig: string;
+	/** true when autowire.toml sets [dtsim] config (not the default). */
+	dtsimConfigSet: boolean;
 	/** Plugin generate root ([dump] plugins_dir, default gen/plugins) */
 	pluginsDir: string;
 	/** Wishbone regfile RTL dir ([plugins.wishbone] regfile_dir).
@@ -492,6 +494,7 @@ export async function loadWorkspace(
 		connectDir: rel(connectDirRel),
 		simDir: rel(simDirRel),
 		dtsimConfig: rel(dtsimConfig),
+		dtsimConfigSet: dtsim.config !== undefined,
 		pluginsDir: pluginsDirAbs,
 		wishboneRegfileDir,
 		wishboneBusDir,

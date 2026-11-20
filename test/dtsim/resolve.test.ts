@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 
-// A Workspace factory computes the options from the mode: it enables the wave
-// option on the VCS backend for a single run (dump.tcl is written only when
-// wave is on) and computes maxSlots, which lands in the regression header.
+// A Workspace factory computes the options from the mode: it turns wave on
+// for a single run (the VCS backend writes dump.tcl only when wave is on) and
+// computes maxSlots, which lands in the regression header.
 // The registry is the first argument ([] here).
 const withFactory = CASES_TS.replace(
 	"export default Workspace({",
@@ -12,7 +12,7 @@ const withFactory = CASES_TS.replace(
 )
 	.replace(
 		"\ttools: [VcsTool()],",
-		'\ttools: [VcsTool({ wave: mode === "run" })],',
+		'\ttools: [VcsTool()],\n\twave: mode === "run",',
 	)
 	.replace(
 		"\ttask: { maxSlots: 4, maxCompiles: 2 },",
@@ -62,7 +62,7 @@ describe("Workspace factory", () => {
 		)
 			.replace(
 				"tools: [VcsTool()],",
-				'tools: [VcsTool({ wave: process.env.WAVE === "1" })],',
+				'tools: [VcsTool()],\n\twave: process.env.WAVE === "1",',
 			)
 			.replace(
 				"\tgroups: [base, cosim],\n});",

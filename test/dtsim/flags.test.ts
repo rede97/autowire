@@ -1,17 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { VcsTool } from "../../src/dtsim/dsl/index.ts";
-
-describe("workspace-wide top", () => {
-	test("VcsTool defaults to tb_top and ignores case toolOptions.top", () => {
-		const tool = VcsTool();
-		const key = tool.compileKey?.(
-			{ id: "x", toolOptions: { top: "other" } } as never,
-			"base",
-		);
-		expect(key).not.toContain("other");
-	});
-});
-
 import { vcsBaseFlags, verilatorBaseFlags } from "../../src/dtsim/dsl/flags.ts";
 
 describe("base flags", () => {

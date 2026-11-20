@@ -232,7 +232,7 @@ describe("single case", () => {
 		const on = await makeWorkspace(
 			CASES_TS.replace(
 				"tools: [VcsTool()],",
-				"tools: [VcsTool({ wave: { depth: 2 } })],",
+				"tools: [VcsTool()],\n\twave: true,\n\twaveDepth: 2,",
 			),
 		);
 		const r = await runDtsim(on, ["run", "test_hello_world", "-s", "8"]);
@@ -251,11 +251,11 @@ describe("single case", () => {
 });
 
 describe("vcs options", () => {
-	test("top sets -top and the default wave scope", async () => {
+	test("Workspace top sets -top and the default wave scope", async () => {
 		const ws = await makeWorkspace(
 			CASES_TS.replace(
 				"tools: [VcsTool()],",
-				'tools: [VcsTool({ top: "tb_x", wave: true })],',
+				'tools: [VcsTool()],\n\ttop: "tb_x",\n\twave: true,',
 			),
 		);
 		const run = await runDtsim(ws, ["run", "test_hello_world", "-s", "1"]);
@@ -267,11 +267,55 @@ describe("vcs options", () => {
 		);
 	});
 
+	test("a case top builds separately; waveScope alone keeps the workspace wave", async () => {
+		const ws = await makeWorkspace(
+			CASES_TS.replace(
+				"tools: [VcsTool()],",
+				"tools: [VcsTool()],\n\twave: true,",
+			).replace(
+				'owner: "dave",',
+				'owner: "dave",\n\ttop: "tb_quick",\n\twaveScope: "tb_quick.dut",',
+			),
+		);
+		const plan = await runDtsim(ws, ["plan", "base"]);
+		expect(plan.code).toBe(0);
+		// test_quick_smoke has its own top, so it is its own compile group.
+		expect(plan.stdout).toMatch(
+			/compile test_quick_smoke\s+top tb_quick, wave on/,
+		);
+		expect(plan.stdout).toMatch(/top tb_top, wave on/);
+		const run = await runDtsim(ws, ["run", "test_quick_smoke"]);
+		expect(run.code).toBe(0);
+		const dir = join(ws.out, "test_quick_smoke");
+		expect(await Bun.file(join(dir, "vcs.log")).text()).toContain(
+			"-top tb_quick",
+		);
+		expect(await Bun.file(join(dir, "dump.tcl")).text()).toContain(
+			'fsdbDumpvars 0 tb_quick.dut "+all"',
+		);
+	});
+
+	test("cases that differ only in wave do not share a build", async () => {
+		const ws = await makeWorkspace(
+			CASES_TS.replace(
+				'owner: "dave",',
+				'owner: "dave",\n\tdefines: ["NUM=1"],\n\twave: true,',
+			),
+		);
+		const r = await runDtsim(ws, ["regr", "base", "--plain"]);
+		expect(r.code).toBe(0);
+		// The wave-on case got its own build, with dump.tcl next to its simv.
+		const tcl = [
+			...new Bun.Glob("regression/compile_*/dump.tcl").scanSync(ws.out),
+		].map((p) => p.replaceAll("\\", "/"));
+		expect(tcl).toEqual(["regression/compile_test_quick_smoke/dump.tcl"]);
+	});
+
 	test("run_verdi runs in its own dir, exports the env, defaults -top", async () => {
 		const ws = await makeWorkspace(
 			CASES_TS.replace(
 				"tools: [VcsTool()],",
-				'tools: [VcsTool({ top: "tb_x", wave: true })],',
+				'tools: [VcsTool()],\n\ttop: "tb_x",\n\twave: true,',
 			),
 		);
 		const run = await runDtsim(ws, ["run", "test_hello_world", "-s", "1"]);
@@ -362,10 +406,10 @@ describe("verilator backend", () => {
 		);
 	});
 
-	test("wave uses the default tb_top bind target", async () => {
+	test("wave binds the dump module into the default tb_top", async () => {
 		const body = CASES_TS.replace(
 			"tools: [VcsTool()],",
-			"tools: [VerilatorTool({ wave: true })],",
+			"tools: [VerilatorTool()],\n\twave: true,",
 		).replace(
 			'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
 			'import { DefaultGrader, VerilatorTool } from "./.dtsim/dsl/index.ts";',
@@ -381,7 +425,7 @@ describe("verilator backend", () => {
 	test("compile produces an executable, sim grades its stdout log", async () => {
 		const body = CASES_TS.replace(
 			"tools: [VcsTool()],",
-			'tools: [VerilatorTool({ top: "tb_top" })],',
+			"tools: [VerilatorTool()],",
 		).replace(
 			'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
 			'import { DefaultGrader, VerilatorTool } from "./.dtsim/dsl/index.ts";',
@@ -410,7 +454,7 @@ describe("several tools", () => {
 	)
 		.replace(
 			"tools: [VcsTool()],",
-			'tools: [VcsTool(), VerilatorTool({ top: "tb_top", wave: true })],',
+			"tools: [VcsTool(), VerilatorTool()],\n\twave: true,",
 		)
 		.replace(
 			"export default Workspace({",
@@ -456,7 +500,7 @@ export default Workspace([], (mode) => {
 		expect(vlLog).toContain("mock verilator sim");
 		expect(vlLog).toContain("+both");
 		expect(vlLog).toContain("+vl_only");
-		// --wave on Verilator: --trace-fst plus a dump module bound into the top.
+		// wave on Verilator: --trace-fst plus a dump module bound into the top.
 		expect(await Bun.file(join(dir, "run_compile")).text()).toContain(
 			"--trace-fst",
 		);

@@ -1,12 +1,13 @@
 // demo/soc smokes on two simulators. Run from demo/soc:
 //   bun ../../index.ts dtsim run basic_smoke             (Verilator, the default)
 //   SIM_TOOL=vcs bun ../../index.ts dtsim run basic_smoke  (or ./dt/vcs/run.sh)
-//   bun ../../index.ts dtsim regr smoke            (SIM_TOOL=vcs for the farm)
-// Filelists are relative to the project root (demo/soc); dtsim flattens them
-// into each compile dir. Outputs: dt/simout/<tool>/<case>/.
-// Verilator runs a C++ harness (tb_main.cpp), VCS the pure-SV aw-tb-mod
-// tb_top top; byTool holds what differs. The SD, tb_mod and sv_reg cases are
-// Verilator-only (sdspisim is a C++ model).
+//   bun ../../index.ts dtsim regr smoke --wave     (fst / fsdb per seed)
+// Filelists are relative to the project root (demo/soc); dtsim passes each
+// to the simulator as -f. Outputs: dt/simout/<tool>/<case>/.
+// Every bench's top module is tb_top (the Workspace default): the Verilator
+// C++ harness (tb_main.cpp), the pure-SV aw-tb-mod dump and the sv_reg smoke.
+// byTool holds what differs per simulator. The SD, tb_mod and sv_reg cases
+// are Verilator-only (sdspisim is a C++ model).
 import {
 	Case,
 	DefaultGrader,
@@ -83,7 +84,7 @@ export const sdSha256 = Case("sd_sha256", {
 	simArgs: [firmware("sd_sha256"), "+sdcard=${output_dir}/zeros_sha.img"],
 });
 
-// aw-tb-mod dump top (rtl/gen/sim/tb_top.sv): basic_smoke + SV JTAG host.
+// aw-tb-mod dump top (rtl/gen/sim/soc_tb.sv): basic_smoke + SV JTAG host.
 export const tbMod = Case("tb_mod", {
 	owner: "soc",
 	tools: ["verilator"],
@@ -103,51 +104,48 @@ export const svRegSmoke = Case("sv_reg_smoke", {
 	grader: smoke.extend({ pass: ["SV_REG SMOKE PASS"] }),
 });
 
-export default Workspace([], (mode) => {
-	const opts = {
-	tools: [
-		VerilatorTool(),
-		// Flags of the original VCS run.sh (pure SV, no UVM): the backend
-		// defaults target newer VCS than O-2018.09. -debug_access+all is added
-		// by the backend itself when wave is on.
-		VcsTool({
-			ntbOpts: "",
-			flags: vcsBaseFlags({ timescale: "1ns/1ps" }),
-		}),
+const verilator = VerilatorTool();
+// Flags of the original VCS run.sh (pure SV, no UVM): the backend defaults
+// target newer VCS than O-2018.09.
+const vcs = VcsTool({ ntbOpts: "", flags: vcsBaseFlags({ timescale: "1ns/1ps" }) });
+
+export default Workspace(
+	[
+		{
+			name: "SIM_TOOL",
+			values: "verilator|vcs",
+			default: "verilator",
+			desc: "simulator tried first (the other is the fallback)",
+		},
+		{ name: "WAVE", values: "0|1", default: "0", flags: "--wave", desc: "dump waveforms" },
 	],
-	bareDefaults: {
-		random: false,
-		byTool: {
-			verilator: {
-				compileArgs: verilatorBaseFlags({ jobs: 0, add: VL_WARN }),
-			},
-			// --no-as-needed: VCS O-2018.09 on binutils >= 2.34 drops its own
-			// shared libs.
-			vcs: {
-				filelists: ["vcs.f"],
-				compileArgs: ["-LDFLAGS", "-Wl,--no-as-needed"],
-				grader: smoke.extend({ pass: ["SMOKE PASS: tb_soc"] }),
+	() => ({
+		// Tool selection is config-owned: the first available tool runs.
+		tools: process.env.SIM_TOOL === "vcs" ? [vcs, verilator] : [verilator, vcs],
+		wave: process.env.WAVE === "1",
+		bareDefaults: {
+			random: false,
+			byTool: {
+				verilator: {
+					compileArgs: verilatorBaseFlags({ jobs: 0, add: VL_WARN }),
+				},
+				// --no-as-needed: VCS O-2018.09 on binutils >= 2.34 drops its own
+				// shared libs.
+				vcs: {
+					filelists: ["vcs.f"],
+					compileArgs: ["-LDFLAGS", "-Wl,--no-as-needed"],
+					grader: smoke.extend({ pass: ["SMOKE PASS: tb_soc"] }),
+				},
 			},
 		},
-	},
-	// MAKE / MAKEFLAGS reach verilator --build and the firmware hook (e.g.
-	// MAKEFLAGS=OPT_FAST=-O2); CROSS picks the RISC-V toolchain prefix.
-	env: { passthrough: ["MAKE", "MAKEFLAGS", "CROSS", "MSYSTEM"] },
-	task: { maxSlots: 4, maxCompiles: 2 },
-	hooks: { preCompile: applyIpPatch, preSim: buildFirmware },
-	groups: [
-		Group("smoke", ["basic_smoke", "regfile_smoke", "tb_mod", "sv_reg_smoke"]),
-		Group("sd", ["sd_sha256"]),
-	],
-	};
-	// Tool selection is config-owned: sort the requested backend first so the
-	// auto-fallback picks it (default Verilator, SIM_TOOL=vcs for the farm).
-	if (process.env.SIM_TOOL) {
-		opts.tools.sort(
-			(a, b) =>
-				Number(b.name === process.env.SIM_TOOL) -
-				Number(a.name === process.env.SIM_TOOL),
-		);
-	}
-	return opts;
-});
+		// MAKE / MAKEFLAGS reach verilator --build and the firmware hook (e.g.
+		// MAKEFLAGS=OPT_FAST=-O2); CROSS picks the RISC-V toolchain prefix.
+		env: { passthrough: ["MAKE", "MAKEFLAGS", "CROSS", "MSYSTEM"] },
+		task: { maxSlots: 4, maxCompiles: 2 },
+		hooks: { preCompile: applyIpPatch, preSim: buildFirmware },
+		groups: [
+			Group("smoke", ["basic_smoke", "regfile_smoke", "tb_mod", "sv_reg_smoke"]),
+			Group("sd", ["sd_sha256"]),
+		],
+	}),
+);

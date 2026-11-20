@@ -10,7 +10,7 @@ import {
 	LsfLauncher,
 	SlurmLauncher,
 } from "../dsl/index.ts";
-import { onPath } from "./run.ts";
+import { probeOk } from "./run.ts";
 
 const BUILTIN: Record<string, () => Launcher> = {
 	local: () => LocalLauncher(),
@@ -25,38 +25,32 @@ const BUILTIN: Record<string, () => Launcher> = {
 export async function resolveLauncher(
 	configured: Launcher | readonly Launcher[],
 ): Promise<Launcher> {
-	const list: readonly Launcher[] = Array.isArray(configured)
-		? configured
-		: [configured as Launcher];
-	const single = !Array.isArray(configured);
 	const forced = process.env.DTSIM_TASK_TYPE ?? process.env.DSIM_TASK_TYPE;
-	if (forced) {
-		const inList = list.find((l) => l.name === forced);
-		if (inList) return inList;
-		const make = BUILTIN[forced];
-		if (!make) {
-			throw new Error(
-				`dtsim: unknown task type "${forced}" (built-in: ${Object.keys(BUILTIN).join(", ")}; configured: ${list.map((l) => l.name).join(", ")})`,
-			);
-		}
-		return make();
-	}
-	if (single) return list[0] as Launcher;
-	const available = await Promise.all(
-		list.map(async (l) => {
-			const probe = l.probe ?? [];
-			if (probe.length === 0) return true;
-			const found = await Promise.all(probe.map((e) => onPath(e)));
-			return found.every(Boolean);
-		}),
-	);
-	const chosen = list.find((_, i) => available[i]);
+	// A single launcher (an array has no `wrap`): used as-is, no probe.
+	if ("wrap" in configured)
+		return forced ? pickForced(forced, [configured]) : configured;
+	if (forced) return pickForced(forced, configured);
+	const available = await Promise.all(configured.map((l) => probeOk(l.probe)));
+	const chosen = configured.find((_, i) => available[i]);
 	if (!chosen) {
 		throw new Error(
-			`dtsim: no configured launcher is available (probed ${list.map((l) => l.name).join(", ")}); add LocalLauncher() as a fallback`,
+			`dtsim: no configured launcher is available (probed ${configured.map((l) => l.name).join(", ")}); add LocalLauncher() as a fallback`,
 		);
 	}
 	return chosen;
+}
+
+/** DTSIM_TASK_TYPE: a configured entry by name, else a built-in. */
+function pickForced(forced: string, list: readonly Launcher[]): Launcher {
+	const inList = list.find((l) => l.name === forced);
+	if (inList) return inList;
+	const make = BUILTIN[forced];
+	if (!make) {
+		throw new Error(
+			`dtsim: unknown task type "${forced}" (built-in: ${Object.keys(BUILTIN).join(", ")}; configured: ${list.map((l) => l.name).join(", ")})`,
+		);
+	}
+	return make();
 }
 
 /** argv as `launcher` runs it. */

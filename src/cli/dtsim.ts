@@ -1,6 +1,7 @@
 // `autowire dtsim ...` and the `dtsim` multi-call name (ln -s autowire.js dtsim).
 // The subcommands are the same either way; only the program name differs.
-// Config: <project>/dt/config/dtsim.config.ts, found upward from CWD.
+// Config: autowire.toml's [dtsim] config (default dt/config/dtsim.config.ts),
+// else dt/config/dtsim.config.ts found upward from CWD.
 
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -9,7 +10,6 @@ import chalk from "chalk";
 import { Command, Option } from "commander";
 import type { WorkspaceEnv } from "../dtsim/core/config.ts";
 import {
-	applyEnvOptions,
 	findCase,
 	loadWorkspace,
 	loadWorkspaceEnv,
@@ -31,7 +31,7 @@ import {
 	seedsFor,
 } from "../dtsim/core/single.ts";
 import { plain, type TreeNode, table, tree } from "../dtsim/core/ui.ts";
-import type { CaseDef } from "../dtsim/dsl/index.ts";
+import type { CaseDef, EnvVarDoc } from "../dtsim/dsl/index.ts";
 import { formatRelease } from "./version.ts";
 
 type CommonOpts = {
@@ -40,14 +40,10 @@ type CommonOpts = {
 	plain: boolean;
 };
 
-type ConfigEnv = WorkspaceEnv;
-
 const DESCRIPTION =
 	"Simulation runner: <project>/dt/ holds the testbench, [dtsim] config in autowire.toml selects the cases";
 
-function load(mode: "run" | "regr" = "run") {
-	return loadWorkspace({ mode });
-}
+const NO_CONFIG: WorkspaceEnv = { configPath: "", vars: [] };
 
 function engineOpts(opts: CommonOpts, interactive: boolean) {
 	return {
@@ -59,21 +55,42 @@ function engineOpts(opts: CommonOpts, interactive: boolean) {
 	};
 }
 
-function addConfigOptions(cmd: Command, env: ConfigEnv): Command {
-	const registered = env.vars.flatMap((v) => {
-		if (!v.flags) return [];
-		const option = new Option(v.flags, v.desc ?? `config option for ${v.name}`);
-		return [{ env: v, attribute: option.attributeName(), option }];
+/** Register the config's EnvVarDoc flags on `cmd`, after its built-in
+ *  options so a clash names the config entry. Before the action (and so
+ *  before the Workspace factory) a flag given on the command line sets its
+ *  variable; an unset negatable flag's default (true) does not. */
+function addConfigOptions(cmd: Command, env: WorkspaceEnv): Command {
+	const registered: { env: EnvVarDoc; attribute: string }[] = [];
+	for (const v of env.vars) {
+		if (!v.flags) continue;
+		try {
+			const option = new Option(
+				v.flags,
+				v.desc ?? `config option for ${v.name}`,
+			);
+			cmd.addOption(option);
+			registered.push({ env: v, attribute: option.attributeName() });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				`dtsim: ${env.configPath}: env var ${v.name}: ${message}`,
+			);
+		}
+	}
+	cmd.hook("preAction", () => {
+		for (const { env: v, attribute } of registered) {
+			if (cmd.getOptionValueSource(attribute) !== "cli") continue;
+			const value: unknown = cmd.getOptionValue(attribute);
+			const raw = typeof value === "boolean" ? value : String(value);
+			const out = v.set ? v.set(raw) : raw === true ? "1" : String(raw);
+			if (out !== undefined) process.env[v.name] = out;
+		}
 	});
-	for (const { option } of registered) cmd.addOption(option);
-	cmd.hook("preAction", (_this, action) =>
-		applyEnvOptions(registered, action.opts()),
-	);
 	return cmd;
 }
 
-function addCommon(cmd: Command, env: ConfigEnv): Command {
-	return addConfigOptions(cmd, env)
+function addCommon(cmd: Command): Command {
+	return cmd
 		.option("-d, --label <label>", "output label under dt/simout/")
 		.option(
 			"-v, --verbose",
@@ -84,10 +101,9 @@ function addCommon(cmd: Command, env: ConfigEnv): Command {
 }
 
 /** Attach the dtsim subcommands to `cmd` (autowire's `dtsim` or a bare program). */
-function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
-	addCommon(
+function addDtsimCommands(cmd: Command, env: WorkspaceEnv): Command {
+	const run = addCommon(
 		cmd.command("run <case>").description("compile and simulate one case"),
-		env,
 	)
 		.option("--compile-only", "compile only", false)
 		.option("--sim-only", "reuse an existing build", false)
@@ -101,7 +117,7 @@ function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 					interactive: boolean;
 				},
 			) => {
-				const ws = await load();
+				const ws = await loadWorkspace({});
 				const controller = new AbortController();
 				process.once("SIGINT", () => controller.abort());
 				process.exitCode = await runSingle(ws, caseId, {
@@ -113,13 +129,12 @@ function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 			},
 		);
 
-	addCommon(
+	const regr = addCommon(
 		cmd
 			.command("regr [group]")
 			.description("run a regression group or pattern (default: *)"),
-		env,
 	).action(async (group: string | undefined, opts: CommonOpts) => {
-		const ws = await load("regr");
+		const ws = await loadWorkspace({ mode: "regr" });
 		const controller = new AbortController();
 		process.once("SIGINT", () => controller.abort());
 		process.exitCode = await runRegression(ws, group ?? "*", {
@@ -129,11 +144,11 @@ function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 		});
 	});
 
-	addCommon(
+	const plan = addCommon(
 		cmd.command("plan [group]").description("print the compile-group plan"),
-		env,
 	).action(async (group: string | undefined, opts: CommonOpts) => {
-		const ws = await load();
+		// The plan of a regression: the factory sees the same mode regr does.
+		const ws = await loadWorkspace({ mode: "regr" });
 		const groups = planGroups(ws, group ?? "*", opts.label);
 		const seeds = readSeeds(ws.seeds);
 		const text = planText(groups, (c) => seedsFor(c, seeds), {
@@ -146,7 +161,7 @@ function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 		await writeFile(join(dir, "regression.txt"), `${plain(text)}\n`);
 	});
 
-	cmd
+	const list = cmd
 		.command("list [case]")
 		.description(
 			"list testcases as trees (default 2 levels; a case limits to its subtree)",
@@ -169,7 +184,7 @@ function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 				) {
 					throw new Error("dtsim: --depth must be a positive integer");
 				}
-				const ws = await load();
+				const ws = await loadWorkspace({});
 				const limit = opts.all ? Number.POSITIVE_INFINITY : (opts.depth ?? 2);
 				let roots: CaseDef[];
 				if (caseId === undefined) {
@@ -206,11 +221,11 @@ function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 			},
 		);
 
-	cmd
+	const groups = cmd
 		.command("groups")
 		.description("list regression groups")
 		.action(async () => {
-			const ws = await load();
+			const ws = await loadWorkspace({});
 			// Cases the selected tool runs; the rest are counted as skipped.
 			const rows = ["*", ...ws.groups.keys()].map((name) => {
 				const all = resolveGroup(ws, name).length;
@@ -230,11 +245,25 @@ function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 		.requiredOption("--dir <dir>", "regression or case output directory")
 		.option("--recheck", "re-grade from sim.log", false)
 		.option("--csv", "machine-readable rows", false)
-		.action(async (opts: { dir: string; recheck: boolean; csv: boolean }) => {
-			process.exitCode = await resultsCommand(opts);
-		});
+		.addOption(
+			// dresults passes the regression's tool so --recheck grades with it.
+			new Option(
+				"--tool <name>",
+				"re-grade with this configured tool",
+			).hideHelp(),
+		)
+		.action(
+			async (opts: {
+				dir: string;
+				recheck: boolean;
+				csv: boolean;
+				tool?: string;
+			}) => {
+				process.exitCode = await resultsCommand(opts);
+			},
+		);
 
-	cmd
+	const envCmd = cmd
 		.command("env")
 		.description("show the environment a case would receive")
 		.requiredOption("--case <id>", "case id")
@@ -242,7 +271,7 @@ function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 		.option("--show-values", "print values, not just names", false)
 		.action(
 			async (opts: { case: string; phase: string; showValues: boolean }) => {
-				const ws = await load();
+				const ws = await loadWorkspace({});
 				printCaseEnv(
 					ws,
 					opts.case,
@@ -265,19 +294,41 @@ function addDtsimCommands(cmd: Command, env: ConfigEnv): Command {
 				}
 			},
 		);
+	// Config flags last: a clash with a built-in option then names the
+	// config entry. list/groups/env evaluate the factory too.
+	for (const c of [run, regr, plan, list, groups, envCmd])
+		addConfigOptions(c, env);
 	return cmd;
 }
 
-export async function registerDtsim(program: Command): Promise<void> {
-	let env: ConfigEnv = { configPath: "", vars: [] };
+/** Help, version and `results` without `--recheck` need no config. */
+function configFree(args: readonly string[]): boolean {
+	if (args.some((a) => ["-h", "--help", "-V", "--version"].includes(a)))
+		return true;
+	const sub = args.find((a) => !a.startsWith("-"));
+	return (
+		sub === undefined ||
+		sub === "help" ||
+		(sub === "results" && !args.includes("--recheck"))
+	);
+}
+
+/** The config registry for the dtsim arguments `args`. A command that needs
+ *  no config still registers (empty registry) when the config cannot load. */
+async function configEnv(args: readonly string[]): Promise<WorkspaceEnv> {
 	try {
-		env = await loadWorkspaceEnv({});
+		return await loadWorkspaceEnv();
 	} catch (error) {
-		// The top-level `autowire` command must still register outside a project;
-		// a dtsim command will report the missing config when it is invoked.
-		if (process.argv[2] === "dtsim" && !process.argv.includes("--help"))
-			throw error;
+		if (configFree(args)) return NO_CONFIG;
+		throw error;
 	}
+}
+
+export async function registerDtsim(program: Command): Promise<void> {
+	// Only `autowire dtsim ...` reads the config: other commands must not
+	// import it or write dt/config/.dtsim/.
+	const args = process.argv.slice(2);
+	const env = args[0] === "dtsim" ? await configEnv(args.slice(1)) : NO_CONFIG;
 	addDtsimCommands(program.command("dtsim").description(DESCRIPTION), env);
 }
 
@@ -307,7 +358,7 @@ export function invokedAsDtsim(): boolean {
 /** Multi-call entry: `dtsim <subcommand>` parses exactly like `autowire dtsim <subcommand>`. */
 export async function runDtsimMain(argv: readonly string[]): Promise<void> {
 	try {
-		const env = await loadWorkspaceEnv({});
+		const env = await configEnv(argv.slice(2));
 		const program = addDtsimCommands(
 			new Command("dtsim").description(DESCRIPTION).version(formatRelease()),
 			env,

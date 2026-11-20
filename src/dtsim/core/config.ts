@@ -3,7 +3,7 @@
 // keys.
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
 	findWorkspace,
@@ -20,19 +20,21 @@ import {
 	type Grader,
 	type GroupDef,
 	type GroupMember,
+	type Hooks,
 	isCase,
 	isWorkspace,
 	LocalLauncher,
-	type ResolvedWorkspace,
 	type SimTool,
+	type SlotLimit,
 	type TaskSpec,
 	type UvmCfg,
 	validateWorkspace,
+	type WaveSpec,
 	type WorkspaceDef,
 } from "../dsl/index.ts";
 import { assertNoDeniedAssignments, compileEnvEntries } from "./env.ts";
 import { resolveLauncher } from "./launch.ts";
-import { onPath } from "./run.ts";
+import { probeOk } from "./run.ts";
 
 export type MergedCase = {
 	id: string;
@@ -53,52 +55,70 @@ export type MergedCase = {
 	/** Case filelists (config strings, relative to dt/config), appended in
 	 *  merge order after the workspace's. */
 	filelists: string[];
-	/** Case grader, else bareDefaults' (bare top-level cases), else the workspace's. */
+	/** Top-level module: the case's `top`, else the workspace's. */
+	top: string;
+	/** Waveform dump; scope defaults to `top`. */
+	wave: WaveSpec;
+	/** The case's grader (bareDefaults and parents included), else the workspace's. */
 	grader: Grader;
 	/** Tools the case runs on; undefined = every Workspace tool. */
 	tools?: string[];
 };
 
-export type { ResolvedWorkspace } from "../dsl/index.ts";
+/** The fully-resolved workspace dtsim runs with. */
+export type ResolvedWorkspace = {
+	configPath: string;
+	/** Project root: the RTL design dir that owns dt/. `${workspace}` / $WORKSPACE. */
+	root: string;
+	/** Config dir (<project>/dt/config). `${verify}`. */
+	verify: string;
+	/** Output root: <project>/dt/simout, plus /<tool> when several tools exist. */
+	out: string;
+	/** Selected backend: the first configured tool whose probe passes. */
+	tool: SimTool;
+	/** Every configured backend, in config order. */
+	tools: SimTool[];
+	/** The workspace seed set (default ["0"]). */
+	seeds: string[];
+	/** Workspace filelists, absolute. */
+	filelists: string[];
+	/** Workspace `top` / `wave` / `waveDepth` / `waveScope` with defaults
+	 *  applied: the base every case inherits, below bareDefaults. */
+	caseDefaults: {
+		top: string;
+		wave: boolean;
+		waveDepth: number;
+		waveScope?: string;
+	};
+	bareDefaults?: CaseOpts;
+	passthrough: string[];
+	deny: string[];
+	/** Environment knobs the config documents, for `dtsim env`. */
+	vars: readonly EnvVarDoc[];
+	/** Launcher after the probe / DTSIM_TASK_TYPE override, plus slot limits. */
+	task: TaskSpec;
+	hooks: Hooks;
+	/** Default grader. */
+	grader: Grader;
+	groups: Map<string, GroupMember[]>;
+	/** Top-level cases by name; derived cases hang off `children`. */
+	cases: Map<string, CaseDef>;
+	/** Lazily merged options per case id (functions evaluated once). */
+	resolved: Map<string, CaseOpts>;
+};
 
 export type WorkspaceEnv = {
 	configPath: string;
 	vars: readonly EnvVarDoc[];
 };
 
-export type RegisteredEnvOption = {
-	env: EnvVarDoc;
-	attribute: string;
-};
-
-/** Apply values already parsed by Commander for registered config options. */
-export function applyEnvOptions(
-	options: readonly { env: EnvVarDoc; attribute: string }[],
-	values: Readonly<Record<string, unknown>>,
-): void {
-	for (const { env, attribute } of options) {
-		const value = values[attribute];
-		if (value === undefined) continue;
-		const raw: string | boolean =
-			typeof value === "boolean" ? value : String(value);
-		const out = env.set ? env.set(raw) : raw === true ? "1" : String(raw);
-		if (out !== undefined) process.env[env.name] = out;
-	}
-}
-
 /** Load only the config registry, without evaluating workspace options. */
-export async function loadWorkspaceEnv(opts: {
-	config?: string;
-	cwd?: string;
-}): Promise<WorkspaceEnv> {
-	const cwd = opts.cwd ?? process.cwd();
-	const configPath = opts.config
-		? resolve(cwd, opts.config)
-		: await findConfig(cwd);
-	const verify = dirname(configPath);
-	await ensureDsl(verify);
-	const configModule = await importModule(configPath);
-	const wsDef = configModule.default as WorkspaceDef | undefined;
+export async function loadWorkspaceEnv(): Promise<WorkspaceEnv> {
+	const configPath = configFile(await findConfig(process.cwd()));
+	await ensureDsl(dirname(configPath));
+	const wsDef = (await importModule(configPath)).default as
+		| WorkspaceDef
+		| undefined;
 	if (!isWorkspace(wsDef)) {
 		throw new Error(`dtsim: ${configPath} must default-export Workspace(...)`);
 	}
@@ -206,6 +226,9 @@ function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
 		out.toolOptions = { ...base.toolOptions, ...overlay.toolOptions };
 	}
 	if (overlay.owner !== undefined) out.owner = overlay.owner;
+	for (const key of ["top", "wave", "waveDepth", "waveScope"] as const) {
+		if (overlay[key] !== undefined) Object.assign(out, { [key]: overlay[key] });
+	}
 	if (overlay.random !== undefined) out.random = overlay.random;
 	if (overlay.grader !== undefined) out.grader = overlay.grader;
 	if (overlay.tools !== undefined) out.tools = overlay.tools;
@@ -214,7 +237,14 @@ function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
 
 type CaseSource = Pick<
 	ResolvedWorkspace,
-	"cases" | "resolved" | "bareDefaults" | "deny" | "grader" | "tool" | "tools"
+	| "cases"
+	| "resolved"
+	| "bareDefaults"
+	| "deny"
+	| "grader"
+	| "tool"
+	| "tools"
+	| "caseDefaults"
 >;
 
 /** One level's options for the selected tool: its `byTool.<tool>` merged on
@@ -248,18 +278,19 @@ export function findCase(
 	return node;
 }
 
-/** Merged options of a node: bareDefaults as the lowest-priority base of
- *  every top-level case, then the root's options, then each derivation level
- *  in order (derived cases inherit bareDefaults through their parent).
- *  Function options run here, once per load. */
+/** Merged options of a node. A top-level case starts from the workspace's
+ *  top / wave defaults with bareDefaults on them, then its own options; a
+ *  derived case starts from its parent's merged options. Function options
+ *  see that base as `parent` and run here, once per load. */
 function treeOpts(ws: CaseSource, node: CaseDef): CaseOpts {
 	const cached = ws.resolved.get(node.id);
 	if (cached) return cached;
 	const parent = node.parent
 		? treeOpts(ws, node.parent)
-		: ws.bareDefaults
-			? forTool(ws, "bareDefaults", ws.bareDefaults)
-			: {};
+		: mergeOpts(
+				ws.caseDefaults,
+				ws.bareDefaults ? forTool(ws, "bareDefaults", ws.bareDefaults) : {},
+			);
 	const own = forTool(
 		ws,
 		node.id,
@@ -294,6 +325,12 @@ export function mergeCase(ws: CaseSource, id: string): MergedCase {
 		...(opts.uvm === undefined ? {} : { uvm: { ...opts.uvm } }),
 		toolOptions: { ...opts.toolOptions },
 		filelists: [...(opts.filelists ?? [])],
+		top: opts.top as string,
+		wave: {
+			enabled: opts.wave === true,
+			depth: opts.waveDepth ?? 0,
+			scope: opts.waveScope ?? (opts.top as string),
+		},
 		grader,
 		...(opts.tools === undefined ? {} : { tools: [...opts.tools] }),
 	};
@@ -308,7 +345,7 @@ export function runsOn(c: MergedCase, tool: SimTool): boolean {
 export function assertRunsOn(c: MergedCase, tool: SimTool): void {
 	if (!runsOn(c, tool)) {
 		throw new Error(
-			`dtsim: case ${c.id} does not run on ${tool.name} (tools: ${c.tools?.join(", ")}); force another tool via onResolve`,
+			`dtsim: case ${c.id} does not run on ${tool.name} (tools: ${c.tools?.join(", ")}); the config picks the tool by ordering Workspace tools`,
 		);
 	}
 }
@@ -328,6 +365,9 @@ export function assertConcrete(c: MergedCase): void {
 export function compileKey(c: MergedCase, tool: SimTool): string {
 	const base = JSON.stringify({
 		tool: tool.name,
+		top: c.top,
+		// Depth and scope only matter (and only split builds) with waves on.
+		wave: c.wave.enabled ? c.wave : false,
 		defines: [...c.defines].sort(),
 		compileArgs: c.compileArgs,
 		env: compileEnvEntries(c.env),
@@ -427,12 +467,17 @@ export async function ensureDsl(configDir: string): Promise<string> {
 	return join(dir, "index.ts");
 }
 
-/** Config location inside a project: <project>/dt/config/dtsim.config.ts. */
-export const CONFIG_REL = join("dt", "config", "dtsim.config.ts");
+const CONFIG_REL = join("dt", "config", "dtsim.config.ts");
 
+/** autowire.toml's `[dtsim] config` when set or when its default file exists;
+ *  otherwise dt/config/dtsim.config.ts searched upward from `start`. */
 async function findConfig(start: string): Promise<string> {
 	const tomlPath = findWorkspace(start);
-	if (tomlPath) return (await loadTomlWorkspace(tomlPath)).dtsimConfig;
+	if (tomlPath) {
+		const toml = await loadTomlWorkspace(tomlPath);
+		if (toml.dtsimConfigSet || existsSync(toml.dtsimConfig))
+			return toml.dtsimConfig;
+	}
 	let dir = resolve(start);
 	for (let i = 0; i < 16; i++) {
 		const candidate = join(dir, CONFIG_REL);
@@ -443,8 +488,26 @@ async function findConfig(start: string): Promise<string> {
 		dir = parent;
 	}
 	throw new Error(
-		`dtsim: no config found from ${start}: set [dtsim] config in autowire.toml`,
+		`dtsim: no ${CONFIG_REL} found from ${start}: set [dtsim] config in autowire.toml`,
 	);
+}
+
+/** Check the selected config before anything is written next to it. The
+ *  project root is derived from the path, so it must be
+ *  <project>/dt/config/<file>.ts. */
+function configFile(path: string): string {
+	if (!existsSync(path)) throw new Error(`dtsim: ${path}: config not found`);
+	const verify = dirname(path);
+	if (
+		extname(path) !== ".ts" ||
+		basename(verify) !== "config" ||
+		basename(dirname(verify)) !== "dt"
+	) {
+		throw new Error(
+			`dtsim: ${path}: the config must live in <project>/dt/config/`,
+		);
+	}
+	return path;
 }
 
 async function importModule(path: string): Promise<Record<string, unknown>> {
@@ -459,11 +522,13 @@ export async function loadWorkspace(opts: {
 	config?: string;
 	cwd?: string;
 	mode?: "run" | "regr";
+	/** Select this configured tool instead of the probe fallback. */
+	tool?: string;
 }): Promise<ResolvedWorkspace> {
 	const cwd = opts.cwd ?? process.cwd();
-	const configPath = opts.config
-		? resolve(cwd, opts.config)
-		: await findConfig(cwd);
+	const configPath = configFile(
+		opts.config ? resolve(cwd, opts.config) : await findConfig(cwd),
+	);
 	const verify = dirname(configPath);
 	// <project>/dt/config/dtsim.config.ts: dt/ holds the testbench, its parent
 	// is the RTL design dir that filelists and ${workspace} resolve against.
@@ -531,27 +596,30 @@ export async function loadWorkspace(opts: {
 	const launcher = await resolveLauncher(o.task?.launcher ?? LocalLauncher());
 
 	// Tool auto-fallback: the first tool whose probe executables are all on
-	// PATH (a tool with no probe is always available). onResolve may override.
+	// PATH (a tool with no probe is always available). `opts.tool` (a
+	// regression's recheck) names the tool instead.
 	const tools = [...o.tools];
-	const available = await Promise.all(
-		tools.map(async (t) => {
-			const probe = t.probe ?? [];
-			if (probe.length === 0) return true;
-			return (await Promise.all(probe.map((e) => onPath(e)))).every(Boolean);
-		}),
-	);
-	const fallback = tools.find((_, i) => available[i]) ?? (tools[0] as SimTool);
-	const slots = {
-		maxSlots:
-			typeof o.task?.maxSlots === "function"
-				? o.task.maxSlots({ tool: fallback.name, launcher: launcher.name })
-				: (o.task?.maxSlots ?? 8),
-		maxCompiles:
-			typeof o.task?.maxCompiles === "function"
-				? o.task.maxCompiles({ tool: fallback.name, launcher: launcher.name })
-				: (o.task?.maxCompiles ?? 4),
+	let fallback: SimTool;
+	if (opts.tool !== undefined) {
+		const named = tools.find((t) => t.name === opts.tool);
+		if (!named) {
+			throw new Error(
+				`dtsim: tool "${opts.tool}" is not configured in ${configPath} (tools: ${tools.map((t) => t.name).join(", ")})`,
+			);
+		}
+		fallback = named;
+	} else {
+		const available = await Promise.all(tools.map((t) => probeOk(t.probe)));
+		fallback = tools.find((_, i) => available[i]) ?? (tools[0] as SimTool);
+	}
+	const ctx = { tool: fallback.name, launcher: launcher.name };
+	const limit = (v: SlotLimit | undefined, d: number): number =>
+		typeof v === "function" ? v(ctx) : (v ?? d);
+	const task: TaskSpec = {
+		launcher,
+		maxSlots: limit(o.task?.maxSlots, 8),
+		maxCompiles: limit(o.task?.maxCompiles, 4),
 	};
-	const task: TaskSpec = { launcher, ...slots };
 	const outRoot =
 		o.output === undefined ? join(dt, "simout") : resolvePath(o.output, paths);
 
@@ -566,6 +634,12 @@ export async function loadWorkspace(opts: {
 		tools,
 		seeds: [...(o.seeds ?? ["0"])],
 		filelists: (o.filelists ?? []).map((f) => resolvePath(f, paths)),
+		caseDefaults: {
+			top: o.top ?? "tb_top",
+			wave: o.wave ?? false,
+			waveDepth: o.waveDepth ?? 0,
+			...(o.waveScope === undefined ? {} : { waveScope: o.waveScope }),
+		},
 		cases,
 		resolved: new Map(),
 		...(o.bareDefaults === undefined ? {} : { bareDefaults: o.bareDefaults }),

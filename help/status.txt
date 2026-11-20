@@ -14,7 +14,7 @@ Landed
                             save / save-sv, save-html, help.
                             Run shows the .sv text (same as connect run writes).
                             Saves are browser downloads. The page does not write files.
-  aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir
+  aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir/<id>.sv
   plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/{regfile,bus}/ (docs/cli.md)
   autowire dtsim ...        simulation runner: <project>/dt/ testbench, dt/config/dtsim.config.ts,
                             dt/simout/ outputs; `ln -s autowire.js dtsim` runs it directly;
@@ -183,7 +183,7 @@ Parallel (does not block connect)
     basic_smoke checks cascade SHA MMIO + grant CSR; --sd is channel DMA+SHA;
     demo/soc sot/wb_bus_soc.ts → soc_wb_interconnect + soc_wb_bus_cfg (+ JTAG TDR / wb_cdc);
     demo sim: dtsim (dt/config); Verilator dt/verilator/run.sh (--regfile / --sd /
-    --tb-mod runs the aw-tb-mod dump tb_soc / --sv-reg), VCS dt/vcs/run.sh;
+    --tb-mod runs the aw-tb-mod dump rtl/gen/sim/soc_tb.sv / --sv-reg), VCS dt/vcs/run.sh;
     external JTAG smoke runs concurrently with the firmware;
     sot/wb_bus_sd_sha.ts → sd_sha_interconnect + sd_sha_bus_cfg (mixed slave PIPE);
     ADR=byte; fabric addr_width parametrized;

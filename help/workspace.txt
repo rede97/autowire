@@ -12,7 +12,8 @@ Shared by deps / web / cli for the RTL universe:
                         sim HTML stays under sim/ (DE vs DV)
   [connect.<id>]        DE unit: html= + optional deps= (DAG; aw-mod root; → connect_dir)
   [sim.<id>]            DV TB unit: html= under sim/; aw-tb-mod root; deps may list
-                        connect ids; dump → sim_dir (no .autowire/connect XML)
+                        connect ids; dump → sim_dir/<id>.sv (file named by the
+                        sim id, module keeps its aw-tb-mod name; no .autowire/connect XML)
   [wishbone.<source>]   wishbone SoT file: ts=; optional exports=[]; omit = all
                         RegfileDef and/or BusDef exports (types stay separate)
   [plugins.wishbone]    packed software: export= Excel (bus_regfiles.xlsx: field sheets regfile_<sheet> +

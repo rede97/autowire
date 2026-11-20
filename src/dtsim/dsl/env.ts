@@ -1,4 +1,4 @@
-// Coverage as an environment variable; wave is a backend option now.
+// Coverage switches read from the environment (DTSIM_COV*).
 import type { CovSpec } from "./index.ts";
 
 /** Coverage variables dtsim forwards to its children when set. */

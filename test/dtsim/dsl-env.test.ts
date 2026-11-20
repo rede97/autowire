@@ -372,15 +372,16 @@ describe("environment isolation", () => {
 
 	test("dtsim env lists the config's documented environment variables", async () => {
 		const body = CASES_TS.replace(
-			'env: { passthrough: ["DTSIM_MOCK_*"], deny: ["LD_PRELOAD"] },',
-			`env: {
-		passthrough: ["DTSIM_MOCK_*"],
-		deny: ["LD_PRELOAD"],
-		vars: [
-			{ name: "WAVE", values: "0|1", default: "run=1 regr=0", desc: "dump waveforms" },
-			{ name: "JOBS", default: "8", desc: "parallel compiles" },
-		],
-	},`,
+			"export default Workspace({",
+			`export default Workspace(
+	[
+		{ name: "WAVE", values: "0|1", default: "run=1 regr=0", desc: "dump waveforms" },
+		{ name: "JOBS", default: "8", desc: "parallel compiles" },
+	],
+	{`,
+		).replace(
+			"\tgroups: [base, cosim],\n});",
+			"\tgroups: [base, cosim],\n\t},\n);",
 		);
 		const ws = await makeWorkspace(body);
 		const result = await runDtsim(ws, [

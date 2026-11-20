@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
-import type { SimTool } from "../dsl/index.ts";
+import type { WaveSpec } from "../dsl/index.ts";
 import {
 	assertConcrete,
 	assertRunsOn,
@@ -97,7 +97,8 @@ export async function runSingle(
 		["WORKSPACE", ws.root],
 		["Verify", ws.verify],
 		["Tool", tool.name],
-		["Wave", waveLabel(ws.tool)],
+		["Top", c.top],
+		["Wave", waveLabel(c.wave)],
 		["Test Name", c.id],
 		["Test Seq", c.uvm?.seq ?? ""],
 		["Seeds", seeds.join(",") + (c.random ? "" : " (no-random)")],
@@ -211,9 +212,8 @@ export function printCaseEnv(
 	);
 }
 
-/** "off", or "on (depth N[, scope S])" from the backend's wave option. */
-export function waveLabel(tool: SimTool): string {
-	const w = tool.wave;
-	if (!w?.enabled) return "off";
-	return `on (depth ${w.depth}${w.top ? `, scope ${w.top}` : ""})`;
+/** "off", or "on (depth N, scope S)". */
+export function waveLabel(w: WaveSpec): string {
+	if (!w.enabled) return "off";
+	return `on (depth ${w.depth}, scope ${w.scope})`;
 }

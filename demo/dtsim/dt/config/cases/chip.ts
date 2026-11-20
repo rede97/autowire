@@ -29,10 +29,14 @@ bar.SubCase("cosim", {
 });
 
 // Abstract base: shared full-chip config, never run on its own. The DUT view
-// is a compile-time define, so each leaf is its own build.
+// is a compile-time define, so each leaf is its own build. The full-chip UVM
+// bench has its own top module (the workspace default is tb_top); rtl / gate
+// inherit it and the shallower dump. The gate leaf narrows the dump scope.
 export const chip = Case("chip", {
 	abstract: true,
 	owner: "charlie",
+	top: "tb_chip",
+	waveDepth: 2,
 	defines: ["NUM=1", "FULL_CHIP=1"],
 	compileArgs: ["+fsdb+all"],
 	uvm: {
@@ -44,7 +48,11 @@ export const chip = Case("chip", {
 });
 
 chip.SubCase("rtl", { defines: ["VIEW_RTL"] });
-chip.SubCase("gate", { defines: ["VIEW_GATE"], compileArgs: ["+sdf"] });
+chip.SubCase("gate", {
+	defines: ["VIEW_GATE"],
+	compileArgs: ["+sdf"],
+	waveScope: "tb_chip.u_chip",
+});
 
 export const smoke = Case("test_quick_smoke", {
 	owner: "dave",

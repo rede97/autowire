@@ -264,7 +264,10 @@ async function writeSnapshot(
 	await mkdir(outDir, { recursive: true });
 	const written: string[] = [];
 	for (const m of flattenModules(mods)) {
-		const path = join(outDir, `${m.name}.sv`);
+		// A sim unit's module name can be a workspace-wide tb_top; the unit id
+		// keeps each block's generated file distinct in one sim_dir.
+		const file = unit.kind === "sim" ? unit.id : m.name;
+		const path = join(outDir, `${file}.sv`);
 		if (await writeIfChanged(path, printSv(m, unit.id, style), force))
 			written.push(path);
 	}

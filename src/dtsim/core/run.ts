@@ -16,50 +16,62 @@ import { delimiter, extname, isAbsolute, resolve } from "node:path";
 
 const WIN_EXE = [".exe", ".com", ".cmd", ".bat"];
 
+/** Where `name` can resolve: a path with a separator as-is (against `cwd`
+ *  when relative), else each PATH dir. Windows also tries the executable
+ *  extensions; elsewhere only the bare name. */
+function pathCandidates(
+	name: string,
+	env: Record<string, string>,
+	cwd: string,
+): string[] {
+	const exts =
+		process.platform === "win32" && !extname(name) ? [...WIN_EXE, ""] : [""];
+	const dirs =
+		name.includes("/") || name.includes("\\")
+			? [isAbsolute(name) ? "" : cwd]
+			: (env.PATH ?? env.Path ?? "").split(delimiter).filter(Boolean);
+	return dirs.flatMap((dir) =>
+		exts.map((ext) => (dir ? resolve(dir, name + ext) : name + ext)),
+	);
+}
+
 /** Find `name` the way Windows would, plus extensionless (shebang) files. */
 function winLookup(
 	name: string,
 	env: Record<string, string>,
 	cwd: string,
 ): string | undefined {
-	const exts = extname(name) ? [""] : [...WIN_EXE, ""];
-	const dirs =
-		name.includes("/") || name.includes("\\")
-			? [isAbsolute(name) ? "" : cwd]
-			: (env.PATH ?? env.Path ?? "").split(delimiter).filter(Boolean);
-	for (const dir of dirs) {
-		for (const ext of exts) {
-			const candidate = dir ? resolve(dir, name + ext) : name + ext;
-			if (existsSync(candidate) && statSync(candidate).isFile())
-				return candidate;
-		}
-	}
-	return undefined;
+	return pathCandidates(name, env, cwd).find(
+		(c) => existsSync(c) && statSync(c).isFile(),
+	);
 }
 
-/** Is `name` an executable on PATH? Probes every PATH candidate (and Windows
- *  extensions) concurrently, so launcher detection does not serialise stat
- *  latency on a slow or networked filesystem. A path with a separator is
- *  checked as-is (against the cwd when relative). */
-export async function onPath(name: string): Promise<boolean> {
-	const env = process.env as Record<string, string>;
-	const exts = extname(name) ? [""] : [...WIN_EXE, ""];
-	const dirs =
-		name.includes("/") || name.includes("\\")
-			? [isAbsolute(name) ? "" : process.cwd()]
-			: (env.PATH ?? env.Path ?? "").split(delimiter).filter(Boolean);
-	const candidates = dirs.flatMap((dir) =>
-		exts.map((ext) => (dir ? resolve(dir, name + ext) : name + ext)),
+/** Is `name` an executable on PATH? Probes every candidate concurrently, so
+ *  launcher detection does not serialise stat latency on a slow or networked
+ *  filesystem. Outside Windows the file needs an exec bit. */
+async function onPath(name: string): Promise<boolean> {
+	const candidates = pathCandidates(
+		name,
+		process.env as Record<string, string>,
+		process.cwd(),
 	);
 	const hits = await Promise.all(
 		candidates.map((c) =>
 			stat(c).then(
-				(s) => s.isFile(),
+				(s) =>
+					s.isFile() &&
+					(process.platform === "win32" || (s.mode & 0o111) !== 0),
 				() => false,
 			),
 		),
 	);
 	return hits.some(Boolean);
+}
+
+/** A tool or launcher `probe`: available when every executable is on PATH
+ *  (no probe: always available). */
+export async function probeOk(probe: readonly string[] = []): Promise<boolean> {
+	return (await Promise.all(probe.map(onPath))).every(Boolean);
 }
 
 /**

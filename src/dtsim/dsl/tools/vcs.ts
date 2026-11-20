@@ -1,40 +1,27 @@
 // Built-in VCS backend. Everything VCS-shaped (simv, +UVM_*, fsdb, urg,
 // verdi) lives here; the core engine never mentions these flags.
-// VcsTool({ ntbOpts, flags }); a case's toolOptions may override flags and
-// ntbOpts, but never the workspace-wide top.
+// VcsTool({ ntbOpts, flags, command, casePlusarg }); a case's
+// toolOptions may override any of them. The top module is the case's `top`.
 // ntbOpts picks the -ntb_opts value (default "uvm", e.g. "uvm-1.2"; "" leaves
 // -ntb_opts out for a non-UVM bench). flags replaces DEFAULT_FLAGS (older VCS
 // releases reject some of them, e.g. O-2018.09 reads "-xlrm nettype_array"
-// as a source file). Wave is the backend `wave` option; coverage is read from
-// the configured DTSIM_COV* environment.
+// as a source file). Top and wave come from the case (ctx.caseOpts.top /
+// .wave); coverage is read from the configured DTSIM_COV* environment.
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { covFromEnv } from "../env.ts";
 import { vcsBaseFlags } from "../flags.ts";
-import type { SimTool, ToolContext, WaveOpt, WaveSpec } from "../index.ts";
-import { waveSpec } from "../index.ts";
+import type { SimTool, ToolContext, WaveSpec } from "../index.ts";
 
 export type VcsOpts = {
 	ntbOpts?: string;
 	flags?: readonly string[];
-	/** Waveform dump: `true`, or `{ depth, top }` to bound it. Off by default.
-	 *  Set per case via `toolOptions.wave`. */
-	wave?: WaveOpt;
-	/** -top (default: tb_top); also the default wave scope and run_verdi's -top. */
-	top?: string;
 	/** The compiler to run (default "vcs"), e.g. a wrapper or a full path. */
 	command?: string;
 	/** Plusarg that carries the case id (`+<name>=<case>`); false sends none.
 	 *  Default "TEST". */
 	casePlusarg?: string | false;
 };
-
-function topOf(opts: Record<string, unknown>): string {
-	if (opts.top !== undefined && typeof opts.top !== "string") {
-		throw new Error("dtsim: vcs top must be a module name");
-	}
-	return (opts.top as string | undefined) ?? "tb_top";
-}
 
 const DEFAULT_FLAGS = [
 	...vcsBaseFlags({ timescale: "1ns/1ps" }),
@@ -47,7 +34,7 @@ const DEFAULT_FLAGS = [
 	"-debug_region+cell+encrypt",
 	"-lca",
 	"+v2k",
-	"+v2k_generate",
+	"-v2k_generate",
 	"+transport_path_delays",
 	"+pulse_e/0",
 	"+pulse_r/0",
@@ -100,19 +87,17 @@ function casePlusarg(opts: Record<string, unknown>): string | false {
 	return p;
 }
 
-/** fsdb dump through -ucli (written only with --wave). Scope: $DTSIM_WAVE_TOP,
- *  else `top`, else the whole design. */
-function dumpTcl(wave: WaveSpec, top: string | undefined): string {
-	const scope = wave.top ?? top;
+/** fsdb dump through -ucli (written only with waves on). */
+function dumpTcl(wave: WaveSpec): string {
 	return `fsdbDumpfile verilog.fsdb
-fsdbDumpvars ${wave.depth}${scope ? ` ${scope}` : ""} "+all"
+fsdbDumpvars ${wave.depth} ${wave.scope} "+all"
 fsdbDumpSVA
 fsdbDumpon
 run
 `;
 }
 
-function verdiScript(ctx: ToolContext, top: string | undefined): string {
+function verdiScript(ctx: ToolContext): string {
 	// Export the resolved environment so verdi runs with the right tool paths
 	// when this script is run by hand.
 	const exports = Object.entries(ctx.env)
@@ -123,7 +108,7 @@ function verdiScript(ctx: ToolContext, top: string | undefined): string {
 # (simv.daidir) and the seed's fsdb, in this script's own directory.
 ${exports}
 cd "$(dirname "$0")" || exit 1
-verdi -dbdir ${join(ctx.compileDir, "simv.daidir")} ${top ? `-top ${top}` : ""} -ssf ${join(ctx.dir, "verilog.fsdb")} &
+verdi -dbdir ${join(ctx.compileDir, "simv.daidir")} -top ${ctx.caseOpts.top} -ssf ${join(ctx.dir, "verilog.fsdb")} &
 `;
 }
 
@@ -133,14 +118,11 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 	compileFlags(opts);
 	command(opts);
 	casePlusarg(opts);
-	topOf(opts);
-	const top = topOf(opts);
 	return {
 		kind: "dtsim-tool",
 		name: "vcs",
 		probe: ["vcs"],
 		interactive: true,
-		wave: waveSpec(opts.wave),
 		passthrough: [
 			"PATH",
 			"HOME",
@@ -164,20 +146,19 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		compileErrors: [/Error-\[/, /^Error:/, /^\*E,/],
 		simErrors: [/UVM_ERROR/, /UVM_FATAL/, /Error-\[/, /^Error:/],
 
-		// simv depends on the -ntb_opts library, the flag set and -top too.
+		// simv depends on the -ntb_opts library and the flag set too (the
+		// top is in `base`).
 		compileKey(c, base) {
 			const o = { ...opts, ...c.toolOptions };
 			return JSON.stringify([base, ntbOpts(o), compileFlags(o)]);
 		},
 
 		writeAux(ctx) {
-			const o = { ...opts, ...ctx.caseOpts.toolOptions };
-			const wave = waveSpec(o.wave);
+			const wave = ctx.caseOpts.wave;
 			const cov = covFromEnv();
 			if (ctx.phase === "compile") {
-				if (wave.enabled) {
-					writeFileSync(join(ctx.dir, "dump.tcl"), dumpTcl(wave, top));
-				}
+				if (wave.enabled)
+					writeFileSync(join(ctx.dir, "dump.tcl"), dumpTcl(wave));
 				if (cov.enabled) {
 					const viewer = join(ctx.dir, "verdi_cov");
 					writeFileSync(
@@ -189,7 +170,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 			} else if (wave.enabled) {
 				// run_verdi opens the fsdb dump, so it only exists with waves on.
 				const script = join(ctx.dir, "run_verdi");
-				writeFileSync(script, verdiScript(ctx, top));
+				writeFileSync(script, verdiScript(ctx));
 				chmodSync(script, 0o755);
 				ctx.submitScript("run_verdi");
 			}
@@ -200,21 +181,24 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 		compile(ctx) {
 			const cov = covFromEnv();
 			const o = { ...opts, ...ctx.caseOpts.toolOptions };
-			const wave = waveSpec(o.wave);
-			// dtsim's UCLI fsdb dump (dump.tcl) needs debug access, unless the
-			// config already set a -debug_access level (e.g. via vcsBaseFlags).
-			const debugSet = [...compileFlags(o), ...ctx.caseOpts.compileArgs].some(
-				(a) => a.startsWith("-debug_access"),
-			);
-			// run_verdi loads simv.daidir, which VCS only writes with -kdb.
-			const kdbSet = [...compileFlags(o), ...ctx.caseOpts.compileArgs].includes(
-				"-kdb",
-			);
+			const wave = ctx.caseOpts.wave;
+			const given = [...compileFlags(o), ...ctx.caseOpts.compileArgs];
+			// With waves on, dump.tcl needs debug access and run_verdi loads
+			// simv.daidir (-kdb), unless the flags already ask for them.
+			const waveFlags = wave.enabled
+				? [
+						...(given.some((a) => /^-debug_(acc|access|all|pp)\b/.test(a))
+							? []
+							: ["-debug_access+all"]),
+						...(given.includes("-kdb") ? [] : ["-kdb"]),
+					]
+				: [];
 			const argv = [
 				command(o),
 				...compileFlags(o),
 				...(ntbOpts(o) ? ["-ntb_opts", ntbOpts(o)] : []),
-				...(top ? ["-top", top] : []),
+				"-top",
+				ctx.caseOpts.top,
 				...ctx.filelists.flatMap((f) => ["-f", f]),
 				`-Mdir=${join(ctx.dir, "csrc")}`,
 				"-o",
@@ -223,9 +207,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 				join(ctx.dir, "vcs.log"),
 				...ctx.caseOpts.defines.map((d) => `+define+${d}`),
 				...ctx.caseOpts.compileArgs,
-				...(kdbSet ? [] : ["-kdb"]),
-				// dtsim's UCLI fsdb dump (dump.tcl) needs debug access.
-				...(wave.enabled && !debugSet ? ["-debug_access+all"] : []),
+				...waveFlags,
 				...(cov.enabled
 					? ["-cm", cov.metrics, "-cm_dir", join(ctx.dir, "simv.vdb")]
 					: []),
@@ -241,7 +223,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 
 		simulate(ctx) {
 			const o = { ...opts, ...ctx.caseOpts.toolOptions };
-			const wave = waveSpec(o.wave);
+			const wave = ctx.caseOpts.wave;
 			const cov = covFromEnv();
 			const uvm = ctx.caseOpts.uvm;
 			const plusarg = casePlusarg(o);

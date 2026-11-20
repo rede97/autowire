@@ -1,5 +1,6 @@
 # C++ harness build (tb_top + dt/verilator/tb_main.cpp).
-# Paths are relative to the project root (demo/soc); dtsim flattens this list.
+# Paths are relative to the project root (demo/soc): dtsim passes this list to
+# the simulator as `-f <abs path>` with the project root as cwd.
 # Macro header first (EDA load pattern; analysis gets it via define_headers).
 +incdir+dt
 rtl/soc_macros.svh

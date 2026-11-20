@@ -41,9 +41,19 @@ export type CaseOpts = {
 	uvm?: UvmCfg;
 	/** Per-case options the tool reads on top of its factory options
 	 *  (e.g. VerilatorTool `main`, VcsTool `flags`); objects merge per key.
-	 *  Top-level module selection belongs to the workspace tool, not a case.
 	 *  With several tools, put them under `byTool.<tool>`. */
 	toolOptions?: Record<string, unknown>;
+	/** Top-level module (default: Workspace `top`). Inherited; part of the
+	 *  compile key, so cases with different tops build separately. */
+	top?: string;
+	/** Waveform dump on/off (default: Workspace `wave`). Inherited. */
+	wave?: boolean;
+	/** Dump depth, 0 = all levels (default: Workspace `waveDepth`). Inherited. */
+	waveDepth?: number;
+	/** Dump scope (default: Workspace `waveScope`, else the case's top).
+	 *  Inherited. With `wave` on, all three are part of the compile key: the
+	 *  dump is compiled in (debug access, --trace-fst, the scope). */
+	waveScope?: string;
 	/** Filelists (paths relative to dt/config), appended to the workspace's
 	 *  and the parent's. dtsim never reads them: each reaches the tool as -f,
 	 *  which runs in the project root. */
@@ -138,16 +148,21 @@ export type TaskSpec = {
 	maxCompiles: number;
 };
 
+/** A slot count, or a callback evaluated once the tool and launcher are
+ *  resolved. */
+export type SlotLimit =
+	| number
+	| ((ctx: { tool: string; launcher: string }) => number);
+
 /** `Workspace({ task })` options. `launcher` is one launcher or a probe list
  *  tried left to right: the first whose `probe` executables are all on PATH
  *  wins (local, with no probe, always matches). Probes run concurrently.
- *  `maxSlots` / `maxCompiles` are a number, or a callback evaluated after the
- *  tool and launcher are resolved — so the config can size slots from the
- *  resolved launcher instead of probing the environment itself. */
+ *  `maxSlots` / `maxCompiles` take a SlotLimit, so the config can size slots
+ *  from the resolved launcher instead of probing the environment itself. */
 export type TaskOpts = {
 	launcher?: Launcher | readonly Launcher[];
-	maxSlots?: number | ((ctx: { tool: string; launcher: string }) => number);
-	maxCompiles?: number | ((ctx: { tool: string; launcher: string }) => number);
+	maxSlots?: SlotLimit;
+	maxCompiles?: SlotLimit;
 };
 
 /** What hooks and graders see for one case directory. */
@@ -172,6 +187,10 @@ export type CaseContext = {
 		uvm?: UvmCfg;
 		toolOptions: Record<string, unknown>;
 		filelists: string[];
+		/** Top-level module: the case's `top`, else the workspace's. */
+		top: string;
+		/** Waveform dump: the case's `wave`, else the workspace's. */
+		wave: WaveSpec;
 	};
 	/** The isolated environment the tool command of this phase receives. */
 	env: Readonly<Record<string, string>>;
@@ -243,43 +262,6 @@ export type Grader = {
 	) => GradeStatus | GradeOutcome | Promise<GradeStatus | GradeOutcome>;
 };
 
-/** The fully-resolved workspace, passed to `Workspace.onResolve` to patch in
- *  place. Every field is mutable: reassign `tool`, adjust `task`, mutate
- *  `cases`, `grader`, `hooks`, ... . Only DSL types appear here, so the DSL
- *  stays self-contained; core/config.ts re-exports it. */
-export type ResolvedWorkspace = {
-	configPath: string;
-	/** Project root: the RTL design dir that owns dt/. `${workspace}` / $WORKSPACE. */
-	root: string;
-	/** Config dir (<project>/dt/config). `${verify}`. */
-	verify: string;
-	/** Output root: <project>/dt/simout, plus /<tool> when several tools exist. */
-	out: string;
-	/** Selected backend (auto-fallback, or an onResolve override). */
-	tool: SimTool;
-	/** Every configured backend, in config order. */
-	tools: SimTool[];
-	/** The workspace seed set (default ["0"]). */
-	seeds: string[];
-	/** Workspace filelists, absolute. */
-	filelists: string[];
-	bareDefaults?: CaseOpts;
-	passthrough: string[];
-	deny: string[];
-	/** Environment knobs the config documents, for `dtsim env`. */
-	vars: readonly EnvVarDoc[];
-	/** Launcher after the probe / DTSIM_TASK_TYPE override, plus slot limits. */
-	task: TaskSpec;
-	hooks: Hooks;
-	/** Default grader. */
-	grader: Grader;
-	groups: Map<string, GroupMember[]>;
-	/** Top-level cases by name; derived cases hang off `children`. */
-	cases: Map<string, CaseDef>;
-	/** Lazily merged options per case id (functions evaluated once). */
-	resolved: Map<string, CaseOpts>;
-};
-
 /** An environment knob the config understands, listed by `dtsim env`. */
 export type EnvVarDoc = {
 	/** Variable name, e.g. "WAVE". */
@@ -290,7 +272,7 @@ export type EnvVarDoc = {
 	default?: string;
 	/** One-line description. */
 	desc?: string;
-	/** Optional CLI option spec, e.g. "-v, --wave" (a switch) or "--jobs <n>"
+	/** Optional CLI option spec, e.g. "--wave" (a switch) or "--jobs <n>"
 	 *  (a value option). When the flag is passed, dtsim sets the variable. */
 	flags?: string;
 	/** Map the CLI value to the env value: a switch passes `true`, a value
@@ -301,9 +283,19 @@ export type EnvVarDoc = {
 
 export type WorkspaceOpts = {
 	/** Simulator backends: VcsTool(...), VerilatorTool(...) or defineTool(...).
-	 *  The first available (by each tool's probe) is the default; `onResolve`
-	 *  may force another by reassigning `ws.tool`. */
+	 *  The first available (by each tool's probe) is selected; a factory
+	 *  reorders or filters the list to force one. */
 	tools: readonly SimTool[];
+	/** Top-level module of every case that does not set its own `top`.
+	 *  Default "tb_top". */
+	top?: string;
+	/** Waveform dump of every case that does not set its own `wave`.
+	 *  Default false. */
+	wave?: boolean;
+	/** Default dump depth, 0 = all levels. Default 0. */
+	waveDepth?: number;
+	/** Default dump scope. Default: each case's top. */
+	waveScope?: string;
 	/** Filelists every case compiles (paths relative to dt/config, `${...}`
 	 *  allowed); cases append theirs. Default: none. */
 	filelists?: readonly string[];
@@ -319,8 +311,6 @@ export type WorkspaceOpts = {
 	env?: {
 		passthrough?: readonly string[];
 		deny?: readonly string[];
-		/** Environment knobs this config understands, for `dtsim env` to list. */
-		vars?: readonly EnvVarDoc[];
 	};
 	task?: TaskOpts;
 	hooks?: Hooks;
@@ -349,27 +339,8 @@ export type Prepared = {
 	executable?: string;
 };
 
-/** Waveform resolved from a backend `wave` option. `top`: dump scope
- *  (default: the backend's top). */
-export type WaveSpec = { enabled: boolean; depth: number; top?: string };
-
-/** A backend's `wave` option: `true` (depth 0 = all levels), or
- *  `{ depth, top }` to bound depth and/or the dump scope. */
-export type WaveOpt = boolean | { depth?: number | string; top?: string };
-
-/** Resolve a backend's `wave` option to a WaveSpec. */
-export function waveSpec(opt: WaveOpt | undefined): WaveSpec {
-	if (opt === undefined || opt === false) return { enabled: false, depth: 0 };
-	if (opt === true) return { enabled: true, depth: 0 };
-	if (typeof opt === "object") {
-		const depth = Number(opt.depth ?? 0);
-		if (!Number.isInteger(depth) || depth < 0) {
-			throw new Error("dtsim: wave depth must be a whole number >= 0");
-		}
-		return { enabled: true, depth, ...(opt.top ? { top: opt.top } : {}) };
-	}
-	throw new Error("dtsim: wave must be a boolean or { depth, top }");
-}
+/** A case's resolved waveform dump. `scope` defaults to the case's top. */
+export type WaveSpec = { enabled: boolean; depth: number; scope: string };
 /** Coverage switch ($DTSIM_COV*; read with covFromEnv()). */
 export type CovSpec = { enabled: boolean; metrics: string; merge: boolean };
 
@@ -381,6 +352,10 @@ export type ToolContext = {
 	caseOpts: Required<Pick<CaseOpts, "defines" | "compileArgs" | "simArgs">> & {
 		uvm?: UvmCfg;
 		toolOptions: Record<string, unknown>;
+		/** Top-level module: the case's `top`, else the workspace's. */
+		top: string;
+		/** Waveform dump: the case's `wave`, else the workspace's. */
+		wave: WaveSpec;
 	};
 	dir: string;
 	compileDir: string;
@@ -418,6 +393,10 @@ export type CompileKeyInput = {
 	uvm?: UvmCfg;
 	toolOptions: Record<string, unknown>;
 	filelists: readonly string[];
+	/** Top-level module (already in `base`). */
+	top: string;
+	/** Waveform dump (already in `base`). */
+	wave: WaveSpec;
 };
 
 export type SimTool = {
@@ -426,21 +405,18 @@ export type SimTool = {
 	name: string;
 	/** Executables that must all be on PATH for this tool to count as
 	 *  available in the automatic fallback (e.g. ["vcs"]). Empty/absent =
-	 *  always available. `onResolve` may still force it by name. */
+	 *  always available. */
 	probe?: readonly string[];
 	/** Parent-environment names this tool needs; copied only when present. */
 	passthrough: readonly string[];
 	/** true: first Ctrl+C is forwarded to the child (UCLI-style). */
 	interactive: boolean;
-	/** The backend's factory-level wave setting (for the Run/Regression header).
-	 *  A case's `toolOptions.wave` can override it per case. */
-	wave?: WaveSpec;
 	/**
 	 * Compile identity: cases whose keys are equal share one build in a
-	 * regression. `base` is dtsim's generic key (tool, defines as a set,
+	 * regression. `base` is dtsim's generic key (tool, top, wave, defines as a set,
 	 * compileArgs in order, compile-scope env, filelists). Return it, extend it
-	 * (`${base}|top=x`), or replace it with what this simulator actually
-	 * compiles from. Default: `base`.
+	 * with what else this backend compiles from (`${base}|mdir=x`), or replace
+	 * it. Default: `base`.
 	 */
 	compileKey?: (c: CompileKeyInput, base: string) => string;
 	/** Readable name of the build `c` stands for (the first case of a compile
@@ -503,6 +479,32 @@ function needString(what: string, v: unknown): string {
 	return v;
 }
 
+/** `top` / `waveScope` must be names, `wave` a boolean, `waveDepth` a whole
+ *  number. Shared by case options and the Workspace. */
+function needTopWave(
+	what: string,
+	opts: {
+		top?: unknown;
+		wave?: unknown;
+		waveDepth?: unknown;
+		waveScope?: unknown;
+	},
+): void {
+	for (const key of ["top", "waveScope"] as const) {
+		const v = opts[key];
+		if (v !== undefined && (typeof v !== "string" || v.length === 0)) {
+			throw new Error(`dtsim: ${what}.${key} must be a non-empty name`);
+		}
+	}
+	if (opts.wave !== undefined && typeof opts.wave !== "boolean") {
+		throw new Error(`dtsim: ${what}.wave must be a boolean`);
+	}
+	const d = opts.waveDepth;
+	if (d !== undefined && (!Number.isInteger(d) || (d as number) < 0)) {
+		throw new Error(`dtsim: ${what}.waveDepth must be a whole number >= 0`);
+	}
+}
+
 function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 	if (opts === undefined) return {};
 	if (typeof opts !== "object" || opts === null) {
@@ -526,6 +528,7 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 	if (opts.abstract !== undefined && typeof opts.abstract !== "boolean") {
 		throw new Error(`dtsim: ${what}.abstract must be a boolean`);
 	}
+	needTopWave(what, opts);
 	if (opts.grader !== undefined) needGrader(`${what}.grader`, opts.grader);
 	if (opts.env) {
 		for (const [k, v] of Object.entries(opts.env)) {
@@ -800,6 +803,7 @@ export function validateWorkspace(opts: WorkspaceOpts): void {
 		names.add(tool.name);
 	}
 	needList("Workspace filelists", opts.filelists);
+	needTopWave("Workspace", opts);
 	if (opts.task?.launcher !== undefined) {
 		const ls = opts.task.launcher;
 		for (const l of Array.isArray(ls) ? ls : [ls])
@@ -823,13 +827,13 @@ export function validateWorkspace(opts: WorkspaceOpts): void {
 }
 
 /** Two forms:
- *  - `Workspace(opts)`: static options; the env registry comes from
- *    `opts.env.vars`.
+ *  - `Workspace(opts)`: static options, no registered env vars.
  *  - `Workspace(regEnv, opts | ((mode) => opts))`: the registered environment
- *    variables first, then static options or a callback that computes them
- *    from the mode (`run` / `regr`). The callback holds all the config's
- *    logic — read env, choose backend wave and tools, set slots. dtsim
- *    still auto-fallbacks the tool (probe) and probes the launcher. */
+ *    variables (listed by `dtsim env`, `flags` become CLI options) first,
+ *    then static options or a callback that computes them from the mode
+ *    (`run` / `regr`). The callback holds the config's logic: read env,
+ *    order tools, set wave and slots. dtsim still auto-fallbacks the tool
+ *    (probe) and probes the launcher. */
 export function Workspace(
 	envOrOpts: readonly EnvVarDoc[] | WorkspaceOpts,
 	optsOrFn?: WorkspaceOpts | WorkspaceFactory,
@@ -837,11 +841,7 @@ export function Workspace(
 	if (optsOrFn === undefined) {
 		const opts = envOrOpts as WorkspaceOpts;
 		validateWorkspace(opts);
-		return {
-			kind: "dtsim-workspace",
-			env: [...(opts.env?.vars ?? [])],
-			opts,
-		};
+		return { kind: "dtsim-workspace", env: [], opts };
 	}
 	if (!Array.isArray(envOrOpts)) {
 		throw new Error(

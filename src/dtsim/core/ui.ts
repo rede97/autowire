@@ -10,14 +10,10 @@ export type Row = readonly string[];
 
 /** Bordered table with grey rules and bold cyan header names. `head` is
  *  optional. On a terminal the table fills the width: the widest column grows
- *  to use the slack, or wraps so the whole row never exceeds it (capped no
- *  wider than `maxWidth`). A column is never shrunk below its header. Not a
- *  TTY (pipe, file) keeps the natural width (100-column cap), no padding. */
-export function table(
-	rows: readonly Row[],
-	head?: Row,
-	maxWidth?: number,
-): string {
+ *  to use the slack, or wraps so the whole row never exceeds it. A column is
+ *  never shrunk below its header. Not a TTY (pipe, file) keeps the natural
+ *  width (100-column cap), no padding. */
+export function table(rows: readonly Row[], head?: Row): string {
 	const all = head ? [head, ...rows] : rows;
 	const cols = Math.max(0, ...all.map((r) => r.length));
 	const widthOf = (c: string | undefined) =>
@@ -36,10 +32,7 @@ export function table(
 	);
 	// cli-table3 adds 2 padding + 1 border per column plus a trailing border.
 	const term = process.stdout.columns || 100;
-	const budget = Math.max(
-		cols,
-		Math.min(maxWidth ?? term, term) - (cols * 3 + 1),
-	);
+	const budget = Math.max(cols, term - (cols * 3 + 1));
 	// Shrink the widest shrinkable column a step at a time until the row fits.
 	while (target.reduce((a, b) => a + b, 0) > budget) {
 		let i = -1;
@@ -72,7 +65,7 @@ export function table(
 		chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" },
 	});
 	for (const r of rows)
-		t.push(r.map((cell, i) => wrap(cell, target[i] ?? 100)));
+		t.push(r.map((cell, i) => wrap(cell, target[i] as number)));
 	const lines = t.toString().split("\n");
 	// Header names are single-line: draw the top border again under them.
 	if (head && lines[0]) {

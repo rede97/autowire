@@ -137,7 +137,7 @@ export function planText(
 	for (const g of groups) {
 		const many = g.cases.length === 1 ? "case" : "cases";
 		lines.push(
-			`${chalk.bold.cyan("compile")} ${chalk.bold(g.name)}  ${chalk.dim(`(${g.cases.length} ${many})`)}`,
+			`${chalk.bold.cyan("compile")} ${chalk.bold(g.name)}  ${chalk.dim(`top ${g.representative.top}, wave ${waveLabel(g.representative.wave)}, ${g.cases.length} ${many}`)}`,
 		);
 		const defines = g.representative.defines;
 		lines.push(
@@ -185,13 +185,21 @@ function headerRows(
 	return [
 		["Group", group],
 		["Tool", ws.tool.name],
-		["Wave", waveLabel(ws.tool)],
+		["Wave", regressionWave(groups)],
 		["Launcher", launcher ? `${l.name} (${launcher})` : l.name],
 		["Tasks", `${groups.length} compiles, ${sims} sims`],
 		["Slots", `${ws.task.maxSlots} (compile ${ws.task.maxCompiles})`],
 		["Label", opts.label ?? ""],
 		["Output", regDir],
 	];
+}
+
+/** One wave label when every build agrees, else how many builds dump. */
+function regressionWave(groups: readonly CompileGroup[]): string {
+	const labels = new Set(groups.map((g) => waveLabel(g.representative.wave)));
+	if (labels.size <= 1) return [...labels][0] ?? "off";
+	const on = groups.filter((g) => g.representative.wave.enabled).length;
+	return `on in ${on} of ${groups.length} compiles (see plan)`;
 }
 
 export async function runRegression(
@@ -204,7 +212,7 @@ export async function runRegression(
 	const skipped = { tool: ws.tool.name, ids: skippedCases(ws, group) };
 	if (groups.length === 0) {
 		throw new Error(
-			`dtsim: group "${group}" has no case for ${ws.tool.name} (skipped: ${skipped.ids.join(", ")}); pick another with --tool`,
+			`dtsim: group "${group}" has no case for ${ws.tool.name} (skipped: ${skipped.ids.join(", ")}); order Workspace tools in the config to pick another`,
 		);
 	}
 	const regDir = regressionDir(ws, opts.label);
@@ -395,7 +403,7 @@ async function finishRegression(
 	const text = resultTree(results);
 	console.log(text);
 	await writeFile(join(regDir, "result.txt"), `${plain(text)}\n`);
-	const dresults = writeDresultsScript(regDir);
+	const dresults = writeDresultsScript(regDir, ws.tool.name);
 
 	const counts = new Map<string, number>();
 	for (const r of results) {
