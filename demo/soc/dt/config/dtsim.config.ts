@@ -139,11 +139,14 @@ export default Workspace([], (mode) => {
 		Group("sd", ["sd_sha256"]),
 	],
 	};
-	// Tool selection is config-owned: put the requested backend first so the
+	// Tool selection is config-owned: sort the requested backend first so the
 	// auto-fallback picks it (default Verilator, DTSIM_TOOL=vcs for the farm).
 	if (process.env.DTSIM_TOOL) {
-		const i = opts.tools.findIndex((t) => t.name === process.env.DTSIM_TOOL);
-		if (i > 0) opts.tools = [opts.tools[i], ...opts.tools.filter((_, j) => j !== i)];
+		opts.tools.sort(
+			(a, b) =>
+				Number(b.name === process.env.DTSIM_TOOL) -
+				Number(a.name === process.env.DTSIM_TOOL),
+		);
 	}
 	return opts;
 });
