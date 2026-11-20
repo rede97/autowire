@@ -349,8 +349,8 @@ export type Prepared = {
 	executable?: string;
 };
 
-/** Waveform switch ($DTSIM_WAVE*; read with waveFromEnv()). `top`: dump
- *  scope (default: the backend's top). */
+/** Waveform resolved from a backend `wave` option. `top`: dump scope
+ *  (default: the backend's top). */
 export type WaveSpec = { enabled: boolean; depth: number; top?: string };
 
 /** A backend's `wave` option: `true` (depth 0 = all levels), or
@@ -828,7 +828,7 @@ export function validateWorkspace(opts: WorkspaceOpts): void {
  *  - `Workspace(regEnv, opts | ((mode) => opts))`: the registered environment
  *    variables first, then static options or a callback that computes them
  *    from the mode (`run` / `regr`). The callback holds all the config's
- *    logic — read env, default `DTSIM_WAVE`, choose tools, set slots. dtsim
+ *    logic — read env, choose backend wave and tools, set slots. dtsim
  *    still auto-fallbacks the tool (probe) and probes the launcher. */
 export function Workspace(
 	envOrOpts: readonly EnvVarDoc[] | WorkspaceOpts,

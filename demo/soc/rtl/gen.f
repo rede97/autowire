@@ -5,4 +5,4 @@ rtl/gen/connect/sha256wb.sv
 rtl/gen/connect/sd_sha_ch.sv
 rtl/gen/connect/macro_width_probe.sv
 rtl/gen/connect/soc_top.sv
-rtl/gen/sim/tb_soc.sv
+rtl/gen/sim/tb_top.sv

@@ -3,7 +3,7 @@
 // - regEnv (arg 1): the environment knobs this config documents; `dtsim env`
 //   lists them.
 // - the factory (arg 2) computes the options from the mode (`run` / `regr`):
-//   read env, default DTSIM_WAVE, choose tools, set slots. dtsim then
+//   read env, choose backend wave, tools and slots. dtsim then
 //   auto-fallbacks the tool (probe) and probes the launcher.
 // The tools are fakes from ../bin (run.sh puts them first on PATH; the LSF
 // launcher goes through the fake bsub). Repo demos import the DSL source;
@@ -43,11 +43,9 @@ export default Workspace(
 		{ name: "DTSIM_SLOTS", default: "8", desc: "max concurrent sims" },
 	],
 	(mode) => {
-		// Default wave from the mode (dump a single run, not a regression),
-		// unless WAVE / DTSIM_WAVE already set it. Backends read DTSIM_WAVE
-		// at compile/sim time.
-		if (process.env.WAVE === undefined && process.env.DTSIM_WAVE === undefined)
-			process.env.DTSIM_WAVE = mode === "run" ? "1" : "0";
+		const wave = process.env.WAVE === undefined
+			? mode === "run"
+			: process.env.WAVE === "1";
 		const seeds = process.env.SEEDS
 			? process.env.SEEDS.split(",").map((s) => s.trim()).filter(Boolean)
 			: process.env.RANDOM
@@ -56,7 +54,12 @@ export default Workspace(
 					)
 				: ["0"];
 		return {
-			tools: [VcsTool({ flags: vcsBaseFlags({ timescale: "1ns/1ps" }) })],
+			tools: [
+				VcsTool({
+					flags: vcsBaseFlags({ timescale: "1ns/1ps" }),
+					wave,
+				}),
+			],
 			seeds,
 			filelists: ["file.lst"],
 			bareDefaults: {

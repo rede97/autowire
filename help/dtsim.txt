@@ -36,12 +36,9 @@ Tools, wave and coverage (config-owned)
   Tool selection: no --tool / $DTSIM_TOOL. Each tool has a probe (executables on
   PATH: vcs, verilator); dtsim auto-fallbacks to the first available, in tools
   order. A config factory can order/filter tools to force one.
-  Wave / coverage: no --wave / --cov flags. The config sets DTSIM_WAVE /
-  DTSIM_COV (and _DEPTH/_TOP/_METRICS/_MERGE) itself, typically in its factory;
-  backends read them at compile/sim time. VCS writes dump.tcl and runs simv
-  -ucli -i dump.tcl → <seed>/verilog.fsdb (and adds -debug_access+all unless
-  set). Verilator: --trace-fst plus a bound dtsim_wave module → <seed>/wave.fst
-  (needs top; a C++ harness calls traceEverOn(true)).
+  Wave / coverage: no --wave / --cov flags. Config sets backend wave with
+  VcsTool({ wave }) / VerilatorTool({ wave }) (boolean or {depth, top}); coverage
+  uses DTSIM_COV / DTSIM_COV_METRICS / DTSIM_COV_MERGE.
 
 Agent workflow
   1. dtsim list / dtsim groups / dtsim plan <group>: see what exists, no run.
@@ -62,7 +59,7 @@ DSL (import from ./.dtsim/dsl/index.ts)
             listed by `dtsim env`; flags are Commander option specs registered
             before parsing. `set(value)` maps the parsed value to the env var.
             The factory computes the opts from the mode:
-            read env, default DTSIM_WAVE, choose tools, set slots and seeds.
+            read env, choose backend wave and tools, set slots and seeds.
   tools     [VcsTool({ top, ntbOpts, flags, command, casePlusarg })
             | VerilatorTool({ top, mdir, main, command })
             | defineTool({ name, passthrough, compile, simulate, ... }), ...];

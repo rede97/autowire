@@ -1,4 +1,4 @@
-# VCS filelist (aw-tb-mod tb_soc top). Paths are relative to the project root
+# VCS filelist (aw-tb-mod tb_top top). Paths are relative to the project root
 # (demo/soc); dtsim flattens this list into the compile dir.
 # Macro header first (EDA load pattern; analysis gets it via define_headers).
 +incdir+dt

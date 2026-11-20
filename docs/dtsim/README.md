@@ -167,7 +167,7 @@ symlinks need extra privileges and Bun does not follow MSYS ones.
   `(mode: "run" | "regr") => opts` 的回调。`tools`（非空列表）、`task.launcher`、
   `grader` 都是值（`VcsTool(...)`、`LsfLauncher(...)`、`DefaultGrader(...)`），不是 id。
 - **工厂回调**：dtsim 加载时以 mode 调用它，返回完整 `WorkspaceOpts`。config 的全部
-  逻辑写在这里——按 mode 默认 `DTSIM_WAVE`（单跑 dump、回归不 dump）、算
+  逻辑写在这里——按 mode 设置 backend 的 `wave`（单跑 dump、回归不 dump）、算
   `task.maxSlots`、调整 `tools` 顺序以强制某个仿真器。这是 `onResolve` 的替代
   （`onResolve` 已删除）。静态 opts 的字段同前：`filelists`、`output`、`grader`、
   `bareDefaults`、`env`、`task`、`hooks`、`groups`、`cases`。
@@ -301,28 +301,31 @@ const xcelium = defineTool({
 export default Workspace({ tools: [xcelium], ... });
 ```
 
-Built-in options (factory argument, or case `toolOptions`):
+Built-in options (factory argument, or case `toolOptions` where noted):
 
 | Backend | Option | Default | Meaning |
 |---|---|---|---|
-| `VerilatorTool` | `top` | none: Verilator finds the single top | `--top-module`; the `--wave` bind target (required for `--wave`) |
-| `VerilatorTool` | `mdir` | `obj_dir` | `-Mdir` inside the compile dir; the executable is `<mdir>/V<top>` (`Vsim` without `top`, via `-o`) |
+| `VerilatorTool` | `top` | `tb_top` | `--top-module`; the wave bind target. Workspace tool only |
+| `VerilatorTool` | `mdir` | `obj_dir` | `-Mdir` inside the compile dir; the executable is `<mdir>/V<top>` |
 | `VerilatorTool` | `main` | `true` | `true`: `--binary`. `false`: `--cc --exe --build` for a C++ harness; the `.cpp` files and `--timing` go in `compileArgs` |
 | `VerilatorTool` | `command` | `verilator` | the compiler to run, e.g. `verilator_bin` or a full path |
-| `VcsTool` | `top` | none: VCS finds the top | `-top`; the default `--wave` scope and `run_verdi -t`'s `-top` |
+| `VcsTool` | `top` | `tb_top` | `-top`; the default wave scope and `run_verdi`'s `-top`. Workspace tool only |
 | `VcsTool` | `ntbOpts` | `uvm` | `-ntb_opts` value, e.g. `uvm-1.2`; `""` leaves `-ntb_opts` out |
 | `VcsTool` | `flags` | built-in list | a string array (e.g. from `vcsBaseFlags(...)`). Replaces the built-in compile flags (`-xlrm nettype_array -lca -kdb ...`); `-f`, `-Mdir`, `-o`, `-l`, defines and `compileArgs` still follow |
 | `VcsTool` | `command` | `vcs` | the compiler to run, e.g. a wrapper or a full path; `process.env.VCS ?? "vcs"` reads an env var |
 | `VcsTool` | `casePlusarg` | `"TEST"` | `+<name>=<case id>` on every simv run; `false` sends none (the child always has `$DTSIM_CASE`) |
+
+`top` belongs to the workspace tool, not a case's `toolOptions`.
 
 The engine owns scheduling, grading, and environment assembly. A backend only
 supplies argv, log locations, excerpt regexes, optional helper files
 (`writeAux`), its `compileKey`, and how it reads `toolOptions`. `name` is part
 of the compile key and the per-tool output dir; `interactive` (default
 `false`) forwards the first Ctrl+C of `run --interactive` to the child.
-Waveform / coverage switches are not in the context: a backend reads them
-with `waveFromEnv()` / `covFromEnv()` at each compile and sim, so a config's
-factory can default `DTSIM_WAVE` before the run (next sections).
+Waveform / coverage switches are not in the context: wave is a backend option
+(`VcsTool({ wave })` / `VerilatorTool({ wave })`, boolean or `{ depth, top }`),
+while coverage reads `covFromEnv()` at each compile and sim. Config computes
+backend wave in its factory.
 
 ### Base flags
 
@@ -342,8 +345,7 @@ compileArgs: [...verilatorBaseFlags({ timing: true, jobs: 8 }), "-Wno-WIDTHEXPAN
 `-timescale=`、`-j<jobs>`、可选 `debugaccess: "all" | "pp" | "r" | "w" | "f" | "drivers"`
 → `-debug_access+<level>`。`verilatorBaseFlags` → `--sv` plus `--timing`、`--timescale`、
 `-j <jobs>`。用展开把返回值传给 `VcsTool({ flags })` 或 case 的 `compileArgs`。
-`--wave` 无需 flag —— dtsim 自绑 dump（wave 打开且未显式设置 debug access 时加
-`-debug_access+all`）。
+波形由 backend 的 `wave` 选项决定，不需要 `DTSIM_WAVE` 环境变量。
 
 ### 多仿真器
 
@@ -369,35 +371,17 @@ demo/soc 用一份配置跑 Verilator（C++ harness）与 VCS（纯 SV `tb_soc`�
 `basic_smoke` / `regfile_smoke` 的 `byTool.verilator` 与 `bareDefaults.byTool`，
 `sd_sha256` / `tb_mod` / `sv_reg_smoke` 写 `tools: ["verilator"]`。
 
-### 运行开关（环境变量）
+### 运行开关
 
-波形和覆盖率由 config 决定，不再用 `--wave` / `--cov` 等 CLI flag。config（通常在工厂
-回调里）自己设置 `DTSIM_WAVE` / `DTSIM_COV` 等环境变量，backend 在每次 compile / sim
-时用 `waveFromEnv()` / `covFromEnv()` 读取。子进程拿到同样的变量，`run_compile` /
-`run_sim` 也记下它们，手工重跑行为一致。
+波形是 backend 的配置，不是 CLI 或 `DTSIM_WAVE*` 环境变量：在工厂里给
+`VcsTool({ wave })` / `VerilatorTool({ wave })` 传 `true`，或 `{ depth, top }`。
+VCS 在 wave 开启时生成 `dump.tcl` 并用 `-ucli -i dump.tcl` 运行 simv；未显式设置
+debug access 时自动加 `-debug_access+all`，`-kdb` 默认开启以支持 `run_verdi`。
+Verilator 生成绑定的 `dtsim_wave.sv`、加 `--trace-fst`，每个 seed 写 `wave.fst`。
 
-| 变量 | 缺省 | 含义 |
-|---|---|---|
-| `DTSIM_WAVE` | 关 | `1` 时 dump 波形（由 config 按 mode 等决定） |
-| `DTSIM_WAVE_DEPTH` | `0`（全部层级） | dump 深度 |
-| `DTSIM_WAVE_TOP` | 后端的 top | dump 范围（层次路径） |
-| `DTSIM_COV` | 关 | `1` 时收集覆盖率（VCS） |
-| `DTSIM_COV_METRICS` | `line+cond+fsm+tgl+branch+assert` | `-cm` 指标 |
-| `DTSIM_COV_MERGE` | 开 | `0` 时回归结束不做每组 urg 合并 |
-
-各后端的波形：
-
-- **VCS**：`DTSIM_WAVE=1` 时生成 `dump.tcl` 并用 `-ucli -i dump.tcl` 运行 simv
-  （`--interactive` 只加 `-ucli`；都没有时 simv 直接运行），编译始终加 `-kdb`（供
-  `run_verdi` 的 simv.daidir）并在未显式设置 debug access 时加 `-debug_access+all`。
-  `fsdbDumpvars <depth> [<scope>] "+all"`，scope 取 `DTSIM_WAVE_TOP`，否则 `VcsTool({ top })`，
-  都没有则 dump 整个设计；每个 seed 目录写 `verilog.fsdb`（`run_verdi` 用 `-dbdir
-  simv.daidir` 打开它）。TB 自己管 dump 时可在配置里按开关加 plusarg。
-- **Verilator**：编译加 `--trace-fst`，并生成 `dtsim_wave.sv`（`bind <top> dtsim_wave`，
-  内含 `$dumpfile("wave.fst")` 与 `$dumpvars(<depth>, <scope 或 top>)`），每个 seed 目录写
-  `wave.fst`，TB 不用改。波形是编译进去的：开 / 关要重新编译，`--sim-only` 沿用已有
-  build。C++ harness（`main: false`）要在 `commandArgs` 之后调用
-  `ctx->traceEverOn(true)`（demo/soc `tb_main.cpp` 用 `#if VM_TRACE` 包住）。
+覆盖率仍由 config 决定并可通过 `DTSIM_COV` / `DTSIM_COV_METRICS` /
+`DTSIM_COV_MERGE` 环境变量传入，backend 用 `covFromEnv()` 读取；这些变量会进入
+compile/sim 子进程和生成的 `run_compile` / `run_sim`。
 
 ### Which cases share a build
 

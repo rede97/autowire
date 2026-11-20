@@ -5,7 +5,7 @@
 // simulator env. Build with --binary and +incdir+<dv/sv_reg>; run the binary.
 `include "soc_pkg.sv"
 
-module sv_reg_smoke;
+module tb_top;
 	import sha256_pkg::*;
 	import smoke_pkg::*;
 

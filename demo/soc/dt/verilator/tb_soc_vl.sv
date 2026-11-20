@@ -2,7 +2,7 @@
 // Thin Verilator top: soc_top + spiflash_vl (no inout Z / # delays).
 // jtag_* are driven by the C++ host in tb_main.cpp (external JTAG smoke).
 `timescale 1ns / 1ps
-module tb_soc_vl (
+module tb_top (
 	input  wire        clk,
 	input  wire        rst_ni,
 	output wire        trap,

@@ -5,8 +5,8 @@
 // ntbOpts picks the -ntb_opts value (default "uvm", e.g. "uvm-1.2"; "" leaves
 // -ntb_opts out for a non-UVM bench). flags replaces DEFAULT_FLAGS (older VCS
 // releases reject some of them, e.g. O-2018.09 reads "-xlrm nettype_array"
-// as a source file). Waveform and coverage come from $DTSIM_WAVE* /
-// $DTSIM_COV*, read when the tool is constructed.
+// as a source file). Wave is the backend `wave` option; coverage is read from
+// the configured DTSIM_COV* environment.
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { covFromEnv } from "../env.ts";

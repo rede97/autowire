@@ -3,8 +3,8 @@
 // toolOptions may override mdir/main/command, not top. The default top is tb_top. main=false builds a C++ harness (--cc --exe
 // --build; the .cpp files and --timing come from compileArgs) instead of
 // --binary. The executable is <mdir>/V<top> (Vsim without a top).
-// $DTSIM_WAVE (read when the tool is constructed) compiles with --trace-fst
-// and binds a small dtsim_wave module into the top: $dumpfile("wave.fst"),
+// The backend `wave` option compiles with --trace-fst and binds a small
+// dtsim_wave module into the top: $dumpfile("wave.fst"),
 // $dumpvars(depth, scope), so each seed dir gets wave.fst without touching
 // the bench. The bind needs `top`. A C++ harness must call
 // VerilatedContext::traceEverOn(true).
@@ -110,7 +110,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 			const top = verilatorOpts(opts).top;
 			if (!top) {
 				throw new Error(
-					`dtsim: ${ctx.caseId}: --wave on Verilator binds a dump module into the top; set VerilatorTool({ top }) or toolOptions.top`,
+					`dtsim: ${ctx.caseId}: wave on Verilator needs a bind target; set VerilatorTool({ top })`,
 				);
 			}
 			writeFileSync(join(ctx.dir, "dtsim_wave.sv"), waveModule(top, wave));

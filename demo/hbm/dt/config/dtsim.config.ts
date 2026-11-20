@@ -5,7 +5,12 @@
 // All cases share one compile group; each test is a +UVM_TESTNAME.
 // Grading is the built-in DefaultGrader: the UVM Report Summary marks a
 // finished run and any UVM_ERROR / UVM_FATAL message fails it.
-import { Case, VcsTool, Workspace } from "../../../../src/dtsim/dsl/index.ts";
+import {
+	Case,
+	VcsTool,
+	Workspace,
+	vcsBaseFlags,
+} from "../../../../src/dtsim/dsl/index.ts";
 
 // VCS O-2018.09 compiles its UVM DPI (uvm_dpi.cc) with the g++ on PATH.
 // g++ >= 10 rejects the curly quotes in a skipped `#error` of
@@ -36,7 +41,10 @@ export default Workspace({
 	tools: [
 		VcsTool({
 			ntbOpts: "uvm-1.2",
-			flags: ["-sverilog", "-full64", "-timescale=1ns/1ps", "-debug_access+all"],
+			flags: vcsBaseFlags({
+				timescale: "1ns/1ps",
+				debugaccess: "all",
+			}),
 		}),
 	],
 	bareDefaults: {

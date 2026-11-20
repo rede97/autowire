@@ -4,7 +4,7 @@
 // clk / rst_ni / flash_* come from the dump and are declared above.
 // Timescale lives in dt/tb_timescale.sv (compile unit; cannot be inside module).
 // No inout Z on the flash model (simulator tristate limits): pads resolve
-// DUT OE first, then flash OE, else pull-up (same as dt/verilator/tb_soc_vl.sv).
+// DUT OE first, then flash OE, else pull-up (same as dt/verilator/tb_soc_vl.sv, now tb_top).
 
 initial clk = 1;
 always #5 clk = ~clk;

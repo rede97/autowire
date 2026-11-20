@@ -18,7 +18,6 @@ mkdir -p "$(dirname "$LOG")"
   echo "UNRELATED_SECRET=${UNRELATED_SECRET:-}"
   echo "LD_PRELOAD=${LD_PRELOAD:-}"
   echo "DTSIM_TASK_TYPE=${DTSIM_TASK_TYPE:-}"
-  echo "DTSIM_WAVE=${DTSIM_WAVE:-}"
 } > "$LOG"
 if [ "${DTSIM_MOCK_SIMV_FAIL:-0}" = "1" ]; then
   echo "UVM_FATAL @ 1200ns: mock fatal" >> "$LOG"

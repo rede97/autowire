@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# VCS SoC smoke (aw-tb-mod tb_soc top): thin wrapper over
+# VCS SoC smoke (aw-tb-mod tb_top top): thin wrapper over
 # `SIM_TOOL=vcs dtsim run <case>` (dt/config/dtsim.config.ts). Usage (from anywhere):
 #   ./dt/vcs/run.sh                # basic_smoke: cascade MMIO + smoke CSR + JTAG
 #   ./dt/vcs/run.sh regfile_smoke  # wishbone-regfile MMIO smoke
 # sd_sha256 / tb_mod / sv_reg_smoke are Verilator-only (Case tools).
 # Outputs: dt/simout/vcs/<case>/. Arguments after the case go to `dtsim run`
-# (e.g. -v). Waveforms: DTSIM_WAVE=1 ./dt/vcs/run.sh. DTSIM overrides the dtsim command.
+# (e.g. -v). Waveforms are configured by the workspace backend's `wave` option.
+# DTSIM overrides the dtsim command.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"

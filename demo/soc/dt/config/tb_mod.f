@@ -1,4 +1,4 @@
-# aw-tb-mod dump top (rtl/gen/sim/tb_soc.sv + dt/*.svh): pure SV, Verilator --binary.
+# aw-tb-mod dump top (rtl/gen/sim/tb_top.sv + dt/*.svh): pure SV, Verilator --binary.
 # Paths are relative to the project root (demo/soc); dtsim flattens this list.
 +incdir+dt
 dt/tb_timescale.sv

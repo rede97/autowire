@@ -5,7 +5,7 @@
 // Filelists are relative to the project root (demo/soc); dtsim flattens them
 // into each compile dir. Outputs: dt/simout/<tool>/<case>/.
 // Verilator runs a C++ harness (tb_main.cpp), VCS the pure-SV aw-tb-mod
-// tb_soc top; byTool holds what differs. The SD, tb_mod and sv_reg cases are
+// tb_top top; byTool holds what differs. The SD, tb_mod and sv_reg cases are
 // Verilator-only (sdspisim is a C++ model).
 import {
 	Case,
@@ -14,6 +14,8 @@ import {
 	VcsTool,
 	VerilatorTool,
 	Workspace,
+	vcsBaseFlags,
+	verilatorBaseFlags,
 } from "../../../../src/dtsim/dsl/index.ts";
 import { applyIpPatch, buildFirmware } from "./hooks.ts";
 
@@ -35,12 +37,12 @@ const SDSPISIM = `${VL_DIR}/third_party/sdspisim`;
 const firmware = (fw: string) =>
 	`+firmware=\${workspace}/fw/${fw}/build/firmware.hex`;
 
-// C++ harness (tb_main.cpp drives tb_soc_vl and the external JTAG host).
+// C++ harness (tb_main.cpp drives tb_top and the external JTAG host).
 // The SD build links the sdspisim card model; it is a separate compile group.
 function harness(sd: boolean) {
 	return {
 		filelists: ["harness.f"],
-		toolOptions: { top: "tb_soc_vl", main: false },
+		toolOptions: { main: false },
 		compileArgs: [
 			"-Wall",
 			"--timing",
@@ -81,12 +83,11 @@ export const sdSha256 = Case("sd_sha256", {
 	simArgs: [firmware("sd_sha256"), "+sdcard=${output_dir}/zeros_sha.img"],
 });
 
-// aw-tb-mod dump top (rtl/gen/sim/tb_soc.sv): basic_smoke + SV JTAG host.
+// aw-tb-mod dump top (rtl/gen/sim/tb_top.sv): basic_smoke + SV JTAG host.
 export const tbMod = Case("tb_mod", {
 	owner: "soc",
 	tools: ["verilator"],
 	filelists: ["tb_mod.f"],
-	toolOptions: { top: "tb_soc" },
 	grader: smoke.extend({ pass: ["SMOKE PASS: tb_soc"] }),
 	compileArgs: ["-CFLAGS", "-O2 -std=c++17", "-LDFLAGS", "-pthread"],
 	env: { FW: { value: "basic_smoke", scope: "sim" } },
@@ -98,7 +99,6 @@ export const svRegSmoke = Case("sv_reg_smoke", {
 	owner: "soc",
 	tools: ["verilator"],
 	filelists: ["sv_reg.f"],
-	toolOptions: { top: "sv_reg_smoke" },
 	compileArgs: ["--timescale", "1ns/1ps", "-Wno-lint", "-Wno-style"],
 	grader: smoke.extend({ pass: ["SV_REG SMOKE PASS"] }),
 });
@@ -112,14 +112,15 @@ export default Workspace([], (mode) => {
 		// by the backend itself when wave is on.
 		VcsTool({
 			ntbOpts: "",
-			top: "tb_soc",
-			flags: ["-full64", "-sverilog", "-timescale=1ns/1ps"],
+			flags: vcsBaseFlags({ timescale: "1ns/1ps" }),
 		}),
 	],
 	bareDefaults: {
 		random: false,
 		byTool: {
-			verilator: { compileArgs: ["-j", "0", ...VL_WARN] },
+			verilator: {
+				compileArgs: verilatorBaseFlags({ jobs: 0, add: VL_WARN }),
+			},
 			// --no-as-needed: VCS O-2018.09 on binutils >= 2.34 drops its own
 			// shared libs.
 			vcs: {
