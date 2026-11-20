@@ -314,7 +314,26 @@ supplies argv, log locations, excerpt regexes, optional helper files
 `${tool}`, `$DTSIM_TOOL` and part of the compile key; `interactive` (default
 `false`) forwards the first Ctrl+C of `run --interactive` to the child.
 Waveform / coverage switches are not in the context: a backend reads them
-with `waveFromEnv()` / `covFromEnv()` when it is constructed (next sections).
+with `waveFromEnv()` / `covFromEnv()` at each compile and sim, so a config's
+`onResolve` can default `DTSIM_WAVE` before the run (next sections).
+
+### Base flags
+
+`vcsBaseFlags(opts)` and `verilatorBaseFlags(opts)` return a portable compile
+baseline a config spreads instead of listing every flag. The options override
+the defaults (`sv: false` drops SystemVerilog) and `add` appends, so one call
+is base-plus-overlay:
+
+```ts
+VcsTool({ flags: [...vcsBaseFlags({ timescale: "1ns/1ps", jobs: 8 }), "+notimingcheck"] })
+// Verilator reads flags from a case's compileArgs (or byTool.verilator):
+compileArgs: [...verilatorBaseFlags({ timing: true, jobs: 8 }), "-Wno-WIDTHEXPAND"]
+```
+
+`vcsBaseFlags` → `-full64 -sverilog` plus `-timescale=`, `-j<jobs>`, and
+`-debug_access+all` only when `debugAccessOnWave` is set and `DTSIM_WAVE=1`.
+`verilatorBaseFlags` → `--sv` plus `--timing`, `--timescale`, `-j <jobs>`.
+`--wave` needs no flag here — dtsim binds the dump itself.
 
 ### 多仿真器
 

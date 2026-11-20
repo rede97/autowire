@@ -4,6 +4,12 @@
 
 export { covFromEnv, RUN_ENV, waveFromEnv } from "./env.ts";
 export {
+	type VcsBaseOpts,
+	type VerilatorBaseOpts,
+	vcsBaseFlags,
+	verilatorBaseFlags,
+} from "./flags.ts";
+export {
 	type ClusterOpts,
 	LocalLauncher,
 	LsfLauncher,

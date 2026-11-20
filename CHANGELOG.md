@@ -9,6 +9,7 @@
 - **作业后端探测与顺序 fallback**:`task.launcher` 可以给一个列表,dtsim 并发探测每个 launcher 的提交工具是否在 PATH 上(LSF→`bsub`、Slurm→`srun`、local 永远可用),按列表顺序选中第一个有效的(`[LsfLauncher(), SlurmLauncher(), LocalLauncher()]`)。单个 launcher 仍是显式选择、不探测;`DTSIM_TASK_TYPE` 可强制某一个并跳过探测。并发探测避免慢文件系统上逐个串行拖慢启动。
 - **作业后端生成提交备份脚本**:选中的 cluster launcher 在 `run_sim` / `run_compile` / VCS `run_verdi` 旁各写一份提交脚本(LSF `bjob_*`、Slurm `srun_*`,内容 `<bsub|srun> … bash <run 脚本>`)供手动重投;dtsim 仍内联提交、不执行这些备份,local 不生成(bypass)。`defineLauncher` 新增可选 `probe`(需在 PATH 上的可执行文件)和 `scriptPrefix`(备份脚本前缀)。
 - **`Workspace({ onResolve })` 解析后回调**:tool 和 launcher 解析完、开跑之前调用一次,`ctx = { mode:"run"|"regr", tool, launcher }`。可读写 `process.env`(典型:无 `--wave`/`WAVE` 时按 mode 默认 `DTSIM_WAVE`——单跑 dump、回归不 dump)并 `return { maxSlots, maxCompiles }` 覆盖 `task`。为支持这一点,VCS/Verilator 后端的 `waveFromEnv()`/`covFromEnv()` 读取从"构造时"挪到"用时",现有 config 行为不变。
+- **DSL 默认 flags 构造器**:新增 `vcsBaseFlags(opts)` / `verilatorBaseFlags(opts)`,返回可移植的编译基线(VCS `-full64 -sverilog`、Verilator `--sv`),config 展开后再追加项目特有项,不必从头写一遍。选项覆盖默认(`sv:false` 去掉 SV)、`timescale`/`jobs` 即辅助参数、`add` 追加,一次调用完成"基线 + overlay"。`--wave` 本身无需 flag(dtsim 自绑 dump);VCS `-debug_access+all` 仅在 `debugAccessOnWave` 且 `DTSIM_WAVE=1` 时加。
 
 ## [2.8.6] - 2026-11-19
 
