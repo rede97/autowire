@@ -1,5 +1,8 @@
 // Remaining example cases. SIM_TRACE demonstrates a sim-only env variable:
-// it reaches the simulator but never splits a compile group.
+// it reaches the simulator but never splits a compile group. `chip` shows an
+// abstract base (derivation only): dtsim never runs it; its `rtl` / `gate`
+// leaves are the runnable cases, and `*`, `chip`, or `chip.*` all expand to
+// the leaves, never the base.
 import { Case } from "../../../../../src/dtsim/dsl/index.ts";
 
 export const bar = Case("test_bar_basic", {
@@ -25,8 +28,15 @@ bar.SubCase("cosim", {
 	env: { INPUT: "input.spf" },
 });
 
-export const fullChip = Case("test_full_chip", {
+// Abstract base: shared full-chip config, never run on its own. The DUT view
+// is a compile-time define, so each leaf is its own build. The full-chip UVM
+// bench has its own top module (the workspace default is tb_top); rtl / gate
+// inherit it and the shallower dump. The gate leaf narrows the dump scope.
+export const chip = Case("chip", {
+	abstract: true,
 	owner: "charlie",
+	top: "tb_chip",
+	waveDepth: 2,
 	defines: ["NUM=1", "FULL_CHIP=1"],
 	compileArgs: ["+fsdb+all"],
 	uvm: {
@@ -37,11 +47,11 @@ export const fullChip = Case("test_full_chip", {
 	},
 });
 
-fullChip.SubCase("cosim", {
-	// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time
-	compileArgs: ["-ad=${verify}/abc", "-debug_access+all"],
-	simArgs: ["+fsdb+glitch=0"],
-	env: { INPUT: "input.spf" },
+chip.SubCase("rtl", { defines: ["VIEW_RTL"] });
+chip.SubCase("gate", {
+	defines: ["VIEW_GATE"],
+	compileArgs: ["+sdf"],
+	waveScope: "tb_chip.u_chip",
 });
 
 export const smoke = Case("test_quick_smoke", {

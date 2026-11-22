@@ -28,11 +28,14 @@ export async function resultsCommand(opts: {
 	dir: string;
 	recheck: boolean;
 	csv: boolean;
-	config?: string;
+	/** Re-grade with this configured tool (dresults passes the regression's). */
+	tool?: string;
 }): Promise<number> {
 	const rows = collectResults(opts.dir);
 	if (opts.recheck) {
-		const ws = await loadWorkspace({ config: opts.config });
+		const ws = await loadWorkspace(
+			opts.tool === undefined ? {} : { tool: opts.tool },
+		);
 		for (const row of rows) {
 			const caseId = basename(dirname(row.dir));
 			const seed = basename(row.dir);
@@ -54,7 +57,6 @@ export async function resultsCommand(opts: {
 			table(
 				rows.map((r) => [status(r.status), r.dir]),
 				["Status", "Seed dir"],
-				120,
 			),
 		);
 	}

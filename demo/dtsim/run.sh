@@ -4,7 +4,7 @@
 # Usage (from anywhere):
 #   demo/dtsim/run.sh list
 #   demo/dtsim/run.sh run test_hello_world
-#   demo/dtsim/run.sh run test_hello_world.cosim --num-seeds 3
+#   demo/dtsim/run.sh run test_hello_world.cosim --random 3
 #   demo/dtsim/run.sh regr base
 # Mock switches (export before running): DTSIM_MOCK_VCS_FAIL=1,
 # DTSIM_MOCK_SIMV_FAIL=1, DTSIM_MOCK_SIMV_ERROR=1, DTSIM_MOCK_SIMV_WAIVE=1.

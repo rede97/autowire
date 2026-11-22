@@ -61,7 +61,6 @@ if (invokedAsDtsim()) {
 	registerPlugin(program);
 	registerDocs(program);
 	registerUpdate(program);
-	registerDtsim(program);
 
 	if (process.argv.slice(2).length === 0) {
 		// Command index first, then who/what/where (version + project link).
@@ -71,6 +70,8 @@ if (invokedAsDtsim()) {
 		);
 	} else {
 		try {
+			// `autowire dtsim ...` loads the config here; a bad one reports below.
+			await registerDtsim(program);
 			await program.parseAsync();
 		} catch (error) {
 			console.error(error instanceof Error ? error.message : String(error));

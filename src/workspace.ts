@@ -44,6 +44,10 @@ export interface WorkspaceConfig {
 	connectDir: string;
 	/** DV TB dump dir ([dump] sim_dir, default gen/sim) */
 	simDir: string;
+	/** dtsim TypeScript config path ([dtsim] config, default dt/config/dtsim.config.ts). */
+	dtsimConfig: string;
+	/** true when autowire.toml sets [dtsim] config (not the default). */
+	dtsimConfigSet: boolean;
 	/** Plugin generate root ([dump] plugins_dir, default gen/plugins) */
 	pluginsDir: string;
 	/** Wishbone regfile RTL dir ([plugins.wishbone] regfile_dir).
@@ -320,6 +324,10 @@ export async function loadWorkspace(
 	const dump = isObj(workspace.dump) ? workspace.dump : {};
 	const connect = isObj(doc.connect) ? doc.connect : {};
 	const sim = isObj(doc.sim) ? doc.sim : {};
+	const dtsim = isObj(doc.dtsim) ? doc.dtsim : {};
+	const dtsimConfig = dtsim.config ?? "dt/config/dtsim.config.ts";
+	if (typeof dtsimConfig !== "string" || dtsimConfig.length === 0)
+		throw new Error("autowire.toml: [dtsim] config must be a non-empty string");
 	const style = isObj(workspace.style) ? workspace.style : {};
 	if (style.param !== undefined)
 		throw new Error(
@@ -485,6 +493,8 @@ export async function loadWorkspace(
 		dumpDir: rel(legacyDir ?? connectDirRel),
 		connectDir: rel(connectDirRel),
 		simDir: rel(simDirRel),
+		dtsimConfig: rel(dtsimConfig),
+		dtsimConfigSet: dtsim.config !== undefined,
 		pluginsDir: pluginsDirAbs,
 		wishboneRegfileDir,
 		wishboneBusDir,

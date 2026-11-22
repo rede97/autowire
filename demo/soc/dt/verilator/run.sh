@@ -4,7 +4,7 @@
 #   ./dt/verilator/run.sh              # basic_smoke: cascade MMIO + smoke CSR
 #   ./dt/verilator/run.sh --regfile    # regfile_smoke: wishbone-regfile MMIO (FIFO/counter)
 #   ./dt/verilator/run.sh --sd         # sd_sha256 + card image (channel DMA)
-#   ./dt/verilator/run.sh --tb-mod     # tb_mod: aw-tb-mod dump top rtl/gen/sim/tb_soc.sv
+#   ./dt/verilator/run.sh --tb-mod     # tb_mod: aw-tb-mod dump top rtl/gen/sim/soc_tb.sv
 #   ./dt/verilator/run.sh --sv-reg     # sv_reg_smoke: sv_reg packages only
 # The harness cases also run the external JTAG smoke (jtag_host.h) with the
 # firmware. Other arguments go to `dtsim run` (e.g. -v to print the logs

@@ -1,5 +1,6 @@
 # HBM VCS + UVM-1.2 filelist. Paths are relative to the project root
-# (demo/hbm); dtsim flattens this list into the compile dir.
+# (demo/hbm): dtsim passes this list to the simulator as `-f <abs path>`
+# with the project root as cwd.
 +incdir+dv/ral
 +incdir+dv/ral/bus
 +incdir+dt/uvm

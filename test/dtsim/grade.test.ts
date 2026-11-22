@@ -43,6 +43,38 @@ describe("keywords", () => {
 			"re:[unclosed": 1,
 		});
 	});
+
+	test("pass keywords take re: too", () => {
+		expect(
+			gradeLines(["  TEST PASS  "], { pass: ["re:^TEST PASS$"] }).status,
+		).toBe("FAIL");
+		expect(gradeLines(["TEST PASS"], { pass: ["re:^TEST PASS$"] }).status).toBe(
+			"PASS",
+		);
+	});
+});
+
+describe("log files", () => {
+	test("CRLF lines match anchored keywords; an unfinished run says why", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "dtsim-grade-"));
+		const log = join(dir, "sim.log");
+		await writeFile(log, "Error: boom\r\nTEST PASS\r\n");
+		const g = DefaultGrader({
+			pass: ["re:^TEST PASS$"],
+			error: ["re:^Error: boom$"],
+		});
+		const out = await g.grade({ log } as GradeContext);
+		expect(typeof out === "object" && out.status).toBe("PASS WITH ERRORS");
+		await writeFile(log, "simulation ended\r\n");
+		const failed = await g.grade({ log } as GradeContext);
+		if (typeof failed !== "object") throw new Error("expected a report");
+		expect(failed.status).toBe("FAIL");
+		expect(failed.note).toBe("not finished");
+		expect(failed.details).toContainEqual([
+			"Finished",
+			"no line matched re:^TEST PASS$",
+		]);
+	});
 });
 
 describe("waive", () => {

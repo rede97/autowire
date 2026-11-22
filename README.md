@@ -76,8 +76,10 @@ import { DefaultGrader, Group, VcsTool, Workspace } from "./.dtsim/dsl/index.ts"
 import { smoke } from "./cases/smoke.ts";
 
 export default Workspace({
-	tool: VcsTool({ ntbOpts: "uvm-1.2" }),
-	filelist: "file.lst", // entries relative to <project>/
+	tools: [VcsTool({ ntbOpts: "uvm-1.2" })], // several: auto-fallback by each tool's probe
+	top: "tb_top", // the default; a case may set its own top
+	wave: process.env.WAVE === "1", // cases inherit; waveDepth / waveScope too
+	filelists: ["file.lst"], // dtsim passes it as -f; entries relative to <project>/
 	grader: DefaultGrader({ pass: ["TEST PASSED"] }),
 	groups: [Group("nightly", [smoke, "smoke.**"])],
 	cases: ["./cases/smoke.ts"],
@@ -89,7 +91,8 @@ ln -s autowire.js dtsim               # or call `bun autowire.js dtsim <cmd>`
 ./dtsim list                          # case trees
 ./dtsim plan nightly                  # compile groups, defines, seeds; no run
 ./dtsim run smoke                     # compile + simulate one case
-./dtsim regr nightly --num-seeds 4    # shared compiles, parallel sims, Summary table
+./dtsim regr nightly                  # shared compiles, parallel sims, Summary table
+WAVE=1 ./dtsim run smoke              # waveform dump (VCS fsdb, Verilator fst)
 ./dtsim results --dir dt/simout/regression
 ```
 

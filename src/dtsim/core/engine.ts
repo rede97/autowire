@@ -2,14 +2,13 @@
 // assembly, tool invocation, hooks, grading, and per-directory artifacts.
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { RUN_ENV } from "../dsl/env.ts";
 import type {
 	CaseContext,
-	CovSpec,
 	HookStage,
 	Status,
 	ToolContext,
-	WaveSpec,
 } from "../dsl/index.ts";
 import {
 	type ExpandVars,
@@ -20,7 +19,6 @@ import {
 } from "./config.ts";
 import { buildChildEnv, envStatsLine } from "./env.ts";
 import { formatExcerpt } from "./excerpt.ts";
-import { toolPath, writeFlatFilelist } from "./filelist.ts";
 import { type Graded, runGrader } from "./grade.ts";
 import { type HookBase, runHooks } from "./hooks.ts";
 import { wrapCommand } from "./launch.ts";
@@ -30,6 +28,7 @@ import {
 	writeResultMarker,
 	writeRunCompile,
 	writeRunSim,
+	writeSubmitScript,
 } from "./scripts.ts";
 
 /** Steps of one case, reported to EngineOptions.monitor. */
@@ -71,8 +70,6 @@ export type EngineOptions = {
 	interactive: boolean;
 	/** true only for `regr`: shared compile dirs, absolute paths in run_sim. */
 	regression: boolean;
-	wave: WaveSpec;
-	cov: CovSpec;
 	abort?: AbortSignal;
 	monitor?: PhaseObserver;
 };
@@ -116,20 +113,32 @@ export function expandFor(
 	return (text) => expandVars(text, vars);
 }
 
-/** Source filelist of a case: its own override, else the workspace one. */
-export function caseFilelist(
+/** Windows tools and the generated bash scripts all accept forward slashes. */
+export function toolPath(path: string): string {
+	return process.platform === "win32" ? path.replaceAll("\\", "/") : path;
+}
+
+/** Cluster job name of a compile: the regression build dir's name
+ *  (`compile_build01_tb_top`), or `compile_<case>` for a single run. */
+function compileJobName(
+	c: MergedCase,
+	compileDir: string,
+	regression: boolean,
+): string {
+	return regression ? basename(compileDir) : `compile_${c.id}`;
+}
+
+/** A case's filelists, absolute: the workspace's, then the case's in merge
+ *  order. dtsim never reads them; the tool gets each as -f. */
+export function caseFilelists(
 	ws: ResolvedWorkspace,
 	c: MergedCase,
 	dir: string,
-): string {
-	return c.filelist === undefined
-		? ws.filelist
-		: resolvePath(c.filelist, varsFor(ws, c.id, dir));
-}
-
-/** The flattened, absolute filelist dtsim writes into every compile dir. */
-export function flatFilelist(compileDir: string): string {
-	return join(compileDir, "filelist.f");
+): string[] {
+	const vars = varsFor(ws, c.id, dir);
+	return [...ws.filelists, ...c.filelists.map((f) => resolvePath(f, vars))].map(
+		toolPath,
+	);
 }
 
 export function toolContext(
@@ -140,6 +149,7 @@ export function toolContext(
 	compileDir: string,
 	seed: string | undefined,
 	opts: EngineOptions,
+	env: Record<string, string>,
 ): ToolContext {
 	return {
 		phase,
@@ -151,18 +161,44 @@ export function toolContext(
 			simArgs: c.simArgs,
 			...(c.uvm === undefined ? {} : { uvm: c.uvm }),
 			toolOptions: { ...c.toolOptions },
+			top: c.top,
+			wave: c.wave,
 		},
 		dir,
 		compileDir,
 		...(seed === undefined ? {} : { seed }),
 		verify: ws.verify,
 		workspace: ws.root,
-		filelist: toolPath(flatFilelist(compileDir)),
-		wave: opts.wave,
-		cov: opts.cov,
+		filelists: caseFilelists(ws, c, compileDir),
 		regression: opts.regression,
+		interactive: opts.interactive,
+		env,
 		expand: expandFor(ws, c.id, dir, seed),
 		resolvePath: (text) => resolvePath(text, varsFor(ws, c.id, dir, seed)),
+		submitScript: (scriptName) => {
+			const launcher = ws.task.launcher;
+			if (!launcher.scriptPrefix) return;
+			const argv = wrapCommand(
+				["bash", toolPath(resolve(dir, scriptName))],
+				launcher,
+				{
+					phase,
+					jobName:
+						phase === "sim"
+							? `${c.id}_${seed}`
+							: compileJobName(c, compileDir, opts.regression),
+					caseId: c.id,
+					...(seed === undefined ? {} : { seed }),
+					cwd: dir,
+					interactive: phase === "sim" ? opts.interactive : false,
+				},
+			);
+			writeSubmitScript(
+				dir,
+				`${launcher.scriptPrefix}_${scriptName.replace(/^run_/, "")}`,
+				argv,
+			);
+		},
 	};
 }
 
@@ -186,13 +222,23 @@ export function childEnv(
 			project_home: ws.root,
 			verify: ws.verify,
 			output_dir: dir,
-			DTSIM_TOOL: ws.tool.name,
+			// Run switches as the backend read them.
+			...runSwitches(),
 			DTSIM_CASE: c.id,
 			DTSIM_PHASE: phase,
 			...(seed === undefined ? {} : { DTSIM_SEED: seed }),
 		},
 		expand: expandFor(ws, c.id, dir, seed),
 	});
+}
+
+function runSwitches(): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const name of RUN_ENV) {
+		const v = process.env[name];
+		if (v !== undefined) out[name] = v;
+	}
+	return out;
 }
 
 /** Fields hooks and graders share for one case directory (no `sh`). */
@@ -220,7 +266,9 @@ function caseContext(
 			env: c.env,
 			...(c.uvm === undefined ? {} : { uvm: c.uvm }),
 			toolOptions: { ...c.toolOptions },
-			...(c.filelist === undefined ? {} : { filelist: c.filelist }),
+			filelists: [...c.filelists],
+			top: c.top,
+			wave: c.wave,
 		},
 		env,
 		expand: (text) => expandVars(text, vars),
@@ -292,6 +340,7 @@ export async function executeCompile(
 	opts: EngineOptions,
 ): Promise<CompileOutcome> {
 	const tool = ws.tool;
+	const env = childEnv(ws, c, "compile", compileDir);
 	const ctx = toolContext(
 		ws,
 		c,
@@ -300,35 +349,34 @@ export async function executeCompile(
 		compileDir,
 		undefined,
 		opts,
+		env.env,
 	);
 	await mkdir(compileDir, { recursive: true });
 	tool.writeAux?.(ctx);
-	const env = childEnv(ws, c, "compile", compileDir);
 	if (opts.verbose) process.stderr.write(`${envStatsLine(env.stats)}\n`);
 	// Preparing argv is pure; it gives preCompile the compile log path.
 	const prepared = tool.compile(ctx);
 	const stage = (s: HookStage) =>
 		hookBase(ws, c, s, compileDir, prepared.log, env.env);
-	// preCompile runs before the filelist is flattened so it can generate or
-	// patch sources the filelist names.
+	// preCompile may generate sources or the filelists themselves; then each
+	// listed filelist must exist. Their contents are the tool's to read.
 	hookStep(ws, opts, "preCompile");
 	const pre = await hookStage(ws, stage("preCompile"));
 	if (pre) {
 		opts.monitor?.end("preCompile", "FAIL");
 		return { ok: false, code: 1, log: pre.log, hookFailed: true };
 	}
-	writeFlatFilelist(
-		caseFilelist(ws, c, compileDir),
-		flatFilelist(compileDir),
-		ws.root,
-		ctx.expand,
-	);
+	for (const f of ctx.filelists) {
+		if (!existsSync(f)) {
+			throw new Error(`dtsim: ${c.id}: filelist not found: ${f}`);
+		}
+	}
 	writeGitRev(compileDir, ws.verify);
 
 	let hookFailed = false;
 	const argv = wrapCommand(prepared.argv, ws.task.launcher, {
 		phase: "compile",
-		jobName: `compile_${c.base}`,
+		jobName: compileJobName(c, compileDir, opts.regression),
 		caseId: c.id,
 		cwd: prepared.cwd,
 		interactive: false,
@@ -341,6 +389,7 @@ export async function executeCompile(
 		argv: prepared.argv,
 		submitted: argv,
 	});
+	ctx.submitScript("run_compile");
 	opts.monitor?.start("compile", { log: prepared.log, cmd: argv });
 	let code = await runProcess({
 		argv,
@@ -396,19 +445,30 @@ export async function executeSim(
 	opts: EngineOptions,
 ): Promise<SeedResult> {
 	const tool = ws.tool;
-	const ctx = toolContext(ws, c, "sim", seedDir, compileDir, seed, opts);
+	const env = childEnv(ws, c, "sim", seedDir, seed);
+	const ctx = toolContext(
+		ws,
+		c,
+		"sim",
+		seedDir,
+		compileDir,
+		seed,
+		opts,
+		env.env,
+	);
 	await mkdir(seedDir, { recursive: true });
 	tool.writeAux?.(ctx);
 	writeGitRev(seedDir, ws.verify);
 
 	const prepared = tool.simulate(ctx);
-	const env = childEnv(ws, c, "sim", seedDir, seed);
 	const runSim = writeRunSim({
 		dir: seedDir,
 		seed,
 		exports: env.env,
 		argv: prepared.argv,
+		seedArg: tool.seedArg ?? "+ntb_random_seed=$SEED",
 	});
+	ctx.submitScript("run_sim");
 
 	const base: Omit<SeedResult, "status" | "code"> = {
 		caseId: c.id,

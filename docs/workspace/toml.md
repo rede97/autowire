@@ -77,6 +77,12 @@ SYNTHESIS = "1"
 
 [workspace.dump]
 # 产物目录三分（DE / DV / 插件）；相对工作区根。
+[dtsim]
+# dtsim 的 TypeScript 配置入口（相对 autowire.toml 所在目录解析，必须位于
+# <project>/dt/config/ 下）；默认 dt/config/dtsim.config.ts。未设置且默认文件不存在时
+# dtsim 从当前目录向上查找 dt/config/dtsim.config.ts。只有 `autowire dtsim …` 会读取它，
+# 并在解析命令前注册配置声明的 CLI 选项。
+config = "dt/config/dtsim.config.ts"
 # 现状实现仍认单一 dir=（兼容）；迁移后以三分目录为准（见 §4.0）。
 connect_dir = "gen/connect"
 sim_dir     = "gen/sim"
@@ -171,7 +177,7 @@ demo/soc 覆盖为 `rtl/gen/{connect,sim,plugins}`（生成 RTL 与手写叶子�
 规则：
 
 1. 与 §4.1 相同的缺边 / 多余 / 环纪律；**合入同一 DAG** 做拓扑（sim 为汇点）。  
-2. dump 写入 **`sim_dir`**；**不**写抽象接口到 `.autowire/connect/`（不可被例化）。  
+2. dump 写入 **`sim_dir/<id>.sv`**（文件名取 `[sim.<id>]` 的 id，不取 `aw-tb-mod name`；多个 sim 单元的模块都叫 `tb_top` 也各写各的文件）；**不**写抽象接口到 `.autowire/connect/`（不可被例化）。  
 3. **禁止**与 DE 包装共文件；**禁止**登记在 `[connect.*]` 下充数。  
 4. 细则见 [`../connect/tb-mod.md`](../connect/tb-mod.md)。
 

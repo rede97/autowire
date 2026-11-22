@@ -14,7 +14,7 @@ import { VcsTool } from "../../src/dtsim/dsl/index.ts";
 import { CASES_TS, makeWorkspace, runDtsim } from "./helpers.ts";
 
 describe("dsl merge", () => {
-	test("bare case gets bareDefaults, explicit subcase does not", async () => {
+	test("bareDefaults are the base every case and subcase inherits", async () => {
 		const ws = await loadWorkspace({ config: (await makeWorkspace()).config });
 		const bare = mergeCase(ws, "test_hello_world");
 		expect(bare.compileArgs).toEqual(["+nospecify", "+notimingcheck"]);
@@ -23,12 +23,45 @@ describe("dsl merge", () => {
 
 		const cosim = mergeCase(ws, "test_hello_world.cosim");
 		expect(cosim.compileArgs).toEqual([
+			"+nospecify",
+			"+notimingcheck",
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder, expanded at run time
 			"-ad=${verify}/abc",
 			"-debug_access+all",
 		]);
 		expect(cosim.defines).toEqual(["NUM=1"]);
 		expect(cosim.env.INPUT).toBe("input.spf");
+	});
+
+	test("a case's own scalar beats bareDefaults'", async () => {
+		const body = CASES_TS.replace(
+			'bareDefaults: { compileArgs: ["+nospecify", "+notimingcheck"] },',
+			'bareDefaults: { compileArgs: ["+nospecify"], random: false, owner: "team" },',
+		).replace(
+			'export const smoke = Case("test_quick_smoke", {',
+			'export const smoke = Case("test_quick_smoke", {\n\trandom: true,',
+		);
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(body)).config,
+		});
+		const smoke = mergeCase(ws, "test_quick_smoke");
+		expect(smoke.random).toBe(true);
+		expect(smoke.owner).toBe("dave");
+	});
+
+	test("cases inside exported arrays and Maps are registered", async () => {
+		const body = CASES_TS.replace(
+			"export default Workspace({",
+			`export const table = [Case("arr_a"), Case("arr_b")];
+export const byName = new Map([["m", Case("map_c")]]);
+export default Workspace({`,
+		);
+		const ws = await loadWorkspace({
+			config: (await makeWorkspace(body)).config,
+		});
+		for (const id of ["arr_a", "arr_b", "map_c"]) {
+			expect(ws.cases.has(id)).toBe(true);
+		}
 	});
 
 	test("a derived case's extended grader keeps the base keywords", async () => {
@@ -95,7 +128,7 @@ const shared = defineTool({
 	compile: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/c.log", logMode: "tee" }),
 	simulate: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/s.log", logMode: "tee" }),
 });`,
-		).replace("tool: VcsTool(),", "tool: shared,");
+		).replace("tools: [VcsTool()],", "tools: [shared],");
 		const ws = await makeWorkspace(body);
 		const vcsPlan = await runDtsim(await makeWorkspace(), ["plan", "base"]);
 		expect(vcsPlan.stdout).toContain("in 3 compile groups");
@@ -115,7 +148,7 @@ const named = defineTool({
 	compile: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/c.log", logMode: "tee" }),
 	simulate: (ctx) => ({ argv: ["true"], cwd: ctx.dir, log: ctx.dir + "/s.log", logMode: "tee" }),
 });`,
-		).replace("tool: VcsTool(),", "tool: named,");
+		).replace("tools: [VcsTool()],", "tools: [named],");
 		const ws = await loadWorkspace({
 			config: (await makeWorkspace(body)).config,
 		});
@@ -161,7 +194,7 @@ top.SubCase("slow", () => {
 	calls.push("slow");
 	throw new Error("slow opts should never be evaluated");
 });
-export default Workspace({ tool: VcsTool() });
+export default Workspace({ tools: [VcsTool()] });
 `;
 
 	test("multi-level SubCase merges every level; only the root is exported", async () => {
@@ -202,9 +235,9 @@ export default Workspace({ tool: VcsTool() });
 				"return {};",
 			)
 			.replace(
-				"export default Workspace({ tool: VcsTool() });",
+				"export default Workspace({ tools: [VcsTool()] });",
 				`const extra = top.SubCase("extra");
-export default Workspace({ tool: VcsTool(), groups: [
+export default Workspace({ tools: [VcsTool()], groups: [
 	Group("objs", [extra, fast]),
 	Group("one", ["t.*"]),
 	Group("deep", ["t.**", "t.fast"]),
@@ -256,19 +289,20 @@ export default Workspace({ tool: VcsTool(), groups: [
 		);
 	});
 
-	test("dtsim list prints derived ids under their parent", async () => {
-		const result = await runDtsim(await makeWorkspace(TREE), ["list"]);
-		expect(result.code).toBe(0);
-		expect(result.stdout.split("\n").slice(0, 4)).toEqual([
-			"t",
-			"├─ t.fast",
-			"│  └─ t.fast.ss",
-			"└─ t.slow",
-		]);
+	test("dtsim list shows 2 levels by default, --all goes deeper", async () => {
+		const ws = await makeWorkspace(TREE);
+		const def = await runDtsim(ws, ["list"]);
+		expect(def.code).toBe(0);
+		expect(def.stdout).toContain("t.fast");
+		expect(def.stdout).toContain("t.slow");
+		// t.fast.ss is level 3: hidden at the default depth of 2.
+		expect(def.stdout).not.toContain("t.fast.ss");
+		const all = await runDtsim(ws, ["list", "--all"]);
+		expect(all.stdout).toContain("t.fast.ss");
 	});
 
 	test("a tool option that is not a tool fails at load", async () => {
-		const body = CASES_TS.replace("tool: VcsTool(),", 'tool: "xcelium",');
+		const body = CASES_TS.replace("tools: [VcsTool()],", 'tools: ["xcelium"],');
 		const ws = await makeWorkspace(body);
 		await expect(loadWorkspace({ config: ws.config })).rejects.toThrow(
 			"must be a tool",
@@ -334,6 +368,32 @@ describe("environment isolation", () => {
 		expect(result.stdout).toMatch(/│ case\s+│ INPUT\s/);
 		expect(result.stdout).toMatch(/│ inject\s+│ output_dir\s/);
 		expect(result.stdout).toMatch(/│ plugin\s+│ PATH\s/);
+	});
+
+	test("dtsim env lists the config's documented environment variables", async () => {
+		const body = CASES_TS.replace(
+			"export default Workspace({",
+			`export default Workspace(
+	[
+		{ name: "WAVE", values: "0|1", default: "run=1 regr=0", desc: "dump waveforms" },
+		{ name: "JOBS", default: "8", desc: "parallel compiles" },
+	],
+	{`,
+		).replace(
+			"\tgroups: [base, cosim],\n});",
+			"\tgroups: [base, cosim],\n\t},\n);",
+		);
+		const ws = await makeWorkspace(body);
+		const result = await runDtsim(ws, [
+			"env",
+			"--case",
+			"test_bar_basic.cosim",
+		]);
+		expect(result.code).toBe(0);
+		expect(result.stdout).toContain("Config environment variables");
+		expect(result.stdout).toContain("WAVE");
+		expect(result.stdout).toContain("dump waveforms");
+		expect(result.stdout).toContain("JOBS");
 	});
 });
 

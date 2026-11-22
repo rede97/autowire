@@ -1,10 +1,13 @@
 // Single-case orchestration: compile once into dt/simout/<case>/, then run each
 // seed in its own subdirectory. Quiet by default; failures leave error.txt.
 import { existsSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
+import type { WaveSpec } from "../dsl/index.ts";
 import {
+	assertConcrete,
+	assertRunsOn,
 	type MergedCase,
 	mergeCase,
 	type ResolvedWorkspace,
@@ -22,34 +25,9 @@ import { CaseMonitor } from "./monitor.ts";
 import { elapsedLine, fmtElapsed } from "./scripts.ts";
 import { block, status, table } from "./ui.ts";
 
-export type SeedOptions = {
-	seed?: string;
-	seedFile?: string;
-	numSeeds?: number;
-};
-
-export async function readSeeds(opts: SeedOptions): Promise<string[]> {
-	if (opts.seedFile !== undefined && opts.numSeeds !== undefined) {
-		throw new Error(
-			"dtsim: --seed-file and --num-seeds are mutually exclusive",
-		);
-	}
-	if (opts.seedFile !== undefined) {
-		const text = await readFile(opts.seedFile, "utf8");
-		const seeds = text
-			.split("\n")
-			.map((l) => l.trim())
-			.filter((l) => l.length > 0);
-		if (seeds.length === 0) throw new Error("dtsim: empty seed file");
-		return seeds;
-	}
-	if (opts.numSeeds !== undefined) {
-		if (!Number.isInteger(opts.numSeeds) || opts.numSeeds < 1) {
-			throw new Error("dtsim: --num-seeds must be a positive integer");
-		}
-		return Array.from({ length: opts.numSeeds }, () => randomSeed());
-	}
-	return [opts.seed ?? randomSeed()];
+export function readSeeds(defaults: readonly string[]): string[] {
+	if (defaults.length === 0) throw new Error("dtsim: no seeds");
+	return [...defaults];
 }
 
 export function randomSeed(): string {
@@ -77,14 +55,13 @@ function printBlock(
 	console.log(block(title, rows));
 }
 
-export type SingleOptions = EngineOptions &
-	SeedOptions & {
-		label?: string;
-		compileOnly: boolean;
-		simOnly: boolean;
-		/** No live panel: one line per step (also when stderr is no TTY). */
-		plain: boolean;
-	};
+export type SingleOptions = EngineOptions & {
+	label?: string;
+	compileOnly: boolean;
+	simOnly: boolean;
+	/** No live panel: one line per step (also when stderr is no TTY). */
+	plain: boolean;
+};
 
 export async function runSingle(
 	ws: ResolvedWorkspace,
@@ -98,7 +75,9 @@ export async function runSingle(
 		);
 	}
 	const c = mergeCase(ws, caseId);
-	const seeds = seedsFor(c, await readSeeds(opts));
+	assertConcrete(c);
+	assertRunsOn(c, ws.tool);
+	const seeds = seedsFor(c, readSeeds(ws.seeds));
 	const compileDir = caseOutputDir(ws, c.id, opts.label);
 	const tool = ws.tool;
 	// -v on a TTY prints the running log above the live panel (the monitor
@@ -118,6 +97,8 @@ export async function runSingle(
 		["WORKSPACE", ws.root],
 		["Verify", ws.verify],
 		["Tool", tool.name],
+		["Top", c.top],
+		["Wave", waveLabel(c.wave)],
 		["Test Name", c.id],
 		["Test Seq", c.uvm?.seq ?? ""],
 		["Seeds", seeds.join(",") + (c.random ? "" : " (no-random)")],
@@ -161,6 +142,7 @@ export async function runSingle(
 			compileDir,
 			undefined,
 			opts,
+			childEnv(ws, c, "compile", compileDir).env,
 		);
 		const exe = tool.compile(ctx).executable;
 		if (exe && !existsSync(exe)) {
@@ -215,6 +197,8 @@ export function printCaseEnv(
 	showValues: boolean,
 ): void {
 	const c = mergeCase(ws, caseId);
+	assertConcrete(c);
+	assertRunsOn(c, ws.tool);
 	const dir = caseOutputDir(ws, c.id);
 	const built = childEnv(ws, c, phase, dir, phase === "sim" ? "0" : undefined);
 	console.log(chalk.dim(envStatsLine(built.stats)));
@@ -226,4 +210,10 @@ export function printCaseEnv(
 	console.log(
 		table(rows, showValues ? ["Source", "Name", "Value"] : ["Source", "Name"]),
 	);
+}
+
+/** "off", or "on (depth N, scope S)". */
+export function waveLabel(w: WaveSpec): string {
+	if (!w.enabled) return "off";
+	return `on (depth ${w.depth}, scope ${w.scope})`;
 }

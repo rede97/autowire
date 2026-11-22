@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# VCS SoC smoke (aw-tb-mod tb_soc top): thin wrapper over dtsim
-# (dt/config/vcs.config.ts). Usage (from anywhere):
+# VCS SoC smoke (aw-tb-mod tb_top top): thin wrapper over
+# `SIM_TOOL=vcs dtsim run <case>` (dt/config/dtsim.config.ts). Usage (from anywhere):
 #   ./dt/vcs/run.sh                # basic_smoke: cascade MMIO + smoke CSR + JTAG
 #   ./dt/vcs/run.sh regfile_smoke  # wishbone-regfile MMIO smoke
-# The sd_sha256 card-image case stays Verilator-only (sdspisim is a C++ model).
+# sd_sha256 / tb_mod / sv_reg_smoke are Verilator-only (Case tools).
 # Outputs: dt/simout/vcs/<case>/. Arguments after the case go to `dtsim run`
-# (e.g. -v). DTSIM overrides the dtsim command.
+# (e.g. -v). Waveforms are configured by the workspace backend's `wave` option.
+# DTSIM overrides the dtsim command.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
@@ -20,4 +21,6 @@ elif [[ -f ../../index.ts ]]; then
 else
 	CMD=(dtsim)
 fi
-exec "${CMD[@]}" run "$CASE" --config dt/config/vcs.config.ts --no-wave -d vcs "$@"
+# The config's factory puts vcs first when SIM_TOOL=vcs, so the farm runs VCS.
+export SIM_TOOL=vcs
+exec "${CMD[@]}" run "$CASE" "$@"

@@ -2,7 +2,7 @@
 // Verilator harness for demo/soc: timed clk/rst; external JTAG host running
 // concurrently with the CPU firmware; optional SDSPISIM on sd0.
 
-#include "Vtb_soc_vl.h"
+#include "Vtb_top.h"
 #include "jtag_host.h"
 #include "verilated.h"
 
@@ -41,6 +41,11 @@ int main(int argc, char **argv)
 	const std::unique_ptr<VerilatedContext> ctx{new VerilatedContext};
 	ctx->threads(1);
 	ctx->commandArgs(argc, argv);
+#if VM_TRACE
+	// The backend wave option builds with --trace-fst; its bound dtsim_wave module calls
+	// $dumpfile / $dumpvars, which a custom main must allow.
+	ctx->traceEverOn(true);
+#endif
 
 	const char *firmware = nullptr;
 	const char *sdcard = nullptr;
@@ -63,7 +68,7 @@ int main(int argc, char **argv)
 	}
 	(void)firmware;
 
-	auto top = std::make_unique<Vtb_soc_vl>(ctx.get());
+	auto top = std::make_unique<Vtb_top>(ctx.get());
 
 #if defined(SOC_USE_SDSPISIM)
 	std::unique_ptr<SDSPISIM> card;
@@ -147,7 +152,7 @@ int main(int argc, char **argv)
 			test_count++;
 	};
 
-	JtagHost<Vtb_soc_vl> jtag(top.get(), [&]() {
+	JtagHost<Vtb_top> jtag(top.get(), [&]() {
 		for (int i = 0; i < TCK_HALF_TICKS; i++)
 			step();
 	});

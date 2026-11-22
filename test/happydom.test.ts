@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchBrowser } from "../scripts/cdp-helper.ts";
@@ -250,5 +250,61 @@ html = "leaf.html"
 		await expect(
 			renderUnit(ws, unit, new LeafDb(ws.indexDir), new Map()),
 		).rejects.toThrow(/not a function on window/);
+	});
+});
+
+describe("sim unit dump", () => {
+	test("each [sim.<id>] writes <id>.sv even when every TB is tb_top", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "aw-happy-sim-"));
+		writeFileSync(
+			join(dir, "autowire.toml"),
+			`
+[workspace]
+name = "test"
+[workspace.dump]
+connect_dir = "out/connect"
+sim_dir = "out/sim"
+[analysis.index]
+dir = ".autowire/hdxml"
+[sim.blk_a]
+html = "a.html"
+[sim.blk_b]
+html = "b.html"
+`,
+		);
+		const tb = `<!doctype html>
+<html><body><autowire>
+  <aw-tb-mod name="tb_top" body-post-include="BODY.svh">
+    <aw-content>
+      <aw-localparams>
+        <aw-localparam name="ONE" expr="1'b1"></aw-localparam>
+      </aw-localparams>
+      <aw-ports></aw-ports>
+      <aw-insts></aw-insts>
+    </aw-content>
+    <aw-render></aw-render>
+  </aw-tb-mod>
+</autowire></body></html>
+`;
+		writeFileSync(join(dir, "a.html"), tb.replace("BODY", "a_body"));
+		writeFileSync(join(dir, "b.html"), tb.replace("BODY", "b_body"));
+		const ws = await loadWorkspace(join(dir, "autowire.toml"));
+		for (const unit of ws.simUnits) {
+			const rendered = await renderUnit(
+				ws,
+				unit,
+				new LeafDb(ws.indexDir),
+				new Map(),
+			);
+			expect(rendered.files).toEqual([join(ws.simDir, `${unit.id}.sv`)]);
+		}
+		const a = readFileSync(join(ws.simDir, "blk_a.sv"), "utf8");
+		const b = readFileSync(join(ws.simDir, "blk_b.sv"), "utf8");
+		expect(a).toContain("module tb_top;");
+		expect(a).toContain('`include "a_body.svh"');
+		expect(b).toContain("module tb_top;");
+		expect(b).toContain('`include "b_body.svh"');
+		expect(b).not.toContain("a_body.svh");
+		expect(existsSync(join(ws.simDir, "tb_top.sv"))).toBe(false);
 	});
 });

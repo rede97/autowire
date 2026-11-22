@@ -1,4 +1,4 @@
-// demo/soc hooks, shared by dtsim.config.ts (Verilator) and vcs.config.ts.
+// demo/soc hooks (dtsim.config.ts; the same for Verilator and VCS).
 // Both shell out through ctx.sh: it runs bash in the stage directory with the
 // case's isolated env, logs to hook-<stage>.log, and throws on a non-zero exit.
 import type { HookContext } from "../../../../src/dtsim/dsl/index.ts";

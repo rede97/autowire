@@ -5,12 +5,14 @@
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
+import { covFromEnv } from "../dsl/env.ts";
 import {
 	compileKey,
 	type MergedCase,
 	mergeCase,
 	type ResolvedWorkspace,
 	resolveGroup,
+	runsOn,
 } from "./config.ts";
 import {
 	childEnv,
@@ -26,12 +28,12 @@ import {
 	writeDresultsScript,
 	writeResultMarker,
 } from "./scripts.ts";
-import { readSeeds, type SeedOptions, seedsFor } from "./single.ts";
+import { readSeeds, seedsFor, waveLabel } from "./single.ts";
 import { block, plain, status, type TreeNode, tree } from "./ui.ts";
 
 export type CompileGroup = {
 	index: number;
-	/** Readable build name (SimTool.buildName, default the first case id). */
+	/** Build name: SimTool.buildName, else `build<NN>_<top>`. */
 	name: string;
 	fingerprint: string;
 	representative: MergedCase;
@@ -43,12 +45,21 @@ export function regressionDir(ws: ResolvedWorkspace, label?: string): string {
 	return join(ws.out, ...(label ? [label] : []), "regression");
 }
 
+/** Group members the selected tool cannot run (Case `tools`), in order. */
+export function skippedCases(ws: ResolvedWorkspace, group: string): string[] {
+	return resolveGroup(ws, group).filter(
+		(id) => !runsOn(mergeCase(ws, id), ws.tool),
+	);
+}
+
 export function planGroups(
 	ws: ResolvedWorkspace,
 	group: string,
 	label?: string,
 ): CompileGroup[] {
-	const members = resolveGroup(ws, group).map((id) => mergeCase(ws, id));
+	const members = resolveGroup(ws, group)
+		.map((id) => mergeCase(ws, id))
+		.filter((c) => runsOn(c, ws.tool));
 	const byFp = new Map<string, MergedCase[]>();
 	for (const c of members) {
 		const fp = compileKey(c, ws.tool);
@@ -61,10 +72,15 @@ export function planGroups(
 		return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
 	});
 	const used = new Set<string>();
+	const width = Math.max(2, String(sorted.length).length);
 	return sorted.map(([fp, cases], i) => {
 		const representative = cases[0];
 		if (!representative) throw new Error("dtsim: empty compile group");
-		const raw = ws.tool.buildName?.(representative) ?? representative.id;
+		// Default: the build's position in this plan plus its top module, so
+		// the name never reads as one of its cases.
+		const raw =
+			ws.tool.buildName?.(representative) ??
+			`build${String(i + 1).padStart(width, "0")}_${representative.top}`;
 		// A directory name: unsafe characters become "_", repeats get -2, -3.
 		const base = raw.replace(/[^A-Za-z0-9_.-]/g, "_") || "build";
 		let name = base;
@@ -109,16 +125,24 @@ function simNodes(c: MergedCase, seeds: readonly string[]): TreeNode[] {
 export function planText(
 	groups: readonly CompileGroup[],
 	seedsOf: (c: MergedCase) => readonly string[],
+	skipped: { tool: string; ids: readonly string[] } = { tool: "", ids: [] },
 ): string {
 	const total = groups.reduce((n, g) => n + g.cases.length, 0);
 	const n = groups.length;
 	const lines = [
 		`${chalk.bold("Plan")}: ${total} cases in ${n} compile group${n === 1 ? "" : "s"}`,
+		...(skipped.ids.length
+			? [
+					chalk.yellow(
+						`Skipped (not for ${skipped.tool}): ${skipped.ids.join(", ")}`,
+					),
+				]
+			: []),
 	];
 	for (const g of groups) {
 		const many = g.cases.length === 1 ? "case" : "cases";
 		lines.push(
-			`${chalk.bold.cyan("compile")} ${chalk.bold(g.name)}  ${chalk.dim(`(${g.cases.length} ${many})`)}`,
+			`${chalk.bold.cyan("compile")} ${chalk.bold(g.name)}  ${chalk.dim(`top ${g.representative.top}, wave ${waveLabel(g.representative.wave)}, ${g.cases.length} ${many}`)}`,
 		);
 		const defines = g.representative.defines;
 		lines.push(
@@ -141,8 +165,10 @@ export function planText(
 	return lines.join("\n");
 }
 
-export type RegressionOptions = EngineOptions &
-	SeedOptions & { label?: string; plain: boolean };
+export type RegressionOptions = EngineOptions & {
+	label?: string;
+	plain: boolean;
+};
 
 /** Header block: what a regression is about to run, and where. */
 function headerRows(
@@ -164,12 +190,21 @@ function headerRows(
 	return [
 		["Group", group],
 		["Tool", ws.tool.name],
+		["Wave", regressionWave(groups)],
 		["Launcher", launcher ? `${l.name} (${launcher})` : l.name],
 		["Tasks", `${groups.length} compiles, ${sims} sims`],
 		["Slots", `${ws.task.maxSlots} (compile ${ws.task.maxCompiles})`],
 		["Label", opts.label ?? ""],
 		["Output", regDir],
 	];
+}
+
+/** One wave label when every build agrees, else how many builds dump. */
+function regressionWave(groups: readonly CompileGroup[]): string {
+	const labels = new Set(groups.map((g) => waveLabel(g.representative.wave)));
+	if (labels.size <= 1) return [...labels][0] ?? "off";
+	const on = groups.filter((g) => g.representative.wave.enabled).length;
+	return `on in ${on} of ${groups.length} compiles (see plan)`;
 }
 
 export async function runRegression(
@@ -179,15 +214,21 @@ export async function runRegression(
 ): Promise<number> {
 	const t0 = Date.now();
 	const groups = planGroups(ws, group, opts.label);
+	const skipped = { tool: ws.tool.name, ids: skippedCases(ws, group) };
+	if (groups.length === 0) {
+		throw new Error(
+			`dtsim: group "${group}" has no case for ${ws.tool.name} (skipped: ${skipped.ids.join(", ")}); order Workspace tools in the config to pick another`,
+		);
+	}
 	const regDir = regressionDir(ws, opts.label);
-	const seeds = await readSeeds(opts);
+	const seeds = readSeeds(ws.seeds);
 	const seedsOf = (c: MergedCase) => seedsFor(c, seeds);
 	const simCount = groups.reduce(
 		(n, g) => n + g.cases.reduce((m, c) => m + seedsOf(c).length, 0),
 		0,
 	);
 	await mkdir(regDir, { recursive: true });
-	const plan = planText(groups, seedsOf);
+	const plan = planText(groups, seedsOf, skipped);
 	await writeFile(join(regDir, "regression.txt"), `${plain(plan)}\n`);
 	console.log(
 		block("Regression", headerRows(ws, group, groups, simCount, regDir, opts)),
@@ -367,7 +408,7 @@ async function finishRegression(
 	const text = resultTree(results);
 	console.log(text);
 	await writeFile(join(regDir, "result.txt"), `${plain(text)}\n`);
-	const dresults = writeDresultsScript(regDir);
+	const dresults = writeDresultsScript(regDir, ws.tool.name);
 
 	const counts = new Map<string, number>();
 	for (const r of results) {
@@ -400,8 +441,9 @@ async function finishRegression(
 	);
 
 	let covOk = true;
-	if (opts.cov.enabled) {
-		if (opts.cov.merge) {
+	const cov = covFromEnv();
+	if (cov.enabled) {
+		if (cov.merge) {
 			for (const g of groups) {
 				const env = childEnv(ws, g.representative, "compile", g.dir);
 				const code = await runProcess({

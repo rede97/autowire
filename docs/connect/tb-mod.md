@@ -45,7 +45,7 @@ deps = ["soc_top"]            # 可依赖 connect 单元 id；sim 单元不被 c
 | 导出 | 不导出任何端口；写 `aw-ports` → **报错** |
 | 信号声明 | 自动声明的网默认 **`logic`** |
 | dump 头部 | `module name;`（无端口列表） |
-| dump 目录 | 写入 **`sim_dir`**，不是 `connect_dir` |
+| dump 目录 | 写入 **`sim_dir/<unit id>.sv`**，不是 `connect_dir`；文件名按 `[sim.<id>]` 的 id 固定，模块名仍是 `name` |
 | include | `body-pre-include` / `body-post-include`（§1.2） |
 | 参数 | **禁止 `aw-params`**；只允许 `aw-localparams` |
 | 位置 | 仅 `[sim.<id>]` 页的顶层；禁 submods / 禁被例化 / 禁 `aw-tb-mod@deps`；不进 connect XML sidecar |

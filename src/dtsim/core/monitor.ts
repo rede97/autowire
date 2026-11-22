@@ -11,11 +11,10 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
-import type logUpdate from "log-update";
-import { createLogUpdate } from "log-update";
 import type { CasePhase, PhaseObserver } from "./engine.ts";
+import { LivePanel } from "./live.ts";
 import { fmtElapsed } from "./scripts.ts";
-import { status as colour, fmtSize, titledBox } from "./ui.ts";
+import { status as colour, fmtSize, titledRules } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TAIL_BYTES = 4096;
@@ -73,11 +72,12 @@ function logCol(log: string | undefined, size: number | undefined): string {
 	return `${chalk.dim(basename(log).padEnd(LOG_W))} ${chalk.bold(showSize(size).padStart(SIZE_W))}`;
 }
 
-/** The submitted command in a box titled `cmd`: program bold cyan,
- *  options yellow, the rest dim. */
-function cmdBox(argv: readonly string[]): string {
+/** The submitted command between two full-width rules titled `cmd` (no side
+ *  borders, so it copies cleanly): program bold cyan, options yellow, the rest
+ *  dim. */
+function cmdRule(argv: readonly string[]): string {
 	const width = process.stderr.columns || 100;
-	return titledBox("cmd", argv, width, (piece, i) =>
+	return titledRules("cmd", argv, width, (piece, i) =>
 		i === 0
 			? chalk.bold.cyan(piece)
 			: /^[-+]/.test(argv[i] ?? "")
@@ -92,7 +92,7 @@ export class CaseMonitor implements PhaseObserver {
 	private tailed?: Tail;
 	private frame = 0;
 	private timers: Timer[] = [];
-	private readonly live?: typeof logUpdate;
+	private readonly live?: LivePanel;
 	/** Follow mode: the running step's log, read up to `offset` so far. */
 	private followed?: {
 		path: string;
@@ -108,7 +108,7 @@ export class CaseMonitor implements PhaseObserver {
 		private readonly follow = false,
 	) {
 		if (!plain && process.stderr.isTTY) {
-			this.live = createLogUpdate(process.stderr, { showCursor: true });
+			this.live = new LivePanel();
 		}
 	}
 
@@ -140,9 +140,9 @@ export class CaseMonitor implements PhaseObserver {
 				`${chalk.cyan(pad("▶", STATUS_W))} ${chalk.dim("start")}  ${chalk.bold(pad(this.name(this.current), PHASE_W))} ${chalk.dim(info.log)}`,
 			);
 		}
-		// TTY: the command in a titled box. Otherwise one plain line.
+		// TTY: the command between titled rules. Otherwise one plain line.
 		if (info.cmd?.length) {
-			this.line(this.live ? cmdBox(info.cmd) : `$ ${info.cmd.join(" ")}`);
+			this.line(this.live ? cmdRule(info.cmd) : `$ ${info.cmd.join(" ")}`);
 		}
 		this.render();
 	}
@@ -160,7 +160,6 @@ export class CaseMonitor implements PhaseObserver {
 		for (const t of this.timers) clearInterval(t);
 		this.timers = [];
 		this.live?.clear();
-		this.live?.done();
 	}
 
 	/** The step name only: the seed is in the Run / Summary blocks. */
@@ -236,15 +235,12 @@ export class CaseMonitor implements PhaseObserver {
 			return;
 		}
 		this.frame = (this.frame + 1) % FRAMES.length;
-		const width = (process.stderr.columns || 100) - 1;
 		const t = this.tailed;
 		const head = this.row(chalk.cyan(FRAMES[this.frame] ?? ""), c, t?.size);
 		// The head already names the log and its size; below it only the
-		// running log's last line, under the phase column.
-		const room = Math.max(0, width - INDENT.length);
+		// running log's last line, under the phase column (the panel cuts it
+		// to the terminal width).
 		const line = t?.line ?? "";
-		const text =
-			line.length > room ? `${line.slice(0, Math.max(0, room - 1))}…` : line;
-		this.live(text ? `${head}\n${INDENT}${chalk.dim(text)}` : head);
+		this.live.render(line ? `${head}\n${INDENT}${chalk.dim(line)}` : head);
 	}
 }

@@ -1085,9 +1085,12 @@ async function runView(id: string): Promise<{ files: string[]; sv: string }> {
 	// display == written text). Snapshots stay visible in #aw-live.
 	const chunks: string[] = [];
 	for (const { uid, text } of files) {
+		const simUnit = unitOf(uid)?.kind === "sim";
 		for (const m of flattenModules(parseSnapshot(text))) {
+			// Same file name connect run writes: <unit id>.sv for a sim unit.
+			const file = simUnit ? uid : m.name;
 			chunks.push(
-				`// --- ${uid}/${m.name}.sv ---\n${printSv(m, uid, state.style)}`,
+				`// --- ${uid}/${file}.sv ---\n${printSv(m, uid, state.style)}`,
 			);
 		}
 	}

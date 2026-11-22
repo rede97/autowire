@@ -26,7 +26,7 @@ check（静态）    elaborate（脚本 + on-init + on-template + aw-render）  
 
 | 命令 | 行为 |
 |---|---|
-| `connect run [unit]` | happy-dom 跑经典 `<script>`，elaborate 后写 `.sv`。内容没变的文件不重写。`--force` 强制重写 |
+| `connect run [unit]` | happy-dom 跑经典 `<script>`，elaborate 后写 `.sv`：connect 单元按模块名写 `connect_dir/<module>.sv`；`[sim.<id>]` 单元写 `sim_dir/<id>.sv`（文件名取 sim id，模块名仍是 `aw-tb-mod name`，多个 TB 都叫 `tb_top` 也不互相覆盖）。内容没变的文件不重写。`--force` 强制重写 |
 | `connect check [unit]` | 不跑脚本。只做作者面和依赖的规则检查，打印错误和警告，不写盘 |
 | `connect elaborate [unit]` | 跑脚本和 `on-init` / `on-template`，含展开期门禁，不写盘 |
 | `connect web [unit]` | 只起静态页。浏览器在页面里跑同一批脚本；不把结果交给 autowire 写盘 |

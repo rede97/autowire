@@ -2,6 +2,14 @@
 // objects tagged with `kind`. Never use instanceof: the bundle and the
 // materialized .dtsim/dsl copy may both be loaded in one process.
 
+export { covFromEnv, RUN_ENV } from "./env.ts";
+export {
+	type VcsBaseOpts,
+	type VcsDebugAccess,
+	type VerilatorBaseOpts,
+	vcsBaseFlags,
+	verilatorBaseFlags,
+} from "./flags.ts";
 export {
 	type ClusterOpts,
 	LocalLauncher,
@@ -32,13 +40,40 @@ export type CaseOpts = {
 	env?: Record<string, EnvValue>;
 	uvm?: UvmCfg;
 	/** Per-case options the tool reads on top of its factory options
-	 *  (e.g. VerilatorTool `top`, VcsTool `flags`); objects merge per key. */
+	 *  (e.g. VerilatorTool `main`, VcsTool `flags`); objects merge per key.
+	 *  With several tools, put them under `byTool.<tool>`. */
 	toolOptions?: Record<string, unknown>;
-	/** Filelist for this case instead of the workspace one (relative to dt/config). */
-	filelist?: string;
+	/** Top-level module (default: Workspace `top`). Inherited; part of the
+	 *  compile key, so cases with different tops build separately. */
+	top?: string;
+	/** Waveform dump on/off (default: Workspace `wave`). Inherited. */
+	wave?: boolean;
+	/** Dump depth, 0 = all levels (default: Workspace `waveDepth`). Inherited. */
+	waveDepth?: number;
+	/** Dump scope (default: Workspace `waveScope`, else the case's top).
+	 *  Inherited. With `wave` on, all three are part of the compile key: the
+	 *  dump is compiled in (debug access, --trace-fst, the scope). */
+	waveScope?: string;
+	/** Filelists (paths relative to dt/config), appended to the workspace's
+	 *  and the parent's. dtsim never reads them: each reaches the tool as -f,
+	 *  which runs in the project root. */
+	filelists?: readonly string[];
 	/** Grader for this case and its derived cases (default: Workspace.grader). */
 	grader?: Grader;
+	/** Tools this case runs on (default: every Workspace tool). Inherited. */
+	tools?: readonly string[];
+	/** Base used only for derivation, like a C++ abstract/virtual class: dtsim
+	 *  never runs it. Excluded from `all` and from `<base>.*` group pattern
+	 *  hits; naming it to run errors. Not inherited by derived cases; set it
+	 *  with object options, not a function. */
+	abstract?: boolean;
+	/** Options merged on top of this level's options when that tool is
+	 *  selected: `byTool: { vcs: { filelists: ["vcs.f"] }, verilator: { ... } }`. */
+	byTool?: Readonly<Record<string, ToolCaseOpts>>;
 };
+
+/** Case options for one tool (`byTool.<tool>`): no nested tools / byTool. */
+export type ToolCaseOpts = Omit<CaseOpts, "tools" | "byTool" | "abstract">;
 
 /** Case options, or a function computing them from the parent's merged
  *  options. Functions run only when that case is used (run, regr, env, plan)
@@ -54,6 +89,8 @@ export type CaseDef = {
 	/** Full id: root.suffix.suffix... */
 	id: string;
 	parent?: CaseDef;
+	/** Abstract base (derivation only); never run. Not inherited. */
+	abstract: boolean;
 	opts: CaseOptsInput;
 	/** Derived cases, in declaration order. */
 	readonly children: readonly CaseDef[];
@@ -111,6 +148,23 @@ export type TaskSpec = {
 	maxCompiles: number;
 };
 
+/** A slot count, or a callback evaluated once the tool and launcher are
+ *  resolved. */
+export type SlotLimit =
+	| number
+	| ((ctx: { tool: string; launcher: string }) => number);
+
+/** `Workspace({ task })` options. `launcher` is one launcher or a probe list
+ *  tried left to right: the first whose `probe` executables are all on PATH
+ *  wins (local, with no probe, always matches). Probes run concurrently.
+ *  `maxSlots` / `maxCompiles` take a SlotLimit, so the config can size slots
+ *  from the resolved launcher instead of probing the environment itself. */
+export type TaskOpts = {
+	launcher?: Launcher | readonly Launcher[];
+	maxSlots?: SlotLimit;
+	maxCompiles?: SlotLimit;
+};
+
 /** What hooks and graders see for one case directory. */
 export type CaseContext = {
 	caseId: string;
@@ -132,7 +186,11 @@ export type CaseContext = {
 		env: Readonly<Record<string, EnvValue>>;
 		uvm?: UvmCfg;
 		toolOptions: Record<string, unknown>;
-		filelist?: string;
+		filelists: string[];
+		/** Top-level module: the case's `top`, else the workspace's. */
+		top: string;
+		/** Waveform dump: the case's `wave`, else the workspace's. */
+		wave: WaveSpec;
 	};
 	/** The isolated environment the tool command of this phase receives. */
 	env: Readonly<Record<string, string>>;
@@ -161,8 +219,7 @@ export type HookContext = CaseContext & {
 export type Hook = (ctx: HookContext) => void | Promise<void>;
 
 export type Hooks = {
-	/** Before the compile tool, before the filelist is flattened: generate or
-	 *  patch sources. */
+	/** Before the compile tool: generate or patch sources (and filelists). */
 	preCompile?: Hook | readonly Hook[];
 	postCompile?: Hook | readonly Hook[];
 	preSim?: Hook | readonly Hook[];
@@ -205,18 +262,57 @@ export type Grader = {
 	) => GradeStatus | GradeOutcome | Promise<GradeStatus | GradeOutcome>;
 };
 
+/** An environment knob the config understands, listed by `dtsim env`. */
+export type EnvVarDoc = {
+	/** Variable name, e.g. "WAVE". */
+	name: string;
+	/** Allowed values, e.g. "0|1". */
+	values?: string;
+	/** Documented default. */
+	default?: string;
+	/** One-line description. */
+	desc?: string;
+	/** Optional CLI option spec, e.g. "--wave" (a switch) or "--jobs <n>"
+	 *  (a value option). When the flag is passed, dtsim sets the variable. */
+	flags?: string;
+	/** Map the CLI value to the env value: a switch passes `true`, a value
+	 *  option passes the string. Return undefined to leave it unset. Without
+	 *  `set`, a switch sets "1" and a value option sets the raw string. */
+	set?: (value: string | boolean) => string | undefined;
+};
+
 export type WorkspaceOpts = {
-	/** Simulator backend: VcsTool(...), VerilatorTool(...) or defineTool(...). */
-	tool: SimTool;
-	/** Filelist path (`${...}` allowed; relative to dt/config). Default "file.lst". */
-	filelist?: string;
+	/** Simulator backends: VcsTool(...), VerilatorTool(...) or defineTool(...).
+	 *  The first available (by each tool's probe) is selected; a factory
+	 *  reorders or filters the list to force one. */
+	tools: readonly SimTool[];
+	/** Top-level module of every case that does not set its own `top`.
+	 *  Default "tb_top". */
+	top?: string;
+	/** Waveform dump of every case that does not set its own `wave`.
+	 *  Default false. */
+	wave?: boolean;
+	/** Default dump depth, 0 = all levels. Default 0. */
+	waveDepth?: number;
+	/** Default dump scope. Default: each case's top. */
+	waveScope?: string;
+	/** Filelists every case compiles (paths relative to dt/config, `${...}`
+	 *  allowed); cases append theirs. Default: none. */
+	filelists?: readonly string[];
 	/** Output root (`${...}` allowed; relative to dt/config). Default "${workspace}/dt/simout". */
 	output?: string;
+	/** Seed set for this workspace, default `["0"]`. Configs build it from
+	 *  their own registered SEEDS / RANDOM options; dtsim has no seed flags.
+	 *  A case with `random: false` uses only the first. */
+	seeds?: readonly string[];
 	/** Default grader. Default `DefaultGrader()`. */
 	grader?: Grader;
 	bareDefaults?: CaseOpts;
-	env?: { passthrough?: readonly string[]; deny?: readonly string[] };
-	task?: Partial<TaskSpec>;
+	env?: {
+		passthrough?: readonly string[];
+		deny?: readonly string[];
+	};
+	task?: TaskOpts;
 	hooks?: Hooks;
 	groups?: readonly GroupDef[];
 	cases?: readonly string[];
@@ -224,7 +320,10 @@ export type WorkspaceOpts = {
 
 export type WorkspaceDef = {
 	kind: "dtsim-workspace";
-	opts: WorkspaceOpts;
+	/** Registered environment variables, for `dtsim env` to list. */
+	env: readonly EnvVarDoc[];
+	/** Static options, or a callback invoked with the mode at load. */
+	opts: WorkspaceOpts | WorkspaceFactory;
 };
 
 // --- SimTool plugin contract -------------------------------------------------
@@ -240,7 +339,9 @@ export type Prepared = {
 	executable?: string;
 };
 
-export type WaveSpec = { enabled: boolean; depth: number; top: string };
+/** A case's resolved waveform dump. `scope` defaults to the case's top. */
+export type WaveSpec = { enabled: boolean; depth: number; scope: string };
+/** Coverage switch ($DTSIM_COV*; read with covFromEnv()). */
 export type CovSpec = { enabled: boolean; metrics: string; merge: boolean };
 
 export type ToolContext = {
@@ -251,6 +352,10 @@ export type ToolContext = {
 	caseOpts: Required<Pick<CaseOpts, "defines" | "compileArgs" | "simArgs">> & {
 		uvm?: UvmCfg;
 		toolOptions: Record<string, unknown>;
+		/** Top-level module: the case's `top`, else the workspace's. */
+		top: string;
+		/** Waveform dump: the case's `wave`, else the workspace's. */
+		wave: WaveSpec;
 	};
 	dir: string;
 	compileDir: string;
@@ -259,16 +364,23 @@ export type ToolContext = {
 	verify: string;
 	/** Project root: the RTL design dir that owns dt/. */
 	workspace: string;
-	/** Flat filelist in the compile dir: nested -f inlined, paths absolute. */
-	filelist: string;
-	wave: WaveSpec;
-	cov: CovSpec;
+	/** Filelists of this case, absolute, workspace's first. Contents are the
+	 *  tool's business: pass each as -f with the project root as cwd. */
+	filelists: string[];
 	regression: boolean;
+	/** `run --interactive`: the terminal is attached to the simulator. */
+	interactive: boolean;
+	/** The resolved child environment (passthrough + case env + injected), so a
+	 *  backend can write it into a helper script (e.g. run_verdi). */
+	env: Record<string, string>;
 	/** Expand ${verify}/${workspace}/${output_dir}/... placeholders. */
 	expand: (text: string) => string;
 	/** Same placeholders plus shell variables (${HOME}), then absolute against
 	 *  dt/config; unknown names throw. For paths a backend reads or writes. */
 	resolvePath: (text: string) => string;
+	/** Write a cluster submit wrapper (bjob_ / srun_ prefix) next to a run script a
+	 *  backend generated, e.g. submitScript("run_verdi"); no-op on local. */
+	submitScript: (scriptName: string) => void;
 };
 
 /** The merged case options a compile key is computed from (placeholders intact). */
@@ -280,29 +392,42 @@ export type CompileKeyInput = {
 	env: Readonly<Record<string, EnvValue>>;
 	uvm?: UvmCfg;
 	toolOptions: Record<string, unknown>;
-	filelist?: string;
+	filelists: readonly string[];
+	/** Top-level module (already in `base`). */
+	top: string;
+	/** Waveform dump (already in `base`). */
+	wave: WaveSpec;
 };
 
 export type SimTool = {
 	kind: "dtsim-tool";
-	/** `${tool}`, $DTSIM_TOOL and part of the compile key. */
+	/** Part of the compile key and the output dir name. */
 	name: string;
+	/** Executables that must all be on PATH for this tool to count as
+	 *  available in the automatic fallback (e.g. ["vcs"]). Empty/absent =
+	 *  always available. */
+	probe?: readonly string[];
 	/** Parent-environment names this tool needs; copied only when present. */
 	passthrough: readonly string[];
 	/** true: first Ctrl+C is forwarded to the child (UCLI-style). */
 	interactive: boolean;
 	/**
 	 * Compile identity: cases whose keys are equal share one build in a
-	 * regression. `base` is dtsim's generic key (tool, defines as a set,
-	 * compileArgs in order, compile-scope env, filelist). Return it, extend it
-	 * (`${base}|top=x`), or replace it with what this simulator actually
-	 * compiles from. Default: `base`.
+	 * regression. `base` is dtsim's generic key (tool, top, wave, defines as a set,
+	 * compileArgs in order, compile-scope env, filelists). Return it, extend it
+	 * with what else this backend compiles from (`${base}|mdir=x`), or replace
+	 * it. Default: `base`.
 	 */
 	compileKey?: (c: CompileKeyInput, base: string) => string;
 	/** Readable name of the build `c` stands for (the first case of a compile
-	 *  group), shown in plans and progress and used for its directory
-	 *  (`compile_<name>`). Default: the case id. Duplicates get `-2`, `-3`. */
+	 *  group), shown in plans and progress and used for its directory and
+	 *  cluster job name (`compile_<name>`). Default: `build<NN>_<top>`.
+	 *  Duplicates get `-2`, `-3`. */
 	buildName?: (c: CompileKeyInput) => string;
+	/** The seed argument run_sim appends to the sim command: one bash word in
+	 *  which `$SEED` is the seed (`run_sim -s <seed>` overrides it). Default
+	 *  `+ntb_random_seed=$SEED`. */
+	seedArg?: string;
 	/** Write tool-specific helper files (dump.tcl, run_verdi, ...). */
 	writeAux?: (ctx: ToolContext) => void;
 	compile: (ctx: ToolContext) => Prepared;
@@ -341,6 +466,13 @@ export type Launcher = {
 	wrap: (argv: readonly string[], ctx: LaunchContext) => string[];
 	/** One line for the regression header, e.g. "queue normal, -R rusage[...]". */
 	summary?: string;
+	/** Executables that must all be on PATH for this launcher to count as
+	 *  available when `task.launcher` is a probe list. Empty/absent = always
+	 *  available (local). */
+	probe?: readonly string[];
+	/** Prefix for the backup submit scripts dtsim writes next to run_sim /
+	 *  run_verdi / run_compile (`bjob`, `srun`). Absent = none (local). */
+	scriptPrefix?: string;
 };
 
 // --- constructors ------------------------------------------------------------
@@ -352,12 +484,44 @@ function needString(what: string, v: unknown): string {
 	return v;
 }
 
+/** `top` / `waveScope` must be names, `wave` a boolean, `waveDepth` a whole
+ *  number. Shared by case options and the Workspace. */
+function needTopWave(
+	what: string,
+	opts: {
+		top?: unknown;
+		wave?: unknown;
+		waveDepth?: unknown;
+		waveScope?: unknown;
+	},
+): void {
+	for (const key of ["top", "waveScope"] as const) {
+		const v = opts[key];
+		if (v !== undefined && (typeof v !== "string" || v.length === 0)) {
+			throw new Error(`dtsim: ${what}.${key} must be a non-empty name`);
+		}
+	}
+	if (opts.wave !== undefined && typeof opts.wave !== "boolean") {
+		throw new Error(`dtsim: ${what}.wave must be a boolean`);
+	}
+	const d = opts.waveDepth;
+	if (d !== undefined && (!Number.isInteger(d) || (d as number) < 0)) {
+		throw new Error(`dtsim: ${what}.waveDepth must be a whole number >= 0`);
+	}
+}
+
 function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 	if (opts === undefined) return {};
 	if (typeof opts !== "object" || opts === null) {
 		throw new Error(`dtsim: ${what} options must be an object`);
 	}
-	for (const key of ["defines", "compileArgs", "simArgs"] as const) {
+	for (const key of [
+		"defines",
+		"compileArgs",
+		"simArgs",
+		"tools",
+		"filelists",
+	] as const) {
 		const list = opts[key];
 		if (list !== undefined && !Array.isArray(list)) {
 			throw new Error(`dtsim: ${what}.${key} must be an array`);
@@ -366,8 +530,10 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 			throw new Error(`dtsim: ${what}.${key} entries must be strings`);
 		}
 	}
-	if (opts.filelist !== undefined)
-		needString(`${what}.filelist`, opts.filelist);
+	if (opts.abstract !== undefined && typeof opts.abstract !== "boolean") {
+		throw new Error(`dtsim: ${what}.abstract must be a boolean`);
+	}
+	needTopWave(what, opts);
 	if (opts.grader !== undefined) needGrader(`${what}.grader`, opts.grader);
 	if (opts.env) {
 		for (const [k, v] of Object.entries(opts.env)) {
@@ -380,6 +546,24 @@ function needOpts(what: string, opts: CaseOpts | undefined): CaseOpts {
 					`dtsim: ${what}.env.${k} must be a string or { value, scope }`,
 				);
 			}
+		}
+	}
+	if (opts.byTool !== undefined) {
+		if (typeof opts.byTool !== "object" || opts.byTool === null) {
+			throw new Error(`dtsim: ${what}.byTool must be { <tool>: options }`);
+		}
+		for (const [name, sub] of Object.entries(opts.byTool)) {
+			const inner = sub as CaseOpts;
+			if (
+				inner?.tools !== undefined ||
+				inner?.byTool !== undefined ||
+				inner?.abstract !== undefined
+			) {
+				throw new Error(
+					`dtsim: ${what}.byTool.${name} cannot set tools or byTool`,
+				);
+			}
+			needOpts(`${what}.byTool.${name}`, inner);
 		}
 	}
 	return opts;
@@ -433,15 +617,27 @@ function caseNode(
 	opts: CaseOptsInput,
 	parent: CaseDef | undefined,
 ): CaseDef {
-	// Object options validate now; functions validate when evaluated.
-	if (typeof opts !== "function") needOpts(id, opts);
+	// Object options validate now; functions validate when evaluated. The
+	// node-level `abstract` flag is pulled off here so it never inherits.
+	let abstract = false;
+	let effectiveOpts = opts;
+	if (typeof opts !== "function") {
+		needOpts(id, opts);
+		if (opts.abstract !== undefined) {
+			abstract = opts.abstract === true;
+			const rest: CaseOpts = { ...opts };
+			delete rest.abstract;
+			effectiveOpts = rest;
+		}
+	}
 	const children: CaseDef[] = [];
 	const node: CaseDef = {
 		kind: "dtsim-case",
 		name,
 		id,
+		abstract,
 		...(parent === undefined ? {} : { parent }),
-		opts,
+		opts: effectiveOpts,
 		children,
 		SubCase(suffix: string, sub: CaseOptsInput = {}): CaseDef {
 			needString(`subcase suffix of ${id}`, suffix);
@@ -529,6 +725,13 @@ export function defineTool(
 	if (!Array.isArray(spec.passthrough)) {
 		throw new Error(`dtsim: tool ${spec.name} needs a passthrough array`);
 	}
+	if (
+		spec.probe !== undefined &&
+		(!Array.isArray(spec.probe) ||
+			spec.probe.some((p) => typeof p !== "string"))
+	) {
+		throw new Error(`dtsim: tool ${spec.name} probe must be a string array`);
+	}
 	return {
 		...spec,
 		kind: "dtsim-tool",
@@ -544,6 +747,23 @@ export function defineLauncher(spec: Omit<Launcher, "kind">): Launcher {
 	}
 	if (!Array.isArray(spec.passthrough)) {
 		throw new Error(`dtsim: launcher ${spec.name} needs a passthrough array`);
+	}
+	if (
+		spec.probe !== undefined &&
+		(!Array.isArray(spec.probe) ||
+			spec.probe.some((p) => typeof p !== "string"))
+	) {
+		throw new Error(
+			`dtsim: launcher ${spec.name} probe must be a string array`,
+		);
+	}
+	if (
+		spec.scriptPrefix !== undefined &&
+		typeof spec.scriptPrefix !== "string"
+	) {
+		throw new Error(
+			`dtsim: launcher ${spec.name} scriptPrefix must be a string`,
+		);
 	}
 	return { ...spec, kind: "dtsim-launcher" };
 }
@@ -566,13 +786,33 @@ export function defineGrader(spec: Omit<Grader, "kind">): Grader {
 	return { kind: "dtsim-grader", name: spec.name, grade: spec.grade };
 }
 
-export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
+export type WorkspaceFactory = (mode: "run" | "regr") => WorkspaceOpts;
+
+/** Validate a resolved WorkspaceOpts. Called by `Workspace()` for the static
+ *  form and by loadWorkspace after invoking a factory. */
+export function validateWorkspace(opts: WorkspaceOpts): void {
 	if (typeof opts !== "object" || opts === null) {
 		throw new Error("dtsim: Workspace options must be an object");
 	}
-	needTool("workspace tool", opts.tool);
+	if (!Array.isArray(opts.tools) || opts.tools.length === 0) {
+		throw new Error(
+			"dtsim: Workspace tools must be a non-empty array, e.g. tools: [VcsTool()]",
+		);
+	}
+	const names = new Set<string>();
+	for (const [i, t] of opts.tools.entries()) {
+		const tool = needTool(`workspace tools[${i}]`, t);
+		if (names.has(tool.name)) {
+			throw new Error(`dtsim: two Workspace tools are named "${tool.name}"`);
+		}
+		names.add(tool.name);
+	}
+	needList("Workspace filelists", opts.filelists);
+	needTopWave("Workspace", opts);
 	if (opts.task?.launcher !== undefined) {
-		needLauncher("task.launcher", opts.task.launcher);
+		const ls = opts.task.launcher;
+		for (const l of Array.isArray(ls) ? ls : [ls])
+			needLauncher("task.launcher", l);
 	}
 	if (opts.grader !== undefined) needGrader("workspace grader", opts.grader);
 	if (opts.bareDefaults) needOpts("bareDefaults", opts.bareDefaults);
@@ -589,13 +829,42 @@ export function Workspace(opts: WorkspaceOpts): WorkspaceDef {
 			);
 		}
 	}
-	return { kind: "dtsim-workspace", opts };
+}
+
+/** Two forms:
+ *  - `Workspace(opts)`: static options, no registered env vars.
+ *  - `Workspace(regEnv, opts | ((mode) => opts))`: the registered environment
+ *    variables (listed by `dtsim env`, `flags` become CLI options) first,
+ *    then static options or a callback that computes them from the mode
+ *    (`run` / `regr`). The callback holds the config's logic: read env,
+ *    order tools, set wave and slots. dtsim still auto-fallbacks the tool
+ *    (probe) and probes the launcher. */
+export function Workspace(
+	envOrOpts: readonly EnvVarDoc[] | WorkspaceOpts,
+	optsOrFn?: WorkspaceOpts | WorkspaceFactory,
+): WorkspaceDef {
+	if (optsOrFn === undefined) {
+		const opts = envOrOpts as WorkspaceOpts;
+		validateWorkspace(opts);
+		return { kind: "dtsim-workspace", env: [], opts };
+	}
+	if (!Array.isArray(envOrOpts)) {
+		throw new Error(
+			"dtsim: Workspace(regEnv, opts): the first argument must be the registered env var array",
+		);
+	}
+	if (typeof optsOrFn === "function") {
+		return { kind: "dtsim-workspace", env: [...envOrOpts], opts: optsOrFn };
+	}
+	validateWorkspace(optsOrFn);
+	return { kind: "dtsim-workspace", env: [...envOrOpts], opts: optsOrFn };
 }
 
 // --- DefaultGrader -----------------------------------------------------------
 
 export type DefaultGraderOpts = {
-	/** A line containing any of these marks a finished run. Default ["TEST PASSED"]. */
+	/** A line matching any of these marks a finished run (substring, or "re:"
+	 *  for a regex). Default ["TEST PASSED"]. */
 	pass?: readonly string[];
 	/** Kept (not waived) lines matching any of these: PASS WITH ERRORS.
 	 *  Substring, or "re:" for a regex. */
@@ -626,11 +895,13 @@ export async function* streamLines(path: string): AsyncGenerator<string> {
 		const { done, value } = await reader.read();
 		if (done) break;
 		rest += decoder.decode(value, { stream: true });
-		const parts = rest.split("\n");
+		// CRLF logs (Windows tools): no trailing \r reaches a scanner, so
+		// anchored keywords (re:^...$) match there too.
+		const parts = rest.split(/\r?\n/);
 		rest = parts.pop() ?? "";
 		yield* parts;
 	}
-	rest += decoder.decode();
+	rest = (rest + decoder.decode()).replace(/\r$/, "");
 	if (rest.length > 0) yield rest;
 }
 
@@ -682,6 +953,10 @@ export async function scanLog<A, T>(
 
 export type GradeReport = {
 	status: GradeStatus;
+	/** A pass keyword (or, with uvm, the UVM Report Summary) was seen. */
+	finished: boolean;
+	/** The pass keywords that were looked for. */
+	pass: string[];
 	errorCounts: Record<string, number>;
 	missingExpect: string[];
 	uvmErrors: number;
@@ -746,7 +1021,7 @@ export function defaultScanner(
 		push(line) {
 			if (
 				!finished &&
-				(pass.some((kw) => line.includes(kw)) ||
+				(pass.some((kw) => match(kw, line)) ||
 					(uvm && line.includes("UVM Report Summary")))
 			) {
 				finished = true;
@@ -798,6 +1073,8 @@ export function defaultScanner(
 				status = "PASS WITH ERRORS";
 			return {
 				status,
+				finished,
+				pass: [...pass],
 				errorCounts,
 				missingExpect,
 				uvmErrors,
@@ -823,6 +1100,8 @@ export function gradeLines(
 
 function reportOutcome(r: GradeReport): GradeOutcome {
 	const details: Array<[string, string]> = [];
+	const unfinished = `no line matched ${r.pass.join(" | ") || "(no pass keyword)"}`;
+	if (!r.finished) details.push(["Finished", unfinished]);
 	const kws = Object.entries(r.errorCounts)
 		.map(([kw, n]) => `${kw} (${n})`)
 		.join(", ");
@@ -839,7 +1118,11 @@ function reportOutcome(r: GradeReport): GradeOutcome {
 	}
 	return {
 		status: r.status,
-		...(r.uvmErrors + r.uvmFatals > 0 ? { note: uvm } : {}),
+		...(r.uvmErrors + r.uvmFatals > 0
+			? { note: uvm }
+			: r.finished
+				? {}
+				: { note: "not finished" }),
 		details,
 		highlight: r.hits,
 	};

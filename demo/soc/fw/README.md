@@ -36,8 +36,8 @@ Toolchain: set `CROSS=` if needed (defaults probe `riscv32-wch-elf-`,
 `riscv-none-embed-`, `riscv64-unknown-elf-`, `riscv32-unknown-elf-`).
 
 The JTAG smoke writes SRAM `0x0000_8000`; firmware must not use that word.
-Pass `+nojtag` to the case binary `dt/simout/<case>/obj_dir/Vtb_soc_vl` (e.g.
-`dt/simout/basic_smoke/obj_dir/Vtb_soc_vl`) to run the firmware alone
+Pass `+nojtag` to the case binary `dt/simout/<case>/obj_dir/Vtb_top` (e.g.
+`dt/simout/basic_smoke/obj_dir/Vtb_top`) to run the firmware alone
 (bisect a failure between the two masters).
 
 ## SD notes (`--sd`)

@@ -8,9 +8,8 @@ import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
-import type logUpdate from "log-update";
-import { createLogUpdate } from "log-update";
 import type { PhaseObserver } from "./engine.ts";
+import { LivePanel } from "./live.ts";
 import { fmtElapsed } from "./scripts.ts";
 import { status as colour, fmtSize } from "./ui.ts";
 
@@ -157,7 +156,7 @@ export class Progress {
 	private readonly t0 = Date.now();
 	private frame = 0;
 	private timer?: Timer;
-	private readonly live?: typeof logUpdate;
+	private readonly live?: LivePanel;
 
 	constructor(plan: readonly PlannedBuild[], plain: boolean) {
 		this.builds = plan.map((b) => ({
@@ -166,7 +165,7 @@ export class Progress {
 			sims: b.sims.map((s) => ({ label: `sim ${s}`, state: "waiting" })),
 		}));
 		if (!plain && process.stderr.isTTY) {
-			this.live = createLogUpdate(process.stderr, { showCursor: true });
+			this.live = new LivePanel();
 			this.timer = setInterval(() => this.render(), 100);
 		}
 	}
@@ -189,8 +188,9 @@ export class Progress {
 		this.render();
 	}
 
-	/** A task ended: a status line, then its log path (size) or note below
-	 *  it as a tree branch. */
+	/** A task ended: one plain line `<status> <elapsed> <label> <log> (size)`
+	 *  (or a note in place of the log). The log path is printed inline and the
+	 *  terminal wraps it; dtsim does not lay it out on a fixed-width branch. */
 	finish(node: TaskNode, status: string, log?: string, note?: string): void {
 		node.state = "done";
 		node.status = status;
@@ -203,17 +203,13 @@ export class Progress {
 				? `${chalk.dim(node.log)} ${chalk.bold(`(${size === undefined ? "-" : fmtSize(size)})`)}`
 				: "";
 		const head = `${pad(colour(status), STATUS_W)} ${elapsed(node)}  ${chalk.bold(node.label)}`;
-		const branch = where
-			? `\n${" ".repeat(STATUS_W + 1)}${chalk.gray("└─")} ${where}`
-			: "";
-		this.line(head + branch);
+		this.line(where ? `${head}  ${where}` : head);
 	}
 
 	stop(): void {
 		clearInterval(this.timer);
 		this.timer = undefined;
-		this.live?.clear();
-		this.live?.done();
+		this.live?.stop();
 	}
 
 	private line(text: string): void {
@@ -286,6 +282,6 @@ export class Progress {
 			lines.push(chalk.dim(`… ${active.length - shown} more builds in flight`));
 		}
 		lines.push(`${bar}  ${counts}`);
-		this.live(lines.join("\n"));
+		this.live.render(lines.join("\n"));
 	}
 }

@@ -2,6 +2,72 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.3] - 2026-11-20
+
+- **Verilator 的 seed 生效**：之前 `run_sim` 一律给仿真加 VCS 的 `+ntb_random_seed=<seed>`，Verilator 不认，所以 `--seeds` / `--random` 的每个 seed 在 Verilator 上跑出完全相同的随机序列。`SimTool` 新增 `seedArg`（`run_sim` 追加的一个 bash 词，`$SEED` 是 seed，默认 `+ntb_random_seed=$SEED`）；`VerilatorTool` 改为 `+verilator+seed+<seed>`，seed 0 发成 1（显式的 `+verilator+seed+0` 表示“随机挑一个”，结果不可复现）。C++ harness 需把 argv 交给 `contextp->commandArgs()`。
+- **TTY 面板 resize 不再乱码**：实时面板（spinner、编译树、进度条）改用 dtsim 自己的 `LivePanel`，去掉 `log-update` 依赖。面板每行截到终端宽度减 1，自身永不折行；重画时光标上移到面板顶部再清到屏尾。终端变窄后旧的行会被终端重新折行，面板按新宽度重新算旧帧占的行数再擦，所以不留残影；resize 过程中暂停重画，停止约 100 ms 后按最终尺寸画一次。完成行仍整行原样输出。
+
+## [2.9.2] - 2026-11-20
+
+- **编译组改名为 `build<序号>_<top>`**：回归的编译组（`compile_<名字>` 目录、plan / 进度里的名字）不再借用组内第一个用例的 id，默认是本次计划中的序号加该组的顶层模块，如 `compile_build01_tb_top`、`compile_build04_tb_chip`（序号按成员多少排序，至少两位）；后端的 `buildName` 仍可覆盖。LSF / Slurm 的编译作业名改为同一个 `compile_<名字>`（原来是 `compile_<顶层用例名>`，与目录不一致），单条 `run` 的作业名是 `compile_<case id>`。
+- **完成行原样输出**：TTY 上回归的 compile / sim 完成行、`run` 的开始 / 结束行和 `-v` 跟随的日志行像 `echo` 一样整行写出，不再被 log-update 按当时的终端宽度硬插换行；长路径交给终端软换行，调整窗口大小后会重新排版，复制路径也不会断开。
+- demo/soc：Verilator 编译阶段的 `MAKEFLAGS` 由配置追加 `OPT_FAST=-O2 OPT_GLOBAL=-O2`（MSYS2 UCRT64 GCC 16.2 在默认 `-Os` 下链接 `verilated.o` 失败），不需要再手动 export。
+
+## [2.9.1] - 2026-11-20
+
+- **破坏性：顶层模块与波形改为 Workspace / Case 选项**：`VcsTool({ top, wave })` / `VerilatorTool({ top, wave })` 删除，改为 `Workspace({ top, wave, waveDepth, waveScope })` 默认值加 Case 同名选项，规则和其他标量一样：派生用例继承父用例，case 自己写的值覆盖，`bareDefaults` / `byTool` 也可写。默认 `top: "tb_top"`、`wave: false`、`waveDepth: 0`（全部层级）、`waveScope` 为该 case 的 `top`；case 只写 `waveScope` / `waveDepth` 时开关仍沿用 workspace 的 `wave`。常规 bench 只有一个 `tb_top`，不用写；UVM 等场景里某些 case 用另一个顶层时在 case 上写 `top`。`toolOptions.wave` 与 wave 的 `{ depth, top }` 对象形式一并删除，`waveSpec` / `WaveOpt` / `SimTool.wave` 不再导出。
+- **编译 key 含 top 与 wave**：通用 key 加入 `top`，以及 wave 打开时的深度与范围，所以顶层或波形设置不同的用例不再共用一个编译（修复：2.9.0 里 case 级 `toolOptions.wave` 不同的用例可能共用编译，开波形的用例找不到 `dump.tcl`）。`ToolContext.caseOpts` / `CaseContext.caseOpts` / `CompileKeyInput` 新增 `top` 与 `wave: { enabled, depth, scope }`。`plan` 的每个编译组显示 `top` 和 wave，`run` 的 Run 表新增 `Top` 行，Regression 表的 `Wave` 行按各编译组汇总。
+- **VCS 后端**：`-kdb` 和 `-debug_access+all` 只在 wave 打开且 flags 里没有时补上，`vcsBaseFlags({ kdb: false })` 现在生效；识别已有的 `-debug_acc+all`，不再重复加 debug access；内置 flags 的 `+v2k_generate` 恢复为 `-v2k_generate`。
+- **`[sim.<id>]` 输出文件按单元 id 命名**：`connect run` 把 sim 单元写到 `sim_dir/<sim id>.sv`，不再用 `aw-tb-mod name` 当文件名；模块名仍取 `name`（如 `tb_top`），多个 sim 单元统一叫 `tb_top` 时不再在 `sim_dir` 里互相覆盖。页面 Run 的 `// --- <unit>/<file>.sv ---` 标题同步。破坏性：仿真 filelist 要改引用新文件名（demo/soc：`rtl/gen/sim/tb_top.sv` → `rtl/gen/sim/soc_tb.sv`），没有旧名回退；`connect run` 不删除旧文件，升级后手动删除。
+- **`Workspace(opts)` 不再读 `env.vars`**：注册的环境变量只有一个入口，即 `Workspace(regEnv, opts | factory)` 的第一个参数；单参数 `Workspace(opts)` 是没有注册变量的静态配置。
+- **dtsim 配置加载修复**：只有 `autowire dtsim …` 和 `dtsim` 入口读取配置，其他 autowire 命令不再 import 它、也不再在 `dt/config/.dtsim/` 写文件；`dtsim --help` / `help` / `--version` 与不带 `--recheck` 的 `results --dir` 不需要配置。`[dtsim] config` 未设置且默认文件不存在时恢复从 CWD 向上查找；配置必须位于 `<project>/dt/config/`，否则报错。配置注册的 flag 也加到 `list` / `groups` / `env`，只有命令行给出时才设置变量（未传的 `--no-cov-merge` 不再写入），与内置选项冲突时报 `dtsim: <config>: env var <name>: ...`。
+- **`dresults` 记下回归的仿真器**：`dresults` 给 `dtsim results` 传 `--tool <name>`（隐藏选项），`--recheck` 用该仿真器的 `byTool` grader，不再按当前机器的探测结果选。`results` 表不再限 120 列。Linux / macOS 上 `probe` 要求可执行位，不再尝试 `.exe` / `.cmd` / `.bat`。
+- demo：demo/dtsim 用 Workspace `top` / `wave` 和抽象基 `chip` 的 `top: "tb_chip"` / `waveDepth` / `waveScope` 演示继承，`DTSIM_SLOTS` 由 `maxSlots` 回调读取，`--random` 校验正整数；demo/soc 与 demo/hbm 注册 `--wave`（`WAVE`），demo/soc 注册 `SIM_TOOL` 并去掉排序技巧；filelist 注释不再说 dtsim 会展开 filelist。
+
+## [2.9.0] - 2026-11-20
+
+- **破坏性：`Workspace(regEnv, opts | ((mode) => opts))` 回调式配置**：第一个参数登记 config 支持的环境变量 `{ name, values?, default?, desc?, flags?, set? }`，`dtsim env` 末尾列出 "Config environment variables" 表；带 `flags` 的项注册为真正的 Commander 选项（`set` 可选，默认 switch 写 `"1"`、值选项写原始字符串）。第二个参数是静态 opts 或 `(mode: "run" | "regr") => opts` 的回调，dtsim 加载时以 mode 调用它；config 的逻辑（按 mode 开波形、算 slots、排 tools）写在回调里。静态配置可省略 regEnv，写 `Workspace({...})`。
+- **破坏性：`autowire.toml` 的 `[dtsim] config` 选择配置**（默认 `dt/config/dtsim.config.ts`）；删除 dtsim `--config`、`-s/--seed`、`--seed-file`、`--num-seeds`，seed 由 config 按注册的选项构造 `WorkspaceOpts.seeds`。
+- **破坏性：工具选择交给 config 加自动 fallback**：删除 `--tool` 和 `$DTSIM_TOOL`，子进程与 `dresults` 也不再有 `$DTSIM_TOOL`。每个 `SimTool` 新增 `probe`（需在 PATH 上的可执行文件，VCS→`vcs`、Verilator→`verilator`），dtsim 并发探测，按 `tools` 顺序选中第一个可用的；要强制某个 tool，config 在回调里调整 `tools` 顺序或过滤。
+- **破坏性：删除 `--wave` / `--cov` 等运行开关**（含 `--wave-depth`、`--wave-top`、`--cov-metrics`、`--no-cov-merge`）与 `waveFromEnv()`、`$DTSIM_WAVE*`。波形改为后端选项 `VcsTool({ wave })` / `VerilatorTool({ wave })`（`true` 或 `{ depth, top }`，case 可用 `toolOptions.wave` 覆盖）；覆盖率仍读 `DTSIM_COV*`（`covFromEnv()`）。
+- **统一仿真顶层**：VCS / Verilator 的 `top` 默认都是 `tb_top`；case 的 `toolOptions.top` 不再参与编译和仿真，顶层只由 workspace 的 tool 配置指定。
+- **DSL 默认 flags 构造器**：新增 `vcsBaseFlags(opts)` / `verilatorBaseFlags(opts)`，返回可移植的编译基线，config 展开后再追加项目特有项。SystemVerilog 强制（`-sverilog` / `--sv`），VCS 强制 `-full64`；`timescale` / `jobs` 为辅助参数，`kdb`（默认开，写 `simv.daidir` 供 `run_verdi`），`debugaccess`（`"all" | "pp" | "r" | "w" | "f" | "drivers"` → `-debug_access+<level>`），`add` 追加。wave 打开且没有设置 debug access 时后端自动加 `-debug_access+all`。
+- **`maxSlots` / `maxCompiles` 支持回调**：除数字外可写 `(ctx: { tool, launcher }) => number`，在 tool 和 launcher 选定之后求值，config 可按实际选中的 launcher 定并发数（例如 local 为 1、farm 为 jobs）。
+- **作业后端探测与顺序 fallback**：`task.launcher` 可以是列表，dtsim 并发探测每个 launcher 的提交工具是否在 PATH 上（LSF→`bsub`、Slurm→`srun`，local 永远可用），按列表顺序选中第一个可用的。单个 launcher 仍是显式选择、不探测；`DTSIM_TASK_TYPE` 强制某一个并跳过探测。
+- **作业后端生成提交备份脚本**：选中的 cluster launcher 在 `run_sim` / `run_compile` / VCS `run_verdi` 旁各写一份提交脚本（LSF `bjob_*`、Slurm `srun_*`，内容 `<bsub|srun> … bash <run 脚本>`）供手动重投；dtsim 仍内联提交，不执行这些脚本，local 不生成。`defineLauncher` 新增可选 `probe` 和 `scriptPrefix`；后端可用的 `ToolContext` 新增 `env`（子进程环境）与 `submitScript(name)`。
+- **表格填满终端宽度**：所有框线表格（Run / Summary、Regression / Summary、`results`、`groups`、`env`）按当前终端宽度排版：窄了把空余宽度加给最宽的列，宽了最宽的列折行，列不窄于表头。非终端（管道、文件）保持内容自然宽度，100 列封顶、不补空格。
+- **日志路径改为纯文本整行**：回归里每个 compile / sim 完成后的行，日志路径和大小接在 `<状态> <耗时> <名字>` 同一行末尾（`OK 00:01 compile sd_sha256  <path> (147.1 KiB)`），不再用 `└─` 另起一行。
+
+## [2.8.6] - 2026-11-19
+
+- **`cmd` 面板改为上下分割线**：TTY 下提交的命令不再放进带左右竖线的方框，而是夹在两条与终端等宽的分割线之间（顶行内嵌标题 `cmd`），没有左右边框，便于直接框选复制整条命令。
+
+## [2.8.5] - 2026-11-19
+
+- **`dtsim list` 默认展开 2 层**：`list` 不再一次展开到底，默认只显示 2 层（根加直接子用例）。`-L <n>` / `--depth <n>` 指定展开层数，`-a` / `--all` 全部展开。`list <case>` 只列出该用例（或基）及其子树，层数规则相同。
+
+## [2.8.4] - 2026-11-19
+
+- **抽象基用例**：Case 新增 `abstract: true`（像 C++ 虚类，只用于派生）。dtsim 不运行它：`run` / `env` 报错，`*` 与 `<base>.*` 等分组模式不收它，分组里直接写基名或用模式命中基时，展开成它派生出的具体用例。该标记是节点级的，派生用例继承基的选项但本身是具体用例，不继承 `abstract`。
+- **分组去掉保留字 `all`**：不再有特殊的 `all` 组。分组参数本身可以是模式：`*` = 顶层用例（原 `all` 的含义），`**` = 任意层级；`regr` / `plan` 默认组改为 `*`。`groups` 表的首行也改成 `*`。`Group(name, members)` 的成员可混用用例对象、精确 id、基名、以及 `*` / `**` 模式。
+- **文档/demo**：`docs/dtsim/README.md`、`help/dtsim.txt` 补充 `abstract`、`*` / `**` 分组、以及“派生只继承选项、是否共享编译完全由 compileKey 决定（与父子关系正交）”；`demo/dtsim` 用抽象基 `chip`（`chip.rtl` / `chip.gate`）演示。
+
+## [2.8.3] - 2026-11-19
+
+- **dtsim 不再解析 filelist**（#3）：`Workspace({ filelist })` / Case `filelist` 改为 `filelists: [...]`，按列表追加（workspace 的在前，然后是 `bareDefaults`、根用例、各级派生，每层之后是该层的 `byTool`），workspace 不再默认 `file.lst`。每个 filelist 原样作为 `-f <绝对路径>` 交给仿真器，编译在项目根目录下运行：相对路径、嵌套 `-f`、`-F`（相对文件自身目录）与 `$VAR` 都由仿真器按标准处理；展开器与编译目录里的 `filelist.f` 删除，启动前只检查列出的 filelist 存在（在 `preCompile` 之后）。VCS 加 `-Mdir=<编译目录>/csrc -o <编译目录>/simv`，Verilator 的 `-Mdir` 改为编译目录下的绝对路径，项目根不落文件；`run_verdi` 先 cd 到项目根。`ToolContext.filelist` 改为 `filelists`，新增 `interactive`。
+- **bareDefaults 进入派生链**（#5）：bareDefaults 成为每个顶层用例的最低优先级底座，用例自己的选项合并在上面（列表在后、标量覆盖），派生用例经父用例继承；原来只给裸顶层用例、且其标量会反盖用例自己的值。用例模块导出的数组、`Set`、`Map` 里的 `Case` 也会登记。
+- **DefaultGrader**（#4）：`pass` 也支持 `re:`；日志行去掉行尾 `\r`，CRLF 日志上的锚点正则可用；没有结束标记时结果带 note `not finished` 和 `Finished` 一行（列出查找的关键字）。
+- **VcsTool**（#6）：新增 `top`（`-top`，同时是 `--wave` 默认范围与 `run_verdi -t` 的 `-top`，去掉写死的 `tb_top`）、`command`（编译器命令，默认 `vcs`）、`casePlusarg`（默认 `"TEST"`，`false` 不传）；没有 `--wave` 时不写 `dump.tcl`、simv 不加 `-ucli`（`--interactive` 只加 `-ucli`）。
+- **VerilatorTool**：`top` 不再默认 `"top"`，不设时不传 `--top-module`，由 Verilator 找唯一的 top；可执行文件用 `-o` 固定为 `<mdir>/V<top>`（无 top 时 `Vsim`）；`--wave` 需要 `top`，缺少时报错。新增 `command`（默认 `verilator`）。
+- demo/soc：filelist 移到各用例（`harness.f` / `tb_mod.f` / `sv_reg.f`，VCS 为 `bareDefaults.byTool.vcs.filelists`），VCS 用 `VcsTool({ top: "tb_soc" })`。
+
+## [2.8.2] - 2026-11-19
+
+- **dtsim 多仿真器**：`Workspace({ tool })` 改为 `Workspace({ tools: [...] })`（非空列表，第一个是默认，名字不能重复）；`--tool <name>`（`$DTSIM_TOOL`）在 `run` / `regr` / `plan` / `list` / `groups` / `env` / `results` 上选择仿真器，不在 `tools` 里时加载即报错。Case 新增 `tools: ["verilator"]`（只在这些仿真器上跑，派生用例继承；`run` / `env` 报错，`regr` / `plan` 跳过并打印 `Skipped (not for <tool>): ...`，`groups` 显示每组可跑 / 跳过数）与 `byTool: { <tool>: opts }`（选中该仿真器时在这一层之上合并，`bareDefaults` 同样支持）。配置了多个仿真器时输出改到 `dt/simout/<tool>/`；回归目录的 `dresults` 记下仿真器供 `--recheck` 使用。
+- **运行开关改为环境变量**：`--wave` / `--wave-depth` / `--wave-top` / `--cov` / `--cov-metrics` / `--no-cov-merge` 只负责在加载配置前设置 `DTSIM_WAVE` / `DTSIM_WAVE_DEPTH` / `DTSIM_WAVE_TOP` / `DTSIM_COV` / `DTSIM_COV_METRICS` / `DTSIM_COV_MERGE`；后端在构造时用新导出的 `waveFromEnv()` / `covFromEnv()` 读取，`ToolContext.wave` / `ToolContext.cov` 删除。这些变量传给 compile / sim 子进程并记在 `run_compile` / `run_sim` 里。
+- **波形默认关**：`--no-wave` 删除，`--wave` 打开；`--wave-top` 不再写死 `tb_top`（VCS 不给时 dump 整个设计，Verilator 用后端的 `top`）。Verilator 后端支持波形：编译加 `--trace-fst` 并绑定生成的 `dtsim_wave` 模块，每个 seed 目录写 `wave.fst`，TB 不用改；C++ harness 需调用 `traceEverOn(true)`。Run / Regression 表新增 `Wave` 行。
+- demo/soc 的 `vcs.config.ts` 并入 `dtsim.config.ts`（`tools: [VerilatorTool(), VcsTool(...)]`，`basic_smoke` / `regfile_smoke` 两边都跑，其余三个只在 Verilator），`dt/vcs/run.sh` 改为 `--tool vcs`；`tb_main.cpp` 在 `VM_TRACE` 下开启 trace。demo/hbm 去掉 `--no-wave`。
+
 ## [2.8.1] - 2026-11-19
 
 - **`dtsim regr` 进度条**：TTY 上实时面板的最后一行改为 `<进度条>  compile x/N  sim y/M  running n  MM:SS`（原来的总计行从树上方移到这里）。进度条分两层：每个编译组占 1/N，组内每个 sim 占 1/(N·k)，一组 sim 全部跑完正好盖满该组长度。编译层从左到右为已编译蓝 `█`、编译失败灰 `█`（这一段作废，跳过的 sim 不画）、编译中 `░`（默认前景色）、待编译灰 `░`；跑完的 sim 从左边盖在已编译区上：PASS 绿、PASS WITH ERRORS 黄、其他状态红（`█`），未跑完处露出编译层。宽度取终端剩余列数，10 到 60 格。

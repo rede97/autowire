@@ -1,7 +1,7 @@
-// Terminal rendering for dtsim: tables (cli-table3), trees, status colours,
-// and a live dashboard on stderr (log-update). Colour follows chalk's
-// detection, so pipes, LSF logs and CI get plain text; `plain()` strips any
-// colour before text goes into a file.
+// Terminal rendering for dtsim: tables (cli-table3), trees and status
+// colours; the live panel is in live.ts. Colour follows chalk's detection,
+// so pipes, LSF logs and CI get plain text; `plain()` strips any colour
+// before text goes into a file.
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import Table from "cli-table3";
@@ -9,19 +9,63 @@ import Table from "cli-table3";
 export type Row = readonly string[];
 
 /** Bordered table with grey rules and bold cyan header names. `head` is
- *  optional; columns wrap at `maxWidth`. */
-export function table(
-	rows: readonly Row[],
-	head?: Row,
-	maxWidth = 100,
-): string {
+ *  optional. On a terminal the table fills the width: the widest column grows
+ *  to use the slack, or wraps so the whole row never exceeds it. A column is
+ *  never shrunk below its header. Not a TTY (pipe, file) keeps the natural
+ *  width (100-column cap), no padding. */
+export function table(rows: readonly Row[], head?: Row): string {
+	const all = head ? [head, ...rows] : rows;
+	const cols = Math.max(0, ...all.map((r) => r.length));
+	const widthOf = (c: string | undefined) =>
+		Math.max(
+			0,
+			...plain(c ?? "")
+				.split("\n")
+				.map((l) => l.length),
+		);
+	// Natural content width of each column (header included, colour stripped).
+	const target = Array.from({ length: cols }, (_, i) =>
+		Math.max(1, ...all.map((r) => widthOf(r[i]))),
+	);
+	const floor = Array.from({ length: cols }, (_, i) =>
+		Math.max(1, head ? widthOf(head[i]) : 1),
+	);
+	// cli-table3 adds 2 padding + 1 border per column plus a trailing border.
+	const term = process.stdout.columns || 100;
+	const budget = Math.max(cols, term - (cols * 3 + 1));
+	// Shrink the widest shrinkable column a step at a time until the row fits.
+	while (target.reduce((a, b) => a + b, 0) > budget) {
+		let i = -1;
+		let best = -1;
+		for (let j = 0; j < cols; j++) {
+			const w = target[j] ?? 0;
+			if (w > (floor[j] ?? 0) && w > best) {
+				best = w;
+				i = j;
+			}
+		}
+		if (i < 0) break;
+		target[i] = (target[i] ?? 0) - 1;
+	}
+	// On a terminal, grow the widest column so the whole table fills the width.
+	if (process.stdout.isTTY && cols > 0) {
+		const slack = budget - target.reduce((a, b) => a + b, 0);
+		if (slack > 0) {
+			let i = 0;
+			for (let j = 1; j < cols; j++)
+				if ((target[j] ?? 0) >= (target[i] ?? 0)) i = j;
+			target[i] = (target[i] ?? 0) + slack;
+		}
+	}
 	const t = new Table({
 		...(head ? { head: head.map((h) => chalk.bold.cyan(h)) } : {}),
+		colWidths: target.map((w) => w + 2),
 		style: { head: [], border: [] },
 		// No rule between body rows; a header still gets its own rule.
 		chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" },
 	});
-	for (const r of rows) t.push(r.map((cell) => wrap(cell, maxWidth)));
+	for (const r of rows)
+		t.push(r.map((cell, i) => wrap(cell, target[i] as number)));
 	const lines = t.toString().split("\n");
 	// Header names are single-line: draw the top border again under them.
 	if (head && lines[0]) {
@@ -34,7 +78,8 @@ export function table(
 	return lines.join("\n").replace(/[─│┌┐└┘├┤┬┴┼]+/g, (m) => chalk.gray(m));
 }
 
-/** Titled key/value block, e.g. the Run and Summary blocks of `dtsim run`. */
+/** Titled key/value block, e.g. the Run and Summary blocks of `dtsim run`.
+ *  A two-column table, so it fits the terminal width like every other table. */
 export function block(
 	title: string,
 	rows: ReadonlyArray<readonly [string, string]>,
@@ -112,27 +157,26 @@ export function fmtSize(bytes: number): string {
 }
 
 /**
- * Words in a grey box whose title sits in the top rule (`┌─ cmd ───┐`),
- * wrapped at spaces to fit `width` columns; a word longer than a row is
- * split. `paint` colours a piece of word `index`; widths use plain text.
+ * The words between a top and a bottom rule that each span `width` columns, the
+ * title sitting in the top rule (`── cmd ─────`). There are no side borders, so
+ * the command can be selected and copied verbatim. Words wrap at spaces to
+ * `width`; a word longer than a row is split. `paint` colours a piece of word
+ * `index`; widths use plain text.
  */
-export function titledBox(
+export function titledRules(
 	title: string,
 	words: readonly string[],
 	width: number,
 	paint: (piece: string, index: number) => string = (w) => w,
 ): string {
-	const inner = Math.min(
-		Math.max(title.length + 4, width - 4),
-		Math.max(title.length + 3, words.join(" ").length),
-	);
+	const wrapWidth = Math.max(1, width);
 	type Piece = { text: string; index: number };
 	const rows: Piece[][] = [[]];
 	let used = 0;
 	words.forEach((word, index) => {
-		for (let i = 0; i < Math.max(1, word.length); i += inner) {
-			const text = word.slice(i, i + inner);
-			if (used > 0 && used + 1 + text.length > inner) {
+		for (let i = 0; i < Math.max(1, word.length); i += wrapWidth) {
+			const text = word.slice(i, i + wrapWidth);
+			if (used > 0 && used + 1 + text.length > wrapWidth) {
 				rows.push([]);
 				used = 0;
 			}
@@ -141,11 +185,10 @@ export function titledBox(
 		}
 	});
 	const g = chalk.gray;
-	const top = `${g("┌─ ")}${chalk.bold(title)}${g(` ${"─".repeat(inner - title.length - 1)}┐`)}`;
-	const body = rows.map((row) => {
-		const len = row.reduce((n, p, i) => n + (i > 0 ? 1 : 0) + p.text.length, 0);
-		const text = row.map((p) => paint(p.text, p.index)).join(" ");
-		return `${g("│")} ${text}${" ".repeat(inner - len)} ${g("│")}`;
-	});
-	return [top, ...body, g(`└${"─".repeat(inner + 2)}┘`)].join("\n");
+	const fill = Math.max(0, width - (title.length + 4));
+	const top = `${g("── ")}${chalk.bold(title)}${g(` ${"─".repeat(fill)}`)}`;
+	const body = rows.map((row) =>
+		row.map((p) => paint(p.text, p.index)).join(" "),
+	);
+	return [top, ...body, g("─".repeat(wrapWidth))].join("\n");
 }

@@ -46,9 +46,9 @@ describe("workspace output", () => {
 	test("output moves every run under the resolved directory", async () => {
 		const ws = await makeWorkspace(
 			CASES_TS.replace(
-				'filelist: "file.lst",',
+				'filelists: ["file.lst"],',
 				// biome-ignore lint/suspicious/noTemplateCurlyInString: dtsim placeholder
-				'filelist: "file.lst", output: "${workspace}/temp/output",',
+				'filelists: ["file.lst"], output: "${workspace}/temp/output",',
 			),
 		);
 		const loaded = await loadWorkspace({ config: ws.config });
