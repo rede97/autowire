@@ -1,3 +1,8 @@
+/**
+ * 当前这个方案实现的不是很累 需要改造。Wire不应当是一个值类型
+ * */
+
+
 type Bit = 0 | 1;
 
 type BuildFixedArray<
