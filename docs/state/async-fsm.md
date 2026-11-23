@@ -4,7 +4,7 @@
 > 来源：初稿 `demo/state/demo.md` 与值模型试验 `demo/state/demo.ts`，已并入本文后删除；原文见 git 提交 `21cb9ca`。本文是这套设计的唯一来源。
 > 初稿没说清的地方标为「决定」（本文给出的取舍）或「开放」（§10，需作者拍板）。
 > 作者源码是 **ECMAScript**（`.mjs`），不是 TypeScript：端口方向和位宽是运行时可见的值（§2.2），状态名用原生标签语句（§3.5）。选型理由见 §8.2。
-> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例与 §6.5 的 `aw_dff` 一起要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。示例、生成规则任何一方改动，都要同步更新另一方；将来 `demo/state/` 有可运行示例时，它与本文的对照示例保持一致。
+> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例与 §6.5 的 `aw_dff` 一起要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。除 §7.1 外，SV 示例省略文件头（§7.1）。示例、生成规则任何一方改动，都要同步更新另一方；将来 `demo/state/` 有可运行示例时，它与本文的对照示例保持一致。
 
 ## 背景
 
@@ -23,7 +23,7 @@
 
 不做：
 
-- 四则运算、数据通路、流水线、脉动阵列。这些写在 SV 里，DSL 只消费其结果信号。
+- 四则运算、有符号比较、数据通路、流水线、脉动阵列。这些写在 SV 里：DSL 只消费其结果信号，或调用用户 package 里的 SV 函数（§2.3）。
 - 多时钟域、CDC。一个 async 函数属于一个时钟和一个复位（**决定**，初稿未提）。
 
 ## 1. 术语
@@ -55,7 +55,7 @@
 
 ### 2.1 组合运算
 
-运算只限逻辑与比较，直接用 ES 运算符书写；结果是新的 channel，生成一条 `assign`。
+运算只限逻辑、比较和位选，直接用 ES 运算符书写；结果是新的 channel，生成一条 `assign`。
 
 | 运算符 | 含义 | 输入位宽 | 输出位宽 |
 |---|---|---|---|
@@ -63,10 +63,17 @@
 | `~` | 按位取反 | N | N |
 | `!` `&&` `\|\|` | 逻辑非 / 与 / 或 | 1 | 1 |
 | `===` `!==` | 等于 / 不等 | 两侧同为 N | 1 |
-| `<` `>` `<=` `>=` | 比较 | 两侧同为 N | 1（有无符号：开放，暂定无符号） |
+| `<` `>` `<=` `>=` | 无符号比较 | 两侧同为 N | 1 |
+| `x.bits(i)` | 取第 i 位 | N | 1 |
+| `x.bits(hi, lo)` | 取 hi 到 lo 的位段 | N | hi − lo + 1 |
 
 - 数字字面量取另一侧 channel 的位宽，不必写 `Const(8, 0xff)`。值超出位宽、或两侧都是字面量时，编译期报错。
-- 其余运算符编译期报错：`==` / `!=`（统一写 `===` / `!==`）、`+ - * / %`、`<< >> >>>`、`**`。四则运算外包给 SV（§0）。
+- 其余运算符编译期报错：`==` / `!=`（统一写 `===` / `!==`）、`+ - * / %`、`<< >> >>>`、`**`。这些计算写成用户 SV 函数（§2.3）。
+- 位选的下标必须是整数字面量，满足 `N > hi ≥ lo ≥ 0`，否则编译期报错。不支持变量下标：那是一个多路选择器，写成用户函数。
+- 位选写成方法调用 `bits`，不用 `[]`：SV 的 `x[hi:lo]` 在 ES 里是语法错误，而 `x[hi, lo]` 是逗号表达式，ES 会把它读成 `x[lo]`，容易误读。`bits` 是检查器认识的内建方法，和 `wait` / `read` 一样只作用于 channel。
+- 被选的对象必须是有名字的 channel（端口、`Dff` 的 `val`、`const` 绑定的 channel）或用户函数调用结果。生成器在需要时先把它落成一根线再选，因为 SV 不允许对表达式或函数调用结果直接位选。
+- **不支持拼接和移位（决定）**。ES 没有拼接运算符，数组字面量 `[a, b]` 不被解释为拼接，编译期报错；`<<` / `>>` / `>>>` 同样报错。这两类变换写成用户函数（§2.3）。
+- 比较只按无符号（**决定**）。DSL 不提供有符号类型，也不提供有符号比较；需要有符号判断时调用用户函数，这是 §2.3 的典型用法。
 - 位宽不一致编译期报错（**决定**）。
 - 优先级沿用 ES 解析结果。ES 的 `===` 比 `&` 结合得紧，与 SV 中 `==` 和 `&` 的相对次序一致；生成 SV 时统一加满括号，不依赖两边优先级逐条相同。
 
@@ -74,6 +81,7 @@
 
 ```js
 const next_cond = msg_valid & !skip & (msg_val === 0xff);
+const is_wr = ports.cmd.bits(31) & (ports.cmd.bits(27, 24) === 0x3);
 WaitMsg: await next_cond.wait(1);
 ```
 
@@ -81,11 +89,13 @@ WaitMsg: await next_cond.wait(1);
 
 ```systemverilog
 assign next_cond = msg_valid & !skip & (msg_val == 8'hff);
+assign is_wr     = cmd[31] & (cmd[27:24] == 4'h3);
 assign move_to_X = (state_val == WaitMsg) & next_cond;   // X：WaitMsg 之后的状态
 ```
 
 - DSL 的 `===` / `!==` 生成 SV 的 `==` / `!=`。SV 的 `===` 是四态逐位比较，语义不同，不生成。
-- 字面量按另一侧位宽写成带宽度的常量（`8'hff`）。
+- 字面量按另一侧位宽写成带宽度的常量：`msg_val` 是 8 位，生成 `8'hff`；`cmd.bits(27, 24)` 是 4 位，生成 `4'h3`。
+- `x.bits(hi, lo)` 生成 `x[hi:lo]`，`x.bits(i)` 生成 `x[i]`。
 
 ### 2.2 端口声明
 
@@ -129,6 +139,112 @@ module fsm_drive_signal (
   output logic [7:0] fifo_b_data
 );
 ```
+
+### 2.3 调用用户 SV 函数
+
+较复杂的组合逻辑和信号转换（有符号比较、取绝对值、拼接、移位、变量下标选择、字段解码）写在用户自己的 SV package 里，DSL 声明函数签名后直接调用。DSL：
+
+```js
+const num_pkg = SvPackage("num_pkg", {
+  lt_s8: SvFunction({ args: { a: 8, b: 8 }, ret: 1 }),
+  abs8:  SvFunction({ args: { x: 8 }, ret: 8 }),
+});
+
+const CmpPorts = Ports({
+  vld: Input(1),
+  err: Input(8),
+  limit: Input(8),
+  mag: Dff(8),
+  alarm: Output(1),
+});
+
+export const cmp_fsm = Fsm(CmpPorts, async (ports) => {
+  const below = num_pkg.lt_s8(ports.err, ports.limit);   // signed compare, done in SV
+  IDLE: await (ports.vld & below).wait(1);
+  ports.mag.set(num_pkg.abs8(ports.err));
+  ports.alarm.pulse();
+  Hold: await (ports.vld & !below).wait(1);
+});
+```
+
+用户自己的 package（不是生成物）：
+
+```systemverilog
+package num_pkg;
+  // user code: signed compare and magnitude on 8-bit two's complement
+  function automatic logic lt_s8(input logic signed [7:0] a, input logic signed [7:0] b);
+    return a < b;
+  endfunction
+  function automatic logic [7:0] abs8(input logic signed [7:0] x);
+    return x[7] ? -x : x;
+  endfunction
+endpackage
+```
+
+生成的 SV：
+
+```systemverilog
+package cmp_fsm_pkg;
+  typedef enum logic [0:0] {IDLE, Hold} state_t;
+endpackage
+
+module cmp_fsm
+  import cmp_fsm_pkg::*;
+(
+  input  logic       clk,
+  input  logic       rst_n,
+  input  logic       vld,
+  input  logic [7:0] err,
+  input  logic [7:0] limit,
+  output logic [7:0] mag,
+  output logic       alarm
+);
+  state_t     state_val, state_next;
+  logic       fn_lt_s8_0;
+  logic [7:0] fn_abs8_0;
+  logic       move_to_Hold;
+
+  // user functions: one wire per distinct call
+  assign fn_lt_s8_0 = num_pkg::lt_s8(err, limit);
+  assign fn_abs8_0  = num_pkg::abs8(err);
+
+  assign move_to_Hold = (state_val == IDLE) & vld & fn_lt_s8_0;
+
+  always_comb begin
+    state_next = state_val;
+    unique case (state_val)
+      IDLE:    if (vld &  fn_lt_s8_0) state_next = Hold;
+      Hold:    if (vld & !fn_lt_s8_0) state_next = IDLE;
+      default:                        state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  aw_dff #(.T(logic [7:0])) u_mag (.clk, .rst_n,
+    .set(move_to_Hold), .next(fn_abs8_0), .val(mag));            // ports.mag.set(num_pkg.abs8(ports.err))
+  assign alarm = move_to_Hold;                                    // ports.alarm.pulse()
+endmodule
+```
+
+| DSL | SV |
+|---|---|
+| `SvPackage("num_pkg", {...})` | 不生成任何东西；只声明用户 package 的名字和函数签名 |
+| `num_pkg.lt_s8(ports.err, ports.limit)` | `fn_lt_s8_0 = num_pkg::lt_s8(err, limit)`，结果是 1 位 channel |
+| `ports.mag.set(num_pkg.abs8(ports.err))` | `u_mag.next = fn_abs8_0` |
+
+规则：
+
+- `SvPackage(...)` 与 `Ports(...)` 一样，必须是模块顶层的 `const`，参数是字面量。`args` 按声明顺序对应 SV 形参，值是位宽；`ret` 是返回值位宽。
+- 调用结果是一个普通 channel，位宽为 `ret`，可以参与 §2.1 的运算、`wait`、`read`、`Dff.set` 和 `push` 的数据。实参只能是 channel 或数字字面量；字面量取对应形参的位宽。
+- 实参个数和位宽在编译期检查（§8.3）。签名与 package 源码是否一致，DSL 不检查：RtlIndex 只按名字记录 package（[hdxml/module-info.md](../hdxml/module-info.md) B-5），不含函数签名；不一致由 SV 编译器（Verilator 等）报错。见 §10。
+- 生成的 SV 一律用作用域调用 `pkg::fn(...)`，不写 `import pkg::*`，避免与状态 enum 成员重名。
+- 相同函数加相同实参只生成一根线（`fn_<函数名>_<序号>`），被条件和动作共用。
+- 组合 channel 的 `const` 定义（运算或函数调用）不是动作，可以写在第一个 `await` 之前；它在每一拍都有值。
+- 用户函数必须是 `function automatic`、纯组合、无副作用，作者负责。它的输入只能是 channel，主状态不是 channel，传不进去，所以 §6.5 的状态机识别条件不受影响。
+- 用户 package 是分析与仿真 filelist 的输入，必须排在生成的 `.sv` 之前编译。
 
 ## 3. 状态与节拍
 
@@ -714,7 +830,7 @@ state_next_o = move_to_S 时输出成员 S；state_set_o = 0 时取 state_val_o
 
 ## 7. 生成 SV 的约定
 
-完整的对照示例在各节里：§3.2（顺序、push、join、`exportState`）、§4（分支与子状态机调用）、§5（被调用方与隐式 `IDLE`）、§6.1（脉冲与 DFF 输出）、§6.5（`Dff(N)` 端口）。这些示例与 `aw_dff` 一起过了 Verilator 5.050 `--lint-only -Wall -Wno-DECLFILENAME`（实测）。本节只列它们共同遵守的约定。
+完整的对照示例在各节里：§2.1（运算与位选）、§2.3（用户函数）、§3.2（顺序、push、join、`exportState`）、§4（分支与子状态机调用）、§5（被调用方与隐式 `IDLE`）、§6.1（脉冲与 DFF 输出）、§6.5（`Dff(N)` 端口）。其中完整模块与 `aw_dff` 一起过了 Verilator 5.050 `--lint-only -Wall -Wno-DECLFILENAME`（实测）。本节只列它们共同遵守的约定。
 
 | DSL | SV |
 |---|---|
@@ -722,6 +838,7 @@ state_next_o = move_to_S 时输出成员 S；state_set_o = 0 时取 state_val_o
 | 状态标签 `S:` | `state_t` 的成员 `S`，名字原样，缺省不写数值（§6.5） |
 | 进入 `S` 的 move | `logic move_to_S`，只在有消费者时生成（§4） |
 | `Ports({...})` 的端口 | 同名端口；`PushPort(N)` 展开为 `<name>_vld` / `<name>_rdy` / `<name>_data`；`Dff(N)` 是输出口 `<name>`（`aw_dff` 的 `val`）；`Dff(N, { external: true })` 展开为 `<name>_set` / `<name>_next` / `<name>_val` |
+| 用户函数调用 | `fn_<函数名>_<序号> = pkg::fn(...)`，相同调用共用一根线（§2.3） |
 | 时钟、复位 | 生成器加上 `clk` / `rst_n`（`negedge` 异步低有效） |
 | 主状态 | 本模块内的 `state_val` / `state_next`，一个 `always_comb` + 一个 `always_ff`（§6.5） |
 | 其他寄存器（`DFF`、`pending`、`fin`、`data`） | `aw_dff` 实例 `u_<名字>`，端口 `set` / `next` / `val`，`val` 接到 `<名字>_val` |
@@ -729,7 +846,97 @@ state_next_o = move_to_S 时输出成员 S；state_set_o = 0 时取 state_val_o
 | 被调用方 | 隐式入口状态 `IDLE`，端口 `start` / `done`（/ `result`） |
 
 - 次态的 `case` 与 move 信号表达的是同一组转移；生成器从同一张转移表写出两者，不会不一致。
-- 生成的 SV 注释用英文（仓库约束）。
+- 生成器自己写的注释用英文（仓库约束）；作者的业务注释原样搬运（§7.1）。
+
+### 7.1 文件头与业务注释
+
+**文件头（决定）**：每个生成的 `.sv` 第一行标明是生成物、不得手改、源文件在哪，格式与仓库现有生成器一致（`src/core/printer.ts`、`src/plugins/wishbone-*` 的 `// Generated by autowire … Do not edit…`）：
+
+```systemverilog
+// Generated by autowire fsm (act_demo). Do not edit: SoT is fsm/act_demo.mjs.
+```
+
+括号里是 `Fsm` 的绑定名，`SoT is` 后是 DSL 源文件相对工作区的路径。生成物要改，就改 `.mjs` 再重新生成。落地时把输出目录加进 `AGENTS.md` 的「Generated and MUST NOT be hand-edited」清单（输出目录见 §10）。
+
+**业务注释（决定）**：只搬运一处注释，即紧挨在 `export const X = Fsm(...)` 前面的 `/** … */`，放在 `module X` 之前，说明这个状态机整体做什么。状态、端口、分支的细节不搬运，读 RTL 的人按文件头里的 SoT 路径去看 `.mjs` 源码里的注释。
+
+- 只认这一处 `/** … */`。源码里其他位置的注释（`//`、`/* … */`、别处的 `/** … */`）都是给读源码的人看的，不搬运，也不报错。
+- 「紧挨在前面」指两者之间只有空白。
+- 去掉每行开头的 `*` 和首尾空行后，每行生成一行 `// `。
+- 文本原样搬运，不翻译。仓库的英文约束管的是生成器自己写的注释；作者用什么语言由作者决定，RTL 文件按 UTF-8 写出。
+- ES 解析器需要能给出注释及其位置（acorn 的 `onComment` 可以，§10 的解析器选型要满足这一点）。
+
+DSL：
+
+```js
+const ActPorts = Ports({
+  go: Input(1),      // start request from the host
+  stop: Input(1),
+  cnt_clr: Output(1),
+  active: Dff(1),
+});
+
+/**
+ * Counter control.
+ * Clears the counter on go and holds active high until stop.
+ */
+export const act_demo = Fsm(ActPorts, async (ports) => {
+  IDLE: await ports.go.wait(1);
+  ports.cnt_clr.pulse();
+  ports.active.set(1);
+  Run:  await ports.stop.wait(1);   // active stays high here
+  ports.active.set(0);
+});
+```
+
+生成的 SV（完整文件；`go`、`Run` 后面的 `//` 注释不搬运）：
+
+```systemverilog
+// Generated by autowire fsm (act_demo). Do not edit: SoT is fsm/act_demo.mjs.
+
+package act_demo_pkg;
+  typedef enum logic [0:0] {IDLE, Run} state_t;
+endpackage
+
+// Counter control.
+// Clears the counter on go and holds active high until stop.
+module act_demo
+  import act_demo_pkg::*;
+(
+  input  logic clk,
+  input  logic rst_n,
+  input  logic go,
+  input  logic stop,
+  output logic cnt_clr,
+  output logic active
+);
+  state_t state_val, state_next;
+  logic   move_to_Run, move_to_IDLE;
+
+  assign move_to_Run  = (state_val == IDLE) & go;
+  assign move_to_IDLE = (state_val == Run)  & stop;
+
+  always_comb begin
+    state_next = state_val;
+    unique case (state_val)
+      IDLE:    if (go)   state_next = Run;
+      Run:     if (stop) state_next = IDLE;
+      default:           state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  assign cnt_clr = move_to_Run;                                 // ports.cnt_clr.pulse()
+  aw_dff u_active (.clk, .rst_n,
+    .set(move_to_Run | move_to_IDLE),                           // active.set(1) / active.set(0)
+    .next(move_to_Run), .val(active));
+endmodule
+```
+
+没有业务注释时，`module` 前不生成注释块。
 
 ## 8. 实现路线：为什么需要编译器前端
 
@@ -792,7 +999,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 |---|---|
 | `Ports(...)` / `Fsm(...)` 是模块顶层 `const`，参数是字面量；内建名按 import 绑定识别 | §2.2、§5、§8.2 |
 | 端口方向：`Input` 不能被动作驱动，`Output` 不能被读 | §2 |
-| 运算符白名单；位宽一致；字面量位宽和取值范围 | §2.1 |
+| 运算符白名单（拼接、移位、变量下标报错）；位宽一致；字面量位宽和取值范围；`bits` 的下标为字面量且在范围内 | §2.1 |
 | 状态标签：所在语句的形状、函数内唯一、合法 SV 标识符 | §3.5 |
 | `read()` 的结果只用在分支条件里 | §4 |
 | 悬空 Future | §6.3 |
@@ -801,7 +1008,8 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | 状态机核心只读输入和各 DFF 的 `val`，不读自己的输出（组合环） | §6.5 |
 | 被调用方不得把 `IDLE` 用作标签；顶层第一个 `await` 之前不得有动作 | §5 |
 | `Fsm(...)` 第三个参数的选项名和取值（`stateReg`、`exportState`、`stateValues`）；`Dff` 的选项（`reset`、`external`，两者不能同时出现） | §2.2、§6.5 |
-| 子集：拒绝闭包捕获可变变量、任意 JS 函数调用、递归、动态属性 | §8.2 |
+| `SvPackage(...)` 是模块顶层 `const`，参数是字面量；调用的实参个数、位宽与声明一致 | §2.3 |
+| 子集：拒绝闭包捕获可变变量、`SvPackage` 以外的任意 JS 函数调用、递归、动态属性 | §8.2 |
 
 ## 9. 相对初稿的改动
 
@@ -821,15 +1029,14 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 ## 10. 开放问题
 
 1. 循环：`while` / `for` 的语义（回边上的段在哪一拍执行），以及顶层是否必须写 `while (true)`。初稿未涉及，但重试、逐个处理消息都离不开它。
-2. 位选、拼接是否属于「逻辑运算」。不支持的话，多位字段的比较要先在 SV 里拆好。
-3. 大于 / 小于的有无符号。
-4. 互斥被调用方之间的局部寄存器复用（§5.1 第二步）：如何证明互斥（同一状态机内的顺序调用可证；跨状态机不可证），以及复用后的复位语义。
-5. 端口寄存器选项的 API（§6.4）。
-6. 状态编码：内部编码交给综合器，enum 缺省不写数值（§6.5）。软件怎么拿到成员值或 `stateValues`（随 regfile 的 C / UVM 导出，或由本编译器单独导出头文件）未定。
-7. 工具链接入：输出 `.sv` 放到哪个目录、由哪个命令写出（例如做成 `plugin <name> run`）。落地前不加命令，不写 help。
-8. 编译器的子集边界（§8.2）：允许哪些 ES 语法，例如 `const` 别名、辅助函数是否可内联、箭头函数和 `async function` 是否都接受。
-9. ES 解析器选型（§8.2）：acorn 或其他纯 JS 解析器；要求能给出行列号、支持 ES2022 及以上。引入前确认打包进 `autowire.js` 后的体积。
-10. 内建名的 import 路径（§8.2），例如 `autowire/fsm`；检查器只认这个路径导入的绑定。
-11. 导出口的命名（`state_set_o` / `state_next_o` / `state_val_o`）与仓库 connect、regfile 端口命名惯例对齐。
-12. 用 Yosys 实测 §3.2 / §4 / §5 / §6.1 / §6.5 的 SV 能被 `fsm_detect` 识别，以及 VCS FSM 覆盖率能否提取（本机暂无这两个工具）。`stateReg: "dff"` 在 `synth -flatten` 后是否也能被识别，同样待测。
-13. 同一个 `Fsm` 既被调用又被当作顶层时（§5）：生成两个模块，还是要求作者显式标出。
+2. 用户函数签名与 package 源码的一致性：现在只靠 SV 编译器报错（§2.3）。若 hdxml 将来在 RtlIndex 里记录 package 函数签名，检查器可以改为对照检查，`SvFunction` 的位宽也可以省略。另外，形参或返回值是 packed struct 等用户类型时怎么声明未定。
+3. 互斥被调用方之间的局部寄存器复用（§5.1 第二步）：如何证明互斥（同一状态机内的顺序调用可证；跨状态机不可证），以及复用后的复位语义。
+4. 端口寄存器选项的 API（§6.4）。
+5. 状态编码：内部编码交给综合器，enum 缺省不写数值（§6.5）。软件怎么拿到成员值或 `stateValues`（随 regfile 的 C / UVM 导出，或由本编译器单独导出头文件）未定。
+6. 工具链接入：输出 `.sv` 放到哪个目录、由哪个命令写出（例如做成 `plugin <name> run`）。落地前不加命令，不写 help。
+7. 编译器的子集边界（§8.2）：允许哪些 ES 语法，例如 `const` 别名、辅助函数是否可内联、箭头函数和 `async function` 是否都接受。
+8. ES 解析器选型（§8.2）：acorn 或其他纯 JS 解析器；要求能给出行列号和注释位置（§7.1）、支持 ES2022 及以上。引入前确认打包进 `autowire.js` 后的体积。
+9. 内建名的 import 路径（§8.2），例如 `autowire/fsm`；检查器只认这个路径导入的绑定。
+10. 导出口的命名（`state_set_o` / `state_next_o` / `state_val_o`）与仓库 connect、regfile 端口命名惯例对齐。
+11. 用 Yosys 实测 §2.3 / §3.2 / §4 / §5 / §6.1 / §6.5 / §7.1 的 SV 能被 `fsm_detect` 识别，以及 VCS FSM 覆盖率能否提取（本机暂无这两个工具）。`stateReg: "dff"` 在 `synth -flatten` 后是否也能被识别，同样待测。
+12. 同一个 `Fsm` 既被调用又被当作顶层时（§5）：生成两个模块，还是要求作者显式标出。
