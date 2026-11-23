@@ -175,7 +175,7 @@ export function toolContext(
 		env,
 		expand: expandFor(ws, c.id, dir, seed),
 		resolvePath: (text) => resolvePath(text, varsFor(ws, c.id, dir, seed)),
-		submitScript: (scriptName) => {
+		submitScript: (scriptName, submitOpts) => {
 			const launcher = ws.task.launcher;
 			if (!launcher.scriptPrefix) return;
 			const argv = wrapCommand(
@@ -197,6 +197,7 @@ export function toolContext(
 				dir,
 				`${launcher.scriptPrefix}_${scriptName.replace(/^run_/, "")}`,
 				argv,
+				submitOpts,
 			);
 		},
 	};

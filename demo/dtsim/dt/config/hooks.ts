@@ -72,5 +72,6 @@ export async function recordResult(ctx: HookContext): Promise<void> {
 		() => "case,seed,status,dir\n",
 	);
 	await appendFile(csv, `${header}${ctx.caseId},${ctx.seed},${ctx.status},${ctx.dir}\n`);
-	if (ctx.status === "PASS") await rm(join(ctx.dir, "verilog.fsdb"), { force: true });
+	if (ctx.status === "PASS")
+		await rm(join(ctx.dir, `${ctx.caseId}.fsdb`), { force: true });
 }

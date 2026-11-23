@@ -89,7 +89,7 @@ function casePlusarg(opts: Record<string, unknown>): string | false {
 
 /** fsdb dump through -ucli (written only with waves on). */
 function dumpTcl(wave: WaveSpec): string {
-	return `fsdbDumpfile verilog.fsdb
+	return `fsdbDumpfile "$env(output_dir)/$env(DTSIM_CASE).fsdb"
 fsdbDumpvars ${wave.depth} ${wave.scope} "+all"
 fsdbDumpSVA
 fsdbDumpon
@@ -108,7 +108,7 @@ function verdiScript(ctx: ToolContext): string {
 # (simv.daidir) and the seed's fsdb, in this script's own directory.
 ${exports}
 cd "$(dirname "$0")" || exit 1
-verdi -dbdir ${join(ctx.compileDir, "simv.daidir")} -top ${ctx.caseOpts.top} -ssf ${join(ctx.dir, "verilog.fsdb")} &
+verdi -dbdir ${join(ctx.compileDir, "simv.daidir")} -top ${ctx.caseOpts.top} -ssf "\${output_dir}/\${DTSIM_CASE}.fsdb" &
 `;
 }
 
@@ -172,7 +172,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 				const script = join(ctx.dir, "run_verdi");
 				writeFileSync(script, verdiScript(ctx));
 				chmodSync(script, 0o755);
-				ctx.submitScript("run_verdi");
+				ctx.submitScript("run_verdi", { background: true });
 			}
 		},
 

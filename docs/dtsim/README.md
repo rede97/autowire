@@ -402,11 +402,14 @@ demo/soc 用一份配置跑 Verilator（C++ harness）与 VCS（纯 SV aw-tb-mod
 `wave` 打开时 `waveDepth` / `waveScope` 也进入编译 key（dump 是编译进去的），关闭时不影响分组。
 
 - VCS：wave 开启时编译目录写 `dump.tcl`（`fsdbDumpvars <depth> <scope> "+all"`），simv 用
-  `-ucli -i dump.tcl` 运行，每个 seed 写 `verilog.fsdb` 和 `run_verdi`；flags 里没有 debug access
+  `-ucli -i dump.tcl` 运行，每个 seed 写 `<case id>.fsdb` 和 `run_verdi`；`dump.tcl` 用
+  `$env(output_dir)/$env(DTSIM_CASE).fsdb` 定位波形，`run_verdi` 用同一对变量拼 `-ssf`，
+  所以同一编译组的每个 case 都有自己的文件名；flags 里没有 debug access
   时补 `-debug_access+all`，没有 `-kdb` 时补 `-kdb`。关闭时不写 `dump.tcl`，simv 不加 `-ucli`
   （`--interactive` 只加 `-ucli`）。
 - Verilator：wave 开启时加 `--trace-fst` 并编译一个绑定到 `top` 的 `dtsim_wave.sv`
-  （`$dumpvars(depth, scope)`），每个 seed 写 `wave.fst`；C++ harness 需调用
+  （`$dumpvars(depth, scope)`），仿真参数 `+DTSIM_WAVE_FILE=<seed dir>/<case id>.fst`
+  指定输出，每个 seed 写 `<case id>.fst`；C++ harness 需调用
   `VerilatedContext::traceEverOn(true)`。
 - 让用户从命令行开波形：注册 `{ name: "WAVE", flags: "--wave" }`，回调里写
   `wave: process.env.WAVE === "1"`（demo/hbm、demo/soc）。
@@ -493,8 +496,9 @@ built-ins' own `queue`; it is `""` when unset.
 Next to `run_sim`, `run_compile` and (VCS) `run_verdi`, a cluster launcher also
 writes a submit wrapper — `bjob_*` for LSF, `srun_*` for Slurm — that submits
 that script through the launcher (e.g. `./bjob_sim` runs `bsub … bash run_sim`). They are backups to
-resubmit by hand; dtsim submits inline and does not run them. `LocalLauncher`
-writes none.
+resubmit by hand; dtsim submits inline and does not run them. `bjob_verdi` and
+`srun_verdi` end in `&` so launching the GUI returns immediately; compile and
+sim wrappers still wait for their jobs. `LocalLauncher` writes none.
 
 ## Environment isolation
 

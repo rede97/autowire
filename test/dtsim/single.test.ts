@@ -245,6 +245,9 @@ describe("single case", () => {
 		expect(r.code).toBe(0);
 		const onDir = join(on.out, "test_hello_world");
 		const tcl = await Bun.file(join(onDir, "dump.tcl")).text();
+		expect(tcl).toContain(
+			'fsdbDumpfile "$env(output_dir)/$env(DTSIM_CASE).fsdb"',
+		);
 		expect(tcl).toContain('fsdbDumpvars 2 tb_top "+all"');
 		expect(await Bun.file(join(onDir, "8", "sim.log")).text()).toContain(
 			"-ucli -i",
@@ -343,6 +346,8 @@ describe("vcs options", () => {
 		expect(text).toContain("export DTSIM_CASE=");
 		expect(text).toContain("-dbdir");
 		expect(text).toContain("simv.daidir");
+		expect(text).toContain(`-ssf "\${output_dir}/\${DTSIM_CASE}.fsdb"`);
+		expect(text).not.toContain("verilog.fsdb");
 	});
 
 	test("casePlusarg renames or drops the case plusarg", async () => {
@@ -522,8 +527,16 @@ export default Workspace([], (mode) => {
 			"--trace-fst",
 		);
 		const dump = await Bun.file(join(dir, "dtsim_wave.sv")).text();
+		expect(dump).toContain('$value$plusargs("DTSIM_WAVE_FILE=%s", wave_file)');
+		expect(dump).toContain("$dumpfile(wave_file)");
 		expect(dump).toContain("$dumpvars(0, tb_top)");
 		expect(dump).toContain("bind tb_top dtsim_wave");
+		expect(await Bun.file(join(dir, "3", "run_sim")).text()).toContain(
+			"+DTSIM_WAVE_FILE=",
+		);
+		expect(await Bun.file(join(dir, "3", "run_sim")).text()).toContain(
+			"/split.fst",
+		);
 	});
 
 	test("a case limited by tools is refused by run and skipped by plan", async () => {

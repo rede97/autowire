@@ -379,8 +379,9 @@ export type ToolContext = {
 	 *  dt/config; unknown names throw. For paths a backend reads or writes. */
 	resolvePath: (text: string) => string;
 	/** Write a cluster submit wrapper (bjob_ / srun_ prefix) next to a run script a
-	 *  backend generated, e.g. submitScript("run_verdi"); no-op on local. */
-	submitScript: (scriptName: string) => void;
+	 *  backend generated, e.g. submitScript("run_verdi"); no-op on local.
+	 *  background returns from the wrapper without waiting for a GUI. */
+	submitScript: (scriptName: string, opts?: { background?: boolean }) => void;
 };
 
 /** The merged case options a compile key is computed from (placeholders intact). */

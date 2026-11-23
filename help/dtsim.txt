@@ -41,6 +41,9 @@ Tools, top, wave and coverage (config-owned)
   waveScope (default: the case's top) are Workspace defaults; a case sets its
   own, derived cases inherit it. top, and with wave on also depth/scope, are in
   the compile key. A --wave flag is a config's registered WAVE option.
+  Wave files are <case id>.fsdb (VCS) / <case id>.fst (Verilator) in each seed
+  dir. run_verdi uses ${output_dir}/${DTSIM_CASE}.fsdb; bjob_verdi/srun_verdi end
+  in & to return immediately (compile/sim wrappers still wait).
   Coverage: DTSIM_COV / DTSIM_COV_METRICS / DTSIM_COV_MERGE.
 
 Agent workflow
