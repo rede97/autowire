@@ -90,7 +90,8 @@ WaitMsg: await next_cond.wait(1);
 ```systemverilog
 assign next_cond = msg_valid & !skip & (msg_val == 8'hff);
 assign is_wr     = cmd[31] & (cmd[27:24] == 4'h3);
-assign move_to_X = (state_val == WaitMsg) & next_cond;   // X：WaitMsg 之后的状态
+// in the next-state block (§6.5):
+//   WaitMsg: if (next_cond) begin state_next = X; move_to_X = 1'b1; end
 ```
 
 - DSL 的 `===` / `!==` 生成 SV 的 `==` / `!=`。SV 的 `===` 是四态逐位比较，语义不同，不生成。
@@ -208,14 +209,19 @@ module cmp_fsm
   assign fn_lt_s8_0 = num_pkg::lt_s8(err, limit);
   assign fn_abs8_0  = num_pkg::abs8(err);
 
-  assign move_to_Hold = (state_val == IDLE) & vld & fn_lt_s8_0;
-
   always_comb begin
-    state_next = state_val;
+    state_next   = state_val;
+    move_to_Hold = 1'b0;
     unique case (state_val)
-      IDLE:    if (vld &  fn_lt_s8_0) state_next = Hold;
-      Hold:    if (vld & !fn_lt_s8_0) state_next = IDLE;
-      default:                        state_next = IDLE;
+      IDLE:
+        if (vld & fn_lt_s8_0) begin
+          state_next   = Hold;
+          move_to_Hold = 1'b1;
+        end
+      Hold:
+        if (vld & !fn_lt_s8_0) state_next = IDLE;
+      default:
+        state_next = IDLE;
     endcase
   end
 
@@ -318,19 +324,32 @@ module fsm_drive_signal
   logic   a_pending_val, a_done, a_fin_val;
   logic   b_pending_val, b_done, b_fin_val;
 
-  // moves: (state_val == S) & condition of the await in S
-  assign join_SendMsg    = (a_done | a_fin_val) & (b_done | b_fin_val);
-  assign move_to_SendMsg = (state_val == IDLE)    & cond_init;
-  assign move_to_MsgSent = (state_val == SendMsg) & join_SendMsg;
-  assign move_to_IDLE    = (state_val == MsgSent) & cond_a;       // tail segment = done
+  assign join_SendMsg = (a_done | a_fin_val) & (b_done | b_fin_val);
 
+  // next state and moves: each condition written once
   always_comb begin
-    state_next = state_val;
+    state_next      = state_val;
+    move_to_SendMsg = 1'b0;
+    move_to_MsgSent = 1'b0;
+    move_to_IDLE    = 1'b0;
     unique case (state_val)
-      IDLE:    if (cond_init)    state_next = SendMsg;
-      SendMsg: if (join_SendMsg) state_next = MsgSent;
-      MsgSent: if (cond_a)       state_next = IDLE;
-      default:                   state_next = IDLE;
+      IDLE:
+        if (cond_init) begin
+          state_next      = SendMsg;
+          move_to_SendMsg = 1'b1;
+        end
+      SendMsg:
+        if (join_SendMsg) begin
+          state_next      = MsgSent;
+          move_to_MsgSent = 1'b1;
+        end
+      MsgSent:
+        if (cond_a) begin                // tail segment = done
+          state_next   = IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = IDLE;
     endcase
   end
 
@@ -378,7 +397,7 @@ endmodule
 | DSL | SV |
 |---|---|
 | `IDLE:` / `SendMsg:` / `MsgSent:` 标签 | `state_t` 成员，名字原样 |
-| `await ports.cond_init.wait(1)` 在 IDLE | `move_to_SendMsg = (state_val == IDLE) & cond_init` |
+| `await ports.cond_init.wait(1)` 在 IDLE | 次态块的 `IDLE` 分支：`if (cond_init)` 里同时写 `state_next = SendMsg` 和 `move_to_SendMsg = 1'b1` |
 | 段内 `ports.fifo_a.push(0x00)` | `fifo_a_vld = move_to_SendMsg \| a_pending_val`（§6.2） |
 | `await Promise.all([a_done, b_done])` | `join_SendMsg` 与 `a_fin_val` / `b_fin_val`（§6.3） |
 | 函数末尾 | `move_to_IDLE`：回到入口状态（§3.4） |
@@ -428,15 +447,25 @@ StepC: await ports.cond_c.wait(1);
 ```systemverilog
 typedef enum logic [1:0] {StepA, StepB, StepC} state_t;
 
-assign move_to_StepB = (state_val == StepA) & cond_a & rg_user_config_do_step_b;
-
 always_comb begin
-  state_next = state_val;
+  state_next    = state_val;
+  move_to_StepB = 1'b0;
   unique case (state_val)
-    StepA: if (cond_a)         state_next = rg_user_config_do_step_b ? StepB : StepC;
-    StepB: if (do_step_b_done) state_next = StepC;
-    StepC: if (cond_c)         state_next = StepA;
-    default:                   state_next = StepA;
+    StepA:
+      if (cond_a) begin
+        if (rg_user_config_do_step_b) begin
+          state_next    = StepB;
+          move_to_StepB = 1'b1;
+        end else begin
+          state_next    = StepC;
+        end
+      end
+    StepB:
+      if (do_step_b_done) state_next = StepC;
+    StepC:
+      if (cond_c) state_next = StepA;
+    default:
+      state_next = StepA;
   endcase
 end
 
@@ -494,15 +523,23 @@ module do_step_b
   state_t state_val, state_next;
   logic   move_to_Busy, move_to_IDLE;
 
-  assign move_to_Busy = (state_val == IDLE) & start;
-  assign move_to_IDLE = (state_val == Busy) & go;   // tail segment
-
   always_comb begin
-    state_next = state_val;
+    state_next   = state_val;
+    move_to_Busy = 1'b0;
+    move_to_IDLE = 1'b0;
     unique case (state_val)
-      IDLE:    if (start) state_next = Busy;
-      Busy:    if (go)    state_next = IDLE;
-      default:            state_next = IDLE;
+      IDLE:
+        if (start) begin
+          state_next   = Busy;
+          move_to_Busy = 1'b1;
+        end
+      Busy:
+        if (go) begin                    // tail segment
+          state_next   = IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = IDLE;
     endcase
   end
 
@@ -611,15 +648,23 @@ module act_demo
   state_t state_val, state_next;
   logic   move_to_Run, move_to_IDLE;
 
-  assign move_to_Run  = (state_val == IDLE) & go;
-  assign move_to_IDLE = (state_val == Run)  & stop;
-
   always_comb begin
-    state_next = state_val;
+    state_next   = state_val;
+    move_to_Run  = 1'b0;
+    move_to_IDLE = 1'b0;
     unique case (state_val)
-      IDLE:    if (go)   state_next = Run;
-      Run:     if (stop) state_next = IDLE;
-      default:           state_next = IDLE;
+      IDLE:
+        if (go) begin
+          state_next  = Run;
+          move_to_Run = 1'b1;
+        end
+      Run:
+        if (stop) begin
+          state_next   = IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = IDLE;
     endcase
   end
 
@@ -741,14 +786,19 @@ module reg_demo
   state_t state_val, state_next;
   logic   move_to_Check;
 
-  assign move_to_Check = (state_val == IDLE) & go;
-
   always_comb begin
-    state_next = state_val;
+    state_next    = state_val;
+    move_to_Check = 1'b0;
     unique case (state_val)
-      IDLE:    if (go)                 state_next = Check;
-      Check:   if (mode_val == 8'h5a)  state_next = IDLE;
-      default:                         state_next = IDLE;
+      IDLE:
+        if (go) begin
+          state_next    = Check;
+          move_to_Check = 1'b1;
+        end
+      Check:
+        if (mode_val == 8'h5a) state_next = IDLE;
+      default:
+        state_next = IDLE;
     endcase
   end
 
@@ -775,8 +825,8 @@ state.next = 目标状态
 **主状态的生成形式（缺省）**按 Yosys `fsm_detect` 的识别条件来写（[Yosys FSM handling](https://yosyshq.readthedocs.io/projects/yosys/en/stable/using_yosys/synthesis/fsm.html)）：状态寄存器由单个 `$dff` / `$adff` 驱动；它的 D 输入是一棵叶子只有常量或旧状态值的 mux 树；状态值只用于这棵 mux 树或与常量比较；**它不是所在模块的输出口**。生成规则：
 
 1. `always_ff` 只写 `state_val <= state_next`，带异步复位到入口状态；不写使能。`set = 0` 由 `state_next` 缺省等于 `state_val` 表达。
-2. `always_comb` 先 `state_next = state_val;`，再 `unique case (state_val)`，每个分支 `if (条件) state_next = 常量;`。
-3. `state_val` 只出现在 `case` 和 `state_val == 常量` 里；move 脉冲写成 `(state_val == S) & cond`。
+2. 次态和 move 在同一个 `always_comb` 里（**决定**）：先写缺省值 `state_next = state_val;` 和每个有消费者的 `move_to_S = 1'b0;`，再 `unique case (state_val)`；每个分支 `if (条件) begin state_next = 常量; move_to_S = 1'b1; end`。离开条件只写一次，次态和 move 不会写出两份可能不一致的条件。[INFERENCE] 这不改变 `state_next` 那棵 mux 树（叶子仍是常量或 `state_val`），move 成了由同一组状态比较选出的控制输出，按 Yosys 文档的识别条件不受影响；未实测（§10）。
+3. `state_val` 只出现在 `case` 和 `state_val == 常量` 里；move 不再单独写成 `(state_val == S) & cond`。
 4. `state_val` 是 enum 类型，不接模块输出口，也不做位选。
 5. 状态定义放在该状态机的 package 里：`typedef enum logic [W-1:0] {IDLE, SendMsg, MsgSent} state_t;`，成员名就是状态标签原文，W = ⌈log2(状态数)⌉，至少 1。**缺省不写数值**，实际编码由综合器在识别出状态机后决定。enum 成员顺序按源码中状态出现的顺序，入口状态排第一（被调用方是隐式 `IDLE`，§5）。
 
@@ -845,7 +895,7 @@ state_next_o = move_to_S 时输出成员 S；state_set_o = 0 时取 state_val_o
 | 子状态机调用 | 被调用方实例 `u_<fsm 名>`，`start` 接调用状态的 move（§5） |
 | 被调用方 | 隐式入口状态 `IDLE`，端口 `start` / `done`（/ `result`） |
 
-- 次态的 `case` 与 move 信号表达的是同一组转移；生成器从同一张转移表写出两者，不会不一致。
+- 次态与 move 由同一个 `always_comb` 的同一个分支写出（§6.5 第 2 条），离开条件只出现一次。
 - 生成器自己写的注释用英文（仓库约束）；作者的业务注释原样搬运（§7.1）。
 
 ### 7.1 文件头与业务注释
@@ -913,15 +963,23 @@ module act_demo
   state_t state_val, state_next;
   logic   move_to_Run, move_to_IDLE;
 
-  assign move_to_Run  = (state_val == IDLE) & go;
-  assign move_to_IDLE = (state_val == Run)  & stop;
-
   always_comb begin
-    state_next = state_val;
+    state_next   = state_val;
+    move_to_Run  = 1'b0;
+    move_to_IDLE = 1'b0;
     unique case (state_val)
-      IDLE:    if (go)   state_next = Run;
-      Run:     if (stop) state_next = IDLE;
-      default:           state_next = IDLE;
+      IDLE:
+        if (go) begin
+          state_next  = Run;
+          move_to_Run = 1'b1;
+        end
+      Run:
+        if (stop) begin
+          state_next   = IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = IDLE;
     endcase
   end
 
