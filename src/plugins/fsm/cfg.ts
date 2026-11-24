@@ -21,22 +21,34 @@ import {
 	svText,
 	widthLit,
 } from "./expr.ts";
-import { dffDecl, hsPort, NOT_YET, notYet, reservedName } from "./front.ts";
+import {
+	dffDecl,
+	hsPort,
+	msgShape,
+	NOT_YET,
+	notYet,
+	parseSynthetic,
+	reservedName,
+} from "./front.ts";
 import type {
 	Action,
 	Binding,
 	BrNode,
+	CallerBinding,
 	Chan,
 	CNode,
 	DffReg,
 	FsmMethod,
 	Group,
+	HsPort,
 	Iface,
 	Inst,
 	JumpNode,
 	Key,
 	LetBinding,
 	LetSource,
+	MsgField,
+	MsgShape,
 	Port,
 	Sig,
 	State,
@@ -44,7 +56,7 @@ import type {
 	Unit,
 	Wire,
 } from "./model.ts";
-import { checkSvId, type Src, upperSnake } from "./source.ts";
+import { checkSvId, Src, upperSnake } from "./source.ts";
 
 interface Frame {
 	kind: "loop" | "block";
@@ -84,8 +96,18 @@ export interface Body {
 	privateDffs: DffReg[];
 	chans: Chan[];
 	insts: Inst[];
+	/** Caller servers this method declares, compiled as their own modules (§5.4). */
+	servers: FsmMethod[];
 	/** Head of the while (true) loop. */
 	head: JumpNode;
+}
+
+/** State shared by every compile of one group. */
+export interface Shared {
+	/** Sub-FSMs inlined anywhere (for "never called"). */
+	used: Set<Node>;
+	/** Result width of each inlined sub-FSM or interface method, 0 for none. */
+	results: Map<Node, number>;
 }
 
 const byKey = (a: { key: Key }, b: { key: Key }) => {
@@ -100,7 +122,11 @@ const byKey = (a: { key: Key }, b: { key: Key }) => {
 /** SV names a port takes in the module. */
 export function portNames(p: Port): string[] {
 	if (p.k === "push" || p.k === "pop")
-		return [`${p.name}_vld`, `${p.name}_rdy`, `${p.name}_data`];
+		return [
+			`${p.name}_vld`,
+			`${p.name}_rdy`,
+			...p.msg.fields.map((f) => `${p.name}_${f.name}`),
+		];
 	if (p.k === "dff" && p.place === "external")
 		return [`${p.name}_set`, `${p.name}_next`, `${p.name}_val`];
 	if (p.k === "dff" && p.place === "port") return [p.name, `u_${p.name}`];
@@ -119,6 +145,33 @@ const KIND_TEXT: Record<string, string> = {
 
 /** Constructor arguments of an interface: equal ones mean equal widths. */
 const svArgs = (x: Iface) => x.args.join(", ");
+
+/** Message fields of a pop end that nothing reads (unused input wires in the SV). */
+export const unread = (p: HsPort): string[] =>
+	p.msg.fields.map((f) => f.name).filter((n) => !p.reads.has(n));
+
+const msgText = (m: MsgShape) =>
+	m.k === "data"
+		? `${m.fields[0]?.width}-bit`
+		: `{ ${m.fields.map((f) => `${f.name}: ${f.width}`).join(", ")} }`;
+
+const sameMsg = (a: MsgShape, b: MsgShape) =>
+	msgText(a) === msgText(b) && a.k === b.k;
+
+/** Width or message shape of a port, for "same kind of port" checks. */
+function shapeOf(x: Binding): string {
+	switch (x.k) {
+		case "push":
+		case "pop":
+			return msgText(x.msg);
+		case "input":
+		case "output":
+		case "dff":
+			return `${x.width}-bit`;
+		default:
+			return x.k;
+	}
+}
 
 export class BodyCompiler {
 	readonly states: State[] = [];
@@ -153,11 +206,13 @@ export class BodyCompiler {
 	private sync = false;
 	private readonly stack: Node[] = [];
 	private readonly instCount = new Map<string, number>();
+	private readonly callers: CallerBinding[] = [];
+	private readonly servers: FsmMethod[] = [];
+	private methodName = "";
 
 	constructor(
 		unit: Unit,
-		/** Sub-FSMs inlined anywhere (for "never called"). */
-		private readonly used: Set<Node>,
+		private readonly shared: Shared,
 	) {
 		this.unit = unit;
 		const self = this;
@@ -194,20 +249,29 @@ export class BodyCompiler {
 				}
 				return { sv: c.ref, width: c.wire.width, named: true };
 			},
-			useLet: (b) => {
-				if (!b.src)
+			useLet: (b, field, node) => {
+				const src = b.src;
+				if (!src)
 					return this.src.fail(
-						b.node,
+						node,
 						`let ${b.name} is read before it is assigned (§2.4)`,
 					);
 				b.read = true;
-				if (b.src.port) b.src.port.read = true;
-				this.touched.push(b.src);
-				return {
-					sv: b.src.sv,
-					width: b.src.width,
-					named: b.src.sv.k === "atom",
-				};
+				this.touched.push(src);
+				if (src.fields) {
+					const f = field === undefined ? undefined : src.fields.get(field);
+					if (!f)
+						return this.src.fail(
+							node,
+							`${b.name} is a message: read one of its fields (${[...src.fields.keys()].map((k) => `${b.name}.${k}`).join(", ")})`,
+						);
+					src.port?.reads.add(field as string);
+					return f;
+				}
+				if (field !== undefined)
+					return this.src.fail(node, `${b.name} has no field ${field}`);
+				src.port?.reads.add("data");
+				return { sv: src.sv, width: src.width, named: src.sv.k === "atom" };
 			},
 			macro: (node) => this.macro(node),
 		};
@@ -230,6 +294,7 @@ export class BodyCompiler {
 	/** One @Fsm method: optional const / let / Instance lines, then `while (true) { ... }`. */
 	compile(m: FsmMethod): Body {
 		this.group = m.group;
+		this.methodName = m.name;
 		for (const [name, p] of m.params) this.scope.map.set(name, p);
 		for (const p of m.ports)
 			for (const n of portNames(p)) this.claim(n, p.node);
@@ -280,6 +345,7 @@ export class BodyCompiler {
 			privateDffs: this.privateDffs,
 			chans: this.chans,
 			insts: this.insts,
+			servers: this.servers,
 			head,
 		};
 	}
@@ -287,6 +353,7 @@ export class BodyCompiler {
 	/** Source order, generated names and the checks that need the whole body. */
 	private finish(m: FsmMethod) {
 		this.unit = m.group.unit;
+		for (const c of this.callers) this.serve(c);
 		this.states.sort(byKey);
 		this.actions.sort(byKey);
 		for (const p of [...m.ports, ...this.privateDffs])
@@ -332,8 +399,12 @@ export class BodyCompiler {
 				this.src.fail(c.node, `nobody pushes into channel ${c.name}`);
 			if (c.rx.sites.length === 0 && !c.rx.byInst)
 				this.src.fail(c.node, `nobody pops from channel ${c.name}`);
-			if (c.rx.sites.length > 0 && !c.rx.read)
-				this.src.fail(c.node, `the data popped from ${c.name} is never read`);
+			const missed = unread(c.rx);
+			if (c.rx.sites.length > 0 && missed.length > 0)
+				this.src.fail(
+					c.node,
+					`the data popped from ${c.name} is never read (${missed.join(", ")})`,
+				);
 		}
 		for (const { b, src } of this.lets)
 			if (!b.read)
@@ -422,6 +493,19 @@ export class BodyCompiler {
 				);
 			if (kind === "Instance")
 				src.fail(init, "Instance(...) is a statement, not a value (§5.3)");
+			if (kind === "Caller" && init.type === "CallExpression") {
+				if (!top)
+					src.fail(
+						x,
+						"a Caller belongs before while (true) of an @Fsm method (§5.4)",
+					);
+				// The name only prefixes SV names (u_reg, reg_req_vld): `reg` itself is fine.
+				checkSvId(src, x.id, `u_${name}`, "Caller instance");
+				if (reservedName(name))
+					src.fail(x.id, `name ${name} is reserved by the generator`);
+				this.callerDecl(name, init, x);
+				continue;
+			}
 			if (
 				(kind === "Dff" || kind === "Chan") &&
 				init.type === "CallExpression"
@@ -430,9 +514,8 @@ export class BodyCompiler {
 				if (reservedName(name))
 					src.fail(x.id, `name ${name} is reserved by the generator`);
 				const [a0, a1] = init.arguments;
-				const width = widthLit(src, a0);
 				if (kind === "Dff") {
-					const reg = dffDecl(src, sv, x, width, a1, false);
+					const reg = dffDecl(src, sv, x, widthLit(src, a0), a1, false);
 					this.claim(`${sv}_val`, x);
 					this.claim(`u_${sv}`, x);
 					this.privateDffs.push(reg);
@@ -444,14 +527,16 @@ export class BodyCompiler {
 						x,
 						"a Chan belongs before while (true) of an @Fsm method (§5.3)",
 					);
-				if (a1) src.fail(a1, "Chan(N) takes one width");
+				if (a1)
+					src.fail(a1, "Chan takes one width or one { field: width } object");
+				const msg = msgShape(src, a0, (n) => widthLit(src, n));
 				const c: Chan = {
 					k: "chan",
 					name: sv,
-					width,
+					msg,
 					node: x,
-					tx: hsPort("push", sv, width, "chan", x),
-					rx: hsPort("pop", sv, width, "chan", x),
+					tx: hsPort("push", sv, msg, "chan", x),
+					rx: hsPort("pop", sv, msg, "chan", x),
 				};
 				for (const n of portNames(c.tx)) this.claim(n, x);
 				this.chans.push(c);
@@ -562,10 +647,10 @@ export class BodyCompiler {
 
 	/** One instance port: a signal into an Input, this module's Output out of an
 	 *  Output, a channel end or a forwarded channel port for PushPort / PopPort. */
-	private connect(inst: Inst, p: Port, v: Expression, field?: Port) {
+	private connect(inst: Inst, p: Port, v: Node, given?: Binding) {
 		const src: Src = this.src;
 		if (p.k === "input") {
-			const b = field ?? undefined;
+			const b = given;
 			let text: string;
 			if (b) {
 				if (b.k !== "input")
@@ -574,13 +659,15 @@ export class BodyCompiler {
 				text = b.name;
 			} else {
 				this.touched = [];
-				text = svText(evalSig(this.ecx, v, { width: p.width }).sv);
+				text = svText(
+					evalSig(this.ecx, v as Expression, { width: p.width }).sv,
+				);
 				if (this.touched.length > 0) src.fail(v, LET_LATE);
 			}
 			inst.conn.push([p.name, text]);
 			return;
 		}
-		const b = field ?? this.ref(v);
+		const b = given ?? this.ref(v);
 		if (p.k === "output" || (p.k === "dff" && p.place === "port")) {
 			if (b?.k !== "output" || b.width !== p.width)
 				return src.fail(
@@ -596,20 +683,22 @@ export class BodyCompiler {
 		if (p.k === "dff")
 			return notYet(src, v, "connecting an external Dff port of an instance");
 		const end = b?.k === "chan" ? (p.k === "push" ? b.tx : b.rx) : b;
+		const kind = p.k === "push" ? "PushPort" : "PopPort";
 		if (
 			(end?.k !== "push" && end?.k !== "pop") ||
 			end.k !== p.k ||
-			end.width !== p.width
+			!sameMsg(end.msg, p.msg)
 		)
 			return src.fail(
 				v,
-				`${p.name} is a ${p.width}-bit ${p.k === "push" ? "PushPort" : "PopPort"} of ${inst.module}: connect a Chan of that width or a ${p.k === "push" ? "PushPort" : "PopPort"} of this method`,
+				`${p.name} is a ${msgText(p.msg)} ${kind} of ${inst.module}: connect a Chan of that shape or a ${kind} of this method`,
 			);
 		if (end.byInst)
 			src.fail(v, `${end.name} is already connected to ${end.byInst.name}`);
 		end.byInst = inst;
-		for (const s of ["_vld", "_rdy", "_data"])
-			inst.conn.push([p.name + s, end.name + s]);
+		for (const f of p.msg.fields) end.reads.add(f.name);
+		for (const s of ["vld", "rdy", ...p.msg.fields.map((f) => f.name)])
+			inst.conn.push([`${p.name}_${s}`, `${end.name}_${s}`]);
 	}
 
 	/** `this.m` / `Group.m`: a method of this group or an imported one. */
@@ -824,6 +913,10 @@ export class BodyCompiler {
 			const callee = a.type === "CallExpression" ? this.callee(a) : undefined;
 			if (callee && a.type === "CallExpression")
 				return this.inline(callee, a, label, k, to, true);
+			if (isMethodCall(a, "call")) {
+				const cb = this.ref(a.callee.object);
+				if (cb?.k === "caller") return this.callerCall(cb, a, label, k, to);
+			}
 			if (isMethodCall(a, "push") || isMethodCall(a, "pop"))
 				return this.hs(a, stmt, k, label, to);
 			if (to)
@@ -1036,35 +1129,124 @@ export class BodyCompiler {
 				a,
 				`${port.name} is connected to ${port.byInst.name}; this module cannot ${verb} on it`,
 			);
-		let value: Sig | undefined;
+		let values: Sig[] = [];
 		if (push) {
 			const v = a.arguments[0];
 			if (
-				a.arguments.length !== 1 ||
-				!v ||
-				v.type === "SpreadElement" ||
-				v.type === "ArgumentPlaceholder"
+				a.arguments.length > 1 ||
+				v?.type === "SpreadElement" ||
+				v?.type === "ArgumentPlaceholder"
 			)
 				return src.fail(a, "push(v) takes one value");
-			this.touched = [];
-			value = evalSig(this.ecx, v, { width: port.width });
-			if (this.touched.length > 0) src.fail(v, LET_LATE);
+			values = this.msgValues(port.msg, v, a);
 		} else if (a.arguments.length > 0) src.fail(a, "pop() takes no argument");
-		const state = this.newState(
-			label,
-			stmt,
-			atom(`${port.name}_${push ? "rdy" : "vld"}`),
+		let name = "";
+		if (label) {
+			checkSvId(src, label.label, label.label.name, "state");
+			this.label(label.label.name, label.label);
+			name = this.statePrefix + upperSnake(label.label.name);
+		}
+		const what = `the pop in state ${label?.label.name ?? "(unnamed)"}`;
+		return this.hsState(
+			port,
+			values,
+			label ?? stmt,
+			name,
+			label?.label.name ?? "",
 			k,
+			to,
+			src.textOf(a),
+			what,
 		);
-		state.hs = { port, state, value, text: src.textOf(a), key: state.key };
+	}
+
+	/** The value of `push(v)`: one data signal, or `{ field: v, ... }` for a record. */
+	private msgValues(msg: MsgShape, v: Expression | undefined, at: Node): Sig[] {
+		const src: Src = this.src;
+		this.touched = [];
+		let out: Sig[];
+		if (msg.k === "data") {
+			const f = msg.fields[0] as { width: number };
+			if (!v) return src.fail(at, "push(v) takes the data");
+			out = [evalSig(this.ecx, v, { width: f.width })];
+		} else if (
+			msg.fields.length === 0 &&
+			(!v || (v.type === "ObjectExpression" && v.properties.length === 0))
+		) {
+			out = [];
+		} else {
+			if (v?.type !== "ObjectExpression")
+				return src.fail(
+					v ?? at,
+					`push a message: { ${msg.fields.map((f) => `${f.name}: ...`).join(", ")} }`,
+				);
+			const given = this.args(
+				v,
+				"the message",
+				msg.fields.map((f) => f.name),
+			);
+			out = msg.fields.map((f) =>
+				evalSig(this.ecx, given.get(f.name) as Expression, { width: f.width }),
+			);
+		}
+		if (this.touched.length > 0) src.fail(v ?? at, LET_LATE);
+		return out;
+	}
+
+	/** A push / pop waiting state on `port` (§6.2). */
+	private hsState(
+		port: HsPort,
+		values: Sig[],
+		node: Node,
+		name: string,
+		label: string,
+		k: CNode,
+		to: LetBinding | undefined,
+		text: string,
+		what: string,
+	): CNode {
+		const push = port.k === "push";
+		const state: State = {
+			name,
+			member: "",
+			label,
+			prefix: this.statePrefix,
+			index: -1,
+			node,
+			key: this.at(node),
+			cond: atom(`${port.name}_${push ? "rdy" : "vld"}`),
+			next: k,
+		};
+		this.states.push(state);
+		state.hs = { port, state, values, text, key: state.key };
 		port.sites.push(state.hs);
 		if (to) {
-			to.src = {
-				sv: atom(`${port.name}_data`),
-				width: port.width,
-				what: `the pop in state ${label?.label.name ?? "(unnamed)"}`,
-				port,
-			};
+			const msg = port.msg;
+			if (msg.k === "record" && msg.fields.length === 0)
+				this.src.fail(
+					node,
+					`${port.name} carries no data; drop \`${to.name} =\``,
+				);
+			const fieldSig = (f: { name: string; width: number }) => ({
+				sv: atom(`${port.name}_${f.name}`),
+				width: f.width,
+				named: true,
+			});
+			to.src =
+				msg.k === "data"
+					? {
+							sv: atom(`${port.name}_data`),
+							width: msg.fields[0]?.width ?? 0,
+							what,
+							port,
+						}
+					: {
+							sv: atom(""),
+							width: 0,
+							what,
+							port,
+							fields: new Map(msg.fields.map((f) => [f.name, fieldSig(f)])),
+						};
 			state.produces = to.src;
 		}
 		return { k: "wait", state };
@@ -1192,10 +1374,10 @@ export class BodyCompiler {
 				continue;
 			}
 			const end = b?.k === "chan" ? (p.k === "push" ? b.tx : b.rx) : b;
-			if (end?.k !== p.k || end.width !== p.width)
+			if (!end || end.k !== p.k || shapeOf(end) !== shapeOf(p))
 				return src.fail(
 					v,
-					`${pname} of ${name} is a ${p.width}-bit ${KIND_TEXT[p.k]}: pass a ${p.width}-bit ${KIND_TEXT[p.k]}${p.k === "push" || p.k === "pop" ? " or Chan" : ""} of this method`,
+					`${pname} of ${name} is a ${shapeOf(p)} ${KIND_TEXT[p.k]}: pass a ${shapeOf(p)} ${KIND_TEXT[p.k]}${p.k === "push" || p.k === "pop" ? " or Chan" : ""} of this method`,
 				);
 			if ((end.k === "push" || end.k === "pop") && end.byInst)
 				src.fail(v, `${end.name} is connected to ${end.byInst.name}`);
@@ -1209,6 +1391,283 @@ export class BodyCompiler {
 			});
 		}
 		return { scope, checks };
+	}
+
+	/** `const reg = Caller(this.sub, { bound })`: channels and an instance of a
+	 *  generated server; the server source is written at finish (§5.4). */
+	private callerDecl(
+		name: string,
+		init: Expression & { type: "CallExpression" },
+		x: Node,
+	) {
+		const src: Src = this.src;
+		const [t, binds, extra] = init.arguments;
+		const callee = t?.type === "MemberExpression" ? this.method(t) : undefined;
+		if (!callee || extra || (binds && binds.type !== "ObjectExpression"))
+			return src.fail(init, "Caller(this.sub | Group.sub, { port: ..., ... })");
+		if (!callee.sub)
+			src.fail(
+				t,
+				`${callee.name} is an @Fsm method: instantiate it with Instance (§5.3); Caller takes a sub-FSM`,
+			);
+		for (const p of callee.params.keys())
+			if (p === "req" || p === "rsp" || p === "result" || p.startsWith("arg_"))
+				src.fail(
+					callee.params.get(p)?.node,
+					`port name ${p} is reserved for the Caller server of ${callee.name}`,
+				);
+		const given = new Map<string, Expression>();
+		for (const p of binds?.type === "ObjectExpression"
+			? binds.properties
+			: []) {
+			if (
+				p.type !== "ObjectProperty" ||
+				p.key.type !== "Identifier" ||
+				p.computed ||
+				p.value.type === "AssignmentPattern"
+			)
+				return src.fail(p, "each binding is port: value");
+			if (!callee.params.has(p.key.name))
+				src.fail(p.key, `${callee.name} has no port ${p.key.name}`);
+			if (given.has(p.key.name))
+				src.fail(p.key, `port ${p.key.name} is bound twice`);
+			given.set(p.key.name, p.value as Expression);
+		}
+		const args: MsgField[] = [];
+		for (const [pname, p] of callee.params) {
+			if (given.has(pname)) continue;
+			if (p.k !== "input")
+				src.fail(
+					binds ?? init,
+					`${pname} of ${callee.name} is not an Input: bind it in Caller(...); only Inputs are call arguments`,
+				);
+			else args.push({ name: pname, width: p.width });
+		}
+		const result = this.resultWidth(callee);
+		const inst: Inst = {
+			name: `u_${name}`,
+			module: `${this.methodName}_${name}`,
+			node: init,
+			conn: [],
+		};
+		this.claim(inst.name, x);
+		const chan = (cname: string, msg: MsgShape): Chan => {
+			const c: Chan = {
+				k: "chan",
+				name: cname,
+				msg,
+				node: x,
+				tx: hsPort("push", cname, msg, "chan", x),
+				rx: hsPort("pop", cname, msg, "chan", x),
+			};
+			for (const n of portNames(c.tx)) this.claim(n, x);
+			this.chans.push(c);
+			return c;
+		};
+		const req = chan(`${name}_req`, { k: "record", fields: args });
+		const rsp = chan(
+			`${name}_rsp`,
+			result > 0
+				? { k: "data", fields: [{ name: "data", width: result }] }
+				: { k: "record", fields: [] },
+		);
+		// The server owns req's pop end and rsp's push end.
+		req.rx.byInst = inst;
+		for (const f of args) req.rx.reads.add(f.name);
+		rsp.tx.byInst = inst;
+		const bound: string[] = [];
+		for (const [pname, p] of callee.params) {
+			const v = given.get(pname);
+			if (!v) continue;
+			bound.push(pname);
+			if (p.k !== "iface") {
+				this.connect(inst, p, v);
+				continue;
+			}
+			const b = this.ref(v);
+			if (b?.k !== "iface" || b.cls !== p.cls || svArgs(b) !== svArgs(p))
+				src.fail(
+					v,
+					`${pname} is a ${p.cls.name}(${svArgs(p)}): bind an interface of the same class and arguments`,
+				);
+			for (const [f, q] of p.fields) this.connect(inst, q, v, b.fields.get(f));
+		}
+		const cb: CallerBinding = {
+			k: "caller",
+			name,
+			callee,
+			args,
+			result,
+			req,
+			rsp,
+			inst,
+			bound,
+			node: x,
+		};
+		this.insts.push(inst);
+		this.callers.push(cb);
+		this.scope.map.set(name, cb);
+	}
+
+	/** `L: [r =] await reg.call({ args })`: L_REQ pushes the arguments, L_RSP pops the result. */
+	private callerCall(
+		cb: CallerBinding,
+		a: Expression & { type: "CallExpression" },
+		label: (Node & { type: "LabeledStatement" }) | undefined,
+		k: CNode,
+		to: LetBinding | undefined,
+	): CNode {
+		const src: Src = this.src;
+		if (!label)
+			return src.fail(
+				a,
+				`label the call: its states are <LABEL>_REQ / <LABEL>_RSP (§5.4)`,
+			);
+		if (a.arguments.length > 1)
+			src.fail(a, `${cb.name}.call({ args }) takes one object`);
+		const v = a.arguments[0];
+		if (v?.type === "SpreadElement" || v?.type === "ArgumentPlaceholder")
+			return src.fail(v, "unsupported argument");
+		if (to && cb.result === 0)
+			src.fail(a, `${cb.callee.name} returns no value`);
+		checkSvId(src, label.label, label.label.name, "call label");
+		this.label(label.label.name, label.label);
+		const p = this.statePrefix + upperSnake(label.label.name);
+		const values = this.msgValues(cb.req.msg, v, a);
+		const text = src.textOf(a);
+		const then: JumpNode = { k: "jump", to: k, node: a };
+		const req = this.hsState(
+			cb.req.tx,
+			values,
+			label,
+			`${p}_REQ`,
+			label.label.name,
+			then,
+			undefined,
+			text,
+			"",
+		);
+		then.to = this.hsState(
+			cb.rsp.rx,
+			[],
+			label,
+			`${p}_RSP`,
+			label.label.name,
+			k,
+			to,
+			text,
+			`the ${label.label.name} call`,
+		);
+		return req;
+	}
+
+	/** Parameter declarations of a sub-FSM as written (`rd_req = Output(1)`), by name. */
+	private paramText(m: FsmMethod): Map<string, string> {
+		const out = new Map<string, string>();
+		const pat = m.node.params[0];
+		const text = m.group.unit.src.text;
+		if (pat?.type === "ObjectPattern")
+			for (const p of pat.properties)
+				if (
+					p.type === "ObjectProperty" &&
+					p.value.type === "AssignmentPattern" &&
+					p.value.left.type === "Identifier"
+				)
+					out.set(p.value.left.name, text.slice(p.start ?? 0, p.end ?? 0));
+		return out;
+	}
+
+	/** Result width of a sub-FSM: known once it was inlined, else compiled once in a probe. */
+	private resultWidth(m: FsmMethod): number {
+		const known = this.shared.results.get(m.node);
+		if (known !== undefined) return known;
+		const decls = this.paramText(m);
+		const names = [...m.params.keys()];
+		const text = [
+			"@FsmGroup",
+			"export class __Probe {",
+			"  @Fsm",
+			"  async __probe({",
+			...names.map((n) => `    ${decls.get(n)},`),
+			"  }) {",
+			"    while (true) {",
+			`      Run: await ${m.group.name}.${m.name}({ ${names.join(", ")} });`,
+			"      Stop: await ALWAYS_0.wait(1);",
+			"    }",
+			"  }",
+			"}",
+			"",
+		].join("\n");
+		const unit = parseSynthetic(
+			new Src(`${m.group.unit.src.file} (probe of ${m.name})`, text),
+			m.group.unit,
+		);
+		const probe = unit.group?.methods[0];
+		if (probe) new BodyCompiler(unit, this.shared).compile(probe);
+		return this.shared.results.get(m.node) ?? 0;
+	}
+
+	/** Write and parse the server of a Caller, then connect its channel ports (§5.4).
+	 *  A result nobody reads is dropped: the response becomes a bare token. */
+	private serve(cb: CallerBinding) {
+		const m = cb.callee;
+		if (cb.result > 0 && !cb.rsp.rx.reads.has("data")) {
+			cb.rsp.msg.k = "record";
+			cb.rsp.msg.fields = [];
+		}
+		const result = cb.rsp.msg.fields[0]?.width ?? 0;
+		const decls = this.paramText(m);
+		const args = cb.args;
+		const conn = [
+			...cb.bound,
+			...args.map((a) => `${a.name}: arg_${a.name}.val`),
+		].join(", ");
+		const record = `{ ${args.map((a) => `${a.name}: ${a.width}`).join(", ")} }`;
+		const text = [
+			"@FsmGroup",
+			"export class __Caller {",
+			`  /** Caller server of ${m.name}: one call per request (generated, §5.4). */`,
+			"  @Fsm",
+			`  async ${cb.inst.module}({`,
+			...(cb.bound.length > 0 ? ["    // bound ports"] : []),
+			...cb.bound.map((n) => `    ${decls.get(n)},`),
+			"    // call",
+			`    req = PopPort(${args.length > 0 ? record : "{}"}),`,
+			`    rsp = PushPort(${result > 0 ? result : "{}"}),`,
+			"  }) {",
+			...args.map((a) => `    const arg_${a.name} = Dff(${a.width});`),
+			...(result > 0 ? [`    const result = Dff(${result});`] : []),
+			...(args.length > 0 ? ["    let m;"] : []),
+			...(result > 0 ? ["    let r;"] : []),
+			"    while (true) {",
+			...(args.length > 0
+				? [
+						"      Idle: m = await req.pop();",
+						...args.map((a) => `      arg_${a.name}.set(m.${a.name});`),
+						"      Load: await ALWAYS_1.wait(1);",
+					]
+				: ["      Idle: await req.pop();"]),
+			`      Run: ${result > 0 ? "r = " : ""}await ${m.group.name}.${m.name}({ ${conn} });`,
+			...(result > 0
+				? ["      result.set(r);", "      Done: await rsp.push(result.val);"]
+				: ["      Done: await rsp.push();"]),
+			"    }",
+			"  }",
+			"}",
+			"",
+		].join("\n");
+		const unit = parseSynthetic(
+			new Src(`${this.unit.src.file} (Caller ${cb.name})`, text),
+			m.group.unit,
+		);
+		const server = unit.group?.methods[0];
+		if (server) this.servers.push(server);
+		for (const [port, c, end] of [
+			["req", cb.req, cb.req.rx],
+			["rsp", cb.rsp, cb.rsp.tx],
+		] as const)
+			for (const s of ["vld", "rdy", ...end.msg.fields.map((f) => f.name)])
+				cb.inst.conn.push([`${port}_${s}`, `${c.name}_${s}`]);
 	}
 
 	/** Inline a call: the callee's states join this module, named <LABEL>_<STATE> (§5). */
@@ -1282,6 +1741,7 @@ export class BodyCompiler {
 						this.src.fail(v.node, `every return of ${name} gives a value`);
 				fall.miss = `a path reaches the end of ${name} without return <value>`;
 			}
+			this.shared.results.set(node, valued ? (ret.width ?? 0) : 0);
 		} finally {
 			Object.assign(this, saved);
 			this.stack.pop();
@@ -1291,7 +1751,7 @@ export class BodyCompiler {
 				src.fail(call, `${name} returns no value`);
 			to.src = ret.result;
 		}
-		if (c.k === "sub") this.used.add(node);
+		if (c.k === "sub") this.shared.used.add(node);
 		return entry;
 	}
 

@@ -30,12 +30,15 @@ describe("doc examples: generated SV equals the doc", () => {
 		"dump_check",
 		"dump_server",
 		"dump_client",
+		"reg_mgr",
+		"reg_mgr_reg",
 	];
-	// §5.3 imports the §5.2 source.
+	// §5.3 imports the §5.2 source; a Caller server is compiled from its caller's DSL.
 	const more = () => ({ "dump_check.mjs": docDsl("dump_check").text });
+	const from: Record<string, string> = { reg_mgr_reg: "reg_mgr" };
 	for (const name of modules)
 		test(name, async () => {
-			const dsl = docDsl(name);
+			const dsl = docDsl(from[name] ?? name);
 			const sv = dsl.whole
 				? await compileText(dsl.text, more())
 				: await compileBody(dsl.text);
@@ -59,6 +62,7 @@ describe("doc examples: generated SV equals the doc", () => {
 		["dump_check", ["dump_check"]],
 		["dump_svc", ["dump_server", "dump_client"]],
 		["cfg_load", ["cfg_load"]],
+		["reg_mgr", ["reg_mgr", "reg_mgr_reg"]],
 	];
 	for (const [file, names] of demos)
 		test(`demo/state/fsm/${file}.mjs carries the doc modules`, async () => {

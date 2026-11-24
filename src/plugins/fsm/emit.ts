@@ -145,21 +145,32 @@ function hsDrivers(p: HsPort): Drv[] {
 		dec.length === 1 ? (dec[0] as string) : dec.map(paren).join(" | ");
 	const c = [...new Set(p.sites.map((s) => s.text))].join(" / ");
 	if (p.k === "pop") return [{ k: "asg", lhs: `${p.name}_rdy`, rhs: held, c }];
-	const vals = p.sites.map((s) => svText(s.value?.sv ?? lit(p.width, 0n)));
-	const data =
-		new Set(vals).size === 1
-			? (vals[0] as string)
-			: vals
-					.map((v, i) =>
-						p.width === 1
-							? `(${dec[i]}) & ${paren(v)}`
-							: `({${p.width}{${dec[i]}}} & ${paren(v)})`,
-					)
-					.join(" | ");
-	return [
-		{ k: "asg", lhs: `${p.name}_vld`, rhs: held, c },
-		{ k: "asg", lhs: `${p.name}_data`, rhs: data },
-	];
+	const data = p.msg.fields.map((f, j): Drv => {
+		const vals = p.sites.map(
+			(s) => s.values[j] ?? { sv: lit(f.width, 0n), width: f.width, value: 0n },
+		);
+		const texts = vals.map((v) => svText(v.sv));
+		if (new Set(texts).size === 1)
+			return { k: "asg", lhs: `${p.name}_${f.name}`, rhs: texts[0] as string };
+		// Priority-free select by state; a 0 term drops out, a 1-bit 1 is the decode itself.
+		const terms = vals.flatMap((v, i) => {
+			if (v.value === 0n) return [];
+			if (f.width === 1 && v.value === 1n) return [paren(dec[i] as string)];
+			return [
+				f.width === 1
+					? `(${dec[i]}) & ${paren(svText(v.sv))}`
+					: `({${f.width}{${dec[i]}}} & ${paren(svText(v.sv))})`,
+			];
+		});
+		const rhs =
+			terms.length === 0
+				? svText(lit(f.width, 0n))
+				: terms.length === 1
+					? (terms[0] as string).replace(/^\((.*)\)$/, "$1")
+					: terms.join(" | ");
+		return { k: "asg", lhs: `${p.name}_${f.name}`, rhs };
+	});
+	return [{ k: "asg", lhs: `${p.name}_vld`, rhs: held, c }, ...data];
 }
 
 function drivers(f: Fsm): string[] {
@@ -282,23 +293,36 @@ function emitFsm(f: Fsm): string[] {
 		["input", 1, "rst_n"],
 	];
 	for (const p of f.ports) {
-		if (p.k === "input") ports.push(["input", p.width, p.name, p.group]);
-		else if (p.k === "output") ports.push(["output", p.width, p.name, p.group]);
-		else if (p.k === "push" || p.k === "pop") {
-			const [o, i] = p.k === "push" ? ["output", "input"] : ["input", "output"];
-			ports.push(
-				[o, 1, `${p.name}_vld`, p.group],
-				[i, 1, `${p.name}_rdy`],
-				[o, p.width, `${p.name}_data`],
-			);
-		} else if (p.place === "port")
-			ports.push(["output", p.width, p.name, p.group]);
-		else
-			ports.push(
-				["output", 1, `${p.name}_set`, p.group],
-				["output", p.width, `${p.name}_next`],
-				["input", p.width, `${p.name}_val`],
-			);
+		switch (p.k) {
+			case "input":
+			case "output":
+				ports.push([p.k, p.width, p.name, p.group]);
+				break;
+			case "push":
+			case "pop": {
+				const [o, i] =
+					p.k === "push" ? ["output", "input"] : ["input", "output"];
+				ports.push(
+					[o, 1, `${p.name}_vld`, p.group],
+					[i, 1, `${p.name}_rdy`],
+					...p.msg.fields.map((m): [string, number, string] => [
+						o,
+						m.width,
+						`${p.name}_${m.name}`,
+					]),
+				);
+				break;
+			}
+			case "dff":
+				if (p.place === "port")
+					ports.push(["output", p.width, p.name, p.group]);
+				else
+					ports.push(
+						["output", 1, `${p.name}_set`, p.group],
+						["output", p.width, `${p.name}_next`],
+						["input", p.width, `${p.name}_val`],
+					);
+		}
 	}
 	// The author's ports never sit under a generated group without their own header.
 	const firstUser = ports[2];
@@ -320,7 +344,7 @@ function emitFsm(f: Fsm): string[] {
 		...f.chans.flatMap((c) => [
 			[1, `${c.name}_vld`] as const,
 			[1, `${c.name}_rdy`] as const,
-			[c.width, `${c.name}_data`] as const,
+			...c.msg.fields.map((m) => [m.width, `${c.name}_${m.name}`] as const),
 		]),
 		...f.wires.map((w) => [w.width, w.name] as const),
 		...f.privateDffs.map((d) => [d.width, valName(d)] as const),

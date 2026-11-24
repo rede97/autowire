@@ -14,6 +14,7 @@ const ports1 = P(
 );
 const fsm = (body: string, p = ports) => `@Fsm\nasync f(${p}) {\n${body}\n}`;
 const sub = `async s(${P("a = Input(1)")}) { W: await a.wait(1); return a; }`;
+const callSub = `async s(${P("a = Input(1)", "y = Output(1)")}) { y.pulse(); W: await a.wait(1); return a; }`;
 const caller = (body: string) =>
 	`${fsm(`let r;\nwhile (true) { S: await go.wait(1); ${body} }`, ports1)}\n${sub}`;
 
@@ -238,6 +239,64 @@ const cases: [string, string, string][] = [
 		"Instance inside the loop",
 		`${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); Instance(this.g, { c: go, y: x }); }")}\n@Fsm\nasync g(${P("c = Input(1)", "y = Output(1)")}) { while (true) { W: await c.wait(1); y.pulse(); } }`,
 		"belongs before while (true)",
+	],
+	[
+		"Caller of an @Fsm method",
+		`${fsm("const c = Caller(this.g, {});\nwhile (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n@Fsm\nasync g(${P("c = Input(1)", "y = Output(1)")}) { while (true) { W: await c.wait(1); y.pulse(); } }`,
+		"Caller takes a sub-FSM",
+	],
+	[
+		"Caller leaves an Output unbound",
+		`${fsm("const c = Caller(this.s, {});\nwhile (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n${callSub}`,
+		"y of s is not an Input: bind it",
+	],
+	[
+		"Caller call without a label",
+		`${fsm("const c = Caller(this.s, { y: x });\nwhile (true) { S: await (go & b).wait(1); d.set(1); await c.call({ a: go }); }")}\n${callSub}`,
+		"label the call",
+	],
+	[
+		"Caller call misses an argument",
+		`${fsm("const c = Caller(this.s, { y: x });\nwhile (true) { S: await (go & b).wait(1); d.set(1); C: await c.call({}); }")}\n${callSub}`,
+		"port a of the message is not connected",
+	],
+	[
+		"Caller called twice, result ignored, compiles",
+		`${fsm("const c = Caller(this.s, { y: x });\nwhile (true) { S: await (go & b).wait(1); d.set(1); C: await c.call({ a: go }); D: await c.call({ a: b }); }")}\n${callSub}`,
+		"",
+	],
+	[
+		"Caller port name reserved",
+		`${fsm("const c = Caller(this.t, { y: x });\nwhile (true) { S: await (go & b).wait(1); d.set(1); C: await c.call({ req: go }); }")}\nasync t(${P("req = Input(1)", "y = Output(1)")}) { y.pulse(); W: await req.wait(1); }`,
+		"reserved for the Caller server",
+	],
+	[
+		"record field never read",
+		fsm(
+			"let r;\nwhile (true) { S: await (go & b).wait(1); x.pulse(); T: r = await p.pop(); d.set(r.a ? 1 : 2); }",
+			P(
+				"go = Input(1)",
+				"b = Input(1)",
+				"x = Output(1)",
+				"d = Dff(4)",
+				"p = PopPort({ a: 1, z: 1 })",
+			),
+		),
+		"never read (z)",
+	],
+	[
+		"record message read whole",
+		fsm(
+			"let r;\nwhile (true) { S: await (go & b).wait(1); x.pulse(); T: r = await p.pop(); d.set(r); }",
+			P(
+				"go = Input(1)",
+				"b = Input(1)",
+				"x = Output(1)",
+				"d = Dff(4)",
+				"p = PopPort({ a: 4 })",
+			),
+		),
+		"r is a message: read one of its fields (r.a)",
 	],
 	[
 		"two ports on one line",

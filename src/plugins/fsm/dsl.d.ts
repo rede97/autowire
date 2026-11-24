@@ -20,16 +20,19 @@ export interface DffReg {
 	readonly val: Signal;
 }
 
-/** Sending end of a channel: vld / rdy / data (§6.2). */
+/** A channel message: one N-bit value, or `{ field: value }` for a record channel. */
+export type Message = Signal | number | Record<string, Signal | number>;
+
+/** Sending end of a channel: vld / rdy / data or named fields (§6.2). */
 export interface PushEnd {
-	/** State: hold vld and `v` until rdy. */
-	push(v: Signal | number): Promise<void>;
+	/** State: hold vld and `v` until rdy; `push()` on a `{}` token channel. */
+	push(v?: Message): Promise<void>;
 }
 
 /** Receiving end of a channel (§6.2). */
 export interface PopEnd {
-	/** State: hold rdy until vld; the data is valid in the segment that follows. */
-	pop(): Promise<Signal>;
+	/** State: hold rdy until vld; the data (or `r.<field>`) is valid in the segment that follows. */
+	pop(): Promise<Signal & Record<string, Signal>>;
 }
 
 /** A channel inside an @Fsm: one end for this module, the other for an Instance (§5.3). */
@@ -37,6 +40,15 @@ export interface ChanPair extends PushEnd, PopEnd {
 	readonly tx: PushEnd;
 	readonly rx: PopEnd;
 }
+
+/** `Caller(this.sub, { bound })`: a shared server running a sub-FSM (§5.4). */
+export interface CallerPort {
+	/** Two states, L_REQ then L_RSP: send the unbound Inputs, wait for the result. */
+	call(args?: Record<string, Signal | number>): Promise<Signal>;
+}
+
+/** `N` for one data field, or `{ name: width, ... }` (`{}` is a bare token). */
+export type Shape = number | Record<string, number>;
 
 export interface FsmOptions {
 	statePrefix?: string;
@@ -59,14 +71,19 @@ export declare function Dff(
 	width: number,
 	options?: { reset?: number; external?: boolean },
 ): DffReg;
-export declare function PushPort(width: number): PushEnd;
-export declare function PopPort(width: number): PopEnd;
-export declare function Chan(width: number): ChanPair;
+export declare function PushPort(shape: Shape): PushEnd;
+export declare function PopPort(shape: Shape): PopEnd;
+export declare function Chan(shape: Shape): ChanPair;
 /** An independent process: `Instance(this.fsm, { port: signal | channel end, ... })` (§5.3). */
 export declare function Instance(
 	target: unknown,
 	ports: Record<string, unknown>,
 ): void;
+/** A sub-FSM as a shared server: bound ports are wired once, the rest are call arguments (§5.4). */
+export declare function Caller(
+	target: unknown,
+	bound?: Record<string, unknown>,
+): CallerPort;
 export declare const ALWAYS_0: Signal;
 export declare const ALWAYS_1: Signal;
 export declare function SvPackage(

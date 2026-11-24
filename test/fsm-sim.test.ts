@@ -21,6 +21,7 @@ const DEMOS = [
 	"dump_check",
 	"dump_svc",
 	"cfg_load",
+	"reg_mgr",
 ];
 const USER_PKGS = [join(demo, "rtl/dump_pkg.sv")];
 
@@ -91,6 +92,7 @@ describe("verilator", () => {
 		["dump_check", "dump_check", "dump_check", ""],
 		["dump_client", "dump_svc", "dump_check", "dump_client"],
 		["cfg_load", "cfg_load", "cfg_load", ""],
+		["reg_mgr", "reg_mgr", "reg_mgr", ""],
 	] as const)
 		verilatorTest(
 			`${top}: cycle behavior`,

@@ -42,6 +42,10 @@ export const ALWAYS_1 = signal();
 
 export function Instance() {}
 
+export function Caller() {
+	return { call: async () => signal() };
+}
+
 export function SvPackage() {
 	return new Proxy({}, { get: () => signal });
 }

@@ -2,6 +2,7 @@
 // read the @FsmGroup class, @FsmPort interfaces and the method ports (§2.2, §2.6).
 
 import { dirname, resolve } from "node:path";
+import type { parse as babelParse } from "@babel/parser";
 import type {
 	ClassDeclaration,
 	ClassMethod,
@@ -19,6 +20,8 @@ import type {
 	Iface,
 	IfaceClass,
 	IfaceField,
+	MsgField,
+	MsgShape,
 	Port,
 	SvFn,
 	SvPkg,
@@ -38,6 +41,7 @@ const BUILTINS: Record<string, true> = {
 	PopPort: true,
 	Chan: true,
 	Instance: true,
+	Caller: true,
 	SvPackage: true,
 	SvFunction: true,
 	Escape: true,
@@ -72,11 +76,12 @@ const samePath = (a: string, b: string) =>
 /** Loads another fsm source by absolute path (cached by the caller). */
 export type Loader = (abs: string, from: Src, node: Node) => Promise<Unit>;
 
-async function parseFile(src: Src): Promise<File> {
-	// Lazy: the parser loads only for `plugin fsm run` (§8.2), like exceljs.
-	const { parse } = await import("@babel/parser");
+let parser: typeof babelParse | undefined;
+
+function parseText(src: Src): File {
+	if (!parser) throw new Error("fsm: the parser is not loaded");
 	try {
-		return parse(src.text, {
+		return parser(src.text, {
 			sourceType: "module",
 			sourceFilename: src.file,
 			plugins: ["decorators"],
@@ -102,29 +107,51 @@ async function parseFile(src: Src): Promise<File> {
 	}
 }
 
+const emptyUnit = (src: Src, abs: string): Unit => ({
+	src,
+	abs,
+	builtins: new Map(),
+	packages: new Map(),
+	ifaces: new Map(),
+	groups: new Map(),
+	exports: new Map(),
+});
+
 /** Parse one source. Imports other than the DSL are fsm sources loaded through `load`. */
 export async function parseUnit(
 	src: Src,
 	o: { abs: string; dsl: string; load: Loader },
 ): Promise<Unit> {
-	const file = await parseFile(src);
-	const unit: Unit = {
-		src,
-		abs: o.abs,
-		builtins: new Map(),
-		packages: new Map(),
-		ifaces: new Map(),
-		groups: new Map(),
-		exports: new Map(),
-	};
+	// Lazy: the parser loads only for `plugin fsm run` (§8.2), like exceljs.
+	parser ??= (await import("@babel/parser")).parse;
+	const file = parseText(src);
+	const unit = emptyUnit(src, o.abs);
+	// Imports first, as ES hoists them: classes below resolve the names they bring.
+	for (const stmt of file.program.body)
+		if (stmt.type === "ImportDeclaration") await importDecl(unit, stmt, o);
+	fillUnit(unit, file);
+	return unit;
+}
+
+/** Source the compiler writes itself (a Caller server, §5.4): every builtin is
+ *  in scope under its own name, plus the names of the file it was made for. */
+export function parseSynthetic(src: Src, from: Unit): Unit {
+	const unit = emptyUnit(src, from.abs);
+	for (const b of Object.keys(BUILTINS)) unit.builtins.set(b, b);
+	for (const [k, v] of from.packages) unit.packages.set(k, v);
+	for (const [k, v] of from.ifaces) unit.ifaces.set(k, v);
+	for (const [k, v] of from.groups) unit.groups.set(k, v);
+	fillUnit(unit, parseText(src));
+	return unit;
+}
+
+function fillUnit(unit: Unit, file: File) {
+	const src: Src = unit.src;
 	let groupDecl:
 		| { decl: ClassDeclaration; outer: Node; exported: boolean }
 		| undefined;
 	for (const stmt of file.program.body) {
-		if (stmt.type === "ImportDeclaration") {
-			await importDecl(unit, stmt, o);
-			continue;
-		}
+		if (stmt.type === "ImportDeclaration") continue;
 		const exported = stmt.type === "ExportNamedDeclaration";
 		const decl = exported ? stmt.declaration : stmt;
 		if (exported && (stmt.specifiers.length > 0 || stmt.source))
@@ -170,7 +197,6 @@ export async function parseUnit(
 		unit.groups.set(g.name, g);
 		if (groupDecl.exported) unit.exports.set(g.name, g);
 	}
-	return unit;
 }
 
 async function importDecl(
@@ -391,7 +417,9 @@ function methodPorts(
 					"a port default is a port declaration: Input(N), Output(N), Dff(N), PushPort(N), PopPort(N) or new Iface(...)",
 				);
 			const [a0, a1] = init.arguments;
-			const port = portDecl(src, kind, name, widthLit(src, a0), a1, p);
+			const port = portDecl(src, kind, name, a0, a1, p, (n) =>
+				widthLit(src, n),
+			);
 			params.set(name, port);
 			made = [port];
 		}
@@ -406,31 +434,64 @@ function portDecl(
 	src: Src,
 	kind: string,
 	name: string,
-	width: number,
+	a0: Node | undefined,
 	opts: Node | undefined,
 	node: Node,
+	widthOf: (n: Node | undefined) => number,
 ): Port {
+	if (kind === "PushPort" || kind === "PopPort") {
+		if (opts)
+			src.fail(opts, `${kind} takes one width or one { field: width } object`);
+		return hsPort(
+			kind === "PushPort" ? "push" : "pop",
+			name,
+			msgShape(src, a0, widthOf),
+			"port",
+			node,
+		);
+	}
+	const width = widthOf(a0);
 	if (kind === "Dff") return dffDecl(src, name, node, width, opts, true);
 	if (opts) src.fail(opts, `${kind}(N) takes one width`);
 	if (kind === "Input") return { k: "input", name, width, node, used: false };
-	if (kind === "Output") return { k: "output", name, width, node, sites: [] };
-	return hsPort(
-		kind === "PushPort" ? "push" : "pop",
-		name,
-		width,
-		"port",
-		node,
-	);
+	return { k: "output", name, width, node, sites: [] };
+}
+
+/** `N` (one data field) or `{ addr: 8, we: 1 }` (named fields; `{}` is a token) (§6.2). */
+export function msgShape(
+	src: Src,
+	a0: Node | undefined,
+	widthOf: (n: Node | undefined) => number,
+): MsgShape {
+	if (a0?.type !== "ObjectExpression")
+		return { k: "data", fields: [{ name: "data", width: widthOf(a0) }] };
+	const fields: MsgField[] = [];
+	for (const p of a0.properties) {
+		if (
+			p.type !== "ObjectProperty" ||
+			p.key.type !== "Identifier" ||
+			p.computed
+		)
+			return src.fail(p, "each message field is name: width");
+		const name = p.key.name;
+		checkSvId(src, p.key, name, "message field");
+		if (name === "vld" || name === "rdy")
+			src.fail(p.key, `field name ${name} is the handshake itself`);
+		if (fields.some((f) => f.name === name))
+			src.fail(p.key, `field ${name} is declared twice`);
+		fields.push({ name, width: widthOf(p.value) });
+	}
+	return { k: "record", fields };
 }
 
 export function hsPort(
 	k: "push" | "pop",
 	name: string,
-	width: number,
+	msg: MsgShape,
 	place: "port" | "chan",
 	node: Node,
 ): HsPort {
-	return { k, name, width, place, node, sites: [], read: false };
+	return { k, name, msg, place, node, sites: [], reads: new Set() };
 }
 
 /** `@FsmPort` class: constructor fields `this.f = Kind(...)` and plain methods (§2.6). */
@@ -532,10 +593,13 @@ function fieldPort(
 ): Port {
 	const src: Src = cls.unit.src;
 	const [w, opts] = f.args;
-	const v = w?.type === "Identifier" ? env.get(w.name) : undefined;
-	const width = v !== undefined ? Number(v) : widthLit(src, w);
-	if (width < 1 || width > 4096) src.fail(w, "width must be 1..4096");
-	return portDecl(src, f.kind, name, width, opts, node);
+	const widthOf = (n: Node | undefined) => {
+		const v = n?.type === "Identifier" ? env.get(n.name) : undefined;
+		const width = v !== undefined ? Number(v) : widthLit(src, n);
+		if (width < 1 || width > 4096) src.fail(n, "width must be 1..4096");
+		return width;
+	};
+	return portDecl(src, f.kind, name, w, opts, node, widthOf);
 }
 
 /** Dff(N, { reset?, external? }) as a port (`param`) or in the method body. */

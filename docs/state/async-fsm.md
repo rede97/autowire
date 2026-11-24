@@ -1,11 +1,11 @@
 # async/await 状态机 DSL 设计（草案）
 
-> 状态：**部分落地**。`plugin fsm run` 已编译：状态、分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、子状态机平铺展开与 `return` 结果、`push` / `pop` 与 `Chan`、`Instance` 例化、`@FsmPort` 接口、跨文件 import、`@Fsm({ statePrefix, stateEncoding })`（`help fsm`，示例 `demo/state/`）。还没有实现：不带 `await` 的 push / pop（Future）、`Promise.all`、`try` / `Escape`、`exportState` / `stateValues` / `stateReg`，用到时编译期报「not implemented yet」。
+> 状态：**部分落地**。`plugin fsm run` 已编译：状态、分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、子状态机平铺展开与 `return` 结果、`push` / `pop`（含多字段消息）与 `Chan`、`Instance` 例化、`Caller`、`@FsmPort` 接口、跨文件 import、`@Fsm({ statePrefix, stateEncoding })`（`help fsm`，示例 `demo/state/`）。还没有实现：不带 `await` 的 push / pop（Future）、`Promise.all`、`try` / `Escape`、`exportState` / `stateValues` / `stateReg`，用到时编译期报「not implemented yet」。
 > 来源：初稿 `demo/state/demo.md` 与值模型试验 `demo/state/demo.ts`，已并入本文后删除；原文见 git 提交 `21cb9ca`。本文是这套设计的唯一来源。
 > 初稿没说清的地方标为「决定」（本文给出的取舍）或「开放」（§10，需作者拍板）。
 > 作者源码是 **ECMAScript**（`.mjs`），不是 TypeScript：一组状态机写成带 `@FsmGroup` 的 class，对外的状态机是带 `@Fsm` 的 async 方法，端口是方法的解构参数（§2.2）；状态名用原生标签语句（§3.5）。选型理由见 §8.2。
 > **术语**：「信号」指每拍都有值的线（`Input`、`Output`、`Dff`、组合表达式）；「channel」只指带 vld / rdy 握手的消息通道（`PushPort`、`PopPort`、`Chan`，§6.2）。
-> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例与 §6.5 的 `aw_dff` 一起要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。除 §7.1 外，SV 示例省略文件头（§7.1）。示例、生成规则任何一方改动，都要同步更新另一方。已落地部分的示例（§2.3、§2.6、§3.6、§3.6.1、§4、§5.2、§5.3、§6.1、§6.1.1、§6.5、§7.1）就是生成器的实际输出，`test/fsm.test.ts` 逐字比对，`demo/state/` 是它们的可运行副本；未落地部分的示例按同样的格式手写。
+> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例与 §6.5 的 `aw_dff` 一起要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。除 §7.1 外，SV 示例省略文件头（§7.1）。示例、生成规则任何一方改动，都要同步更新另一方。已落地部分的示例（§2.3、§2.6、§3.6、§3.6.1、§4、§5.2、§5.3、§5.4、§6.1、§6.1.1、§6.5、§7.1）就是生成器的实际输出，`test/fsm.test.ts` 逐字比对，`demo/state/` 是它们的可运行副本；未落地部分的示例按同样的格式手写。
 
 ## 背景
 
@@ -44,6 +44,31 @@
 | 子状态机 | 组里不带装饰器的 async 方法。`await this.xxx({...})` 调用时平铺展开进调用方，不生成模块（§5） |
 | 实例 | `Instance(...)` 例化的顶层状态机：一个独立运行的进程，与父级只通过端口连接的信号和 channel 通信（§5.3） |
 | 接口 | 带 `@FsmPort` 的 class：一组端口加操作它们的方法（§2.6） |
+| Caller | `Caller(this.sub, {...})` 把子状态机包成一个共享的服务实例，`L: r = await reg.call({...})` 从多处调用它（§5.4） |
+
+### 1.1 底层模型
+
+DSL 只有三层概念，其余写法都能展开成它们（**决定**）：
+
+| 层 | 概念 | 硬件 |
+|---|---|---|
+| 原子 | 信号（组合）、寄存器（`Dff`）、状态寄存器 | `assign`、`aw_dff`、`always_ff` |
+| 进程 | `@Fsm`：一个状态寄存器和它驱动的逻辑 | 一个 `module` |
+| 通信 | channel：vld / rdy 加一组数据字段，双方握手交接一个消息 | 一组线 |
+
+组合方式也只有三种：
+
+- **平铺展开**（顺序组合）：两段流程并进同一个进程，共用一个状态寄存器。子状态机调用、接口方法调用都是这一种（§5、§2.6）。
+- **`Instance`**（并行组合）：生成一个新进程，它与父级只通过端口和 channel 通信（§5.3）。
+- **端口绑定**：把信号或 channel 端接到端口上。
+
+其余写法都是这三者的固定组合，展开后的硬件完全确定：
+
+| 写法 | 展开成 |
+|---|---|
+| `@FsmPort` 接口 | 一组端口加若干平铺展开的方法（§2.6） |
+| `Caller(this.sub, {...})` | 一个生成的服务进程（在里面平铺展开 `sub`）、一个 `Instance`、两个 channel，调用点是两个 push / pop 状态（§5.4） |
+| `Promise.all` | 同一进程里的几个握手在一个 join 状态里并行进行（§6.3） |
 
 ## 2. 信号模型
 
@@ -499,6 +524,7 @@ fsm 源文件除了 import DSL 内建名字，还可以 import 别的 fsm 源文
 | `L: r = await x.pop()` | ≥ 1 | 是 | 停在 S 期间 `x_rdy = 1`，`x_vld` 那一拍离开；`r` 是 `x_data`（§6.2） |
 | `L: [r =] await this.sub({...})` | 子状态机的拍数 | 子状态机的状态 | 平铺展开：子状态机的状态并入调用方，名字加前缀 `L_`（§5） |
 | `Instance(this.fsm, {...})` | — | 否 | 独立运行的实例，只通过端口连接的信号和 channel 通信（§5.3） |
+| `const reg = Caller(this.sub, {...})` … `L: [r =] await reg.call({...})` | ≥ 2 | 是（`L_REQ`、`L_RSP`） | 共享的服务实例：推送参数、弹出结果（§5.4） |
 | `const f = x.push(v)` … `await Promise.all([...])` | 等全部 Future 完成 | 是 | fork / join（§6.3，未实现） |
 | `Name: await …` | 0 | 否 | 给该 `await` 的状态命名（§3.5） |
 | `while` / `do…while` / `break` / `continue` | 0 | 否 | 控制流图上的回边与出口（§3.6） |
@@ -1629,6 +1655,7 @@ endmodule
 | 复用 | 每个调用点复制一份状态和私有 `Dff` | 一个实例；父级多个状态向同一个 channel 发请求，就是分时复用 |
 
 - 父级不能调用实例的方法，也不能读实例的状态或 `Dff`；两边的约束只能写在 channel 的消息里，类似 Go 的 goroutine 与 channel。
+- 子状态机也可以只要一份硬件、被多处调用：`Caller` 把它包进一个服务进程再例化（§5.4），代价是每次调用两次握手。
 - 互斥的平铺调用之间复用私有寄存器（例如两个互斥子状态机各自的计数器共用一个），像栈帧复用，是后续优化，见 §10。
 
 ### 5.2 示例：扫描 dump 寄存器堆并统计匹配次数
@@ -2175,6 +2202,334 @@ sequenceDiagram
 - vld 和 rdy 都由状态译码直接给出，两边之间没有组合环。双方都在等待状态里握手，`REQ` 和服务端 `CMD` 同一拍离开。
 - 与 §5.2 相比多了 `pattern` / `count` 两个寄存器和两拍握手：这是独立进程的代价；平铺展开没有这些开销，但每个调用点复制一份扫描状态。
 
+### 5.4 Caller：把子状态机变成可多次调用的实例
+
+场景：寄存器访问写成子状态机 `reg_access`。平铺展开时，每个调用点都会复制一份它的状态；希望它只有一份硬件，寄存器总线端口只连一次，顶层在不同位置多次调用它。`Caller` 就是这种用法（**决定**）：
+
+```js
+const reg = Caller(this.reg_access, { bus_req, bus_we, ... });   // ports bound once
+Rd: v = await reg.call({ addr: 0x10, wdata: 0, we: 0 });         // call site 1
+Wr: await reg.call({ addr: 0x14, wdata: status.val, we: 1 });     // call site 2
+```
+
+`Caller` 不是新的硬件概念，它按 §1.1 展开成三样已有的东西：
+
+1. **服务进程**：生成一个 `@Fsm` 方法 `<所在方法>_<名字>`，它等请求、锁存参数、平铺展开 `reg_access`、发回结果。
+2. **两个 channel**：`<名字>_req` 装参数（被调用方没有绑定的 `Input`，一个字段一个），`<名字>_rsp` 装返回值（没有返回值或没人读结果时是不带数据的 token）。
+3. **一个实例** `u_<名字>`：绑定的端口按 `Instance` 的规则连接（§5.3），`req` / `rsp` 接两个 channel 的对应端。
+
+调用点 `L: r = await reg.call({...})` 展开成两个状态：`L_REQ` 推送参数，`L_RSP` 弹出结果，`r` 就是结果，只在离开 `L_RSP` 那一段有效（§2.4）。
+
+DSL：
+
+```js
+@FsmGroup
+export class RegMgr {
+  /** Reads the status register, then writes it back to the control register. */
+  @Fsm
+  async reg_mgr({
+    // control
+    go = Input(1),
+    done = Output(1),
+    status = Dff(32),
+    // register bus
+    bus_req = Output(1),
+    bus_we = Output(1),
+    bus_addr = Output(8),
+    bus_wdata = Output(32),
+    bus_ack = Input(1),
+    bus_rdata = Input(32),
+  }) {
+    const reg = Caller(this.reg_access, {
+      bus_req,
+      bus_we,
+      bus_addr,
+      bus_wdata,
+      bus_ack,
+      bus_rdata,
+    });
+    let v;
+    while (true) {
+      IDLE: await go.wait(1);
+      Rd: v = await reg.call({ addr: 0x10, wdata: 0, we: 0 });
+      status.set(v);
+      Wr: await reg.call({ addr: 0x14, wdata: status.val, we: 1 });
+      done.pulse();
+    }
+  }
+
+  /** One register access: a request pulse, then ack with the read data. */
+  async reg_access({
+    // access
+    addr = Input(8),
+    wdata = Input(32),
+    we = Input(1),
+    // register bus
+    bus_req = Output(1),
+    bus_we = Output(1),
+    bus_addr = Output(8),
+    bus_wdata = Output(32),
+    bus_ack = Input(1),
+    bus_rdata = Input(32),
+  }) {
+    bus_req.pulse();
+    bus_we.pulse(we);
+    bus_addr.pulse(addr);
+    bus_wdata.pulse(wdata);
+    Wait: await bus_ack.wait(1);
+    return bus_rdata;
+  }
+}
+```
+
+生成器为 `reg` 写出的服务进程，等价于作者手写下面这个 `@Fsm` 方法（它照常经过检查器和生成器）：
+
+```text
+@Fsm
+async reg_mgr_reg({
+  // bound ports
+  bus_req = Output(1), ..., bus_rdata = Input(32),
+  // call
+  req = PopPort({ addr: 8, wdata: 32, we: 1 }),
+  rsp = PushPort(32),
+}) {
+  const arg_addr = Dff(8);  const arg_wdata = Dff(32);  const arg_we = Dff(1);
+  const result = Dff(32);
+  let m;
+  let r;
+  while (true) {
+    Idle: m = await req.pop();
+    arg_addr.set(m.addr);  arg_wdata.set(m.wdata);  arg_we.set(m.we);
+    Load: await ALWAYS_1.wait(1);
+    Run: r = await RegMgr.reg_access({ bus_req, ..., addr: arg_addr.val, wdata: arg_wdata.val, we: arg_we.val });
+    result.set(r);
+    Done: await rsp.push(result.val);
+  }
+}
+```
+
+生成的 SV（调用方）：
+
+```systemverilog
+package reg_mgr_pkg;
+  typedef enum logic [2:0] {IDLE, RD_REQ, RD_RSP, WR_REQ, WR_RSP} state_t;
+endpackage
+
+// Reads the status register, then writes it back to the control register.
+module reg_mgr
+  import reg_mgr_pkg::*;
+(
+  // clock and reset
+  input  logic        clk,
+  input  logic        rst_n,
+  // control
+  input  logic        go,
+  output logic        done,
+  output logic [31:0] status,
+  // register bus
+  output logic        bus_req,
+  output logic        bus_we,
+  output logic [7:0]  bus_addr,
+  output logic [31:0] bus_wdata,
+  input  logic        bus_ack,
+  input  logic [31:0] bus_rdata
+);
+  state_t      state_val, state_next;
+  logic        move_to_WR_REQ, move_to_IDLE;
+  logic        reg_req_vld, reg_req_rdy, reg_req_we, reg_rsp_vld, reg_rsp_rdy;
+  logic [7:0]  reg_req_addr;
+  logic [31:0] reg_req_wdata;
+  logic [31:0] reg_rsp_data;
+
+  always_comb begin
+    state_next     = state_val;
+    move_to_WR_REQ = 1'b0;
+    move_to_IDLE   = 1'b0;
+    unique case (state_val)
+      IDLE:
+        if (go) begin
+          state_next = RD_REQ;
+        end
+      RD_REQ:
+        if (reg_req_rdy) begin
+          state_next = RD_RSP;
+        end
+      RD_RSP:
+        if (reg_rsp_vld) begin
+          state_next     = WR_REQ;
+          move_to_WR_REQ = 1'b1;
+        end
+      WR_REQ:
+        if (reg_req_rdy) begin
+          state_next = WR_RSP;
+        end
+      WR_RSP:
+        if (reg_rsp_vld) begin
+          state_next   = IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  reg_mgr_reg u_reg (
+    .clk, .rst_n,
+    .bus_req   (bus_req),
+    .bus_we    (bus_we),
+    .bus_addr  (bus_addr),
+    .bus_wdata (bus_wdata),
+    .bus_ack   (bus_ack),
+    .bus_rdata (bus_rdata),
+    .req_vld   (reg_req_vld),
+    .req_rdy   (reg_req_rdy),
+    .req_addr  (reg_req_addr),
+    .req_wdata (reg_req_wdata),
+    .req_we    (reg_req_we),
+    .rsp_vld   (reg_rsp_vld),
+    .rsp_rdy   (reg_rsp_rdy),
+    .rsp_data  (reg_rsp_data)
+  );
+
+  assign done = move_to_IDLE;                                   // done.pulse()
+  aw_dff #(.T(logic [31:0])) u_status (.clk, .rst_n,
+    .set(move_to_WR_REQ),                                       // status.set(v)
+    .next(reg_rsp_data), .val(status));
+  assign reg_req_vld   = (state_val == RD_REQ)                  // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
+                       | (state_val == WR_REQ);
+  assign reg_req_addr  = ({8{state_val == RD_REQ}} & 8'h10) | ({8{state_val == WR_REQ}} & 8'h14);
+  assign reg_req_wdata = {32{state_val == WR_REQ}} & status;
+  assign reg_req_we    = state_val == WR_REQ;
+  assign reg_rsp_rdy   = (state_val == RD_RSP)                  // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
+                       | (state_val == WR_RSP);
+endmodule
+```
+
+生成的 SV（服务进程，与调用方在同一个文件里）：
+
+```systemverilog
+package reg_mgr_reg_pkg;
+  typedef enum logic [1:0] {IDLE, LOAD, RUN_WAIT, DONE} state_t;
+endpackage
+
+// Caller server of reg_access: one call per request (generated, §5.4).
+module reg_mgr_reg
+  import reg_mgr_reg_pkg::*;
+(
+  // clock and reset
+  input  logic        clk,
+  input  logic        rst_n,
+  // bound ports
+  output logic        bus_req,
+  output logic        bus_we,
+  output logic [7:0]  bus_addr,
+  output logic [31:0] bus_wdata,
+  input  logic        bus_ack,
+  input  logic [31:0] bus_rdata,
+  // call
+  input  logic        req_vld,
+  output logic        req_rdy,
+  input  logic [7:0]  req_addr,
+  input  logic [31:0] req_wdata,
+  input  logic        req_we,
+  output logic        rsp_vld,
+  input  logic        rsp_rdy,
+  output logic [31:0] rsp_data
+);
+  state_t      state_val, state_next;
+  logic        move_to_LOAD, move_to_RUN_WAIT, move_to_DONE;
+  logic        arg_we_val;
+  logic [7:0]  arg_addr_val;
+  logic [31:0] arg_wdata_val;
+  logic [31:0] result_val;
+
+  always_comb begin
+    state_next       = state_val;
+    move_to_LOAD     = 1'b0;
+    move_to_RUN_WAIT = 1'b0;
+    move_to_DONE     = 1'b0;
+    unique case (state_val)
+      IDLE:
+        if (req_vld) begin
+          state_next   = LOAD;
+          move_to_LOAD = 1'b1;
+        end
+      LOAD:
+        begin
+          state_next       = RUN_WAIT;
+          move_to_RUN_WAIT = 1'b1;
+        end
+      RUN_WAIT:
+        if (bus_ack) begin
+          state_next   = DONE;
+          move_to_DONE = 1'b1;
+        end
+      DONE:
+        if (rsp_rdy) begin
+          state_next = IDLE;
+        end
+      default:
+        state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  assign bus_req   = move_to_RUN_WAIT;                          // bus_req.pulse()
+  assign bus_we    = move_to_RUN_WAIT & arg_we_val;             // bus_we.pulse(we)
+  assign bus_addr  = {8{move_to_RUN_WAIT}} & arg_addr_val;      // bus_addr.pulse(addr)
+  assign bus_wdata = {32{move_to_RUN_WAIT}} & arg_wdata_val;    // bus_wdata.pulse(wdata)
+  assign req_rdy   = state_val == IDLE;                         // req.pop()
+  assign rsp_vld   = state_val == DONE;                         // rsp.push(result.val)
+  assign rsp_data  = result_val;
+  aw_dff #(.T(logic [7:0])) u_arg_addr (.clk, .rst_n,
+    .set(move_to_LOAD),                                         // arg_addr.set(m.addr)
+    .next(req_addr), .val(arg_addr_val));
+  aw_dff #(.T(logic [31:0])) u_arg_wdata (.clk, .rst_n,
+    .set(move_to_LOAD),                                         // arg_wdata.set(m.wdata)
+    .next(req_wdata), .val(arg_wdata_val));
+  aw_dff u_arg_we (.clk, .rst_n,
+    .set(move_to_LOAD),                                         // arg_we.set(m.we)
+    .next(req_we), .val(arg_we_val));
+  aw_dff #(.T(logic [31:0])) u_result (.clk, .rst_n,
+    .set(move_to_DONE),                                         // result.set(r)
+    .next(bus_rdata), .val(result_val));
+endmodule
+```
+
+| DSL | SV |
+|---|---|
+| `const reg = Caller(this.reg_access, {...})` | 模块 `reg_mgr_reg` 与实例 `u_reg`；`reg_req_*`（字段 `addr` / `wdata` / `we`）与 `reg_rsp_*` 两组 channel 线 |
+| 绑定的 `bus_*` | 实例端口直接接父级的 `bus_*`，由服务进程驱动 |
+| 没绑定的 `addr` / `wdata` / `we` | 请求消息的字段，服务进程在 `IDLE` 离开时锁进 `arg_*`，`LOAD` 一拍之后才开始访问 |
+| `Rd: v = await reg.call({...})` | 状态 `RD_REQ`（`reg_req_vld`，字段按状态选择）和 `RD_RSP`（`reg_rsp_rdy`）；`v` 就是 `reg_rsp_data` |
+| `return bus_rdata` | 服务进程锁进 `result`，在 `DONE` 里推回 |
+
+规则：
+
+- `Caller(...)` 只写在 `@Fsm` 方法体顶部；目标是子状态机（不带装饰器的方法），`@Fsm` 方法请用 `Instance`。
+- 第二个参数绑定被调用方的端口，规则与 `Instance` 相同。没绑定的端口就是每次调用的参数，必须是 `Input`；`Output`、`Dff`、channel 和接口端口必须绑定。
+- `call({...})` 的键是全部参数，值是信号表达式，在 `L_REQ` 停留期间保持（§6.2），不能读只在一段内有效的 `let`。
+- 调用必须带标签；被调用方没有返回值时不能写 `r =`。所有调用点都不读结果时，`rsp` 退化成 token，服务进程也不生成 `result`。
+- 同一个 `Caller` 的调用点都在一个进程里，状态互斥，天然不会同时调用。`Promise.all` 里并发调用同一个 `Caller`，或两个进程共用一个 `Caller`，需要仲裁，这一版不支持（§10）。
+- 被调用方的端口名不能是 `req`、`rsp`、`result`，也不能以 `arg_` 开头：它们是服务进程的名字。
+- `reg` 只能在声明它的方法里调用；把它当参数传给子状态机，或转发成模块端口给外部调用，还没有实现（§10）。
+
+三种用法的取舍：
+
+| | 平铺展开 | `Instance` + channel | `Caller` |
+|---|---|---|---|
+| 写法 | `L: await this.sub({...})` | `Instance(this.fsm, {...})`，手写 `push` / `pop` | `Caller(this.sub, {...})` + `L: await reg.call({...})` |
+| 被调用方 | 子状态机 | `@Fsm`，协议自定 | 子状态机，协议固定为请求后接应答 |
+| 多次调用 | 每个调用点复制一份状态和私有寄存器 | 共用一个实例 | 共用一个实例，分时复用 |
+| 每次调用的额外开销 | 0 拍 | 由协议决定 | 两次握手和 1 拍装载，外加参数与结果寄存器 |
+
 ## 6. 动作
 
 基本原则（来自初稿）：
@@ -2386,7 +2741,18 @@ leave S on x_rdy                    // 握手那一拍离开，执行 S 后面�
 - `vld` / `rdy` 只来自状态寄存器，不组合依赖对端，所以两个这样的状态机直连不会有组合环（§5.3）。
 - 至少一拍：进入 S 的那一拍属于前一个状态（§3.3），握手最早在进入后的下一拍完成。
 - `v` 不是锁存的：它在停留期间每拍都要有值，不能读只在一段内有效的 `let`（检查器报错），需要在进入时定下的值，先 `Dff.set` 再 `push(d.val)`。不做隐式数据寄存器，存储都是作者看得见的。
-- 生成例子见 §5.3。
+- 生成例子见 §5.3、§5.4。
+
+**消息（决定）**：channel 一次交接一个消息。消息可以是一个 N 位值，也可以是一组具名字段，共用一对 vld / rdy：
+
+| 声明 | 线 | 发送 | 接收 |
+|---|---|---|---|
+| `PushPort(8)`、`Chan(8)` | `x_vld` / `x_rdy` / `x_data[7:0]` | `await x.push(v)` | `r = await x.pop()`，`r` 即 `x_data` |
+| `PushPort({ addr: 8, we: 1 })` | `x_vld` / `x_rdy` / `x_addr[7:0]` / `x_we` | `await x.push({ addr: a, we: 1 })`，每个字段都要给 | `r = await x.pop()`，读 `r.addr`、`r.we`；直接读 `r` 报错 |
+| `PushPort({})` | 只有 `x_vld` / `x_rdy` | `await x.push()` | `await x.pop()`，不能写 `r =` |
+
+- 字段名不能是 `vld` / `rdy`。接到 `Instance` 或子状态机上时，两边的消息必须同形：同样的字段名、顺序和位宽。
+- 接收方读不到的字段在 SV 里是悬空输入，`-Wall` 会报未使用，所以 `pop` 出来的每个字段都要被读到，否则编译期报错。
 
 不带 `await` 的 `const f = x.push(v)` 是 Future，交给 `Promise.all` 与别的 Future 一起等（§6.3，未实现）。
 
@@ -2674,7 +3040,8 @@ state_next_o = move_to_S 时输出成员 S；state_set_o = 0 时取 state_val_o
 | 其他寄存器（`Dff`、`fin`） | `aw_dff` 实例 `u_<名字>`，端口 `set` / `next` / `val`，`val` 接到 `<名字>_val` |
 | 子状态机调用 `L: await this.m({...})` | 被调用方的状态 `<L>_<STATE>`、私有寄存器与线 `<l>_<名字>` 并入本模块（§5） |
 | `Instance(this.m, {...})` | 实例 `u_<模块名>`（第二个起 `u_<模块名>_1`…），端口按对象字面量连接，接口和 channel 端口逐根展开（§5.3） |
-| `const c = Chan(N)` / push / pop 状态 | `logic c_vld, c_rdy; logic [N-1:0] c_data;`；`c_vld = state_val == S`（几个状态时取或），`c_data` 按状态与-或（§6.2） |
+| `const c = Chan(N \| {...})` / push / pop 状态 | `logic c_vld, c_rdy;` 加每个消息字段一根 `c_<字段>`；`c_vld = state_val == S`（几个状态时取或），字段按状态与-或（§6.2） |
+| `const reg = Caller(this.sub, {...})` | 模块 `<方法>_reg`（与调用方同文件）、实例 `u_reg`、channel `reg_req_*` / `reg_rsp_*`；调用点状态 `<L>_REQ` / `<L>_RSP`（§5.4） |
 | `if` / `else` 分支 | 每个分支都写 `begin` / `end`（§6.5 第 2 条） |
 | 异常区域 `try { Escape(c) }` | 区域内每个状态分支最前面的 `if (c)`，外层在前（§3.7） |
 
@@ -2890,6 +3257,8 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | 状态机核心只读输入和各 DFF 的 `val`，不读自己的输出（组合环） | §6.5 |
 | 子状态机调用：带标签；实参是对象字面量，端口连全、方向和位宽一致，被调用方的端口都用到；几个 `return` 给出同一个值、有值时每条路都 `return`；无递归；未被调用的子状态机（导出的组除外） | §5 |
 | `Instance`：只写在 `@Fsm` 顶部，目标是 `@Fsm` 方法；端口连全；`Output` 只被实例驱动，不再 `pulse()`；同组内无例化环 | §5.3 |
+| `Caller`：只写在 `@Fsm` 顶部，目标是子状态机；没绑定的端口只能是 `Input`；被调用方端口名不占 `req` / `rsp` / `result` / `arg_*`；调用带标签，参数键齐全、不读 `let`；无返回值时不写 `r =` | §5.4 |
+| 消息：字段名唯一、不叫 `vld` / `rdy`；`push` 给齐全部字段；record 消息只读 `r.<字段>`；`pop` 出来的字段都要被读 | §6.2 |
 | `@Fsm({...})` 的选项名和取值（`stateReg`、`exportState`、`stateValues`）；`Dff` 的选项（`reset`、`external`，两者不能同时出现） | §2.2、§6.5 |
 | `SvPackage(...)` 是模块顶层 `const`，参数是字面量；调用的实参个数、位宽与声明一致 | §2.3 |
 | 子集：拒绝闭包捕获可变变量、内建方法与 `this.方法名`、`组.方法名`、接口方法以外的任意 JS 调用、动态属性 | §8.2 |
@@ -2924,6 +3293,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 9. 出错放弃在途 `push` / `pop` 时，是否需要可选的「等握手完成再离开」模式，以满足不允许中途撤 `vld` / `rdy` 的协议（§3.7）。
 10. 同步硬复位：是否提供 `SyncReset()` 端口，语义为下一拍回到入口状态、不执行任何动作、所有模块内 `Dff`（含 `fin`）回到复位值、实例经 `srst` 一起复位。生成形式是次态块外层的 `if (force_reset) state_next = <入口>; else unique case …`。软复位用 §3.7.1 的写法即可，目前没有硬复位需求，暂不加。
 11. 子集放宽：`switch` 是否等同多路分支（§11 的 MVP 不支持）。
+12. `Caller` 的扩展（§5.4）：并发调用与跨进程共用需要的仲裁器（`Arbiter`）；把 `reg` 当参数传给子状态机，或转发成 `PushPort` / `PopPort` 让模块外调用；参数在第一段就用到时省掉 `LOAD` 一拍。
 
 ## 11. 实现计划
 
@@ -2937,7 +3307,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | import 路径 | 内建名从 `.autowire/dsl/fsm/dsl.mjs` 导入，与 wishbone 一样由 `src/cli/pack.ts` 打包、每次 `plugin fsm run` 重新物化（自愈缓存）；`dsl.mjs` 只含空实现，另带 `dsl.d.ts` 给编辑器补全 |
 | 解析器 | `@babel/parser` 写死版本，懒加载（§8.2） |
 | 生成物登记 | 输出目录加进 `AGENTS.md` 的「Generated and MUST NOT be hand-edited」清单 |
-| 文档与帮助 | `help/fsm.txt`，在 `help status` 登记；`demo/state/` 是能跑的示例（`counter_ctl.mjs` = §7.1，`loop_ctl.mjs` = §3.6 / §3.6.1，`reg_ctl.mjs` = §6.5，`dump_check.mjs` = §5.2，`dump_svc.mjs` = §5.3，`cfg_load.mjs` = §2.6），`test/fsm.test.ts` 检查它与本文的 SV 一致 |
+| 文档与帮助 | `help/fsm.txt`，在 `help status` 登记；`demo/state/` 是能跑的示例（`counter_ctl.mjs` = §7.1，`loop_ctl.mjs` = §3.6 / §3.6.1，`reg_ctl.mjs` = §6.5，`dump_check.mjs` = §5.2，`dump_svc.mjs` = §5.3，`reg_mgr.mjs` = §5.4，`cfg_load.mjs` = §2.6），`test/fsm.test.ts` 检查它与本文的 SV 一致 |
 
 **MVP 的 ES 子集（决定）**：不支持 `switch`；变量只允许 §2.4 列出的 `const` / `let` 用法；其余语法一律编译期报错，带 `文件:行:列`。以后放宽见 §10。
 
@@ -2945,7 +3315,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 
 ```mermaid
 flowchart LR
-  P0["P0 骨架（已落地）<br/>解析、检查器（class / 参数 / 标签 / const-let）<br/>CFG：wait / if / while / break / continue<br/>次态块 + enum + pulse / Dff + 文件头"] --> P1["P1 交互（已落地，Promise.all 除外）<br/>push / pop 状态、Chan、Instance<br/>子状态机平铺展开、@FsmPort 接口、跨文件 import<br/>SvPackage、bits、?:"]
+  P0["P0 骨架（已落地）<br/>解析、检查器（class / 参数 / 标签 / const-let）<br/>CFG：wait / if / while / break / continue<br/>次态块 + enum + pulse / Dff + 文件头"] --> P1["P1 交互（已落地，Promise.all 除外）<br/>push / pop 状态、多字段消息、Chan、Instance、Caller<br/>子状态机平铺展开、@FsmPort 接口、跨文件 import<br/>SvPackage、bits、?:"]
   P1 --> P2["P2 异常与观测<br/>Future + Promise.all<br/>try / Escape / Raise<br/>exportState / stateValues / stateReg"]
   P2 --> P3["P3 优化<br/>寄存器复用、带缓存的 Chan<br/>§10 推迟项"]
 ```

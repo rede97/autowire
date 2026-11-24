@@ -2,7 +2,7 @@
 // the control signal that drives every action (move_to_T / leave_S / per edge).
 
 import type { Node } from "@babel/types";
-import type { Body } from "./cfg.ts";
+import { type Body, unread } from "./cfg.ts";
 import type {
 	Action,
 	CNode,
@@ -263,7 +263,10 @@ function checkUse(src: Src, ports: Port[], body: Body) {
 				p.node,
 				`${p.name} is never ${p.k === "push" ? "pushed" : "popped"}`,
 			);
-		if (p.k === "pop" && p.sites.length > 0 && !p.read)
-			src.fail(p.node, `the data popped from ${p.name} is never read`);
+		if (p.k === "pop" && p.sites.length > 0 && unread(p).length > 0)
+			src.fail(
+				p.node,
+				`the data popped from ${p.name} is never read (${unread(p).join(", ")})`,
+			);
 	}
 }

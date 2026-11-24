@@ -59,12 +59,25 @@ export interface DffReg {
 	group?: string[];
 }
 
-/** One end of a handshake channel: <name>_vld / _rdy / _data (§6.2).
+/** A field of a channel message: SV wire <port>_<name>. */
+export interface MsgField {
+	name: string;
+	width: number;
+}
+
+/** What a channel carries (§6.2): one N-bit `data`, or a record of named fields
+ *  (`PushPort({ addr: 8, we: 1 })`; `{}` is a bare token). */
+export interface MsgShape {
+	k: "data" | "record";
+	fields: MsgField[];
+}
+
+/** One end of a handshake channel: <name>_vld / _rdy / _<field> (§6.2).
  *  push sends (vld and data out), pop receives (rdy out). */
 export interface HsPort {
 	k: "push" | "pop";
 	name: string;
-	width: number;
+	msg: MsgShape;
 	/** port: a module port (PushPort / PopPort); chan: one end of a Chan. */
 	place: "port" | "chan";
 	node: Node;
@@ -72,8 +85,8 @@ export interface HsPort {
 	sites: HsSite[];
 	/** Owned by an instance instead of this module's states (§5.3). */
 	byInst?: Inst;
-	/** pop: some popped value is read. */
-	read: boolean;
+	/** pop: the fields some popped value reads. */
+	reads: Set<string>;
 	group?: string[];
 }
 
@@ -81,21 +94,39 @@ export interface HsPort {
 export interface HsSite {
 	port: HsPort;
 	state: State;
-	/** push data while waiting in the state. */
-	value?: Sig;
+	/** push data while waiting in the state, one per message field. */
+	values: Sig[];
 	text: string;
 	key: Key;
 }
 
-/** `const c = Chan(N)` in an @Fsm method: wires between this module and its instances. */
+/** `const c = Chan(N | { ... })` in an @Fsm method: wires between this module and its instances. */
 export interface Chan {
 	k: "chan";
 	name: string;
-	width: number;
+	msg: MsgShape;
 	node: Node;
 	/** Push end (into the channel) and pop end (out of it). */
 	tx: HsPort;
 	rx: HsPort;
+}
+
+/** `const reg = Caller(this.sub, { bound ports })`: a generated server process
+ *  running the sub-FSM, called through `L: r = await reg.call({ args })` (§5.4). */
+export interface CallerBinding {
+	k: "caller";
+	name: string;
+	callee: FsmMethod;
+	/** Call arguments: the callee's unbound Inputs, in its port order. */
+	args: MsgField[];
+	/** Result width; 0 when the callee returns nothing. */
+	result: number;
+	req: Chan;
+	rsp: Chan;
+	inst: Inst;
+	/** Callee parameters bound once in Caller(...), in callee order. */
+	bound: string[];
+	node: Node;
 }
 
 /** `x = new C(args)` with C an @FsmPort class: its fields, flattened to <x>_<field>. */
@@ -137,8 +168,10 @@ export interface LetSource {
 	width: number;
 	/** For errors: "the pop in state RSP", "the Scan call". */
 	what: string;
-	/** pop data: reading it marks the port's data as used. */
+	/** pop data: reading it marks the port's fields as used. */
 	port?: HsPort;
+	/** A record message: read r.<field>, not r. */
+	fields?: Map<string, Sig>;
 }
 
 /** `let r;` assigned once by `r = await x.pop()` or `r = await this.sub({...})` (§2.4). */
@@ -158,7 +191,8 @@ export type Binding =
 	| Chan
 	| Iface
 	| SigBinding
-	| LetBinding;
+	| LetBinding
+	| CallerBinding;
 
 /** A module port as declared; interfaces are flattened into their fields. */
 export type Port = InputPort | OutputPort | DffReg | HsPort;

@@ -61,8 +61,9 @@ export interface ExprCx {
 	pkg(name: string): SvPkg | undefined;
 	/** One wire per distinct call: `fn_<fn>_<n> = pkg::fn(args)`. */
 	userCall(pkg: SvPkg, fn: string, args: Sig[], node: Node): Sig;
-	/** `let r`: the popped data or inlined result, valid in its producer's segment. */
-	useLet(b: LetBinding): Sig;
+	/** `let r` (or `r.<field>` of a record message): the popped data or inlined
+	 *  result, valid in its producer's segment. */
+	useLet(b: LetBinding, field: string | undefined, node: Node): Sig;
 	/** `x.m(a)` with m an interface method `return <expr>`: the expression (§2.6). */
 	macro(node: Expression & { type: "CallExpression" }): Sig | undefined;
 }
@@ -157,22 +158,20 @@ function evalVal(cx: ExprCx, node: Expression, hint?: number): Val {
 		case "ThisExpression":
 			return src.fail(node, "read a field of this interface: this.<field>");
 		case "MemberExpression": {
-			if (
-				node.property.type === "Identifier" &&
-				!node.computed &&
-				node.property.name === "val"
-			) {
+			if (node.property.type === "Identifier" && !node.computed) {
+				const f = node.property.name;
 				const b = cx.ref(node.object);
-				if (b?.k === "dff") {
+				if (b?.k === "dff" && f === "val") {
 					b.read = true;
 					return { sv: atom(valName(b)), width: b.width, named: true };
 				}
+				if (b?.k === "let") return cx.useLet(b, f, node);
 			}
 			const b = cx.ref(node);
 			if (b) return bindingSig(cx, b, cx.src.textOf(node), node);
 			return src.fail(
 				node,
-				"only <Dff>.val and interface fields can be read from an object",
+				"only <Dff>.val, interface fields and message fields (r.<field>) can be read from an object",
 			);
 		}
 		case "AwaitExpression":
@@ -288,6 +287,11 @@ function bindingSig(cx: ExprCx, b: Binding, name: string, node: Node): Sig {
 				node,
 				`${name} is an interface; read its fields or call its methods (§2.6)`,
 			);
+		case "caller":
+			return src.fail(
+				node,
+				`${name} is a Caller; call it with L: r = await ${name}.call({...}) (§5.4)`,
+			);
 		case "sig":
 			if (b.start > (node.start ?? 0))
 				src.fail(node, `${name} is used before its declaration`);
@@ -295,7 +299,7 @@ function bindingSig(cx: ExprCx, b: Binding, name: string, node: Node): Sig {
 			if (b.use) b.use.used = true;
 			return b.sig;
 		case "let":
-			return cx.useLet(b);
+			return cx.useLet(b, undefined, node);
 	}
 }
 

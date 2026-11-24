@@ -19,7 +19,7 @@ export const docJs = blocks("js");
 export const docSv = blocks("systemverilog");
 
 export const IMPORT =
-	'import { FsmGroup, Fsm, FsmPort, Input, Output, Dff, Const, PushPort, PopPort, Chan, Instance, ALWAYS_0, ALWAYS_1, SvPackage, SvFunction } from "./dsl.mjs";\n';
+	'import { FsmGroup, Fsm, FsmPort, Input, Output, Dff, Const, PushPort, PopPort, Chan, Instance, Caller, ALWAYS_0, ALWAYS_1, SvPackage, SvFunction } from "./dsl.mjs";\n';
 
 /** Compile a whole source (imports added); `more` are other in-memory files it may import.
  *  Returns the file without its 2-line header. */

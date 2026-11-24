@@ -6,7 +6,7 @@ import { join, relative, sep } from "node:path";
 import type { Node } from "@babel/types";
 import { writeIfChanged } from "../../core/write.ts";
 import type { WorkspaceConfig } from "../../workspace.ts";
-import { BodyCompiler } from "./cfg.ts";
+import { BodyCompiler, type Shared } from "./cfg.ts";
 import { emitGroup } from "./emit.ts";
 import { type Loader, parseUnit } from "./front.ts";
 import { lower } from "./lower.ts";
@@ -147,19 +147,32 @@ export async function compileFsm(
 		}
 		state.set(m, "done");
 	};
-	const used = new Set<Node>();
+	const shared: Shared = { used: new Set(), results: new Map() };
 	const fsms: Fsm[] = [];
 	const instantiates = new Set<string>();
+	const modules = new Map<string, string>();
+	const add = (f: Fsm, node: Node) => {
+		if (modules.has(f.name))
+			src.fail(node, `module ${f.name} is generated twice in this group`);
+		modules.set(f.name, f.name);
+		fsms.push(f);
+	};
 	for (const m of g.methods) {
 		if (m.sub) continue;
 		visit(m);
 		for (const t of instanceTargets(m.node.body, unit))
 			if (t.group !== g) instantiates.add(t.group.unit.abs);
-		fsms.push(lower(src, m, new BodyCompiler(unit, used).compile(m)));
+		const body = new BodyCompiler(unit, shared).compile(m);
+		add(lower(src, m, body), m.node.key);
+		// Caller servers (§5.4) follow the module that declares them.
+		for (const s of body.servers) {
+			const sb = new BodyCompiler(s.group.unit, shared).compile(s);
+			add(lower(s.group.unit.src, s, sb), m.node.key);
+		}
 	}
 	if (!g.exported)
 		for (const m of g.methods)
-			if (m.sub && !used.has(m.node))
+			if (m.sub && !shared.used.has(m.node))
 				src.fail(m.node.key, `sub-FSM ${m.name} is never called (§5)`);
 	return {
 		name: g.name,

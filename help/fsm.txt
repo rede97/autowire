@@ -20,6 +20,7 @@ Source (.mjs, never executed; the compiler reads the AST)
     x = Input(N)   y = Output(N) (y.pulse(v) on the move, 0 otherwise)
     r = Dff(N[, { reset, external }])
     s = PushPort(N) / q = PopPort(N)    <name>_vld / _rdy / _data
+    PushPort({ addr: 8, we: 1 })        record message: <name>_addr / _we; {} is a bare token
     p = new Iface(args)                 @FsmPort fields → <name>_<field>
   Port layout: one port per line; a `// title` line above a group of ports is
     copied into the SV port list (with a generated `// clock and reset`)
@@ -27,7 +28,9 @@ Source (.mjs, never executed; the compiler reads the AST)
 States (await appears only here; anything else awaited is an error)
   [L:] await x.wait(v)            one state, >= 1 cycle; labels → UPPER_SNAKE (SendMsg → SEND_MSG)
   [L:] await s.push(v)            hold s_vld and v while waiting, leave on s_rdy
-  [L:] [r =] await q.pop()        hold q_rdy, leave on q_vld; r = q_data
+                                  record channels: s.push({ addr: a, we: 1 }); token: s.push()
+  [L:] [r =] await q.pop()        hold q_rdy, leave on q_vld; r = q_data (record: r.addr ...)
+  L: [r =] await reg.call({ args })   a Caller: states L_REQ (push args), L_RSP (pop result)
   L: [r =] await this.sub({ port: value, ... })   or Group.sub(...), iface.method(a, ...)
                                   inlined: the callee's states become L_<STATE>,
                                   its body Dffs / consts <l>_<name>; return v → r
@@ -35,9 +38,14 @@ States (await appears only here; anything else awaited is an error)
   follows its producer: latch it with Dff.set(r)
 
 Processes and channels (@Fsm only, before while (true))
-  const c = Chan(N)                     c_vld / c_rdy / c_data wires; ends c.tx / c.rx
+  const c = Chan(N | { f: N, ... })     c_vld / c_rdy / c_<field> wires; ends c.tx / c.rx
   Instance(this.fsm, { port: ... })     u_<fsm>; Input ← signal, Output → this Output,
                                         PushPort ← c.tx, PopPort ← c.rx (or a forwarded port)
+  const reg = Caller(this.sub, { port: ... })
+                                        a generated server <method>_reg runs the sub-FSM,
+                                        instance u_reg; bound ports are wired once, the
+                                        sub's other Inputs are call arguments (latched,
+                                        one load cycle); its return value is the response
   The parent talks to an instance only through these ports.
 
 Logic

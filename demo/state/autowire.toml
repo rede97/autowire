@@ -41,3 +41,7 @@ mjs = "fsm/dump_svc.mjs"
 # §2.6 @FsmPort interface: a register read port with its own read() method
 [fsm.cfg_load]
 mjs = "fsm/cfg_load.mjs"
+
+# §5.4 Caller: a register-access sub-FSM as one shared server, called twice
+[fsm.reg_mgr]
+mjs = "fsm/reg_mgr.mjs"
