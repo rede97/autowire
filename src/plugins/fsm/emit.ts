@@ -3,7 +3,7 @@
 // moves, leaves) and one always_ff (state register).
 
 import { lit, svText, valName } from "./expr.ts";
-import type { Action, DffReg, Fsm, Signal, Tree } from "./model.ts";
+import type { Action, DffReg, Fsm, HsPort, Signal, Tree } from "./model.ts";
 
 type St =
 	| { k: "asg"; lhs: string; rhs: string }
@@ -137,19 +137,46 @@ type Drv =
 	| { k: "asg"; lhs: string; rhs: string; c?: string }
 	| { k: "raw"; lines: string[] };
 
+/** A push / pop end this module drives from its waiting states (§6.2). */
+function hsDrivers(p: HsPort): Drv[] {
+	if (p.sites.length === 0 || p.byInst) return [];
+	const dec = p.sites.map((s) => `state_val == ${s.state.member}`);
+	const held =
+		dec.length === 1 ? (dec[0] as string) : dec.map(paren).join(" | ");
+	const c = [...new Set(p.sites.map((s) => s.text))].join(" / ");
+	if (p.k === "pop") return [{ k: "asg", lhs: `${p.name}_rdy`, rhs: held, c }];
+	const vals = p.sites.map((s) => svText(s.value?.sv ?? lit(p.width, 0n)));
+	const data =
+		new Set(vals).size === 1
+			? (vals[0] as string)
+			: vals
+					.map((v, i) =>
+						p.width === 1
+							? `(${dec[i]}) & ${paren(v)}`
+							: `({${p.width}{${dec[i]}}} & ${paren(v)})`,
+					)
+					.join(" | ");
+	return [
+		{ k: "asg", lhs: `${p.name}_vld`, rhs: held, c },
+		{ k: "asg", lhs: `${p.name}_data`, rhs: data },
+	];
+}
+
 function drivers(f: Fsm): string[] {
 	const items: Drv[] = [];
 	const texts = (sites: Action[]) =>
 		[...new Set(sites.map((a) => a.text))].join(" / ");
 	const set = (sites: Action[]) => ors(sites.map((a) => siteSig(f, a)));
-	for (const p of [...f.ports, ...f.privateDffs]) {
-		if (p.k === "output" && !p.byCall)
+	const ends = f.chans.flatMap((c) => [c.tx, c.rx]);
+	for (const p of [...f.ports, ...ends, ...f.privateDffs]) {
+		if (p.k === "output" && !p.byInst)
 			items.push({
 				k: "asg",
 				lhs: p.name,
 				rhs: andOr(f, p.width, p.sites),
 				c: texts(p.sites),
 			});
+		if (p.k === "push" || p.k === "pop") items.push(...hsDrivers(p));
 		if (p.k !== "dff") continue;
 		if (p.place === "external") {
 			items.push({
@@ -253,19 +280,18 @@ function emitFsm(f: Fsm): string[] {
 	const ports: [string, number, string, string[]?][] = [
 		["input", 1, "clk", ["clock and reset"]],
 		["input", 1, "rst_n"],
-		...(f.sub
-			? ([["input", 1, "start", ["call handshake"]]] as [
-					string,
-					number,
-					string,
-					string[],
-				][])
-			: []),
 	];
 	for (const p of f.ports) {
 		if (p.k === "input") ports.push(["input", p.width, p.name, p.group]);
 		else if (p.k === "output") ports.push(["output", p.width, p.name, p.group]);
-		else if (p.place === "port")
+		else if (p.k === "push" || p.k === "pop") {
+			const [o, i] = p.k === "push" ? ["output", "input"] : ["input", "output"];
+			ports.push(
+				[o, 1, `${p.name}_vld`, p.group],
+				[i, 1, `${p.name}_rdy`],
+				[o, p.width, `${p.name}_data`],
+			);
+		} else if (p.place === "port")
 			ports.push(["output", p.width, p.name, p.group]);
 		else
 			ports.push(
@@ -275,7 +301,7 @@ function emitFsm(f: Fsm): string[] {
 			);
 	}
 	// The author's ports never sit under a generated group without their own header.
-	const firstUser = ports[2 + (f.sub ? 1 + (f.resultWidth > 0 ? 2 : 1) : 0)];
+	const firstUser = ports[2];
 	if (firstUser && !firstUser[3]) firstUser[3] = ["ports"];
 	const rw = Math.max(...ports.map(([, w]) => range(w).length));
 	for (const [i, [dir, w, name, group]] of ports.entries()) {
@@ -291,11 +317,10 @@ function emitFsm(f: Fsm): string[] {
 		.slice(2)
 		.flatMap((l) => /^ {4}(\S+)\s+= 1'b0;$/.exec(l)?.[1] ?? []);
 	const data = [
-		...f.calls.flatMap((c) => [
-			[1, `${c.inst}_done`] as const,
-			...(c.resultWidth > 0
-				? [[c.resultWidth, `${c.inst}_result`] as const]
-				: []),
+		...f.chans.flatMap((c) => [
+			[1, `${c.name}_vld`] as const,
+			[1, `${c.name}_rdy`] as const,
+			[c.width, `${c.name}_data`] as const,
 		]),
 		...f.wires.map((w) => [w.width, w.name] as const),
 		...f.privateDffs.map((d) => [d.width, valName(d)] as const),
@@ -319,19 +344,13 @@ function emitFsm(f: Fsm): string[] {
 	out.push("  always_ff @(posedge clk or negedge rst_n)");
 	out.push(`    if (!rst_n) state_val <= ${f.entry.member};`);
 	out.push("    else        state_val <= state_next;", "");
-	for (const c of f.calls) {
-		const conn: [string, string][] = [
-			["start", `move_to_${c.state?.name}`],
-			["done", `${c.inst}_done`],
-			...(c.resultWidth > 0
-				? ([["result", `${c.inst}_result`]] as [string, string][])
-				: []),
-			...c.conn.map((x) => [x.port, svText(x.sv)] as [string, string]),
-		];
-		const w = Math.max(...conn.map(([p]) => p.length));
-		out.push(`  ${c.callee} u_${c.inst} (`, "    .clk, .rst_n,");
-		for (const [i, [p, e]] of conn.entries())
-			out.push(`    .${p.padEnd(w)} (${e})${i + 1 < conn.length ? "," : ""}`);
+	for (const inst of f.insts) {
+		const w = Math.max(...inst.conn.map(([p]) => p.length));
+		out.push(`  ${inst.module} ${inst.name} (`, "    .clk, .rst_n,");
+		for (const [i, [p, e]] of inst.conn.entries())
+			out.push(
+				`    .${p.padEnd(w)} (${e})${i + 1 < inst.conn.length ? "," : ""}`,
+			);
 		out.push("  );", "");
 	}
 	out.push(...drivers(f), "endmodule");

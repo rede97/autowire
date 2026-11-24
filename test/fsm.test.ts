@@ -19,20 +19,25 @@ import {
 describe("doc examples: generated SV equals the doc", () => {
 	const modules = [
 		"cmp_fsm",
+		"cfg_load",
 		"burst_ctl",
 		"scan_ctl",
+		"step_ctl",
 		"act_demo",
 		"msg_fwd",
 		"reg_demo",
 		"phy_init",
 		"dump_check",
-		"dump_scan",
+		"dump_server",
+		"dump_client",
 	];
+	// §5.3 imports the §5.2 source.
+	const more = () => ({ "dump_check.mjs": docDsl("dump_check").text });
 	for (const name of modules)
 		test(name, async () => {
 			const dsl = docDsl(name);
 			const sv = dsl.whole
-				? await compileText(dsl.text)
+				? await compileText(dsl.text, more())
 				: await compileBody(dsl.text);
 			expect(sv).toContain(docModule(name));
 		});
@@ -51,7 +56,9 @@ describe("doc examples: generated SV equals the doc", () => {
 		["reg_ctl", ["reg_demo"]],
 		["msg_ctl", ["msg_fwd"]],
 		["phy_ctl", ["phy_init"]],
-		["dump_check", ["dump_check", "dump_scan"]],
+		["dump_check", ["dump_check"]],
+		["dump_svc", ["dump_server", "dump_client"]],
+		["cfg_load", ["cfg_load"]],
 	];
 	for (const [file, names] of demos)
 		test(`demo/state/fsm/${file}.mjs carries the doc modules`, async () => {

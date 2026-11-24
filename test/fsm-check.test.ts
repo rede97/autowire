@@ -1,6 +1,6 @@
 // fsm checker: author mistakes are compile errors with file:line:col.
 import { describe, expect, test } from "bun:test";
-import { compileBody } from "./fixtures/fsm/compile.ts";
+import { compileBody, compileText } from "./fixtures/fsm/compile.ts";
 
 /** Port pattern, one port per line: P("a = Input(1)", "b = Output(1)"). */
 const P = (...ports: string[]) =>
@@ -20,7 +20,9 @@ const caller = (body: string) =>
 const cases: [string, string, string][] = [
 	[
 		"return in @Fsm",
-		fsm("while (true) { S: await go.wait(1); x.pulse(); d.set(b); return; }"),
+		fsm(
+			"while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); return; }",
+		),
 		"never returns",
 	],
 	[
@@ -47,9 +49,7 @@ const cases: [string, string, string][] = [
 	],
 	[
 		"width",
-		fsm(
-			"while (true) { S: await (d.val === go).wait(1); x.pulse(); d.set(b); }",
-		),
+		fsm("while (true) { S: await go.wait(1); x.pulse(); d.set(b); }"),
 		"width mismatch: expected 4, got 1",
 	],
 	[
@@ -112,7 +112,7 @@ const cases: [string, string, string][] = [
 		caller(
 			"Call: r = await this.s({ a: b }); T: await go.wait(1); d.set(r); x.pulse();",
 		),
-		"valid only when leaving state Call",
+		"outside the segment that follows it",
 	],
 	[
 		"result latched in its done cycle compiles",
@@ -127,7 +127,7 @@ const cases: [string, string, string][] = [
 	[
 		"calling an @Fsm method",
 		`${fsm("while (true) { S: await go.wait(1); x.pulse(); d.set(b ? 1 : 2); }")}\n@Fsm\nasync g(${P("c = Input(1)")}) { while (true) { T: await this.f({}); W: await c.wait(1); } }`,
-		"only sub-FSMs can be called",
+		"instantiate it with Instance",
 	],
 	[
 		"sub-FSM never called",
@@ -135,14 +135,109 @@ const cases: [string, string, string][] = [
 		"sub-FSM s is never called",
 	],
 	[
-		"IDLE label in a sub-FSM",
-		`${fsm("while (true) { S: await (go & b).wait(1); await this.s({ a: go }); x.pulse(); d.set(1); }")}\nasync s(${P("a = Input(1)")}) { Idle: await a.wait(1); }`,
-		"implicit entry of a sub-FSM",
+		"sub-FSM call without a label",
+		`${fsm("while (true) { S: await (go & b).wait(1); await this.s({ a: go }); x.pulse(); d.set(1); }")}\nasync s(${P("a = Input(1)")}) { W: await a.wait(1); }`,
+		"label the call",
 	],
 	[
-		"sub-FSM that can finish in its start cycle",
-		`${fsm("let r;\nwhile (true) { S: await go.wait(1); C: r = await this.s({ a: b }); d.set(r); x.pulse(); }", ports1)}\nasync s(${P("a = Input(1)")}) { if (a) return a; W: await a.wait(1); return a; }`,
-		"ends the sub-FSM in its start cycle",
+		"sub-FSM returns differ",
+		`${fsm("let r;\nwhile (true) { S: await go.wait(1); C: r = await this.s({ a: b }); d.set(r); x.pulse(); }", ports1)}\nasync s(${P("a = Input(1)")}) { W: await a.wait(1); if (a) return a; return ALWAYS_0; }`,
+		"give different values",
+	],
+	[
+		"sub-FSM with a valueless path",
+		`${fsm("let r;\nwhile (true) { S: await go.wait(1); C: r = await this.s({ a: b }); d.set(r); x.pulse(); }", ports1)}\nasync s(${P("a = Input(1)")}) { W: await a.wait(1); if (a) return a; }`,
+		"without return <value>",
+	],
+	[
+		"recursive sub-FSM",
+		`${fsm("while (true) { S: await go.wait(1); C: await this.s({ a: b }); x.pulse(); d.set(1); }")}\nasync s(${P("a = Input(1)")}) { W: await a.wait(1); R: await this.s({ a }); }`,
+		"recursive sub-FSM call",
+	],
+	[
+		"let read before it is assigned",
+		fsm(
+			"let r;\nwhile (true) { S: await (go & b).wait(1); x.pulse(); d.set(r); }",
+		),
+		"read before it is assigned",
+	],
+	[
+		"push on a PopPort",
+		fsm(
+			"while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); T: await p.push(1); }",
+			P(
+				"go = Input(1)",
+				"b = Input(1)",
+				"x = Output(1)",
+				"d = Dff(4)",
+				"p = PopPort(1)",
+			),
+		),
+		"push needs a PushPort or a Chan",
+	],
+	[
+		"popped data never read",
+		fsm(
+			"while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); T: await p.pop(); }",
+			P(
+				"go = Input(1)",
+				"b = Input(1)",
+				"x = Output(1)",
+				"d = Dff(4)",
+				"p = PopPort(1)",
+			),
+		),
+		"the data popped from p is never read",
+	],
+	[
+		"push data reads a let",
+		fsm(
+			"let r;\nwhile (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); T: r = await p.pop(); U: await q.push(r); }",
+			P(
+				"go = Input(1)",
+				"b = Input(1)",
+				"x = Output(1)",
+				"d = Dff(4)",
+				"p = PopPort(1)",
+				"q = PushPort(1)",
+			),
+		),
+		"valid only in the segment",
+	],
+	[
+		"Chan pushed and popped by one module",
+		fsm(
+			"const c = Chan(1);\nlet r;\nwhile (true) { S: await (go & b).wait(1); x.pulse(); T: await c.push(go); U: r = await c.pop(); d.set(r); }",
+			ports1,
+		),
+		"pushes and pops on one channel",
+	],
+	[
+		"Chan end without an owner",
+		fsm(
+			"const c = Chan(1);\nwhile (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); T: await c.push(go); }",
+		),
+		"nobody pops from channel c",
+	],
+	[
+		"Instance of a sub-FSM",
+		`${fsm("Instance(this.s, { a: go });\nwhile (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n${sub}`,
+		"Instance takes an @Fsm method",
+	],
+	[
+		"Instance port not connected",
+		`${fsm("Instance(this.g, {});\nwhile (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n@Fsm\nasync g(${P("c = Input(1)", "y = Output(1)")}) { while (true) { W: await c.wait(1); y.pulse(); } }`,
+		"port c of g is not connected",
+	],
+	[
+		"Output driven by an instance and pulsed",
+		`${fsm("Instance(this.g, { c: go, y: x });\nwhile (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n@Fsm\nasync g(${P("c = Input(1)", "y = Output(1)")}) { while (true) { W: await c.wait(1); y.pulse(); } }`,
+		"x is driven by u_g",
+	],
+	[
+		"Instance inside the loop",
+		`${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); Instance(this.g, { c: go, y: x }); }")}\n@Fsm\nasync g(${P("c = Input(1)", "y = Output(1)")}) { while (true) { W: await c.wait(1); y.pulse(); } }`,
+		"belongs before while (true)",
 	],
 	[
 		"two ports on one line",
@@ -153,6 +248,48 @@ const cases: [string, string, string][] = [
 		"one port per line",
 	],
 ];
+
+/** Whole sources (x.mjs plus imported files) for front-end errors. */
+const files: [string, string, Record<string, string>, string][] = [
+	[
+		"sync interface method declares a const",
+		`@FsmPort\nclass Rd {\n  constructor() { this.req = Output(1); }\n  kick(a) { const z = a; this.req.pulse(z); }\n}\n@FsmGroup\nclass G {\n${fsm("while (true) { S: await (go & b).wait(1); rd.kick(go); x.pulse(); d.set(1); }", P("go = Input(1)", "b = Input(1)", "x = Output(1)", "d = Dff(4)", "rd = new Rd()"))}\n}\n`,
+		{},
+		"holds actions only",
+	],
+	[
+		"interface constructor arguments",
+		`@FsmPort\nclass Rd {\n  constructor(w) { this.req = Output(w); }\n}\n@FsmGroup\nclass G {\n${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }", P("go = Input(1)", "b = Input(1)", "x = Output(1)", "d = Dff(4)", "rd = new Rd()"))}\n}\n`,
+		{},
+		"Rd takes 1 argument(s)",
+	],
+	[
+		"import of a name the file does not export",
+		`import { Nope } from "./lib.mjs";\n@FsmGroup\nclass G {\n${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n}\n`,
+		{ "lib.mjs": 'export const pkg = SvPackage("p", {});\n' },
+		"exports no @FsmGroup, @FsmPort or SvPackage named Nope",
+	],
+	[
+		"import cycle",
+		`import { L } from "./lib.mjs";\n@FsmGroup\nexport class G {\n${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n}\n`,
+		{
+			"lib.mjs": 'import { G } from "./x.mjs";\n@FsmGroup\nexport class L {}\n',
+		},
+		"import cycle",
+	],
+];
+
+describe("source-level errors", () => {
+	for (const [what, text, more, msg] of files)
+		test(what, async () => {
+			const err = await compileText(text, more).then(
+				() => "",
+				(e: Error) => e.message,
+			);
+			expect(err).toMatch(/^\w+\.mjs:\d+:\d+: /);
+			expect(err).toContain(msg);
+		});
+});
 
 describe("checker errors carry file:line:col", () => {
 	for (const [what, body, msg] of cases)

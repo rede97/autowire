@@ -1,6 +1,10 @@
-// Behavior check for the generated dump_check + dump_scan (docs/state/async-fsm.md §5.2):
-// the sub-FSM reads cfg_num words from cfg_base, cfg_step apart, counts the
-// words equal to cfg_pattern, and the caller latches the count into hit_cnt.
+// Behavior check for the dump scan (docs/state/async-fsm.md §5.2, §5.3): reads
+// cfg_num words from cfg_base, cfg_step apart, counts the words equal to
+// cfg_pattern and latches the count into hit_cnt. DUT is dump_check (sub-FSM
+// inlined) or dump_client (the scan in an instance behind two channels).
+`ifndef DUT
+`define DUT dump_check
+`endif
 module tb;
   logic        clk = 1'b0, rst_n = 1'b0, check = 1'b0;
   logic [31:0] cfg_base = 32'h0000_1000, cfg_step = 32'h4, cfg_pattern = 32'hdead_beef;
@@ -13,7 +17,7 @@ module tb;
   logic [31:0] mem [64];
   int          reqs = 0, dones = 0;
 
-  dump_check dut (.*);
+  `DUT dut (.*);
 
   always #5 clk = ~clk;
 

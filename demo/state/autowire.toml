@@ -29,6 +29,15 @@ mjs = "fsm/msg_ctl.mjs"
 [fsm.phy_ctl]
 mjs = "fsm/phy_ctl.mjs"
 
-# §5.2 sub-FSM: scan a dump regfile, count pattern matches (user functions: rtl/dump_pkg.sv)
+# §5.2 sub-FSM inlined into its caller: scan a dump regfile, count pattern matches
+# (user functions: rtl/dump_pkg.sv)
 [fsm.dump_check]
 mjs = "fsm/dump_check.mjs"
+
+# §5.3 Instance + Chan: the same scan as a server process; imports dump_check.mjs
+[fsm.dump_svc]
+mjs = "fsm/dump_svc.mjs"
+
+# §2.6 @FsmPort interface: a register read port with its own read() method
+[fsm.cfg_load]
+mjs = "fsm/cfg_load.mjs"

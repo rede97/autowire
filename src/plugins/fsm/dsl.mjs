@@ -2,20 +2,26 @@
 // reads the .mjs source and never runs it; these no-ops only keep an
 // accidental run (Bun turns decorators into real calls) from crashing.
 
-function channel() {
+function signal() {
 	const c = {
 		wait: async () => {},
-		bits: () => channel(),
+		bits: () => signal(),
 		pulse() {},
 		set() {},
 		push: async () => {},
 		pop: async () => c,
 	};
 	c.val = c;
+	c.tx = c;
+	c.rx = c;
 	return c;
 }
 
 export function FsmGroup(cls) {
+	return cls;
+}
+
+export function FsmPort(cls) {
 	return cls;
 }
 
@@ -24,17 +30,20 @@ export function Fsm(target) {
 	return typeof target === "function" ? target : (m) => m;
 }
 
-export const Input = channel;
-export const Output = channel;
-export const Const = channel;
-export const Dff = channel;
-export const PushPort = channel;
-export const PopPort = channel;
-export const ALWAYS_0 = channel();
-export const ALWAYS_1 = channel();
+export const Input = signal;
+export const Output = signal;
+export const Const = signal;
+export const Dff = signal;
+export const PushPort = signal;
+export const PopPort = signal;
+export const Chan = signal;
+export const ALWAYS_0 = signal();
+export const ALWAYS_1 = signal();
+
+export function Instance() {}
 
 export function SvPackage() {
-	return new Proxy({}, { get: () => channel });
+	return new Proxy({}, { get: () => signal });
 }
 
 export function SvFunction() {

@@ -1,5 +1,5 @@
-// Front end: parse the .mjs, resolve DSL imports, read the @FsmGroup class,
-// its @Fsm methods and their port parameters (§2.2).
+// Front end: parse the .mjs, resolve imports (the fsm DSL, other fsm sources),
+// read the @FsmGroup class, @FsmPort interfaces and the method ports (§2.2, §2.6).
 
 import { dirname, resolve } from "node:path";
 import type {
@@ -11,71 +11,76 @@ import type {
 	VariableDeclaration,
 } from "@babel/types";
 import { intLit, widthLit } from "./expr.ts";
-import type { DffReg, FsmOptions, Port, SvFn, SvPkg } from "./model.ts";
+import type {
+	DffReg,
+	FsmOptions,
+	Group,
+	HsPort,
+	Iface,
+	IfaceClass,
+	IfaceField,
+	Port,
+	SvFn,
+	SvPkg,
+	Unit,
+} from "./model.ts";
 import { checkSvId, FsmError, type Src } from "./source.ts";
 
-const BUILTINS = [
-	"FsmGroup",
-	"Fsm",
-	"Input",
-	"Output",
-	"Const",
-	"Dff",
-	"PushPort",
-	"PopPort",
-	"SvPackage",
-	"SvFunction",
-	"Escape",
-	"Raise",
-	"ALWAYS_0",
-	"ALWAYS_1",
-];
+const BUILTINS: Record<string, true> = {
+	FsmGroup: true,
+	Fsm: true,
+	FsmPort: true,
+	Input: true,
+	Output: true,
+	Const: true,
+	Dff: true,
+	PushPort: true,
+	PopPort: true,
+	Chan: true,
+	Instance: true,
+	SvPackage: true,
+	SvFunction: true,
+	Escape: true,
+	Raise: true,
+	ALWAYS_0: true,
+	ALWAYS_1: true,
+};
 
 /** Builtins of a later phase (docs/state/async-fsm.md §11): rejected with a clear error. */
 export const NOT_YET: Record<string, string> = {
-	PushPort: "push / pop ports (§6.2)",
-	PopPort: "push / pop ports (§6.2)",
 	Escape: "exception regions (§3.7)",
 	Raise: "exception regions (§3.7)",
+};
+
+/** Port declarations a parameter default or an interface field may use. */
+const PORT_KINDS: Record<string, true> = {
+	Input: true,
+	Output: true,
+	Dff: true,
+	PushPort: true,
+	PopPort: true,
 };
 
 export function notYet(src: Src, node: Node, what: string): never {
 	return src.fail(node, `${what} is not implemented yet`);
 }
 
-export interface FsmMethod {
-	node: ClassMethod;
-	name: string;
-	comment: string[];
-	ports: Port[];
-	options: FsmOptions;
-	/** Undecorated method: a sub-FSM called with `await this.name({...})` (§5). */
-	sub: boolean;
-}
-
-export interface Group {
-	name: string;
-	comment: string[];
-	methods: FsmMethod[];
-	/** Local import name → builtin name. */
-	builtins: Map<string, string>;
-	/** Top-level `const x = SvPackage(...)` by local name (§2.3). */
-	packages: Map<string, SvPkg>;
-}
-
 /** Paths compare case-insensitively on Windows. */
 const samePath = (a: string, b: string) =>
 	process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
 
-export async function parseGroup(
-	src: Src,
-	o: { abs: string; dsl: string },
-): Promise<Group> {
+/** Loads another fsm source by absolute path (cached by the caller). */
+export type Loader = (abs: string, from: Src, node: Node) => Promise<Unit>;
+
+async function parseFile(src: Src): Promise<File> {
 	// Lazy: the parser loads only for `plugin fsm run` (§8.2), like exceljs.
 	const { parse } = await import("@babel/parser");
-	let file: File;
 	try {
-		file = parse(src.text, { sourceType: "module", plugins: ["decorators"] });
+		return parse(src.text, {
+			sourceType: "module",
+			sourceFilename: src.file,
+			plugins: ["decorators"],
+		});
 	} catch (e) {
 		const msg = (e instanceof Error ? e.message : String(e)).replace(
 			/ \(\d+:\d+\)$/,
@@ -95,53 +100,129 @@ export async function parseGroup(
 				: "";
 		throw new FsmError(`${src.file}${at}: ${msg}`);
 	}
-	const builtins = new Map<string, string>();
-	const packages = new Map<string, SvPkg>();
-	let cls: { decl: ClassDeclaration; outer: Node } | undefined;
+}
+
+/** Parse one source. Imports other than the DSL are fsm sources loaded through `load`. */
+export async function parseUnit(
+	src: Src,
+	o: { abs: string; dsl: string; load: Loader },
+): Promise<Unit> {
+	const file = await parseFile(src);
+	const unit: Unit = {
+		src,
+		abs: o.abs,
+		builtins: new Map(),
+		packages: new Map(),
+		ifaces: new Map(),
+		groups: new Map(),
+		exports: new Map(),
+	};
+	let groupDecl:
+		| { decl: ClassDeclaration; outer: Node; exported: boolean }
+		| undefined;
 	for (const stmt of file.program.body) {
 		if (stmt.type === "ImportDeclaration") {
-			if (!samePath(resolve(dirname(o.abs), stmt.source.value), resolve(o.dsl)))
-				src.fail(
-					stmt.source,
-					`only the fsm DSL may be imported (${o.dsl}); the source is never executed`,
-				);
-			for (const s of stmt.specifiers) {
-				if (s.type !== "ImportSpecifier" || s.imported.type !== "Identifier")
-					src.fail(s, "import builtins by name: import { Fsm, ... } from ...");
-				if (!BUILTINS.includes(s.imported.name))
-					src.fail(s, `${s.imported.name} is not an fsm builtin`);
-				builtins.set(s.local.name, s.imported.name);
-			}
+			await importDecl(unit, stmt, o);
 			continue;
 		}
-		if (stmt.type === "VariableDeclaration") {
-			svPackage(src, stmt, builtins, packages);
-			continue;
-		}
-		const decl =
-			stmt.type === "ExportNamedDeclaration" ? stmt.declaration : stmt;
-		if (decl?.type !== "ClassDeclaration")
+		const exported = stmt.type === "ExportNamedDeclaration";
+		const decl = exported ? stmt.declaration : stmt;
+		if (exported && (stmt.specifiers.length > 0 || stmt.source))
 			src.fail(
 				stmt,
-				"only imports and one @FsmGroup class are allowed at the top level",
+				"export a declaration: export class ... / export const ...",
 			);
-		if (cls) src.fail(stmt, "one @FsmGroup class per file");
-		cls = { decl, outer: stmt };
+		if (decl?.type === "VariableDeclaration") {
+			const [name, pkg] = svPackage(src, decl, unit.builtins);
+			unit.packages.set(name, pkg);
+			if (exported) unit.exports.set(name, pkg);
+			continue;
+		}
+		if (decl?.type !== "ClassDeclaration")
+			return src.fail(
+				stmt,
+				"the top level holds imports, SvPackage consts, @FsmPort classes and one @FsmGroup class",
+			);
+		const decos = decl.decorators ?? [];
+		const deco = decos[0]?.expression;
+		const kind =
+			deco?.type === "Identifier" ? unit.builtins.get(deco.name) : undefined;
+		if (decos.length !== 1 || (kind !== "FsmGroup" && kind !== "FsmPort"))
+			src.fail(
+				decl,
+				"a class needs exactly one decorator: @FsmGroup or @FsmPort",
+			);
+		if (decl.superClass)
+			src.fail(decl.superClass, "an fsm class cannot extend");
+		if (!decl.id) return src.fail(decl, "the class needs a name");
+		if (kind === "FsmPort") {
+			const c = ifaceClass(unit, decl);
+			unit.ifaces.set(c.name, c);
+			if (exported) unit.exports.set(c.name, c);
+			continue;
+		}
+		if (groupDecl) src.fail(stmt, "one @FsmGroup class per file");
+		groupDecl = { decl, outer: stmt, exported };
 	}
-	if (!cls) throw new FsmError(`${src.file}: no @FsmGroup class`);
-	const { decl, outer } = cls;
-	const decos = decl.decorators ?? [];
-	const deco = decos[0]?.expression;
-	if (
-		decos.length !== 1 ||
-		deco?.type !== "Identifier" ||
-		builtins.get(deco.name) !== "FsmGroup"
-	)
-		src.fail(decl, "the class needs exactly one decorator: @FsmGroup");
-	if (decl.superClass)
-		src.fail(decl.superClass, "an @FsmGroup class cannot extend");
-	if (!decl.id) return src.fail(decl, "the @FsmGroup class needs a name");
-	const methods: FsmMethod[] = [];
+	if (groupDecl) {
+		const g = group(unit, groupDecl.decl, groupDecl.outer, groupDecl.exported);
+		unit.group = g;
+		unit.groups.set(g.name, g);
+		if (groupDecl.exported) unit.exports.set(g.name, g);
+	}
+	return unit;
+}
+
+async function importDecl(
+	unit: Unit,
+	stmt: Node & { type: "ImportDeclaration" },
+	o: { abs: string; dsl: string; load: Loader },
+) {
+	const src: Src = unit.src;
+	const target = resolve(dirname(o.abs), stmt.source.value);
+	const dsl = samePath(target, resolve(o.dsl));
+	if (!dsl && !target.endsWith(".mjs"))
+		src.fail(
+			stmt.source,
+			`import the fsm DSL (${o.dsl}) or another fsm .mjs source; the source is never executed`,
+		);
+	const from = dsl ? undefined : await o.load(target, src, stmt.source);
+	for (const s of stmt.specifiers) {
+		if (s.type !== "ImportSpecifier" || s.imported.type !== "Identifier")
+			return src.fail(s, "import by name: import { Fsm, ... } from ...");
+		const name = s.imported.name;
+		const local = s.local.name;
+		if (!from) {
+			if (!BUILTINS[name]) src.fail(s, `${name} is not an fsm builtin`);
+			unit.builtins.set(local, name);
+			continue;
+		}
+		const x = from.exports.get(name);
+		if (!x)
+			src.fail(
+				s,
+				`${stmt.source.value} exports no @FsmGroup, @FsmPort or SvPackage named ${name}`,
+			);
+		if ("fns" in x) unit.packages.set(local, x);
+		else if ("fields" in x) unit.ifaces.set(local, x);
+		else unit.groups.set(local, x);
+	}
+}
+
+function group(
+	unit: Unit,
+	decl: ClassDeclaration,
+	outer: Node,
+	exported: boolean,
+): Group {
+	const src: Src = unit.src;
+	const g: Group = {
+		name: decl.id?.name ?? "",
+		comment: docComment(src, outer),
+		exported,
+		methods: [],
+		unit,
+	};
 	for (const m of decl.body.body) {
 		if (
 			m.type !== "ClassMethod" ||
@@ -160,31 +241,21 @@ export async function parseGroup(
 		checkSvId(src, m.key, name, "module name");
 		const [d0, d1] = m.decorators ?? [];
 		if (d1) src.fail(d1, "one @Fsm decorator per method");
-		const sub = !d0;
-		const options = d0 ? fsmOptions(src, d0.expression, builtins) : {};
-		const ps = ports(src, m, builtins);
-		if (sub)
-			for (const p of ps)
-				if (p.name === "start" || p.name === "done" || p.name === "result")
-					src.fail(p.node, `${p.name} is a generated sub-FSM port (§5)`);
-		methods.push({
+		const { params, ports } = methodPorts(unit, m);
+		g.methods.push({
 			node: m,
 			name,
 			comment: docComment(src, m),
-			options,
-			sub,
-			ports: ps,
+			options: d0 ? fsmOptions(src, d0.expression, unit.builtins) : {},
+			sub: !d0,
+			params,
+			ports,
+			group: g,
 		});
 	}
-	if (!methods.some((m) => !m.sub))
+	if (!g.methods.some((m) => !m.sub) && !exported)
 		src.fail(decl, "the @FsmGroup class has no @Fsm method");
-	return {
-		name: decl.id.name,
-		comment: docComment(src, outer),
-		methods,
-		builtins,
-		packages,
-	};
+	return g;
 }
 
 function fsmOptions(
@@ -254,19 +325,21 @@ export function reservedName(name: string): boolean {
 	);
 }
 
-function ports(
-	src: Src,
+/** The destructured parameter: `{ go = Input(1), req = new ReqPort(8), ... }` (§2.2). */
+function methodPorts(
+	unit: Unit,
 	m: ClassMethod,
-	builtins: Map<string, string>,
-): Port[] {
-	if (m.params.length === 0) return [];
+): { params: Map<string, Port | Iface>; ports: Port[] } {
+	const src: Src = unit.src;
+	const params = new Map<string, Port | Iface>();
+	const ports: Port[] = [];
+	if (m.params.length === 0) return { params, ports };
 	const pat = m.params[0];
 	if (m.params.length > 1 || pat?.type !== "ObjectPattern")
-		src.fail(
+		return src.fail(
 			m,
 			"ports are one destructured parameter: ({ go = Input(1), ... })",
 		);
-	const out: Port[] = [];
 	let prevLine = pat.loc?.start.line ?? 0;
 	for (const p of pat.properties) {
 		const line = p.loc?.start.line ?? 0;
@@ -295,49 +368,174 @@ function ports(
 		)
 			return src.fail(
 				p,
-				"each port is `name = Input(N)` / `Output(1)` / `Dff(N)`",
+				"each port is `name = Input(N)` / `Output(N)` / `Dff(N)` / `PushPort(N)` / `PopPort(N)` / `new Iface(...)`",
 			);
 		const name = p.value.left.name;
 		checkSvId(src, p, name, "port");
 		if (reservedName(name))
 			src.fail(p, `port name ${name} is reserved by the generator`);
 		const init = p.value.right;
-		const kind =
-			init.type === "CallExpression" && init.callee.type === "Identifier"
-				? builtins.get(init.callee.name)
-				: undefined;
-		if (init.type !== "CallExpression" || !kind)
-			return src.fail(
-				init,
-				"a port default is a port declaration: Input(N), Output(1), Dff(N)",
-			);
-		if (NOT_YET[kind]) notYet(src, init, NOT_YET[kind]);
-		const [a0, a1] = init.arguments;
-		if (kind === "Input") {
-			out.push({
-				k: "input",
-				name,
-				width: widthLit(src, a0),
-				node: p,
-				used: false,
-			});
-		} else if (kind === "Output") {
-			out.push({
-				k: "output",
-				name,
-				width: widthLit(src, a0),
-				node: p,
-				sites: [],
-			});
-		} else if (kind === "Dff") {
-			out.push(dffDecl(src, name, p, a0, a1, true));
+		let made: Port[];
+		if (init.type === "NewExpression") {
+			const x = instantiate(unit, name, init, p);
+			params.set(name, x);
+			made = [...x.fields.values()];
 		} else {
-			src.fail(init, `${kind}(...) is not a port declaration`);
+			const kind =
+				init.type === "CallExpression" && init.callee.type === "Identifier"
+					? unit.builtins.get(init.callee.name)
+					: undefined;
+			if (init.type !== "CallExpression" || !kind || !PORT_KINDS[kind])
+				return src.fail(
+					init,
+					"a port default is a port declaration: Input(N), Output(N), Dff(N), PushPort(N), PopPort(N) or new Iface(...)",
+				);
+			const [a0, a1] = init.arguments;
+			const port = portDecl(src, kind, name, widthLit(src, a0), a1, p);
+			params.set(name, port);
+			made = [port];
 		}
-		const port = out.at(-1);
-		if (port && group.length > 0) port.group = group;
+		const first = made[0];
+		if (first && group.length > 0) first.group = group;
+		ports.push(...made);
 	}
-	return out;
+	return { params, ports };
+}
+
+function portDecl(
+	src: Src,
+	kind: string,
+	name: string,
+	width: number,
+	opts: Node | undefined,
+	node: Node,
+): Port {
+	if (kind === "Dff") return dffDecl(src, name, node, width, opts, true);
+	if (opts) src.fail(opts, `${kind}(N) takes one width`);
+	if (kind === "Input") return { k: "input", name, width, node, used: false };
+	if (kind === "Output") return { k: "output", name, width, node, sites: [] };
+	return hsPort(
+		kind === "PushPort" ? "push" : "pop",
+		name,
+		width,
+		"port",
+		node,
+	);
+}
+
+export function hsPort(
+	k: "push" | "pop",
+	name: string,
+	width: number,
+	place: "port" | "chan",
+	node: Node,
+): HsPort {
+	return { k, name, width, place, node, sites: [], read: false };
+}
+
+/** `@FsmPort` class: constructor fields `this.f = Kind(...)` and plain methods (§2.6). */
+function ifaceClass(unit: Unit, decl: ClassDeclaration): IfaceClass {
+	const src: Src = unit.src;
+	const name = decl.id?.name ?? "";
+	const c: IfaceClass = {
+		name,
+		unit,
+		node: decl,
+		params: [],
+		fields: [],
+		methods: new Map(),
+	};
+	for (const m of decl.body.body) {
+		if (
+			m.type !== "ClassMethod" ||
+			m.static ||
+			m.computed ||
+			m.key.type !== "Identifier" ||
+			(m.kind !== "method" && m.kind !== "constructor")
+		)
+			return src.fail(
+				m,
+				"an @FsmPort class holds a constructor and methods only",
+			);
+		if (m.decorators?.length) src.fail(m, "@FsmPort methods take no decorator");
+		const ids = m.params.map((p) =>
+			p.type === "Identifier"
+				? p.name
+				: src.fail(p, "interface method parameters are plain names"),
+		);
+		if (m.kind === "method") {
+			if (m.generator) src.fail(m, "generators are not supported");
+			c.methods.set(m.key.name, m);
+			continue;
+		}
+		c.params = ids;
+		for (const s of m.body.body) {
+			const e = s.type === "ExpressionStatement" ? s.expression : undefined;
+			const r = e?.type === "AssignmentExpression" ? e.right : undefined;
+			const kind =
+				r?.type === "CallExpression" && r.callee.type === "Identifier"
+					? unit.builtins.get(r.callee.name)
+					: undefined;
+			if (
+				e?.type !== "AssignmentExpression" ||
+				e.operator !== "=" ||
+				e.left.type !== "MemberExpression" ||
+				e.left.object.type !== "ThisExpression" ||
+				e.left.property.type !== "Identifier" ||
+				r?.type !== "CallExpression" ||
+				!kind ||
+				!PORT_KINDS[kind]
+			)
+				return src.fail(
+					s,
+					"the constructor declares fields only: this.f = Input(N) / Output(N) / Dff(N) / PushPort(N) / PopPort(N)",
+				);
+			const f = e.left.property.name;
+			checkSvId(src, e.left.property, f, "field");
+			if (c.fields.some((x) => x.name === f))
+				src.fail(e.left, `field ${f} is declared twice`);
+			c.fields.push({ name: f, kind, args: r.arguments, node: s });
+		}
+	}
+	if (c.fields.length === 0)
+		src.fail(decl, "an @FsmPort class declares its fields in the constructor");
+	return c;
+}
+
+/** `name = new C(8, ...)`: fields become ports <name>_<field>. */
+function instantiate(
+	unit: Unit,
+	name: string,
+	e: Node & { type: "NewExpression" },
+	node: Node,
+): Iface {
+	const src: Src = unit.src;
+	const cls =
+		e.callee.type === "Identifier" ? unit.ifaces.get(e.callee.name) : undefined;
+	if (!cls) return src.fail(e.callee, "new takes an @FsmPort class");
+	if (e.arguments.length !== cls.params.length)
+		src.fail(e, `${cls.name} takes ${cls.params.length} argument(s)`);
+	const args = e.arguments.map((a) => intLit(src, a, "an interface argument"));
+	const env = new Map(cls.params.map((p, i) => [p, args[i] ?? 0n]));
+	const fields = new Map<string, Port>();
+	for (const f of cls.fields)
+		fields.set(f.name, fieldPort(cls, f, env, `${name}_${f.name}`, node));
+	return { k: "iface", name, cls, args, fields, node };
+}
+
+function fieldPort(
+	cls: IfaceClass,
+	f: IfaceField,
+	env: Map<string, bigint>,
+	name: string,
+	node: Node,
+): Port {
+	const src: Src = cls.unit.src;
+	const [w, opts] = f.args;
+	const v = w?.type === "Identifier" ? env.get(w.name) : undefined;
+	const width = v !== undefined ? Number(v) : widthLit(src, w);
+	if (width < 1 || width > 4096) src.fail(w, "width must be 1..4096");
+	return portDecl(src, f.kind, name, width, opts, node);
 }
 
 /** Dff(N, { reset?, external? }) as a port (`param`) or in the method body. */
@@ -345,11 +543,10 @@ export function dffDecl(
 	src: Src,
 	name: string,
 	node: Node,
-	w: Node | undefined,
+	width: number,
 	opts: Node | undefined,
 	param: boolean,
 ): DffReg {
-	const width = widthLit(src, w);
 	let reset = 0n;
 	let external = false;
 	let resetNode: Node | undefined;
@@ -398,8 +595,7 @@ function svPackage(
 	src: Src,
 	d: VariableDeclaration,
 	builtins: Map<string, string>,
-	packages: Map<string, SvPkg>,
-) {
+): [string, SvPkg] {
 	const shape =
 		'const x = SvPackage("pkg", { fn: SvFunction({ args: { a: 8 }, ret: 1 }) })';
 	const [x, extra] = d.declarations;
@@ -465,7 +661,7 @@ function svPackage(
 			return src.fail(sig, "SvFunction needs args and ret");
 		fns.set(p.key.name, { args, ret });
 	}
-	packages.set(x.id.name, { name: name.value, fns });
+	return [x.id.name, { name: name.value, fns }];
 }
 
 /** `/** ... *\/` directly above `node` (only whitespace between) as comment lines (§7.1). */

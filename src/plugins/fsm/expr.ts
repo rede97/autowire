@@ -1,4 +1,4 @@
-// Channel expressions (§2.1): typing, width rules, SV printing.
+// Signal expressions (§2.1): typing, width rules, SV printing.
 
 import type { Expression, Node } from "@babel/types";
 import type { Binding, DffReg, LetBinding, Sig, Sv, SvPkg } from "./model.ts";
@@ -53,14 +53,18 @@ export interface ExprCx {
 	src: Src;
 	/** Lexical binding, or undefined. */
 	lookup(name: string): Binding | undefined;
+	/** Binding of a name, `this`, an interface field or a Chan end, or undefined. */
+	ref(node: Node): Binding | undefined;
 	/** Builtin name an imported local name stands for. */
 	builtin(name: string): string | undefined;
 	/** User SV package declared at the top level (§2.3). */
 	pkg(name: string): SvPkg | undefined;
 	/** One wire per distinct call: `fn_<fn>_<n> = pkg::fn(args)`. */
 	userCall(pkg: SvPkg, fn: string, args: Sig[], node: Node): Sig;
-	/** `let r` bound to a sub-FSM result: <inst>_result, valid on its done cycle. */
+	/** `let r`: the popped data or inlined result, valid in its producer's segment. */
 	useLet(b: LetBinding): Sig;
+	/** `x.m(a)` with m an interface method `return <expr>`: the expression (§2.6). */
+	macro(node: Expression & { type: "CallExpression" }): Sig | undefined;
 }
 
 /** An unsized number literal: takes the width of the other operand. */
@@ -95,9 +99,9 @@ export function sized(src: Src, node: Node, v: bigint, width: number): Sig {
 
 /** `await` is a state; anything else awaited is an error (§3.1, §2.5). */
 export const AWAIT_IS_STATE =
-	"await marks a state: only await x.wait(v) and await this.sub({...}) (§3.1); a branch or loop condition is a plain channel expression, e.g. if (a & b) (§2.5)";
+	"await marks a state: only await x.wait(v), x.push(v), x.pop() and a sub-FSM call (§3.1); a branch or loop condition is a plain signal expression, e.g. if (a & b) (§2.5)";
 
-/** Evaluate to a channel. `width` sizes a bare literal. */
+/** Evaluate to a signal. `width` sizes a bare literal. */
 export function evalSig(
 	cx: ExprCx,
 	node: Expression,
@@ -112,7 +116,7 @@ export function evalSig(
 	if (o.width === undefined)
 		cx.src.fail(
 			node,
-			"a bare number has no width here; write Const(N, v) or compare it with a channel",
+			"a bare number has no width here; write Const(N, v) or compare it with a signal",
 		);
 	return sized(cx.src, node, v.lit, o.width);
 }
@@ -135,22 +139,41 @@ function evalVal(cx: ExprCx, node: Expression, hint?: number): Val {
 			return { lit: intLit(src, node, "number"), node };
 		case "BooleanLiteral":
 			return src.fail(node, "use ALWAYS_1 / ALWAYS_0 for constant conditions");
-		case "Identifier":
-			return ident(cx, node.name, node);
+		case "Identifier": {
+			const b = cx.lookup(node.name);
+			if (b?.k === "sig" && b.lit !== undefined) {
+				if (b.use) b.use.used = true;
+				return { lit: b.lit, node };
+			}
+			if (b) return bindingSig(cx, b, node.name, node);
+			const bi = cx.builtin(node.name);
+			if (bi === "ALWAYS_0") return constSig(1, 0n);
+			if (bi === "ALWAYS_1") return constSig(1, 1n);
+			return src.fail(
+				node,
+				bi ? `${node.name} is not a signal` : `unknown name ${node.name}`,
+			);
+		}
+		case "ThisExpression":
+			return src.fail(node, "read a field of this interface: this.<field>");
 		case "MemberExpression": {
 			if (
-				node.object.type === "Identifier" &&
 				node.property.type === "Identifier" &&
 				!node.computed &&
 				node.property.name === "val"
 			) {
-				const b = cx.lookup(node.object.name);
+				const b = cx.ref(node.object);
 				if (b?.k === "dff") {
 					b.read = true;
 					return { sv: atom(valName(b)), width: b.width, named: true };
 				}
 			}
-			return src.fail(node, "only <Dff>.val can be read from an object");
+			const b = cx.ref(node);
+			if (b) return bindingSig(cx, b, cx.src.textOf(node), node);
+			return src.fail(
+				node,
+				"only <Dff>.val and interface fields can be read from an object",
+			);
 		}
 		case "AwaitExpression":
 			return src.fail(node, AWAIT_IS_STATE);
@@ -236,18 +259,8 @@ function evalVal(cx: ExprCx, node: Expression, hint?: number): Val {
 	}
 }
 
-function ident(cx: ExprCx, name: string, node: Node): Sig {
+function bindingSig(cx: ExprCx, b: Binding, name: string, node: Node): Sig {
 	const src: Src = cx.src;
-	const b = cx.lookup(name);
-	if (!b) {
-		const bi = cx.builtin(name);
-		if (bi === "ALWAYS_0") return constSig(1, 0n);
-		if (bi === "ALWAYS_1") return constSig(1, 1n);
-		return src.fail(
-			node,
-			bi ? `${name} is not a channel` : `unknown name ${name}`,
-		);
-	}
 	switch (b.k) {
 		case "input":
 			b.used = true;
@@ -259,10 +272,27 @@ function ident(cx: ExprCx, name: string, node: Node): Sig {
 			);
 		case "dff":
 			return src.fail(node, `read the register through ${name}.val`);
+		case "push":
+		case "pop":
+			return src.fail(
+				node,
+				`${name} is a channel end; move data with await ${name}.push(v) / ${name}.pop() (§6.2)`,
+			);
 		case "chan":
+			return src.fail(
+				node,
+				`${name} is a channel; move data with await ${name}.push(v) / ${name}.pop() (§6.2)`,
+			);
+		case "iface":
+			return src.fail(
+				node,
+				`${name} is an interface; read its fields or call its methods (§2.6)`,
+			);
+		case "sig":
 			if (b.start > (node.start ?? 0))
 				src.fail(node, `${name} is used before its declaration`);
 			if (b.wire) b.wire.used = true;
+			if (b.use) b.use.used = true;
 			return b.sig;
 		case "let":
 			return cx.useLet(b);
@@ -315,7 +345,7 @@ function call(cx: ExprCx, node: Expression & { type: "CallExpression" }): Sig {
 		if (isLit(obj) || !obj.named)
 			src.fail(
 				node,
-				"bits() selects from a named channel: a port, a const, or a Dff .val",
+				"bits() selects from a named signal: a port, a const, or a Dff .val",
 			);
 		const args = node.arguments;
 		if (args.length < 1 || args.length > 2)
@@ -334,7 +364,7 @@ function call(cx: ExprCx, node: Expression & { type: "CallExpression" }): Sig {
 			width: hi - lo + 1,
 		};
 	}
-	return src.fail(node, "unsupported call in an expression");
+	return cx.macro(node) ?? src.fail(node, "unsupported call in an expression");
 }
 
 type MethodCall = Expression & {

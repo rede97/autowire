@@ -19,6 +19,8 @@ const DEMOS = [
 	"msg_ctl",
 	"phy_ctl",
 	"dump_check",
+	"dump_svc",
+	"cfg_load",
 ];
 const USER_PKGS = [join(demo, "rtl/dump_pkg.sv")];
 
@@ -82,11 +84,13 @@ describe("verilator", () => {
 		120_000,
 	);
 
-	for (const [top, file] of [
-		["act_demo", "counter_ctl"],
-		["scan_ctl", "loop_ctl"],
-		["msg_fwd", "msg_ctl"],
-		["dump_check", "dump_check"],
+	for (const [top, file, tb, dut] of [
+		["act_demo", "counter_ctl", "act_demo", ""],
+		["scan_ctl", "loop_ctl", "scan_ctl", ""],
+		["msg_fwd", "msg_ctl", "msg_fwd", ""],
+		["dump_check", "dump_check", "dump_check", ""],
+		["dump_client", "dump_svc", "dump_check", "dump_client"],
+		["cfg_load", "cfg_load", "cfg_load", ""],
 	] as const)
 		verilatorTest(
 			`${top}: cycle behavior`,
@@ -94,14 +98,19 @@ describe("verilator", () => {
 				const sv = (await compileDemo(`fsm/${file}.mjs`)).sv;
 				withDir("aw-fsm-sim-", (dir) => {
 					const dff = join(dir, "aw_dff.sv");
-					const dut = join(dir, "dut.sv");
+					const dutFile = join(dir, "dut.sv");
 					writeFileSync(dff, AW_DFF_SV);
-					writeFileSync(dut, sv);
-					const tb = join(import.meta.dir, `fixtures/fsm/${top}_tb.sv`);
+					writeFileSync(dutFile, sv);
 					const r = verilatorSim({
 						dir: join(dir, "obj"),
 						top: "tb",
-						sources: [dff, ...USER_PKGS, dut, tb],
+						sources: [
+							dff,
+							...USER_PKGS,
+							dutFile,
+							join(import.meta.dir, `fixtures/fsm/${tb}_tb.sv`),
+						],
+						args: dut ? [`+define+DUT=${dut}`] : [],
 					});
 					expect(r.buildOk, r.buildLog).toBe(true);
 					expect(r.exitCode, r.stdout + r.stderr).toBe(0);

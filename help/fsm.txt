@@ -7,24 +7,41 @@ Entry
   Writes are incremental (same bytes → skipped); --force rewrites.
 
 Source (.mjs, never executed; the compiler reads the AST)
-  import { FsmGroup, Fsm, Input, Output, Dff, Const, ALWAYS_0, ALWAYS_1,
-           SvPackage, SvFunction } from "<rel>/.autowire/dsl/fsm/dsl.mjs";
-  One @FsmGroup class per file → plugins_dir/fsm/<Class>.sv
-  @Fsm async method    top-level: body is one while (true) { ... }, never returns
+  import { FsmGroup, Fsm, FsmPort, Input, Output, Dff, Const, PushPort, PopPort,
+           Chan, Instance, ALWAYS_0, ALWAYS_1, SvPackage, SvFunction }
+         from "<rel>/.autowire/dsl/fsm/dsl.mjs";
+  import { Group, Iface, pkg } from "./other.mjs"   exported names of another fsm source
+  One @FsmGroup class per file → plugins_dir/fsm/<Class>.sv; any @FsmPort classes
+  @Fsm async method    a module: body is one while (true) { ... }, never returns
   @Fsm({ statePrefix: "LPDDRPHY", stateEncoding: "binary" | "onehot" })
                        enum members LPDDRPHY_<STATE>; omit stateEncoding to let synthesis pick
-  undecorated method   sub-FSM: implicit IDLE waits for start; return [value] → done / result
+  undecorated method   sub-FSM, inlined at each call: no module, no start / done
   Ports: one destructured parameter, defaults declare them:
     x = Input(N)   y = Output(N) (y.pulse(v) on the move, 0 otherwise)
     r = Dff(N[, { reset, external }])
+    s = PushPort(N) / q = PopPort(N)    <name>_vld / _rdy / _data
+    p = new Iface(args)                 @FsmPort fields → <name>_<field>
   Port layout: one port per line; a `// title` line above a group of ports is
-    copied into the SV port list (with generated `// clock and reset`, `// call handshake`)
-  State: [Label:] await <channel>.wait(v)   one await = one state, >= 1 cycle
-         labels become UPPER_SNAKE enum members (SendMsg → SEND_MSG)
-  Call:  [Label:] [r =] await this.sub({ port: channel, ... })   with `let r;` declared;
-         r is valid only in the segment right after the call: latch it with Dff.set(r)
-  await appears only in a state (wait / sub-FSM call); anything else awaited is an error
-  Branch / loop conditions: a plain 1-bit channel expression, e.g. if (a & !b), sampled
+    copied into the SV port list (with a generated `// clock and reset`)
+
+States (await appears only here; anything else awaited is an error)
+  [L:] await x.wait(v)            one state, >= 1 cycle; labels → UPPER_SNAKE (SendMsg → SEND_MSG)
+  [L:] await s.push(v)            hold s_vld and v while waiting, leave on s_rdy
+  [L:] [r =] await q.pop()        hold q_rdy, leave on q_vld; r = q_data
+  L: [r =] await this.sub({ port: value, ... })   or Group.sub(...), iface.method(a, ...)
+                                  inlined: the callee's states become L_<STATE>,
+                                  its body Dffs / consts <l>_<name>; return v → r
+  let r; is assigned once by one of these; r is valid only in the segment that
+  follows its producer: latch it with Dff.set(r)
+
+Processes and channels (@Fsm only, before while (true))
+  const c = Chan(N)                     c_vld / c_rdy / c_data wires; ends c.tx / c.rx
+  Instance(this.fsm, { port: ... })     u_<fsm>; Input ← signal, Output → this Output,
+                                        PushPort ← c.tx, PopPort ← c.rx (or a forwarded port)
+  The parent talks to an instance only through these ports.
+
+Logic
+  Branch / loop conditions: a plain 1-bit signal expression, e.g. if (a & !b), sampled
          on the cycle that leaves the previous state, zero cycles
   Combinational logic: const c = expr before while (true) → assign (reuse, waveform name);
          an expression written in place → inlined into always_comb
@@ -33,6 +50,8 @@ Source (.mjs, never executed; the compiler reads the AST)
   Operators: & | ^ ~ ! && || === !== < > <= >= ?: x.bits(i) x.bits(hi, lo)
   No arithmetic: declare SV functions with SvPackage("pkg", { f: SvFunction({ args: { a: 8 }, ret: 8 }) })
     and call pkg.f(x); the user package is compiled before the generated .sv
+  @FsmPort class: constructor(n) { this.f = Output(n); ... }; sync methods hold actions,
+    async methods are inlined like sub-FSMs, `m(a) { return expr; }` works in expressions
   Trap state: await ALWAYS_0.wait(1)
 
 Output
@@ -40,8 +59,9 @@ Output
   plugins_dir/fsm/aw_dff.sv    reference DFF (parameter type T); add both to
                                the analysis / simulation filelist
   every if / else branch is written with begin / end
+  a group that is instantiated from another file must itself be an [fsm.<id>] source
 
-Not yet (compile error names the feature): push / pop ports, Promise.all,
-try / Escape / Raise / abort, @Fsm exportState / stateValues / stateReg,
-connecting a Dff port of a sub-FSM.
+Not yet (compile error names the feature): push / pop without await (Future),
+Promise.all, try / Escape / Raise, @Fsm exportState / stateValues / stateReg,
+connecting an external Dff port of an instance.
 Errors: <file>:<line>:<col>: <message>. Demo: demo/state (bun ../../index.ts plugin fsm run).

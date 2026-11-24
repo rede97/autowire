@@ -11,12 +11,13 @@ export class Src {
 		readonly text: string,
 	) {}
 
+	/** Nodes carry their own file (parsed with sourceFilename), so code inlined
+	 *  from another source reports where it was written. */
 	fail(node: Node | null | undefined, msg: string): never {
 		const p = node?.loc?.start;
+		const file = node?.loc?.filename ?? this.file;
 		throw new FsmError(
-			p
-				? `${this.file}:${p.line}:${p.column + 1}: ${msg}`
-				: `${this.file}: ${msg}`,
+			p ? `${file}:${p.line}:${p.column + 1}: ${msg}` : `${file}: ${msg}`,
 		);
 	}
 

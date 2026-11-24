@@ -1,6 +1,6 @@
 import { ALWAYS_1, Dff, Fsm, FsmGroup, Input, Output, SvFunction, SvPackage } from "../.autowire/dsl/fsm/dsl.mjs";
 
-const dump_pkg = SvPackage("dump_pkg", {
+export const dump_pkg = SvPackage("dump_pkg", {
   add32: SvFunction({ args: { a: 32, b: 32 }, ret: 32 }),
   inc7:  SvFunction({ args: { x: 7 }, ret: 7 }),
 });
@@ -59,7 +59,7 @@ export class DumpCheck {
     const hits = Dff(7);
     const idx_next = dump_pkg.inc7(idx.val);
     const hits_next = (rd_data === cfg_pattern) ? dump_pkg.inc7(hits.val) : hits.val;
-    addr.set(cfg_base);                     // start cycle
+    addr.set(cfg_base);                     // on the move into Issue
     idx.set(0);
     hits.set(0);
     do {

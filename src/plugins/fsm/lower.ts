@@ -3,22 +3,23 @@
 
 import type { Node } from "@babel/types";
 import type { Body } from "./cfg.ts";
-import type { FsmMethod } from "./front.ts";
 import type {
 	Action,
 	CNode,
 	Edge,
 	Fsm,
+	FsmMethod,
+	LetSource,
 	Port,
 	Signal,
 	State,
 	Tree,
-	Wire,
 } from "./model.ts";
 import type { Src } from "./source.ts";
 
 const target = (a: Action) => (a.k === "pulse" ? a.port : a.dff);
 
+/** `live`: let values produced earlier in this segment (a pop state, an inlined return). */
 function expand(
 	src: Src,
 	method: Node,
@@ -28,6 +29,7 @@ function expand(
 	path: Set<CNode>,
 	last: Node | undefined,
 	edges: Edge[],
+	live: ReadonlySet<LetSource>,
 ): Tree {
 	if (n.k === "wait") {
 		const edge: Edge = { from, to: n.state, acts };
@@ -46,13 +48,14 @@ function expand(
 			"this loop can repeat without passing an await: a combinational loop (§3.6)",
 		);
 	path.add(n);
-	if (n.k !== "jump")
-		for (const c of n.needs)
-			if (c.state !== from)
-				src.fail(
-					at,
-					`${c.inst}_result is valid only when leaving state ${c.state?.label || c.state?.name}; latch it with Dff.set(r) (§2.4)`,
-				);
+	const needs = n.k === "jump" ? (n.needs ?? []) : n.needs;
+	for (const s of needs)
+		if (!live.has(s))
+			src.fail(
+				at,
+				`this reads the value of ${s.what} outside the segment that follows it; latch it with Dff.set(r) (§2.4)`,
+			);
+	if (n.k === "jump" && n.miss) src.fail(n.node, n.miss);
 	let t: Tree;
 	if (n.k === "act") {
 		const dup = acts.find((a) => target(a) === target(n.act));
@@ -61,16 +64,27 @@ function expand(
 				n.act.node,
 				`${target(n.act).name} is written twice in one segment (§6.1)`,
 			);
-		t = expand(src, method, n.next, from, [...acts, n.act], path, last, edges);
+		t = expand(
+			src,
+			method,
+			n.next,
+			from,
+			[...acts, n.act],
+			path,
+			last,
+			edges,
+			live,
+		);
 	} else if (n.k === "br") {
 		t = {
 			k: "if",
 			cond: n.cond,
-			yes: expand(src, method, n.yes, from, acts, path, last, edges),
-			no: expand(src, method, n.no, from, acts, path, last, edges),
+			yes: expand(src, method, n.yes, from, acts, path, last, edges, live),
+			no: expand(src, method, n.no, from, acts, path, last, edges, live),
 		};
 	} else {
-		t = expand(src, method, n.to, from, acts, path, n.node, edges);
+		const next = n.produces ? new Set([...live, n.produces]) : live;
+		t = expand(src, method, n.to, from, acts, path, n.node, edges, next);
 	}
 	path.delete(n);
 	return t;
@@ -116,7 +130,17 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 		const before = edges.length;
 		exits.set(
 			s,
-			expand(src, m.node, s.next, s, [], new Set(), undefined, edges),
+			expand(
+				src,
+				m.node,
+				s.next,
+				s,
+				[],
+				new Set(),
+				undefined,
+				edges,
+				new Set(s.produces ? [s.produces] : []),
+			),
 		);
 		for (const e of edges.slice(before))
 			if (!reached.has(e.to)) {
@@ -127,16 +151,6 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 	for (const s of states)
 		if (!reached.has(s))
 			src.fail(s.node, `state ${s.label || s.name} is unreachable`);
-	if (m.sub)
-		for (const e of edges)
-			if (e.from === entry && e.to === entry) {
-				const at =
-					e.acts.find((a) => a.k === "pulse" && a.implicit)?.node ?? m.node;
-				src.fail(
-					at,
-					"this path ends the sub-FSM in its start cycle, before the caller waits for done; pass an await first (§5)",
-				);
-			}
 
 	const into = new Map<State, Set<Edge>>(states.map((s) => [s, new Set()]));
 	const out = new Map<State, Set<Edge>>(states.map((s) => [s, new Set()]));
@@ -156,14 +170,7 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 	const drive = new Map<Action, Signal[]>();
 	for (const a of actions) {
 		const on = new Set(edges.filter((e) => e.acts.includes(a)));
-		if (on.size === 0 && !(a.k === "pulse" && a.implicit))
-			src.fail(a.node, "this action never runs");
-		if (on.size === 0) continue;
-		if (a.k === "pulse" && a.implicit === "end" && body.resultWidth > 0)
-			src.fail(
-				m.node,
-				"a path reaches the end of this sub-FSM without `return <value>`",
-			);
+		if (on.size === 0) src.fail(a.node, "this action never runs");
 		const exact = (m: Map<State, Set<Edge>>) =>
 			states.find((s) => {
 				const set = m.get(s) as Set<Edge>;
@@ -208,29 +215,24 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 		}
 		drive.set(a, chosen);
 	}
-	// A call state's start is the move into it (§5).
-	for (const c of body.calls)
-		if (c.state)
-			sig(`move_to_${c.state.name}`, "move", into.get(c.state) as Set<Edge>);
 	const onEdge = new Map<Edge, Signal[]>(edges.map((e) => [e, []]));
 	const leave = new Map<State, Signal>();
 	for (const s of signals.values()) {
 		if (s.kind === "leave") for (const e of s.edges) leave.set(e.from, s);
 		else for (const e of s.edges) onEdge.get(e)?.push(s);
 	}
-	checkUse(src, m.ports, body.wires, body.privateDffs);
+	checkUse(src, m.ports, body);
 	return {
 		name: m.name,
 		comment: m.comment,
 		options: m.options,
-		ports: [...body.implicitPorts, ...m.ports],
+		ports: m.ports,
 		privateDffs: body.privateDffs,
 		wires: body.wires,
+		chans: body.chans,
+		insts: body.insts,
 		states,
 		entry,
-		sub: m.sub,
-		resultWidth: body.resultWidth,
-		calls: body.calls,
 		exits,
 		drive,
 		onEdge,
@@ -239,22 +241,29 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 }
 
 /** Unused ports and names would be -Wall warnings in the SV; reject them at the source. */
-function checkUse(src: Src, ports: Port[], wires: Wire[], regs: Port[]) {
-	for (const w of wires)
+function checkUse(src: Src, ports: Port[], body: Body) {
+	for (const w of body.wires)
 		if (!w.used) src.fail(w.node, `const ${w.name} is never used`);
-	for (const p of [...ports, ...regs]) {
+	for (const p of [...ports, ...body.privateDffs]) {
 		if (p.k === "input" && !p.used)
 			src.fail(p.node, `input ${p.name} is never read`);
-		if (p.k === "output" && p.sites.length === 0 && !p.byCall)
+		if (p.k === "output" && p.sites.length === 0 && !p.byInst)
 			src.fail(p.node, `output ${p.name} is never pulsed`);
-		if (p.k === "output" && p.sites.length > 0 && p.byCall)
+		if (p.k === "output" && p.sites.length > 0 && p.byInst)
 			src.fail(
 				p.node,
-				`output ${p.name} is driven by both pulse() and the ${p.byCall.callee} call`,
+				`output ${p.name} is driven by both pulse() and ${p.byInst.name}`,
 			);
 		if (p.k === "dff" && p.sites.length === 0)
 			src.fail(p.node, `Dff ${p.name} is never set`);
 		if (p.k === "dff" && p.place === "body" && !p.read)
 			src.fail(p.node, `Dff ${p.name} is never read (.val)`);
+		if ((p.k === "push" || p.k === "pop") && p.sites.length === 0 && !p.byInst)
+			src.fail(
+				p.node,
+				`${p.name} is never ${p.k === "push" ? "pushed" : "popped"}`,
+			);
+		if (p.k === "pop" && p.sites.length > 0 && !p.read)
+			src.fail(p.node, `the data popped from ${p.name} is never read`);
 	}
 }

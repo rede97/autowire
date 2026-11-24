@@ -1,9 +1,11 @@
 // Shared helpers for the fsm compiler tests: doc blocks and demo sources.
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-	compileFsmSource,
+	compileFsm,
 	fsmDslPath,
+	Sources,
 } from "../../../src/plugins/fsm/generate.ts";
 
 export const root = join(import.meta.dir, "../../..");
@@ -16,17 +18,27 @@ const blocks = (lang: string) =>
 export const docJs = blocks("js");
 export const docSv = blocks("systemverilog");
 
-const IMPORT =
-	'import { FsmGroup, Fsm, Input, Output, Dff, Const, ALWAYS_0, ALWAYS_1, SvPackage, SvFunction } from "./dsl.mjs";\n';
+export const IMPORT =
+	'import { FsmGroup, Fsm, FsmPort, Input, Output, Dff, Const, PushPort, PopPort, Chan, Instance, ALWAYS_0, ALWAYS_1, SvPackage, SvFunction } from "./dsl.mjs";\n';
 
-/** Compile a whole source (imports added); returns the file without its 2-line header. */
-export async function compileText(text: string): Promise<string> {
-	const g = await compileFsmSource({
-		file: "x.mjs",
-		abs: join(import.meta.dir, "x.mjs"),
-		text: IMPORT + text,
-		dsl: join(import.meta.dir, "dsl.mjs"),
+/** Compile a whole source (imports added); `more` are other in-memory files it may import.
+ *  Returns the file without its 2-line header. */
+export async function compileText(
+	text: string,
+	more: Record<string, string> = {},
+): Promise<string> {
+	const dir = import.meta.dir;
+	const files = new Map(
+		Object.entries({ "x.mjs": text, ...more }).map(([f, t]) => [
+			join(dir, f).toLowerCase(),
+			IMPORT + t,
+		]),
+	);
+	const sources = new Sources(dir, join(dir, "dsl.mjs"), async (p) => {
+		const t = files.get(p.toLowerCase());
+		return t ?? readFile(p, "utf8");
 	});
+	const g = await compileFsm(sources, join(dir, "x.mjs"));
 	return g.sv.split("\n").slice(2).join("\n");
 }
 
@@ -48,11 +60,5 @@ export function docModule(name: string): string {
 }
 
 export async function compileDemo(file: string) {
-	const abs = join(demo, file);
-	return compileFsmSource({
-		file,
-		abs,
-		text: readFileSync(abs, "utf8"),
-		dsl: fsmDslPath(demo),
-	});
+	return compileFsm(new Sources(demo, fsmDslPath(demo)), join(demo, file));
 }
