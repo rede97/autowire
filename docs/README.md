@@ -57,7 +57,7 @@
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| [state/async-fsm.md](./state/async-fsm.md) | 用 ECMAScript async/await 描述 RTL 状态机：channel 信号模型、运算符、端口声明、await 与节拍、标签命名状态、分支、子状态机调用、move 驱动动作、编译器与自写检查器；初稿已并入（git `21cb9ca`） | 设计草案，未实现 |
+| [state/async-fsm.md](./state/async-fsm.md) | 用 ECMAScript async/await 描述 RTL 状态机：channel 信号模型、运算符、端口声明、await 与节拍、标签命名状态、分支、子状态机调用、move 驱动动作、编译器与自写检查器；初稿已并入（git `21cb9ca`） | P0 已落地（`plugin fsm run`，`demo/state/`）；P1–P3 未实现 |
 
 ## 开发环境 · [`dev/`](./dev/)
 

@@ -1,10 +1,10 @@
 # async/await 状态机 DSL 设计（草案）
 
-> 状态：**设计草案，未实现**。没有命令、没有 `help` 主题，`help status` 不列。
+> 状态：**部分落地**。`plugin fsm run` 已编译：状态、`read` 分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、子状态机调用与 `return` 结果、`@Fsm({ statePrefix, stateEncoding })`（`help fsm`，示例 `demo/state/`）。还没有实现：push / pop、`Promise.all`、`try` / `Escape` / `abort`、`exportState` / `stateValues` / `stateReg`，用到时编译期报「not implemented yet」。
 > 来源：初稿 `demo/state/demo.md` 与值模型试验 `demo/state/demo.ts`，已并入本文后删除；原文见 git 提交 `21cb9ca`。本文是这套设计的唯一来源。
 > 初稿没说清的地方标为「决定」（本文给出的取舍）或「开放」（§10，需作者拍板）。
 > 作者源码是 **ECMAScript**（`.mjs`），不是 TypeScript：一组状态机写成带 `@FsmGroup` 的 class，对外的状态机是带 `@Fsm` 的 async 方法，端口是方法的解构参数（§2.2）；状态名用原生标签语句（§3.5）。选型理由见 §8.2。
-> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例与 §6.5 的 `aw_dff` 一起要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。除 §7.1 外，SV 示例省略文件头（§7.1）。示例、生成规则任何一方改动，都要同步更新另一方；将来 `demo/state/` 有可运行示例时，它与本文的对照示例保持一致。
+> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例与 §6.5 的 `aw_dff` 一起要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。除 §7.1 外，SV 示例省略文件头（§7.1）。示例、生成规则任何一方改动，都要同步更新另一方。已落地部分的示例（§2.3、§3.6、§3.6.1、§5.2、§6.1、§6.1.1、§6.5、§7.1）就是生成器的实际输出，`test/fsm.test.ts` 逐字比对，`demo/state/` 是它们的可运行副本；未落地部分的示例按同样的格式手写。
 
 ## 背景
 
@@ -71,6 +71,7 @@
 | `<` `>` `<=` `>=` | 无符号比较 | 两侧同为 N | 1 |
 | `x.bits(i)` | 取第 i 位 | N | 1 |
 | `x.bits(hi, lo)` | 取 hi 到 lo 的位段 | N | hi − lo + 1 |
+| `c ? a : b` | 二选一；`c` 1 位，`a` / `b` 同宽 | 1 / N / N | N |
 
 - 数字字面量取另一侧 channel 的位宽，不必写 `Const(8, 0xff)`。值超出位宽、或两侧都是字面量时，编译期报错。
 - 其余运算符编译期报错：`==` / `!=`（统一写 `===` / `!==`）、`+ - * / %`、`<< >> >>>`、`**`。这些计算写成用户 SV 函数（§2.3）。
@@ -80,6 +81,7 @@
 - **不支持拼接和移位（决定）**。ES 没有拼接运算符，数组字面量 `[a, b]` 不被解释为拼接，编译期报错；`<<` / `>>` / `>>>` 同样报错。这两类变换写成用户函数（§2.3）。
 - 比较只按无符号（**决定**）。DSL 不提供有符号类型，也不提供有符号比较；需要有符号判断时调用用户函数，这是 §2.3 的典型用法。
 - 位宽不一致编译期报错（**决定**）。
+- `?:` 原样生成 SV 的 `?:`，这是 DSL 里唯一的选择器；两臂都是数字字面量时取上下文的位宽（例如 `x.pulse(c ? 1 : 2)`），否则取另一臂的位宽。条件可以是 `await x.read()`（只在分支和循环条件里）。
 - 优先级沿用 ES 解析结果。ES 的 `===` 比 `&` 结合得紧，与 SV 中 `==` 和 `&` 的相对次序一致；生成 SV 时统一加满括号，不依赖两边优先级逐条相同。
 
 这些运算符在 ES 运行时对对象没有意义：Bun 实测 `{} & !{}` 得 `0`，`==` 比较引用；TC39 的运算符重载提案已于 2023-11 撤回。DSL 源码从不执行（§8.2），运算符的含义由编译器从 AST 赋予。初稿里 `msg_valid & !skip & (msg_val == const_val)` 的写法因此成立，只需把 `==` 改成 `===`：
@@ -108,14 +110,16 @@ assign is_wr     = cmd[31] & (cmd[27:24] == 4'h3);
 初稿用 TS `interface` 声明端口。ES 没有类型，而生成 SV 端口恰好需要方向和位宽，所以端口写成**方法的解构参数，默认值就是端口声明**：
 
 ```js
-import { FsmGroup, Fsm, Input, PushPort } from "autowire/fsm";
+import { FsmGroup, Fsm, Input, PushPort } from "../.autowire/dsl/fsm/dsl.mjs";
 
 @FsmGroup
 export class MsgCtl {
   @Fsm
   async fsm_drive_signal({
+    // conditions
     cond_init = Input(1),
     cond_a = Input(1),
+    // FIFO send ports
     fifo_a = PushPort(8),
     fifo_b = PushPort(8),
   }) {
@@ -128,7 +132,8 @@ export class MsgCtl {
 - `@Fsm` 标记对外的顶层状态机，方法名就是生成的 `module` 名。选项写在装饰器参数里：`@Fsm({ exportState: true })`（§6.5）。
 - 不带装饰器的 async 方法是组内子状态机（§5）。
 - 参数必须是一个对象解构模式，每个属性都写默认值，默认值是端口声明。属性名就是 SV 端口名。默认值不是运行时语义：源码从不执行（§8.2），编译器只从 AST 读出方向和位宽。
-- 方法体里直接用参数名，不需要 `ports.` 前缀。`autowire/fsm` 是暂定的 import 路径（§10）。
+- **端口每行一个，用注释分组（决定）**：每个端口独占一行，两个端口写在同一行（或第一个端口和 `({` 同行）时编译期报错。端口之间独占一行的 `//` 注释是分组标题，生成器把它原样搬到 SV 端口表的同一位置；端口行尾的 `//` 注释不搬运。生成器自己加两组标题：`// clock and reset`（`clk` / `rst_n`），子状态机再加 `// call handshake`（`start` / `done` / `result`）；作者的第一个端口没有标题时，生成器补一行 `// ports`，避免它落在生成的分组里。调用子状态机时的端口连接也按每行一个书写（只是风格，不检查）。
+- 方法体里直接用参数名，不需要 `ports.` 前缀。import 路径是 `.autowire/dsl/fsm/dsl.mjs`（相对源文件写，§11）；检查器只认解析到这个文件的 import。
 - 位宽、方向错误由我们自己写的检查器在编译期报出（§8.3），不依赖 tsc 或任何类型检查。
 - 装饰器只能用在 class 和 class 方法上。ES 不允许装饰普通函数，`@Fsm async function f() {}` 是语法错误（Bun 实测：`Expected "class" but found "async"`），所以状态机必须写成 class 方法。
 - `PushPort(N)` 是 `<name>_vld` 出 / `<name>_rdy` 入 / `<name>_data[N]` 出 三根线的打包，用 `.push(v)` 发送（§6.2）。`PopPort(N)` 是对称的接收口：`<name>_vld` 入 / `<name>_rdy` 出 / `<name>_data[N]` 入，用 `.pop()` 接收（§6.2）。
@@ -140,18 +145,21 @@ export class MsgCtl {
   | 参数里 `x = Dff(N, { external: true })` | 模块外，属于别人 | `x_set` / `x_next` 输出，`x_val` 输入 | regfile 字段、别的模块也读写的寄存器（§6.5） |
   | 方法体里 `const x = Dff(N)` | 模块内 `aw_dff` | 无 | 状态机私有的寄存器，例如锁存 `read()` 的结果（§4） |
 
-  `Output(N)` 只表示由动作驱动的组合输出（脉冲），不带寄存器。
+  `Output(N)` 只表示由动作驱动的组合输出（脉冲），不带寄存器；N 可以大于 1，用 `x.pulse(v)` 在 move 那一拍输出 `v`，其余拍为 0（§6.1.1）。
 
-class 的其他写法都由检查器拒绝（§8.3）：`constructor`、字段、`static`、getter / setter、`extends`、`this` 的其他用法。源码虽不执行，但 Bun 会把装饰器转成 `__decorateElement` 等运行时调用（实测），误运行时会真的调用 `FsmGroup` / `Fsm`；`autowire/fsm` 因此导出同名的空实现，误运行不会崩溃，也不会产生任何输出。
+class 的其他写法都由检查器拒绝（§8.3）：`constructor`、字段、`static`、getter / setter、`extends`、`this` 的其他用法。源码虽不执行，但 Bun 会把装饰器转成 `__decorateElement` 等运行时调用（实测），误运行时会真的调用 `FsmGroup` / `Fsm`；`dsl.mjs` 因此导出同名的空实现，误运行不会崩溃，也不会产生任何输出。
 
 生成的 SV 端口（`clk` / `rst_n` 由生成器加上，作者面不出现，与「节拍是背景」一致）：
 
 ```systemverilog
 module fsm_drive_signal (
+  // clock and reset
   input  logic       clk,
   input  logic       rst_n,
+  // conditions
   input  logic       cond_init,
   input  logic       cond_a,
+  // FIFO send ports
   output logic       fifo_a_vld,
   input  logic       fifo_a_rdy,
   output logic [7:0] fifo_a_data,
@@ -175,9 +183,11 @@ const num_pkg = SvPackage("num_pkg", {
 export class CmpCtl {
   @Fsm
   async cmp_fsm({
+    // samples
     vld = Input(1),
     err = Input(8),
     limit = Input(8),
+    // results
     mag = Dff(8),
     alarm = Output(1),
   }) {
@@ -210,40 +220,44 @@ endpackage
 
 ```systemverilog
 package cmp_fsm_pkg;
-  typedef enum logic [0:0] {IDLE, Hold} state_t;
+  typedef enum logic [0:0] {IDLE, HOLD} state_t;
 endpackage
 
 module cmp_fsm
   import cmp_fsm_pkg::*;
 (
+  // clock and reset
   input  logic       clk,
   input  logic       rst_n,
+  // samples
   input  logic       vld,
   input  logic [7:0] err,
   input  logic [7:0] limit,
+  // results
   output logic [7:0] mag,
   output logic       alarm
 );
   state_t     state_val, state_next;
+  logic       move_to_HOLD;
   logic       fn_lt_s8_0;
   logic [7:0] fn_abs8_0;
-  logic       move_to_Hold;
 
-  // user functions: one wire per distinct call
   assign fn_lt_s8_0 = num_pkg::lt_s8(err, limit);
   assign fn_abs8_0  = num_pkg::abs8(err);
 
   always_comb begin
     state_next   = state_val;
-    move_to_Hold = 1'b0;
+    move_to_HOLD = 1'b0;
     unique case (state_val)
       IDLE:
         if (vld & fn_lt_s8_0) begin
-          state_next   = Hold;
-          move_to_Hold = 1'b1;
+          state_next   = HOLD;
+          move_to_HOLD = 1'b1;
         end
-      Hold:
-        if (vld & !fn_lt_s8_0) state_next = IDLE;
+      HOLD:
+        if (vld & !fn_lt_s8_0) begin
+          state_next = IDLE;
+        end
       default:
         state_next = IDLE;
     endcase
@@ -254,8 +268,9 @@ module cmp_fsm
     else        state_val <= state_next;
 
   aw_dff #(.T(logic [7:0])) u_mag (.clk, .rst_n,
-    .set(move_to_Hold), .next(fn_abs8_0), .val(mag));            // mag.set(num_pkg.abs8(err))
-  assign alarm = move_to_Hold;                                    // alarm.pulse()
+    .set(move_to_HOLD),                                         // mag.set(num_pkg.abs8(err))
+    .next(fn_abs8_0), .val(mag));
+  assign alarm = move_to_HOLD;                                  // alarm.pulse()
 endmodule
 ```
 
@@ -288,7 +303,7 @@ endmodule
 | `let x = …` 之后重新赋值，或在多个段里赋值 | 编译期报错，提示改用 `Dff` | 重新赋值意味着需要寄存器或按状态的选择器，assign 表达不了 |
 
 - `const` 绑定的组合信号可以在多个段里读，它每一拍都有值；`read()` 的结果不能绑定到变量上（§4）。
-- `let r` 拿到的 `result` 只在 `done` 那一拍有效，与 `read()` 相同；要在后面的段里用，先 `Dff.set(r)`（§5）。
+- `let r` 拿到的 `result` 只在 `done` 那一拍有效，与 `read()` 相同；只能在紧跟调用状态的那一段里读（动作或分支条件），要在后面的段里用，先 `Dff.set(r)`（§5）。在别的段、`const` 定义、`wait` 条件或调用的实参里读 `r`，编译期报错。`pop` 的写法还没有实现。
 
 ## 3. 状态与节拍
 
@@ -320,10 +335,17 @@ S(K+1) 是第 K+1 个 `await` 的等待状态，名字是该 `await` 语句上�
 
 ```js
 @Fsm({ exportState: true })
-async fsm_drive_signal({ cond_init = Input(1), cond_a = Input(1), fifo_a = PushPort(8), fifo_b = PushPort(8) }) {
+async fsm_drive_signal({
+  // conditions
+  cond_init = Input(1),
+  cond_a = Input(1),
+  // FIFO send ports
+  fifo_a = PushPort(8),
+  fifo_b = PushPort(8),
+}) {
   while (true) {
     IDLE:    await cond_init.wait(1);               // IDLE 等 cond_init
-    const a_done = fifo_a.push(0x00);               // move_to_SendMsg 这一拍发起
+    const a_done = fifo_a.push(0x00);               // move_to_SEND_MSG 这一拍发起
     const b_done = fifo_b.push(0x10);
     SendMsg: await Promise.all([a_done, b_done]);   // SendMsg 等两个 push 完成
     MsgSent: await cond_a.wait(1);                  // MsgSent 等 cond_a；之后是循环体末尾（§3.4）
@@ -334,61 +356,64 @@ async fsm_drive_signal({ cond_init = Input(1), cond_a = Input(1), fifo_a = PushP
 ```mermaid
 stateDiagram-v2
   [*] --> IDLE
-  IDLE --> SendMsg: cond_init / push a, push b
-  SendMsg --> MsgSent: a 完成 & b 完成
-  MsgSent --> IDLE: cond_a / 循环体末尾
+  IDLE --> SEND_MSG: cond_init / push a, push b
+  SEND_MSG --> MSG_SENT: a 完成 & b 完成
+  MSG_SENT --> IDLE: cond_a / 循环体末尾
 ```
 
 生成的 SV（`exportState: true`，§6.5）：
 
 ```systemverilog
 package fsm_drive_signal_pkg;
-  typedef enum logic [1:0] {IDLE, SendMsg, MsgSent} state_t;  // no values: left to synthesis
+  typedef enum logic [1:0] {IDLE, SEND_MSG, MSG_SENT} state_t;
 endpackage
 
 module fsm_drive_signal
   import fsm_drive_signal_pkg::*;
 (
+  // clock and reset
   input  logic       clk,
   input  logic       rst_n,
+  // conditions
   input  logic       cond_init,
   input  logic       cond_a,
+  // FIFO send ports
   output logic       fifo_a_vld,
   input  logic       fifo_a_rdy,
   output logic [7:0] fifo_a_data,
   output logic       fifo_b_vld,
   input  logic       fifo_b_rdy,
   output logic [7:0] fifo_b_data,
-  output logic       state_set_o,  // exportState
+  // exportState
+  output logic       state_set_o,
   output state_t     state_next_o,
   output state_t     state_val_o
 );
   state_t state_val, state_next;
-  logic   move_to_SendMsg, move_to_MsgSent, move_to_IDLE, join_SendMsg;
+  logic   move_to_SEND_MSG, move_to_MSG_SENT, move_to_IDLE, join_SEND_MSG;
   logic   a_pending_val, a_done, a_fin_val;
   logic   b_pending_val, b_done, b_fin_val;
 
-  assign join_SendMsg = (a_done | a_fin_val) & (b_done | b_fin_val);
+  assign join_SEND_MSG = (a_done | a_fin_val) & (b_done | b_fin_val);
 
-  // next state and moves: each condition written once
   always_comb begin
-    state_next      = state_val;
-    move_to_SendMsg = 1'b0;
-    move_to_MsgSent = 1'b0;
-    move_to_IDLE    = 1'b0;
+    state_next       = state_val;
+    move_to_SEND_MSG = 1'b0;
+    move_to_MSG_SENT = 1'b0;
+    move_to_IDLE     = 1'b0;
     unique case (state_val)
       IDLE:
         if (cond_init) begin
-          state_next      = SendMsg;
-          move_to_SendMsg = 1'b1;
+          state_next       = SEND_MSG;
+          move_to_SEND_MSG = 1'b1;
         end
-      SendMsg:
-        if (join_SendMsg) begin
-          state_next      = MsgSent;
-          move_to_MsgSent = 1'b1;
+      SEND_MSG:
+        if (join_SEND_MSG) begin
+          state_next       = MSG_SENT;
+          move_to_MSG_SENT = 1'b1;
         end
-      MsgSent:
-        if (cond_a) begin                // loop body end: back to the entry
+      MSG_SENT:
+        if (cond_a) begin
           state_next   = IDLE;
           move_to_IDLE = 1'b1;
         end
@@ -401,50 +426,56 @@ module fsm_drive_signal
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  // fifo_a.push(0x00), started on move_to_SendMsg
-  assign fifo_a_vld  = move_to_SendMsg | a_pending_val;
+  // fifo_a.push(0x00), started on move_to_SEND_MSG
+  assign fifo_a_vld  = move_to_SEND_MSG | a_pending_val;
   assign fifo_a_data = 8'h00;                                   // constant payload: no data register
   assign a_done      = fifo_a_vld & fifo_a_rdy;
   aw_dff u_a_pending (.clk, .rst_n,
-    .set((move_to_SendMsg & ~fifo_a_rdy) | (a_pending_val & fifo_a_rdy)),
-    .next(move_to_SendMsg & ~fifo_a_rdy), .val(a_pending_val));
-  aw_dff u_a_fin (.clk, .rst_n, .set(a_done | move_to_MsgSent), .next(~move_to_MsgSent), .val(a_fin_val));
+    .set((move_to_SEND_MSG & ~fifo_a_rdy) | (a_pending_val & fifo_a_rdy)),
+    .next(move_to_SEND_MSG & ~fifo_a_rdy), .val(a_pending_val));
+  aw_dff u_a_fin (.clk, .rst_n, .set(a_done | move_to_MSG_SENT), .next(~move_to_MSG_SENT), .val(a_fin_val));
 
   // fifo_b.push(0x10)
-  assign fifo_b_vld  = move_to_SendMsg | b_pending_val;
+  assign fifo_b_vld  = move_to_SEND_MSG | b_pending_val;
   assign fifo_b_data = 8'h10;
   assign b_done      = fifo_b_vld & fifo_b_rdy;
   aw_dff u_b_pending (.clk, .rst_n,
-    .set((move_to_SendMsg & ~fifo_b_rdy) | (b_pending_val & fifo_b_rdy)),
-    .next(move_to_SendMsg & ~fifo_b_rdy), .val(b_pending_val));
-  aw_dff u_b_fin (.clk, .rst_n, .set(b_done | move_to_MsgSent), .next(~move_to_MsgSent), .val(b_fin_val));
+    .set((move_to_SEND_MSG & ~fifo_b_rdy) | (b_pending_val & fifo_b_rdy)),
+    .next(move_to_SEND_MSG & ~fifo_b_rdy), .val(b_pending_val));
+  aw_dff u_b_fin (.clk, .rst_n, .set(b_done | move_to_MSG_SENT), .next(~move_to_MSG_SENT), .val(b_fin_val));
 
   // exportState: enum members selected by comparisons, never state_val itself
   always_comb begin
     unique case (state_val)
-      IDLE:    state_val_o = IDLE;
-      SendMsg: state_val_o = SendMsg;
-      MsgSent: state_val_o = MsgSent;
-      default: state_val_o = IDLE;
+      IDLE:     state_val_o = IDLE;
+      SEND_MSG: state_val_o = SEND_MSG;
+      MSG_SENT: state_val_o = MSG_SENT;
+      default:  state_val_o = IDLE;
     endcase
   end
-  assign state_set_o = move_to_SendMsg | move_to_MsgSent | move_to_IDLE;
+  assign state_set_o = move_to_SEND_MSG | move_to_MSG_SENT | move_to_IDLE;
   always_comb begin
     state_next_o = state_val_o;
-    if (move_to_SendMsg) state_next_o = SendMsg;
-    if (move_to_MsgSent) state_next_o = MsgSent;
-    if (move_to_IDLE)    state_next_o = IDLE;
+    if (move_to_SEND_MSG) begin
+      state_next_o = SEND_MSG;
+    end
+    if (move_to_MSG_SENT) begin
+      state_next_o = MSG_SENT;
+    end
+    if (move_to_IDLE) begin
+      state_next_o = IDLE;
+    end
   end
 endmodule
 ```
 
 | DSL | SV |
 |---|---|
-| `IDLE:` / `SendMsg:` / `MsgSent:` 标签 | `state_t` 成员，名字原样 |
-| `await cond_init.wait(1)` 在 IDLE | 次态块的 `IDLE` 分支：`if (cond_init)` 里同时写 `state_next = SendMsg` 和 `move_to_SendMsg = 1'b1` |
-| 段内 `fifo_a.push(0x00)` | `fifo_a_vld = move_to_SendMsg \| a_pending_val`（§6.2） |
-| `await Promise.all([a_done, b_done])` | `join_SendMsg` 与 `a_fin_val` / `b_fin_val`（§6.3） |
-| 循环体末尾 | 回边 `MsgSent → IDLE`：回到 `while (true)` 开头的入口状态（§3.4） |
+| `IDLE:` / `SendMsg:` / `MsgSent:` 标签 | `state_t` 成员 `IDLE` / `SEND_MSG` / `MSG_SENT`：标签转成大写下划线（§3.5） |
+| `await cond_init.wait(1)` 在 IDLE | 次态块的 `IDLE` 分支：`if (cond_init)` 里同时写 `state_next = SEND_MSG` 和 `move_to_SEND_MSG = 1'b1` |
+| 段内 `fifo_a.push(0x00)` | `fifo_a_vld = move_to_SEND_MSG \| a_pending_val`（§6.2） |
+| `await Promise.all([a_done, b_done])` | `join_SEND_MSG` 与 `a_fin_val` / `b_fin_val`（§6.3） |
+| 循环体末尾 | 回边 `MSG_SENT → IDLE`：回到 `while (true)` 开头的入口状态（§3.4） |
 
 ### 3.3 等待从进入后的第一拍开始
 
@@ -489,7 +520,8 @@ ES 规定 `break L` / `continue L` 只能指向**包住**当前语句的那条�
 - 声明语句不能带标签：`S: const x = await …` 是 ES 语法错误（`Cannot use a declaration in a single-statement context`，实测）。需要返回值时先 `let r;`，再写带标签的赋值。
 - ES 只禁止嵌套的同名标签。同一方法内的所有状态名必须唯一，由编译器检查。
 - 标签必须是合法的 SV 标识符。ES 标识符允许 Unicode 和以 `$` 开头，SV 不允许，由编译器检查。
-- 没有标签的 `await` 生成匿名状态（按源码顺序编号）。
+- **enum 成员名一律大写（决定）**：标签按「小写或数字后接大写处断开、连续大写在最后一个大写前断开」转成大写下划线：`SendMsg` → `SEND_MSG`，`WaitAck` → `WAIT_ACK`，`HTTPReq` → `HTTP_REQ`，`Work0` → `WORK0`，`IDLE` 不变。`move_to_*` / `leave_*` 用转换后的名字。两个标签转换后相同（`SendMsg` 与 `SEND_MSG`）时报错。`@Fsm({ statePrefix })` 再给 enum 成员加前缀（§6.5）。
+- 没有标签的 `await` 生成匿名状态 `S<序号>`，序号是它在 enum 里的位置（源码顺序，从 0 起）；与作者的标签重名时报错。
 - 末段没有 `await`，所以没有状态可命名。**决定**：末段那次 move 就是 `done`，不需要名字。
 - 循环名和块名不生成状态，也不在 enum 里出现（§3.6.1）。
 - 工具链：`bun run lint` 不检查 DSL 源码。`tsconfig.json` 的 `include` 只含 `.ts`，`biome.json` 排除了 `demo/`。放到 `test/` 下的 `.mjs` 夹具会被 biome 扫到，`lint/suspicious/noConfusingLabels` 会对非循环标签报警告（实测），需要对该路径关掉这条规则。
@@ -516,9 +548,17 @@ DSL（两层嵌套）：
 ```js
 @Fsm
 async burst_ctl({
-  go = Input(1), more = Input(1), req_rdy = Input(1),
-  burst = Input(1), beat_vld = Input(1), ack = Input(1),
-  req = Output(1), beat_ack = Output(1),
+  // control
+  go = Input(1),
+  more = Input(1),
+  // request
+  req_rdy = Input(1),
+  req = Output(1),
+  // burst beats
+  burst = Input(1),
+  beat_vld = Input(1),
+  beat_ack = Output(1),
+  ack = Input(1),
 }) {
   while (true) {
     IDLE: await go.wait(1);
@@ -538,73 +578,82 @@ async burst_ctl({
 ```mermaid
 stateDiagram-v2
   [*] --> IDLE
-  IDLE --> Fetch: go & more / req
+  IDLE --> FETCH: go & more / req
   IDLE --> IDLE: go & !more（循环体末尾）
-  Fetch --> Beat: req_rdy & burst
-  Fetch --> Ack: req_rdy & !burst
-  Beat --> Beat: beat_vld & burst / beat_ack
-  Beat --> Ack: beat_vld & !burst / beat_ack
-  Ack --> Fetch: ack & more / req
-  Ack --> IDLE: ack & !more（循环体末尾）
+  FETCH --> BEAT: req_rdy & burst
+  FETCH --> ACK: req_rdy & !burst
+  BEAT --> BEAT: beat_vld & burst / beat_ack
+  BEAT --> ACK: beat_vld & !burst / beat_ack
+  ACK --> FETCH: ack & more / req
+  ACK --> IDLE: ack & !more（循环体末尾）
 ```
 
 生成的 SV：
 
 ```systemverilog
 package burst_ctl_pkg;
-  typedef enum logic [1:0] {IDLE, Fetch, Beat, Ack} state_t;
+  typedef enum logic [1:0] {IDLE, FETCH, BEAT, ACK} state_t;
 endpackage
 
 module burst_ctl
   import burst_ctl_pkg::*;
 (
+  // clock and reset
   input  logic clk,
   input  logic rst_n,
+  // control
   input  logic go,
   input  logic more,
+  // request
   input  logic req_rdy,
+  output logic req,
+  // burst beats
   input  logic burst,
   input  logic beat_vld,
-  input  logic ack,
-  output logic req,
-  output logic beat_ack
+  output logic beat_ack,
+  input  logic ack
 );
   state_t state_val, state_next;
-  logic   move_to_Fetch, leave_Beat;
+  logic   move_to_FETCH, leave_BEAT;
 
-  // next state, moves and leaves: each condition written once
   always_comb begin
     state_next    = state_val;
-    move_to_Fetch = 1'b0;
-    leave_Beat    = 1'b0;
+    move_to_FETCH = 1'b0;
+    leave_BEAT    = 1'b0;
     unique case (state_val)
       IDLE:
         if (go) begin
-          if (more) begin                // outer loop: enter
-            state_next    = Fetch;
-            move_to_Fetch = 1'b1;
-          end else begin                 // outer loop: skip, tail segment
-            state_next    = IDLE;
+          if (more) begin
+            state_next    = FETCH;
+            move_to_FETCH = 1'b1;
+          end else begin
+            state_next = IDLE;
           end
         end
-      Fetch:
+      FETCH:
         if (req_rdy) begin
-          if (burst) state_next = Beat;  // inner loop: enter
-          else       state_next = Ack;   // inner loop: skip
+          if (burst) begin
+            state_next = BEAT;
+          end else begin
+            state_next = ACK;
+          end
         end
-      Beat:
+      BEAT:
         if (beat_vld) begin
-          leave_Beat = 1'b1;
-          if (burst) state_next = Beat;  // inner loop: back edge
-          else       state_next = Ack;   // inner loop: exit
+          leave_BEAT = 1'b1;
+          if (burst) begin
+            state_next = BEAT;
+          end else begin
+            state_next = ACK;
+          end
         end
-      Ack:
+      ACK:
         if (ack) begin
-          if (more) begin                // outer loop: back edge
-            state_next    = Fetch;
-            move_to_Fetch = 1'b1;
-          end else begin                 // outer loop: exit, tail segment
-            state_next    = IDLE;
+          if (more) begin
+            state_next    = FETCH;
+            move_to_FETCH = 1'b1;
+          end else begin
+            state_next = IDLE;
           end
         end
       default:
@@ -616,16 +665,16 @@ module burst_ctl
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  assign req      = move_to_Fetch;       // req.pulse()
-  assign beat_ack = leave_Beat;          // beat_ack.pulse()
+  assign req      = move_to_FETCH;                              // req.pulse()
+  assign beat_ack = leave_BEAT;                                 // beat_ack.pulse()
 endmodule
 ```
 
 | DSL | SV |
 |---|---|
-| `while (await more.read())` | `IDLE` 和 `Ack` 分支里的 `if (more)`：进入与回边各写一次 |
-| 循环体开头的 `req.pulse()` | `move_to_Fetch`，在两个前驱分支里各置一次 |
-| `Beat:` 之后、内层条件之前的 `beat_ack.pulse()` | `leave_Beat`：不管去 `Beat` 还是 `Ack` 都发 |
+| `while (await more.read())` | `IDLE` 和 `ACK` 分支里的 `if (more)`：进入与回边各写一次 |
+| 循环体开头的 `req.pulse()` | `move_to_FETCH`，在两个前驱分支里各置一次 |
+| `Beat:` 之后、内层条件之前的 `beat_ack.pulse()` | `leave_BEAT`：不管去 `BEAT` 还是 `ACK` 都发 |
 | 外层循环退出、循环体末尾 | `state_next = IDLE`：回到 `while (true)` 开头（§3.4） |
 
 #### 3.6.1 `break` / `continue` 与跳转标签
@@ -643,9 +692,18 @@ DSL（二维扫描，找到即结束）：
 ```js
 @Fsm
 async scan_ctl({
-  go = Input(1), row_more = Input(1), row_rdy = Input(1),
-  col_more = Input(1), col_rdy = Input(1), hit = Input(1),
-  ack = Input(1), found = Output(1),
+  // control
+  go = Input(1),
+  ack = Input(1),
+  // rows
+  row_more = Input(1),
+  row_rdy = Input(1),
+  // columns
+  col_more = Input(1),
+  col_rdy = Input(1),
+  hit = Input(1),
+  // result
+  found = Output(1),
 }) {
   while (true) {
     IDLE: await go.wait(1);
@@ -666,61 +724,73 @@ async scan_ctl({
 
 ```systemverilog
 package scan_ctl_pkg;
-  typedef enum logic [1:0] {IDLE, Row, Col, Report} state_t;  // no member for the loop label Outer
+  typedef enum logic [1:0] {IDLE, ROW, COL, REPORT} state_t;
 endpackage
 
 module scan_ctl
   import scan_ctl_pkg::*;
 (
+  // clock and reset
   input  logic clk,
   input  logic rst_n,
+  // control
   input  logic go,
+  input  logic ack,
+  // rows
   input  logic row_more,
   input  logic row_rdy,
+  // columns
   input  logic col_more,
   input  logic col_rdy,
   input  logic hit,
-  input  logic ack,
+  // result
   output logic found
 );
   state_t state_val, state_next;
-  logic   move_to_Report;
+  logic   move_to_REPORT;
 
   always_comb begin
     state_next     = state_val;
-    move_to_Report = 1'b0;
+    move_to_REPORT = 1'b0;
     unique case (state_val)
       IDLE:
         if (go) begin
-          if (row_more) state_next = Row;        // Outer: enter
-          else begin                             // Outer: skip
-            state_next     = Report;
-            move_to_Report = 1'b1;
+          if (row_more) begin
+            state_next = ROW;
+          end else begin
+            state_next     = REPORT;
+            move_to_REPORT = 1'b1;
           end
         end
-      Row:
+      ROW:
         if (row_rdy) begin
-          if (col_more) state_next = Col;        // inner: enter
-          else if (row_more) state_next = Row;   // inner: skip, Outer: back edge
-          else begin                             // Outer: exit
-            state_next     = Report;
-            move_to_Report = 1'b1;
+          if (col_more) begin
+            state_next = COL;
+          end else if (row_more) begin
+            state_next = ROW;
+          end else begin
+            state_next     = REPORT;
+            move_to_REPORT = 1'b1;
           end
         end
-      Col:
+      COL:
         if (col_rdy) begin
-          if (hit) begin                         // break Outer
-            state_next     = Report;
-            move_to_Report = 1'b1;
-          end else if (col_more) state_next = Col;   // inner: back edge
-          else if (row_more) state_next = Row;       // inner: exit, Outer: back edge
-          else begin                                 // Outer: exit
-            state_next     = Report;
-            move_to_Report = 1'b1;
+          if (hit) begin
+            state_next     = REPORT;
+            move_to_REPORT = 1'b1;
+          end else if (col_more) begin
+            state_next = COL;
+          end else if (row_more) begin
+            state_next = ROW;
+          end else begin
+            state_next     = REPORT;
+            move_to_REPORT = 1'b1;
           end
         end
-      Report:
-        if (ack) state_next = IDLE;              // loop body end: back to the entry
+      REPORT:
+        if (ack) begin
+          state_next = IDLE;
+        end
       default:
         state_next = IDLE;
     endcase
@@ -730,16 +800,16 @@ module scan_ctl
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  assign found = move_to_Report;                 // found.pulse() after the loop
+  assign found = move_to_REPORT;                                // found.pulse()
 endmodule
 ```
 
 | DSL | SV |
 |---|---|
 | `Outer:` 循环标签 | 不生成 enum 成员 |
-| `break Outer` | `Col` 分支里 `if (hit)` → `Report` |
-| 外层循环自然结束 | 同样到 `Report`，与 `break Outer` 共用 `move_to_Report` |
-| 循环后的 `found.pulse()` | `found = move_to_Report`：三条到达 `Report` 的边都发 |
+| `break Outer` | `COL` 分支里 `if (hit)` → `REPORT` |
+| 外层循环自然结束 | 同样到 `REPORT`，与 `break Outer` 共用 `move_to_REPORT` |
+| 循环后的 `found.pulse()` | `found = move_to_REPORT`：三条到达 `REPORT` 的边都发 |
 
 ### 3.7 异常区域：`try` / `catch`
 
@@ -750,9 +820,18 @@ DSL（两级错误：可恢复的 `err`，致命的 `fatal`）：
 ```js
 @Fsm
 async work_ctl({
-  go = Input(1), err = Input(1), fatal = Input(1), more = Input(1),
-  a_done = Input(1), b_done = Input(1), rec_done = Input(1),
-  clr = Output(1), halt = Dff(1),
+  // control
+  go = Input(1),
+  more = Input(1),
+  // work steps
+  a_done = Input(1),
+  b_done = Input(1),
+  // error handling
+  err = Input(1),
+  fatal = Input(1),
+  rec_done = Input(1),
+  clr = Output(1),
+  halt = Dff(1),
 }) {
   while (true) {
     IDLE: await go.wait(1);                 // 第一个 await = 复位后的初始状态
@@ -779,83 +858,93 @@ async work_ctl({
 ```mermaid
 stateDiagram-v2
   [*] --> IDLE
-  IDLE --> Work0: go & more
-  Work0 --> Work1: a_done
-  Work1 --> Work0: b_done & more
-  Work1 --> IDLE: b_done & !more
-  Work0 --> Recovery: err / clr
-  Work1 --> Recovery: err / clr
-  Recovery --> IDLE: rec_done
-  Work0 --> FATAL: fatal / halt
-  Work1 --> FATAL: fatal / halt
-  Recovery --> FATAL: fatal / halt
+  IDLE --> WORK0: go & more
+  WORK0 --> WORK1: a_done
+  WORK1 --> WORK0: b_done & more
+  WORK1 --> IDLE: b_done & !more
+  WORK0 --> RECOVERY: err / clr
+  WORK1 --> RECOVERY: err / clr
+  RECOVERY --> IDLE: rec_done
+  WORK0 --> FATAL: fatal / halt
+  WORK1 --> FATAL: fatal / halt
+  RECOVERY --> FATAL: fatal / halt
 ```
 
 生成的 SV：
 
 ```systemverilog
 package work_ctl_pkg;
-  typedef enum logic [2:0] {IDLE, Work0, Work1, Recovery, FATAL} state_t;
+  typedef enum logic [2:0] {IDLE, WORK0, WORK1, RECOVERY, FATAL} state_t;
 endpackage
 
 module work_ctl
   import work_ctl_pkg::*;
 (
+  // clock and reset
   input  logic clk,
   input  logic rst_n,
+  // control
   input  logic go,
-  input  logic err,
-  input  logic fatal,
   input  logic more,
+  // work steps
   input  logic a_done,
   input  logic b_done,
+  // error handling
+  input  logic err,
+  input  logic fatal,
   input  logic rec_done,
   output logic clr,
   output logic halt
 );
   state_t state_val, state_next;
-  logic   move_to_Recovery, move_to_FATAL;
+  logic   move_to_RECOVERY, move_to_FATAL;
 
   always_comb begin
     state_next       = state_val;
-    move_to_Recovery = 1'b0;
+    move_to_RECOVERY = 1'b0;
     move_to_FATAL    = 1'b0;
     unique case (state_val)
       IDLE:
         if (go) begin
-          if (more) state_next = Work0;    // enter the loop
-          else      state_next = IDLE;     // skip: back to the entry
+          if (more) begin
+            state_next = WORK0;
+          end else begin
+            state_next = IDLE;
+          end
         end
-      Work0:
-        if (fatal) begin                   // outer Escape(fatal): highest priority
-          state_next    = FATAL;
-          move_to_FATAL = 1'b1;
-        end else if (err) begin            // inner Escape(err)
-          state_next       = Recovery;
-          move_to_Recovery = 1'b1;
-        end else if (a_done) begin
-          state_next = Work1;
-        end
-      Work1:
+      WORK0:
         if (fatal) begin
           state_next    = FATAL;
           move_to_FATAL = 1'b1;
         end else if (err) begin
-          state_next       = Recovery;
-          move_to_Recovery = 1'b1;
-        end else if (b_done) begin
-          if (more) state_next = Work0;    // loop back edge
-          else      state_next = IDLE;     // loop exit: back to the entry
+          state_next       = RECOVERY;
+          move_to_RECOVERY = 1'b1;
+        end else if (a_done) begin
+          state_next = WORK1;
         end
-      Recovery:
-        if (fatal) begin                   // still inside the outer region
+      WORK1:
+        if (fatal) begin
+          state_next    = FATAL;
+          move_to_FATAL = 1'b1;
+        end else if (err) begin
+          state_next       = RECOVERY;
+          move_to_RECOVERY = 1'b1;
+        end else if (b_done) begin
+          if (more) begin
+            state_next = WORK0;
+          end else begin
+            state_next = IDLE;
+          end
+        end
+      RECOVERY:
+        if (fatal) begin
           state_next    = FATAL;
           move_to_FATAL = 1'b1;
         end else if (rec_done) begin
-          state_next = IDLE;               // handler done: back to the entry
+          state_next = IDLE;
         end
       FATAL:
-        state_next = FATAL;                // trap: await ALWAYS_0 never leaves
+        state_next = FATAL;
       default:
         state_next = IDLE;
     endcase
@@ -865,17 +954,19 @@ module work_ctl
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  assign clr = move_to_Recovery;           // clr.pulse()
-  aw_dff u_halt (.clk, .rst_n, .set(move_to_FATAL), .next(1'b1), .val(halt));
+  assign clr = move_to_RECOVERY;                                // clr.pulse()
+  aw_dff u_halt (.clk, .rst_n,
+    .set(move_to_FATAL),                                        // halt.set(1)
+    .next(1'b1), .val(halt));
 endmodule
 ```
 
 | DSL | SV |
 |---|---|
-| `Escape(err)` 所在的 `try` 块 | `Work0`、`Work1` 分支里排在正常条件之前的 `else if (err)` |
-| 外层 `Escape(fatal)` | 外层区域内每个状态（含内层 `catch` 的 `Recovery`）最前面的 `if (fatal)` |
-| `catch` 里的第一个动作 `clr.pulse()` | `move_to_Recovery`：所有出错出口共用 |
-| `catch` 走完、循环体末尾 | `Recovery` 的 `rec_done` → `IDLE`（§3.4） |
+| `Escape(err)` 所在的 `try` 块 | `WORK0`、`WORK1` 分支里排在正常条件之前的 `else if (err)` |
+| 外层 `Escape(fatal)` | 外层区域内每个状态（含内层 `catch` 的 `RECOVERY`）最前面的 `if (fatal)` |
+| `catch` 里的第一个动作 `clr.pulse()` | `move_to_RECOVERY`：所有出错出口共用 |
+| `catch` 走完、循环体末尾 | `RECOVERY` 的 `rec_done` → `IDLE`（§3.4） |
 | `FATAL: await ALWAYS_0.wait(1)` | `FATAL: state_next = FATAL`，复位之外不再离开 |
 
 规则：
@@ -898,8 +989,16 @@ DSL：
 
 ```js
 @Fsm
-async soft_rst_ctl({ force_reset = Input(1), clean_done = Input(1), go = Input(1), stop = Input(1),
-                     clean_start = Output(1), active = Dff(1) }) {
+async soft_rst_ctl({
+  // control
+  go = Input(1),
+  stop = Input(1),
+  active = Dff(1),
+  // soft reset
+  force_reset = Input(1),
+  clean_start = Output(1),
+  clean_done = Input(1),
+}) {
   while (true) {
     try {
       Escape(force_reset);              // covers every working state, entry IDLE included
@@ -920,48 +1019,53 @@ async soft_rst_ctl({ force_reset = Input(1), clean_done = Input(1), go = Input(1
 
 ```systemverilog
 package soft_rst_ctl_pkg;
-  typedef enum logic [1:0] {IDLE, Run, RESET} state_t;
+  typedef enum logic [1:0] {IDLE, RUN, RESET} state_t;
 endpackage
 
 module soft_rst_ctl
   import soft_rst_ctl_pkg::*;
 (
+  // clock and reset
   input  logic clk,
   input  logic rst_n,
-  input  logic force_reset,
-  input  logic clean_done,
+  // control
   input  logic go,
   input  logic stop,
+  output logic active,
+  // soft reset
+  input  logic force_reset,
   output logic clean_start,
-  output logic active
+  input  logic clean_done
 );
   state_t state_val, state_next;
-  logic   move_to_Run, move_to_RESET, leave_Run;
+  logic   move_to_RUN, move_to_RESET, move_RUN_to_IDLE;
 
   always_comb begin
-    state_next    = state_val;
-    move_to_Run   = 1'b0;
-    move_to_RESET = 1'b0;
-    leave_Run     = 1'b0;
+    state_next       = state_val;
+    move_to_RUN      = 1'b0;
+    move_to_RESET    = 1'b0;
+    move_RUN_to_IDLE = 1'b0;
     unique case (state_val)
       IDLE:
-        if (force_reset) begin             // Escape(force_reset)
-          state_next    = RESET;
-          move_to_RESET = 1'b1;
-        end else if (go) begin
-          state_next  = Run;
-          move_to_Run = 1'b1;
-        end
-      Run:
         if (force_reset) begin
           state_next    = RESET;
           move_to_RESET = 1'b1;
-        end else if (stop) begin           // normal exit only
-          state_next = IDLE;               // loop body end: back to the entry
-          leave_Run  = 1'b1;
+        end else if (go) begin
+          state_next  = RUN;
+          move_to_RUN = 1'b1;
+        end
+      RUN:
+        if (force_reset) begin
+          state_next    = RESET;
+          move_to_RESET = 1'b1;
+        end else if (stop) begin
+          state_next       = IDLE;
+          move_RUN_to_IDLE = 1'b1;
         end
       RESET:
-        if (clean_done) state_next = IDLE; // catch done: back to the entry
+        if (clean_done) begin
+          state_next = IDLE;
+        end
       default:
         state_next = IDLE;
     endcase
@@ -971,10 +1075,10 @@ module soft_rst_ctl
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  assign clean_start = move_to_RESET;      // clean_start.pulse() in catch
   aw_dff u_active (.clk, .rst_n,
-    .set(move_to_Run | leave_Run | move_to_RESET),   // set(1) / set(0) / cleanup set(0)
-    .next(move_to_Run), .val(active));
+    .set(move_to_RUN | move_RUN_to_IDLE | move_to_RESET),       // active.set(1) / active.set(0)
+    .next(move_to_RUN), .val(active));
+  assign clean_start = move_to_RESET;                           // clean_start.pulse()
 endmodule
 ```
 
@@ -982,7 +1086,7 @@ endmodule
 |---|---|
 | `try` 包住第一个 `await` | `IDLE` 分支也有 `if (force_reset)` |
 | `catch` 里的 `active.set(0)`、`clean_start.pulse()` | `move_to_RESET`：所有出错出口共用 |
-| 循环体末尾的 `active.set(0)` | `leave_Run`：只在 `stop` 成立时发出；`RESET → IDLE` 这条边不执行它 |
+| 循环体末尾的 `active.set(0)` | `move_RUN_to_IDLE`：只在 `stop` 成立时发出；`RUN → RESET` 和 `RESET → IDLE` 都不执行它，所以既不是 `leave_RUN` 也不是 `move_to_IDLE`（§3.6） |
 | `RESET: await clean_done.wait(1)` 之后到循环体末尾 | `RESET` 的 `clean_done` → `IDLE` |
 
 - 与强制复位的区别：RESET 是普通状态，进入时执行 `catch` 的清理动作，等待清理完成；作者声明的 `Dff` 不会自动回到复位值，要清什么在 `catch` 里显式 `set`。生成器只按 §3.7 清理在途的 `pending` / `fin` 和子状态机。
@@ -1004,10 +1108,23 @@ DSL：
 ```js
 @Fsm
 async err_ctl({
-  go = Input(1), more = Input(1), a_done = Input(1), b_done = Input(1),
-  e0 = Input(1), e1 = Input(1), e2 = Input(1),
-  c0_done = Input(1), c1_done = Input(1), c2_done = Input(1),
-  c0_start = Output(1), c1_start = Output(1), c2_start = Output(1),
+  // control
+  go = Input(1),
+  more = Input(1),
+  // work steps
+  a_done = Input(1),
+  b_done = Input(1),
+  // error levels
+  e0 = Input(1),
+  e1 = Input(1),
+  e2 = Input(1),
+  // cleanup steps
+  c0_done = Input(1),
+  c1_done = Input(1),
+  c2_done = Input(1),
+  c0_start = Output(1),
+  c1_start = Output(1),
+  c2_start = Output(1),
 }) {
   while (true) {
     IDLE: await go.wait(1);
@@ -1036,40 +1153,45 @@ async err_ctl({
 ```mermaid
 stateDiagram-v2
   [*] --> IDLE
-  IDLE --> Work0: go & more
-  Work0 --> Work1: a_done
-  Work1 --> Work0: b_done & more
-  Work1 --> IDLE: b_done & !more
-  Work0 --> Clean2: e2
-  Work1 --> Clean2: e2
-  Work0 --> Clean1: e1 & !e2
-  Work1 --> Clean1: e1 & !e2
-  Work0 --> Clean0: e0 & !e1 & !e2
-  Work1 --> Clean0: e0 & !e1 & !e2
-  Clean2 --> Clean1: c2_done
-  Clean1 --> Clean0: c1_done
-  Clean0 --> IDLE: c0_done
+  IDLE --> WORK0: go & more
+  WORK0 --> WORK1: a_done
+  WORK1 --> WORK0: b_done & more
+  WORK1 --> IDLE: b_done & !more
+  WORK0 --> CLEAN2: e2
+  WORK1 --> CLEAN2: e2
+  WORK0 --> CLEAN1: e1 & !e2
+  WORK1 --> CLEAN1: e1 & !e2
+  WORK0 --> CLEAN0: e0 & !e1 & !e2
+  WORK1 --> CLEAN0: e0 & !e1 & !e2
+  CLEAN2 --> CLEAN1: c2_done
+  CLEAN1 --> CLEAN0: c1_done
+  CLEAN0 --> IDLE: c0_done
 ```
 
 生成的 SV：
 
 ```systemverilog
 package err_ctl_pkg;
-  typedef enum logic [2:0] {IDLE, Work0, Work1, Clean2, Clean1, Clean0} state_t;
+  typedef enum logic [2:0] {IDLE, WORK0, WORK1, CLEAN2, CLEAN1, CLEAN0} state_t;
 endpackage
 
 module err_ctl
   import err_ctl_pkg::*;
 (
+  // clock and reset
   input  logic clk,
   input  logic rst_n,
+  // control
   input  logic go,
   input  logic more,
+  // work steps
   input  logic a_done,
   input  logic b_done,
+  // error levels
   input  logic e0,
   input  logic e1,
   input  logic e2,
+  // cleanup steps
   input  logic c0_done,
   input  logic c1_done,
   input  logic c2_done,
@@ -1078,66 +1200,74 @@ module err_ctl
   output logic c2_start
 );
   state_t state_val, state_next;
-  logic   move_to_Clean0, move_to_Clean1, move_to_Clean2;
+  logic   move_to_CLEAN0, move_to_CLEAN1, move_to_CLEAN2;
 
   always_comb begin
     state_next     = state_val;
-    move_to_Clean0 = 1'b0;
-    move_to_Clean1 = 1'b0;
-    move_to_Clean2 = 1'b0;
+    move_to_CLEAN0 = 1'b0;
+    move_to_CLEAN1 = 1'b0;
+    move_to_CLEAN2 = 1'b0;
     unique case (state_val)
       IDLE:
         if (go) begin
-          if (more) state_next = Work0;
-          else      state_next = IDLE;
-        end
-      Work0:
-        if (e0 | e1 | e2) begin            // Escape(e0 | e1 | e2)
-          if (e1 | e2) begin               // catch: reads sampled in this same cycle
-            if (e2) begin
-              state_next     = Clean2;
-              move_to_Clean2 = 1'b1;
-            end else begin
-              state_next     = Clean1;
-              move_to_Clean1 = 1'b1;
-            end
+          if (more) begin
+            state_next = WORK0;
           end else begin
-            state_next     = Clean0;
-            move_to_Clean0 = 1'b1;
+            state_next = IDLE;
           end
-        end else if (a_done) begin
-          state_next = Work1;
         end
-      Work1:
+      WORK0:
         if (e0 | e1 | e2) begin
           if (e1 | e2) begin
             if (e2) begin
-              state_next     = Clean2;
-              move_to_Clean2 = 1'b1;
+              state_next     = CLEAN2;
+              move_to_CLEAN2 = 1'b1;
             end else begin
-              state_next     = Clean1;
-              move_to_Clean1 = 1'b1;
+              state_next     = CLEAN1;
+              move_to_CLEAN1 = 1'b1;
             end
           end else begin
-            state_next     = Clean0;
-            move_to_Clean0 = 1'b1;
+            state_next     = CLEAN0;
+            move_to_CLEAN0 = 1'b1;
+          end
+        end else if (a_done) begin
+          state_next = WORK1;
+        end
+      WORK1:
+        if (e0 | e1 | e2) begin
+          if (e1 | e2) begin
+            if (e2) begin
+              state_next     = CLEAN2;
+              move_to_CLEAN2 = 1'b1;
+            end else begin
+              state_next     = CLEAN1;
+              move_to_CLEAN1 = 1'b1;
+            end
+          end else begin
+            state_next     = CLEAN0;
+            move_to_CLEAN0 = 1'b1;
           end
         end else if (b_done) begin
-          if (more) state_next = Work0;    // loop back edge
-          else      state_next = IDLE;     // loop exit: back to the entry
+          if (more) begin
+            state_next = WORK0;
+          end else begin
+            state_next = IDLE;
+          end
         end
-      Clean2:                              // catch is outside its own region: not interrupted
+      CLEAN2:
         if (c2_done) begin
-          state_next     = Clean1;         // fall through to level 1
-          move_to_Clean1 = 1'b1;
+          state_next     = CLEAN1;
+          move_to_CLEAN1 = 1'b1;
         end
-      Clean1:
+      CLEAN1:
         if (c1_done) begin
-          state_next     = Clean0;         // fall through to level 0
-          move_to_Clean0 = 1'b1;
+          state_next     = CLEAN0;
+          move_to_CLEAN0 = 1'b1;
         end
-      Clean0:
-        if (c0_done) state_next = IDLE;    // loop body end: back to the entry
+      CLEAN0:
+        if (c0_done) begin
+          state_next = IDLE;
+        end
       default:
         state_next = IDLE;
     endcase
@@ -1147,18 +1277,18 @@ module err_ctl
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  assign c2_start = move_to_Clean2;
-  assign c1_start = move_to_Clean1;
-  assign c0_start = move_to_Clean0;
+  assign c0_start = move_to_CLEAN0;                             // c0_start.pulse()
+  assign c1_start = move_to_CLEAN1;                             // c1_start.pulse()
+  assign c2_start = move_to_CLEAN2;                             // c2_start.pulse()
 endmodule
 ```
 
 | DSL | SV |
 |---|---|
-| `Escape(e0 \| e1 \| e2)` | `Work0` / `Work1` 分支最前面的 `if (e0 \| e1 \| e2)`，每个工作状态只写一次 |
+| `Escape(e0 \| e1 \| e2)` | `WORK0` / `WORK1` 分支最前面的 `if (e0 \| e1 \| e2)`，每个工作状态只写一次 |
 | `catch` 里的 `read()` | 在出错那一拍采样，并进同一个分支，选出第一个清理状态 |
-| 嵌套 `if` 之后的代码 | 清理状态之间固定的向下跳转：`Clean2 → Clean1 → Clean0` |
-| `catch` 走完、循环体末尾 | `Clean0` 的 `c0_done` → `IDLE` |
+| 嵌套 `if` 之后的代码 | 清理状态之间固定的向下跳转：`CLEAN2 → CLEAN1 → CLEAN0` |
+| `catch` 走完、循环体末尾 | `CLEAN0` 的 `c0_done` → `IDLE` |
 
 - **进入点**：WORK 期间出现哪一级就直接进哪一级的清理，不经过更高等级的清理状态。同一拍出现多级时，嵌套 `if` 的顺序决定先处理高等级；因为每条路线都会经过所有更低等级，低等级的清理不会漏。
 - **清理期间的新错误**：`catch` 不在自己的 `Escape` 范围内，清理不会被打断。`Clean2` 期间来的 `e1` 不需要处理，后面本来就会经过 `Clean1`；`Clean0` 期间来的 `e2` 不处理，回到 `IDLE`、重新进入 WORK 时若仍为高，会再触发一次。需要清理中途升级时，把升级条件写进对应清理状态的 `await` 条件，或在清理段里加分支。
@@ -1177,47 +1307,51 @@ if (await rg_user_config_do_step_b.read()) {
 StepC: await cond_c.wait(1);
 ```
 
-- `read()` 不占拍、不生成状态：在 `(state_val == StepA) & cond_a` 那一拍采样。生成的是次态选择，不是新状态。
+- `read()` 不占拍、不生成状态：在 `(state_val == STEP_A) & cond_a` 那一拍采样。生成的是次态选择，不是新状态。
 
 生成的 SV（调用方部分；`do_step_b` 的端口见 §5）：
 
 ```systemverilog
-typedef enum logic [1:0] {StepA, StepB, StepC} state_t;
+typedef enum logic [1:0] {STEP_A, STEP_B, STEP_C} state_t;
 
 always_comb begin
-  state_next    = state_val;
-  move_to_StepB = 1'b0;
+  state_next     = state_val;
+  move_to_STEP_B = 1'b0;
   unique case (state_val)
-    StepA:
+    STEP_A:
       if (cond_a) begin
         if (rg_user_config_do_step_b) begin
-          state_next    = StepB;
-          move_to_StepB = 1'b1;
+          state_next     = STEP_B;
+          move_to_STEP_B = 1'b1;
         end else begin
-          state_next    = StepC;
+          state_next = STEP_C;
         end
       end
-    StepB:
-      if (do_step_b_done) state_next = StepC;
-    StepC:
-      if (cond_c) state_next = StepA;
+    STEP_B:
+      if (do_step_b_done) begin
+        state_next = STEP_C;
+      end
+    STEP_C:
+      if (cond_c) begin
+        state_next = STEP_A;
+      end
     default:
-      state_next = StepA;
+      state_next = STEP_A;
   endcase
 end
 
 do_step_b u_do_step_b (
   .clk, .rst_n,
-  .start   (move_to_StepB),
-  .done    (do_step_b_done),
-  .go      (b_go),
-  .cnt_clr (b_cnt_clr),
-  .send_vld(b_send_vld)
+  .start    (move_to_STEP_B),
+  .done     (do_step_b_done),
+  .go       (b_go),
+  .cnt_clr  (b_cnt_clr),
+  .send_vld (b_send_vld)
 );
 ```
 
-- 分支只改变次态选择：`StepA` 分支里是一个两路选择，叶子都是常量，符合 §6.5 的识别条件。
-- 只有被用到的 move 才生成信号。这里 `move_to_StepB` 驱动子状态机的 `start`；`move_to_StepC` 没有动作，不生成。
+- 分支只改变次态选择：`STEP_A` 分支里是一个两路选择，叶子都是常量，符合 §6.5 的识别条件。
+- 只有被用到的 move 才生成信号。这里 `move_to_STEP_B` 驱动子状态机的 `start`；`move_to_STEP_C` 没有动作，不生成。
 - 同一段里的多个 `read()` 采样同一拍。
 - `read()` 的结果只能直接用在分支条件里。**决定**：不允许存进 JS 变量留到后面的段再用，因为那需要一个寄存器；要用请显式写 `Dff`（§2.2）。
 - 初稿里 `do_step_b()` 没有 `await`。按 §6.3 的规则，没有被 join 的 Future 是编译期错误，所以这里必须写 `await this.do_step_b({...})`。
@@ -1230,14 +1364,29 @@ do_step_b u_do_step_b (
 @FsmGroup
 export class StepCtl {
   @Fsm
-  async step_ctl({ /* …, */ b_go = Input(1), b_cnt_clr = Output(1), b_send_vld = Output(1) }) {
+  async step_ctl({
+    // …
+    // step B
+    b_go = Input(1),
+    b_cnt_clr = Output(1),
+    b_send_vld = Output(1),
+  }) {
     while (true) {
       // … 见 §4
-      StepB: await this.do_step_b({ go: b_go, cnt_clr: b_cnt_clr, send_vld: b_send_vld });
+      StepB: await this.do_step_b({
+        go: b_go,
+        cnt_clr: b_cnt_clr,
+        send_vld: b_send_vld,
+      });
     }
   }
 
-  async do_step_b({ go = Input(1), cnt_clr = Output(1), send_vld = Output(1) }) {
+  async do_step_b({
+    // step B
+    go = Input(1),
+    cnt_clr = Output(1),
+    send_vld = Output(1),
+  }) {
     cnt_clr.pulse();              // start 那一拍
     Busy: await go.wait(1);
     send_vld.pulse();             // 末段，与 done 同拍
@@ -1249,35 +1398,38 @@ export class StepCtl {
 
 ```systemverilog
 package do_step_b_pkg;
-  typedef enum logic [0:0] {IDLE, Busy} state_t;  // IDLE: implicit entry, waits for start
+  typedef enum logic [0:0] {IDLE, BUSY} state_t;
 endpackage
 
 module do_step_b
   import do_step_b_pkg::*;
 (
+  // clock and reset
   input  logic clk,
   input  logic rst_n,
-  input  logic start,      // caller: move_to_<call state>
-  output logic done,       // callee: move of the tail segment
+  // call handshake
+  input  logic start,
+  output logic done,
+  // step B
   input  logic go,
   output logic cnt_clr,
   output logic send_vld
 );
   state_t state_val, state_next;
-  logic   move_to_Busy, move_to_IDLE;
+  logic   move_to_BUSY, move_to_IDLE;
 
   always_comb begin
     state_next   = state_val;
-    move_to_Busy = 1'b0;
+    move_to_BUSY = 1'b0;
     move_to_IDLE = 1'b0;
     unique case (state_val)
       IDLE:
         if (start) begin
-          state_next   = Busy;
-          move_to_Busy = 1'b1;
+          state_next   = BUSY;
+          move_to_BUSY = 1'b1;
         end
-      Busy:
-        if (go) begin                    // tail segment
+      BUSY:
+        if (go) begin
           state_next   = IDLE;
           move_to_IDLE = 1'b1;
         end
@@ -1290,9 +1442,9 @@ module do_step_b
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  assign cnt_clr  = move_to_Busy;   // cnt_clr.pulse()
-  assign send_vld = move_to_IDLE;   // send_vld.pulse()
   assign done     = move_to_IDLE;
+  assign cnt_clr  = move_to_BUSY;                               // cnt_clr.pulse()
+  assign send_vld = move_to_IDLE;                               // send_vld.pulse()
 endmodule
 ```
 
@@ -1306,7 +1458,7 @@ endmodule
 - 顶层状态机没有 `start`，不加隐式状态：`while (true)` 里第一个 `await` 的状态就是入口（§3.2 的 `IDLE` 是作者自己写的标签）。`while (true)` 循环体里第一个 `await` 之前不能有动作，检查器报错；复位后要做的事写在第一个等待之后（§3.4）。
 - **顶层与子状态机由装饰器区分（决定）**：带 `@Fsm` 的方法是顶层，没有 `start` / `done`；不带装饰器的方法是子状态机，按上面的形状生成。`@Fsm` 方法不能被 `await this.xxx(...)` 调用，编译期报错，所以每个状态机的模块形状是唯一的。不带装饰器、也没有被任何方法调用的方法，编译期报错，避免写了却没生成。
 - 方法名就是生成的模块名，同一个组里唯一；跨组的模块名冲突由生成器报错。
-- 调用的实参必须是对象字面量，键是被调用方的端口名，值是调用方作用域里的 channel（参数、`const` 绑定的组合 channel 或 `Dff`）。每个端口都要连，方向和位宽一致，由检查器检查。
+- 调用的实参必须是对象字面量，键是被调用方的端口名，值是调用方作用域里的 channel。被调用方的 `Input` 接任意同宽 channel 表达式；被调用方的 `Output` 接调用方的同宽 `Output`，由实例直接驱动，这个输出不能再有别的 `pulse()` 或调用驱动；被调用方的 `Dff` 端口还不能连（未实现）。每个端口都要连，方向和位宽一致，由检查器检查。
 - 子状态机不能递归调用（直接或间接），编译期报错。
 - `result` 的位宽就是 `return` 的那个 channel 的位宽。多个 `return` 的位宽不一致时编译期报错。
 
@@ -1323,7 +1475,7 @@ endmodule
 
 调用方停在调用状态 S_call，离开条件是 `state_is_S_call & do_step_b_done`。`result` 与 `read()` 一样只在 `done` 那一拍可用；后面还要用就锁进 DFF。
 
-被调用方没有任何 `await` 时，它只是一段动作，按内联处理，不生成调用状态（**决定**）。
+被调用方没有任何 `await` 时，它只是一段动作，目标是按内联处理、不生成调用状态（**决定**）。第一版还不内联：从 `start` 不经过任何 `await` 就能走到结束的子状态机（包括没有 `await` 的、或在第一个 `await` 之前 `return` 的），`done` 会落在调用方进入调用状态之前的那一拍，调用方等不到，所以编译期报错。
 
 ### 5.1 生成方式与资源复用
 
@@ -1336,6 +1488,301 @@ endmodule
 | 每个被调用函数一个共享实例，调用点之间对参数做 mux | 顺序调用不重叠，一个实例服务所有调用点 | 参数 mux；`Promise.all` 里同时调用同一函数时必须复制实例 |
 
 **决定**：目标是共享实例（`Promise.all` 里并发的同名调用各自一个实例），但**第一版实现按每个调用点一个实例生成**：电路一定正确，只是资源偏多；共享实例的参数 mux 放到第二步。互斥的被调用方之间复用局部寄存器（例如两个互斥子状态机各自的计数器共用一个），像栈帧复用，是第三步，见 §10。
+
+### 5.2 示例：扫描 dump 寄存器堆并统计匹配次数
+
+场景：一个 regfile 存着硬件 dump 的结果，最多 64 个 32 位字，每个字有自己的总线地址。软件配置起始地址 `cfg_base`、地址步长 `cfg_step`、字数 `cfg_num`（1..64）和 32 位比较值 `cfg_pattern`；扫描完后上报有多少个字等于 `cfg_pattern`。
+
+扫描本身写成子状态机 `dump_scan`：它不等 `go`，由调用方 `await this.dump_scan({...})` 启动（隐式 `IDLE` 等 `start`），走完后 `return` 匹配次数，同拍发出 `done` / `result`。顶层 `dump_check` 是调用方的例子：等软件触发 `check`，调用扫描，把结果锁进 `hit_cnt`（接 regfile 的只读字段），发 `check_done`。
+
+DSL 没有 `+`（§2.1），地址加步长和计数加一写成用户函数（§2.3）。`hits_next` 用 `?:` 选出「本字匹配就加一」的值；`return hits_next` 让最后一个字也算进去，因为 `hits.set(...)` 要到下一拍才生效。循环条件 `idx_next !== cfg_num` 在读完一个字的那一拍判断，读完第 `cfg_num` 个字就退出。
+
+```js
+const dump_pkg = SvPackage("dump_pkg", {
+  add32: SvFunction({ args: { a: 32, b: 32 }, ret: 32 }),
+  inc7:  SvFunction({ args: { x: 7 }, ret: 7 }),
+});
+
+@FsmGroup
+export class DumpCheck {
+  @Fsm
+  async dump_check({
+    // software control
+    check = Input(1),                       // trigger
+    hit_cnt = Dff(7),                       // matches of the last scan (RO field)
+    check_done = Output(1),
+    // software config
+    cfg_base = Input(32),
+    cfg_step = Input(32),
+    cfg_num = Input(7),                     // words to scan, 1..64
+    cfg_pattern = Input(32),
+    // dump regfile read port
+    rd_req = Output(1),
+    rd_addr = Output(32),
+    rd_ack = Input(1),
+    rd_data = Input(32),
+  }) {
+    let hits;
+    while (true) {
+      IDLE: await check.wait(1);
+      Scan: hits = await this.dump_scan({
+        cfg_base,
+        cfg_step,
+        cfg_num,
+        cfg_pattern,
+        rd_req,
+        rd_addr,
+        rd_ack,
+        rd_data,
+      });
+      hit_cnt.set(hits);
+      check_done.pulse();
+    }
+  }
+
+  async dump_scan({
+    // software config
+    cfg_base = Input(32),
+    cfg_step = Input(32),
+    cfg_num = Input(7),
+    cfg_pattern = Input(32),
+    // dump regfile read port
+    rd_req = Output(1),
+    rd_addr = Output(32),
+    rd_ack = Input(1),
+    rd_data = Input(32),
+  }) {
+    const addr = Dff(32);
+    const idx = Dff(7);
+    const hits = Dff(7);
+    const idx_next = dump_pkg.inc7(idx.val);
+    const hits_next = (rd_data === cfg_pattern) ? dump_pkg.inc7(hits.val) : hits.val;
+    addr.set(cfg_base);                     // start cycle
+    idx.set(0);
+    hits.set(0);
+    do {
+      Issue:   await ALWAYS_1.wait(1);      // addr.val holds this word's address
+      rd_req.pulse();
+      rd_addr.pulse(addr.val);
+      WaitAck: await rd_ack.wait(1);
+      addr.set(dump_pkg.add32(addr.val, cfg_step));
+      idx.set(idx_next);
+      hits.set(hits_next);
+    } while (await (idx_next !== cfg_num).read());
+    return hits_next;                       // includes the last word
+  }
+}
+```
+
+用户自己的 package（`demo/state/rtl/dump_pkg.sv`，不是生成物）：
+
+```systemverilog
+package dump_pkg;
+  function automatic logic [31:0] add32(input logic [31:0] a, input logic [31:0] b);
+    return a + b;
+  endfunction
+  function automatic logic [6:0] inc7(input logic [6:0] x);
+    return x + 7'd1;
+  endfunction
+endpackage
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> IDLE
+  IDLE --> ISSUE: start / addr = base, idx = 0, hits = 0
+  ISSUE --> WAIT_ACK: 下一拍 / rd_req, rd_addr = addr
+  WAIT_ACK --> ISSUE: rd_ack & idx+1 != num / addr += step
+  WAIT_ACK --> IDLE: rd_ack & idx+1 == num / done, result = hits_next
+```
+
+生成的 SV（调用方）：
+
+```systemverilog
+package dump_check_pkg;
+  typedef enum logic [0:0] {IDLE, SCAN} state_t;
+endpackage
+
+module dump_check
+  import dump_check_pkg::*;
+(
+  // clock and reset
+  input  logic        clk,
+  input  logic        rst_n,
+  // software control
+  input  logic        check,
+  output logic [6:0]  hit_cnt,
+  output logic        check_done,
+  // software config
+  input  logic [31:0] cfg_base,
+  input  logic [31:0] cfg_step,
+  input  logic [6:0]  cfg_num,
+  input  logic [31:0] cfg_pattern,
+  // dump regfile read port
+  output logic        rd_req,
+  output logic [31:0] rd_addr,
+  input  logic        rd_ack,
+  input  logic [31:0] rd_data
+);
+  state_t     state_val, state_next;
+  logic       move_to_SCAN, move_to_IDLE;
+  logic       dump_scan_done;
+  logic [6:0] dump_scan_result;
+
+  always_comb begin
+    state_next   = state_val;
+    move_to_SCAN = 1'b0;
+    move_to_IDLE = 1'b0;
+    unique case (state_val)
+      IDLE:
+        if (check) begin
+          state_next   = SCAN;
+          move_to_SCAN = 1'b1;
+        end
+      SCAN:
+        if (dump_scan_done) begin
+          state_next   = IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  dump_scan u_dump_scan (
+    .clk, .rst_n,
+    .start       (move_to_SCAN),
+    .done        (dump_scan_done),
+    .result      (dump_scan_result),
+    .cfg_base    (cfg_base),
+    .cfg_step    (cfg_step),
+    .cfg_num     (cfg_num),
+    .cfg_pattern (cfg_pattern),
+    .rd_req      (rd_req),
+    .rd_addr     (rd_addr),
+    .rd_ack      (rd_ack),
+    .rd_data     (rd_data)
+  );
+
+  aw_dff #(.T(logic [6:0])) u_hit_cnt (.clk, .rst_n,
+    .set(move_to_IDLE),                                         // hit_cnt.set(hits)
+    .next(dump_scan_result), .val(hit_cnt));
+  assign check_done = move_to_IDLE;                             // check_done.pulse()
+endmodule
+```
+
+生成的 SV（被调用方）：
+
+```systemverilog
+package dump_scan_pkg;
+  typedef enum logic [1:0] {IDLE, ISSUE, WAIT_ACK} state_t;
+endpackage
+
+module dump_scan
+  import dump_scan_pkg::*;
+(
+  // clock and reset
+  input  logic        clk,
+  input  logic        rst_n,
+  // call handshake
+  input  logic        start,
+  output logic        done,
+  output logic [6:0]  result,
+  // software config
+  input  logic [31:0] cfg_base,
+  input  logic [31:0] cfg_step,
+  input  logic [6:0]  cfg_num,
+  input  logic [31:0] cfg_pattern,
+  // dump regfile read port
+  output logic        rd_req,
+  output logic [31:0] rd_addr,
+  input  logic        rd_ack,
+  input  logic [31:0] rd_data
+);
+  state_t      state_val, state_next;
+  logic        leave_IDLE, move_to_WAIT_ACK, leave_WAIT_ACK, move_to_IDLE;
+  logic [6:0]  fn_inc7_0;
+  logic [6:0]  hits_next;
+  logic [6:0]  fn_inc7_1;
+  logic [31:0] fn_add32_0;
+  logic [31:0] addr_val;
+  logic [6:0]  idx_val;
+  logic [6:0]  hits_val;
+
+  assign fn_inc7_0  = dump_pkg::inc7(idx_val);
+  assign hits_next  = (rd_data == cfg_pattern) ? fn_inc7_1 : hits_val;
+  assign fn_inc7_1  = dump_pkg::inc7(hits_val);
+  assign fn_add32_0 = dump_pkg::add32(addr_val, cfg_step);
+
+  always_comb begin
+    state_next       = state_val;
+    leave_IDLE       = 1'b0;
+    move_to_WAIT_ACK = 1'b0;
+    leave_WAIT_ACK   = 1'b0;
+    move_to_IDLE     = 1'b0;
+    unique case (state_val)
+      IDLE:
+        if (start) begin
+          leave_IDLE = 1'b1;
+          state_next = ISSUE;
+        end
+      ISSUE:
+        begin
+          state_next       = WAIT_ACK;
+          move_to_WAIT_ACK = 1'b1;
+        end
+      WAIT_ACK:
+        if (rd_ack) begin
+          leave_WAIT_ACK = 1'b1;
+          if (fn_inc7_0 != cfg_num) begin
+            state_next = ISSUE;
+          end else begin
+            state_next   = IDLE;
+            move_to_IDLE = 1'b1;
+          end
+        end
+      default:
+        state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  assign done    = move_to_IDLE;
+  assign result  = {7{move_to_IDLE}} & hits_next;               // return hits_next;
+  assign rd_req  = move_to_WAIT_ACK;                            // rd_req.pulse()
+  assign rd_addr = {32{move_to_WAIT_ACK}} & addr_val;           // rd_addr.pulse(addr.val)
+  aw_dff #(.T(logic [31:0])) u_addr (.clk, .rst_n,
+    .set(leave_IDLE | leave_WAIT_ACK),                          // addr.set(cfg_base) / addr.set(dump_pkg.add32(addr.val, cfg_step))
+    .next(({32{leave_IDLE}} & cfg_base) | ({32{leave_WAIT_ACK}} & fn_add32_0)), .val(addr_val));
+  aw_dff #(.T(logic [6:0])) u_idx (.clk, .rst_n,
+    .set(leave_IDLE | leave_WAIT_ACK),                          // idx.set(0) / idx.set(idx_next)
+    .next({7{leave_WAIT_ACK}} & fn_inc7_0), .val(idx_val));
+  aw_dff #(.T(logic [6:0])) u_hits (.clk, .rst_n,
+    .set(leave_IDLE | leave_WAIT_ACK),                          // hits.set(0) / hits.set(hits_next)
+    .next({7{leave_WAIT_ACK}} & hits_next), .val(hits_val));
+endmodule
+```
+
+| DSL | SV |
+|---|---|
+| 不带装饰器的 `dump_scan` | 模块多出 `start` 入、`done` 出、`result` 出；隐式 `IDLE` 等 `start` |
+| 第一个 `await` 之前的三个 `set` | `leave_IDLE`：在 `start` 那一拍执行 |
+| `return hits_next` | `done = move_to_IDLE`，`result = {7{move_to_IDLE}} & hits_next`：只在结束那一拍有效 |
+| `Scan: hits = await this.dump_scan({...})` | 调用状态 `SCAN`：`start = move_to_SCAN`，等 `dump_scan_done`；端口按名字连接，`rd_req` / `rd_addr` 由实例直接驱动调用方的输出 |
+| `let hits` 与 `hit_cnt.set(hits)` | `hits` 就是 `dump_scan_result`，只在离开 `SCAN` 的那一拍可读；检查器拒绝在别的段里读它 |
+| `Issue: await ALWAYS_1.wait(1)` | 条件恒成立：`ISSUE` 分支不写 `if`，下一拍就离开，让 `addr` 先装好 |
+| `(rd_data === cfg_pattern) ? ... : hits.val` | 组合线 `hits_next`，SV 的 `?:` |
+
+- 每次读多占一拍 `ISSUE`：64 个字约 `2 × 64` 拍加握手等待。要背靠背读，把地址加法前移到请求那一拍（`rd_addr.pulse(...)` 直接用加法结果），代价是加法器进入请求的组合路径。
+- `cfg_num` 为 0 时会读满 128 个字（7 位计数回绕），软件只写 1..64；需要硬件保护时在调用前加一个 `if (await (cfg_num === 0).read())` 分支。
+- 读口是单拍脉冲接口（`rd_req` 一拍，`rd_ack` 带数据回来）。接 valid / ready 握手时改用 `PushPort` / `PopPort`（§6.2，未实现）。
 
 ## 6. 动作
 
@@ -1351,6 +1798,7 @@ endmodule
 | 动作 | 写法 | 生成 |
 |---|---|---|
 | 脉冲输出 | `cnt_clr.pulse()` | `cnt_clr = move_to_S`（条件之前的动作挂 `leave_S`，§3.6） |
+| 多位输出 | `msg.pulse(v)`，`v` 是常量或 channel | `msg = {N{move_to_S}} & v`；不在 move 那一拍时为 0（§6.1.1） |
 | DFF 写入 | `dff.set(v)` | `dff.set = move_to_S`，`dff.next = v`（§6.5） |
 | 电平标志 | `active.set(1)` … `active.set(0)` | DFF，两个 move 分别置位和清零 |
 | FIFO 发送 | `const f = fifo.push(v)` | 握手子状态机，返回 Future（§6.2） |
@@ -1361,7 +1809,14 @@ DSL：
 
 ```js
 @Fsm
-async act_demo({ go = Input(1), stop = Input(1), cnt_clr = Output(1), active = Dff(1) }) {
+async act_demo({
+  // host control
+  go = Input(1),
+  stop = Input(1),
+  // counter
+  cnt_clr = Output(1),
+  active = Dff(1),
+}) {
   while (true) {
     IDLE: await go.wait(1);
     cnt_clr.pulse();
@@ -1376,33 +1831,36 @@ async act_demo({ go = Input(1), stop = Input(1), cnt_clr = Output(1), active = D
 
 ```systemverilog
 package act_demo_pkg;
-  typedef enum logic [0:0] {IDLE, Run} state_t;
+  typedef enum logic [0:0] {IDLE, RUN} state_t;
 endpackage
 
 module act_demo
   import act_demo_pkg::*;
 (
+  // clock and reset
   input  logic clk,
   input  logic rst_n,
+  // host control
   input  logic go,
   input  logic stop,
+  // counter
   output logic cnt_clr,
   output logic active
 );
   state_t state_val, state_next;
-  logic   move_to_Run, move_to_IDLE;
+  logic   move_to_RUN, move_to_IDLE;
 
   always_comb begin
     state_next   = state_val;
-    move_to_Run  = 1'b0;
+    move_to_RUN  = 1'b0;
     move_to_IDLE = 1'b0;
     unique case (state_val)
       IDLE:
         if (go) begin
-          state_next  = Run;
-          move_to_Run = 1'b1;
+          state_next  = RUN;
+          move_to_RUN = 1'b1;
         end
-      Run:
+      RUN:
         if (stop) begin
           state_next   = IDLE;
           move_to_IDLE = 1'b1;
@@ -1416,16 +1874,110 @@ module act_demo
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  assign cnt_clr = move_to_Run;                                 // cnt_clr.pulse()
+  assign cnt_clr = move_to_RUN;                                 // cnt_clr.pulse()
   aw_dff u_active (.clk, .rst_n,
-    .set(move_to_Run | move_to_IDLE),                           // active.set(1) / active.set(0)
-    .next(move_to_Run), .val(active));
+    .set(move_to_RUN | move_to_IDLE),                           // active.set(1) / active.set(0)
+    .next(move_to_RUN), .val(active));
 endmodule
 ```
 
-`active` 在进入 `Run` 的那一拍写 1、离开 `Run` 的那一拍写 0，所以它与 `state_val == Run` 同步为高，但输出直接来自寄存器，没有状态译码的组合路径（原则 3）。
+`active` 在进入 `RUN` 的那一拍写 1、离开 `RUN` 的那一拍写 0，所以它与 `state_val == RUN` 同步为高，但输出直接来自寄存器，没有状态译码的组合路径（原则 3）。
 
-同一目标被多个段驱动：一个状态机同一拍只有一个 move，各段天然互斥，生成 OR（脉冲）或按 move 选择的 mux（DFF 数据）。同一段内写同一目标两次，或 `Promise.all` 的两个分支写同一目标，编译期报错。
+同一目标被多个段驱动：一个状态机同一拍只有一个 move，各段天然互斥，生成 OR（脉冲）或按 move 选择的与-或（多位输出和 DFF 数据）。同一段内写同一目标两次，或 `Promise.all` 的两个分支写同一目标，编译期报错。
+
+#### 6.1.1 多位输出：发送固定消息与转发消息
+
+`Output(N)` 可以是任意位宽。`x.pulse(v)` 在 move 那一拍输出 `v`，其余拍输出 0；`v` 可以是常量（固定消息）、输入 channel（转发）或 `?:` 选出的值。1 位输出的 `pulse()` 等于 `pulse(1)`。要在多拍内保持一个值，用 `Dff(N)`。
+
+DSL（向写口 FIFO 先发一个固定头，再转发收到的消息；`rx_err` 时改发错误码）：
+
+```js
+@Fsm
+async msg_fwd({
+  // control
+  go = Input(1),
+  // receive side
+  rx_vld = Input(1),
+  rx_err = Input(1),
+  rx_msg = Input(8),
+  // FIFO write port
+  full = Input(1),
+  wr_en = Output(1),
+  wr_data = Output(8),
+}) {
+  while (true) {
+    IDLE: await (go & !full).wait(1);
+    wr_en.pulse();
+    wr_data.pulse(0xa5);                     // fixed header message
+    Fwd:  await (rx_vld & !full).wait(1);
+    wr_en.pulse();
+    wr_data.pulse(rx_err ? 0xee : rx_msg);   // forward, or an error code
+  }
+}
+```
+
+生成的 SV：
+
+```systemverilog
+package msg_fwd_pkg;
+  typedef enum logic [0:0] {IDLE, FWD} state_t;
+endpackage
+
+module msg_fwd
+  import msg_fwd_pkg::*;
+(
+  // clock and reset
+  input  logic       clk,
+  input  logic       rst_n,
+  // control
+  input  logic       go,
+  // receive side
+  input  logic       rx_vld,
+  input  logic       rx_err,
+  input  logic [7:0] rx_msg,
+  // FIFO write port
+  input  logic       full,
+  output logic       wr_en,
+  output logic [7:0] wr_data
+);
+  state_t state_val, state_next;
+  logic   move_to_FWD, move_to_IDLE;
+
+  always_comb begin
+    state_next   = state_val;
+    move_to_FWD  = 1'b0;
+    move_to_IDLE = 1'b0;
+    unique case (state_val)
+      IDLE:
+        if (go & !full) begin
+          state_next  = FWD;
+          move_to_FWD = 1'b1;
+        end
+      FWD:
+        if (rx_vld & !full) begin
+          state_next   = IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  assign wr_en   = move_to_FWD | move_to_IDLE;                  // wr_en.pulse()
+  assign wr_data = ({8{move_to_FWD}} & 8'ha5)                   // wr_data.pulse(0xa5) / wr_data.pulse(rx_err ? 0xee : rx_msg)
+                 | ({8{move_to_IDLE}} & (rx_err ? 8'hee : rx_msg));
+endmodule
+```
+
+| DSL | SV |
+|---|---|
+| `wr_data.pulse(0xa5)` | 字面量按 `wr_data` 的位宽写成 `8'ha5`，与 `move_to_FWD` 相与 |
+| `wr_data.pulse(rx_err ? 0xee : rx_msg)` | `?:` 原样生成 SV 的 `?:`，与 `move_to_IDLE` 相与 |
+| 两处写入 | 不带优先级的与-或；两个 move 互斥，空闲时为 0 |
 
 ### 6.2 push：move 脉冲加一个 DFF
 
@@ -1463,12 +2015,12 @@ done        = vld & rdy
 
 以 §3.2 的例子，fifo_a 晚一拍就绪、fifo_b 立即就绪：
 
-| 拍 | 状态 | cond_init | move_to_SendMsg | a_vld | a_rdy | a_done | b_done | b_fin.val | 离开 SendMsg |
+| 拍 | 状态 | cond_init | move_to_SEND_MSG | a_vld | a_rdy | a_done | b_done | b_fin.val | 离开 SEND_MSG |
 |---|---|---|---|---|---|---|---|---|---|
 | t0 | IDLE | 1 | 1 | 1 | 0 | 0 | 1 | 0 | 0 |
-| t1 | SendMsg | - | 0 | 1 | 0 | 0 | 0 | 1 | 0 |
-| t2 | SendMsg | - | 0 | 1 | 1 | 1 | 0 | 1 | 1 |
-| t3 | MsgSent | - | 0 | 0 | - | 0 | 0 | 0 | - |
+| t1 | SEND_MSG | - | 0 | 1 | 0 | 0 | 0 | 1 | 0 |
+| t2 | SEND_MSG | - | 0 | 1 | 1 | 1 | 0 | 1 | 1 |
+| t3 | MSG_SENT | - | 0 | 0 | - | 0 | 0 | 0 | - |
 
 ### 6.4 输出时序
 
@@ -1511,7 +2063,12 @@ endmodule
 
 ```js
 @Fsm
-async reg_demo({ go = Input(1), mode = Dff(8, { external: true }) }) {
+async reg_demo({
+  // control
+  go = Input(1),
+  // regfile field
+  mode = Dff(8, { external: true }),
+}) {
   while (true) {
     IDLE:  await go.wait(1);
     mode.set(0x5a);
@@ -1524,33 +2081,38 @@ async reg_demo({ go = Input(1), mode = Dff(8, { external: true }) }) {
 
 ```systemverilog
 package reg_demo_pkg;
-  typedef enum logic [0:0] {IDLE, Check} state_t;
+  typedef enum logic [0:0] {IDLE, CHECK} state_t;
 endpackage
 
 module reg_demo
   import reg_demo_pkg::*;
 (
+  // clock and reset
   input  logic       clk,
   input  logic       rst_n,
+  // control
   input  logic       go,
+  // regfile field
   output logic       mode_set,
   output logic [7:0] mode_next,
   input  logic [7:0] mode_val
 );
   state_t state_val, state_next;
-  logic   move_to_Check;
+  logic   move_to_CHECK;
 
   always_comb begin
     state_next    = state_val;
-    move_to_Check = 1'b0;
+    move_to_CHECK = 1'b0;
     unique case (state_val)
       IDLE:
         if (go) begin
-          state_next    = Check;
-          move_to_Check = 1'b1;
+          state_next    = CHECK;
+          move_to_CHECK = 1'b1;
         end
-      Check:
-        if (mode_val == 8'h5a) state_next = IDLE;
+      CHECK:
+        if (mode_val == 8'h5a) begin
+          state_next = IDLE;
+        end
       default:
         state_next = IDLE;
     endcase
@@ -1560,7 +2122,7 @@ module reg_demo
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  assign mode_set  = move_to_Check;                             // mode.set(0x5a)
+  assign mode_set  = move_to_CHECK;                             // mode.set(0x5a)
   assign mode_next = 8'h5a;
 endmodule
 ```
@@ -1579,10 +2141,10 @@ state.next = 目标状态
 **主状态的生成形式（缺省）**按 Yosys `fsm_detect` 的识别条件来写（[Yosys FSM handling](https://yosyshq.readthedocs.io/projects/yosys/en/stable/using_yosys/synthesis/fsm.html)）：状态寄存器由单个 `$dff` / `$adff` 驱动；它的 D 输入是一棵叶子只有常量或旧状态值的 mux 树；状态值只用于这棵 mux 树或与常量比较；**它不是所在模块的输出口**。生成规则：
 
 1. `always_ff` 只写 `state_val <= state_next`，带异步复位到入口状态；不写使能。`set = 0` 由 `state_next` 缺省等于 `state_val` 表达。
-2. 次态和 move 在同一个 `always_comb` 里（**决定**）：先写缺省值 `state_next = state_val;` 和每个有消费者的 `move_to_S = 1'b0;`，再 `unique case (state_val)`；每个分支 `if (条件) begin state_next = 常量; move_to_S = 1'b1; end`。离开条件只写一次，次态和 move 不会写出两份可能不一致的条件。[INFERENCE] 这不改变 `state_next` 那棵 mux 树（叶子仍是常量或 `state_val`），move 成了由同一组状态比较选出的控制输出，按 Yosys 文档的识别条件不受影响；未实测（§10）。
+2. 次态和 move 在同一个 `always_comb` 里（**决定**）：先写缺省值 `state_next = state_val;` 和每个有消费者的 `move_to_S = 1'b0;`，再 `unique case (state_val)`；每个分支 `if (条件) begin state_next = 常量; move_to_S = 1'b1; end`。离开条件只写一次，次态和 move 不会写出两份可能不一致的条件。**每个 `if` / `else if` / `else` 分支都写 `begin` / `end`**，哪怕里面只有一条赋值（决定）；`case` 分支本身不加。[INFERENCE] 这不改变 `state_next` 那棵 mux 树（叶子仍是常量或 `state_val`），move 成了由同一组状态比较选出的控制输出，按 Yosys 文档的识别条件不受影响；未实测（§10）。
 3. `state_val` 只出现在 `case` 和 `state_val == 常量` 里；move 不再单独写成 `(state_val == S) & cond`。
 4. `state_val` 是 enum 类型，不接模块输出口，也不做位选。
-5. 状态定义放在该状态机的 package 里：`typedef enum logic [W-1:0] {IDLE, SendMsg, MsgSent} state_t;`，成员名就是状态标签原文，W = ⌈log2(状态数)⌉，至少 1。**缺省不写数值**，实际编码由综合器在识别出状态机后决定。enum 成员顺序按源码中状态出现的顺序，入口状态排第一（被调用方是隐式 `IDLE`，§5）。
+5. 状态定义放在该状态机的 package 里：`typedef enum logic [W-1:0] {IDLE, SEND_MSG, MSG_SENT} state_t;`。成员名由状态标签转成大写下划线（`SendMsg` → `SEND_MSG`，§3.5），写了 `statePrefix` 时再加前缀（见下）。W = ⌈log2(状态数)⌉，至少 1。**缺省不写数值**，实际编码由综合器在识别出状态机后决定；`stateEncoding` 可以改成显式的二进制或 one-hot（见下）。enum 成员顺序按源码中状态出现的顺序，入口状态排第一（被调用方是隐式 `IDLE`，§5）。
 
 不写数值时，仿真按 IEEE 1800 的规则取隐式值：第一个成员为 0，其后依次加 1。综合器重编码（例如 Yosys `fsm_recode` 改成 one-hot）只改变内部状态寄存器的位型，RTL 里的比较和赋值都写成 enum 成员名，不受影响。生成的 RTL 不得出现状态的数字字面量，也不得对 `state_val` 做算术或位选，否则重编码会改变行为（检查器之外由生成器保证）。
 
@@ -1595,28 +2157,104 @@ state.next = 目标状态
 
 #### 选项：`@Fsm({...})`
 
-```js
-@Fsm({
-  exportState: true,                                     // 缺省 false
-  // stateValues: { IDLE: 0, SendMsg: 1, MsgSent: 2 },   // 缺省不写
-})
-async fsm_drive_signal({ /* … */ }) { /* … */ }
-```
-
-生成的 SV：`exportState: true` 的导出口见 §3.2 示例末尾。写了 `stateValues` 时，只有 enum 定义变化：
-
-```systemverilog
-typedef enum logic [1:0] {IDLE = 2'd0, SendMsg = 2'd1, MsgSent = 2'd2} state_t;
-```
-
 | 选项 | 取值 | 生成 |
 |---|---|---|
-| `stateReg` | `"always_ff"`（缺省） | 主状态按上面第 1-5 条生成在本模块内 |
+| `statePrefix` | 大写 SV 标识符字符串，例如 `"LPDDRPHY"` | enum 成员写成 `<前缀>_<状态>`（`LPDDRPHY_IDLE`）。多个状态机的 package 被同一处 `import ...::*` 时用它区分；`move_to_*` / `leave_*` 是模块内信号，不加前缀 |
+| `stateEncoding` | 缺省（不写） | enum 不写数值，交给综合器（上面第 5 条） |
+| | `"binary"` | 按声明顺序写出 `IDLE = 2'd0, ...`，W = ⌈log2(状态数)⌉ |
+| | `"onehot"` | 写出 one-hot 数值 `IDLE = 3'b001, ...`，W = 状态数 |
+| `stateReg`（未实现） | `"always_ff"`（缺省） | 主状态按上面第 1-5 条生成在本模块内 |
 | | `"dff"` | 主状态是 `aw_dff` 实例；放弃工具识别，现阶段不推荐 |
-| `exportState` | `true` | 模块多出输出口 `state_set_o` / `state_next_o` / `state_val_o`，类型 `state_t`（DFF 接口形状，三个都是输出） |
-| `stateValues` | 状态名 → 数值 | 在 enum 里写出显式数值。必须列全全部状态、互不相同、放得进 W 位，由检查器检查 |
+| `exportState`（未实现） | `true` | 模块多出输出口 `state_set_o` / `state_next_o` / `state_val_o`，类型 `state_t`（DFF 接口形状，三个都是输出） |
+| `stateValues`（未实现） | enum 成员名 → 数值 | 逐个写出数值。必须列全全部状态、互不相同、放得进 W 位，与 `stateEncoding` 互斥，由检查器检查 |
 
-`stateValues` 只固定 enum 成员的值，也就是仿真值和导出口的值。综合时内部寄存器是否仍被重编码取决于工具设置（例如 Yosys 的 `fsm -norecode`、`fsm_encoding` 属性），不由本 DSL 控制。
+DSL（前缀加 one-hot）：
+
+```js
+@Fsm({ statePrefix: "LPDDRPHY", stateEncoding: "onehot" })
+async phy_init({
+  // control
+  start = Input(1),
+  ready = Dff(1),
+  // calibration
+  cal_done = Input(1),
+  cal_req = Output(1),
+}) {
+  while (true) {
+    Idle:  await start.wait(1);
+    cal_req.pulse();
+    Calib: await cal_done.wait(1);
+    ready.set(1);
+    Ready: await start.wait(0);
+    ready.set(0);
+  }
+}
+```
+
+生成的 SV：
+
+```systemverilog
+package phy_init_pkg;
+  typedef enum logic [2:0] {LPDDRPHY_IDLE = 3'b001, LPDDRPHY_CALIB = 3'b010, LPDDRPHY_READY = 3'b100} state_t;
+endpackage
+
+module phy_init
+  import phy_init_pkg::*;
+(
+  // clock and reset
+  input  logic clk,
+  input  logic rst_n,
+  // control
+  input  logic start,
+  output logic ready,
+  // calibration
+  input  logic cal_done,
+  output logic cal_req
+);
+  state_t state_val, state_next;
+  logic   move_to_CALIB, move_to_READY, move_to_IDLE;
+
+  always_comb begin
+    state_next    = state_val;
+    move_to_CALIB = 1'b0;
+    move_to_READY = 1'b0;
+    move_to_IDLE  = 1'b0;
+    unique case (state_val)
+      LPDDRPHY_IDLE:
+        if (start) begin
+          state_next    = LPDDRPHY_CALIB;
+          move_to_CALIB = 1'b1;
+        end
+      LPDDRPHY_CALIB:
+        if (cal_done) begin
+          state_next    = LPDDRPHY_READY;
+          move_to_READY = 1'b1;
+        end
+      LPDDRPHY_READY:
+        if (!start) begin
+          state_next   = LPDDRPHY_IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = LPDDRPHY_IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= LPDDRPHY_IDLE;
+    else        state_val <= state_next;
+
+  aw_dff u_ready (.clk, .rst_n,
+    .set(move_to_READY | move_to_IDLE),                         // ready.set(1) / ready.set(0)
+    .next(move_to_READY), .val(ready));
+  assign cal_req = move_to_CALIB;                               // cal_req.pulse()
+endmodule
+```
+
+`stateEncoding: "binary"` 时只有 enum 定义变化：`typedef enum logic [1:0] {LPDDRPHY_IDLE = 2'd0, LPDDRPHY_CALIB = 2'd1, LPDDRPHY_READY = 2'd2} state_t;`。
+
+- one-hot 的 `default` 分支照常生成：非 one-hot 的位型（例如上电毛刺）回到入口。
+- 显式数值只固定 enum 成员的值，也就是仿真值和导出口的值。综合时内部寄存器是否仍被重编码取决于工具设置（例如 Yosys 的 `fsm -norecode`、`fsm_encoding` 属性；各工具属性名不同，生成器不写），不由本 DSL 控制。
 
 导出口不直接接 `state_val`。直接接会违反 Yosys 的「不是模块输出口」和「只与常量比较」两条，状态机识别和重编码随之失效。导出口从比较结果重新选出 enum 成员：
 
@@ -1641,16 +2279,18 @@ state_next_o = move_to_S 时输出成员 S；state_set_o = 0 时取 state_val_o
 |---|---|
 | `@FsmGroup class G` | 一个 `.sv` 文件，内含组里每个状态机的 `package <方法名>_pkg` + `module <方法名>` |
 | `@Fsm` 方法 / 子状态机方法 `m` | `package m_pkg`（状态 enum）+ `module m`；子状态机多 `start` / `done`（§5） |
-| 状态标签 `S:` | `state_t` 的成员 `S`，名字原样，缺省不写数值（§6.5） |
+| 状态标签 `S:` | `state_t` 的成员，标签转大写下划线（§3.5），可加 `statePrefix`；缺省不写数值，`stateEncoding` 可选二进制或 one-hot（§6.5） |
 | 进入 `S` 的 move | `logic move_to_S`，只在有消费者时生成（§4） |
 | 解构参数里的端口 | 同名端口；`PushPort(N)` 展开为 `<name>_vld` / `<name>_rdy` / `<name>_data`；`Dff(N)` 是输出口 `<name>`（`aw_dff` 的 `val`）；`Dff(N, { external: true })` 展开为 `<name>_set` / `<name>_next` / `<name>_val` |
+| 端口参数里独占一行的 `//` 注释 | SV 端口表里同位置的分组标题；生成器另加 `// clock and reset`、`// call handshake`（§2.2） |
 | 条件之前的动作 | `logic leave_S`，只在有消费者时生成（§3.6） |
 | 用户函数调用 | `fn_<函数名>_<序号> = pkg::fn(...)`，相同调用共用一根线（§2.3） |
 | 时钟、复位 | 生成器加上 `clk` / `rst_n`（`negedge` 异步低有效） |
 | 主状态 | 本模块内的 `state_val` / `state_next`，一个 `always_comb` + 一个 `always_ff`（§6.5） |
 | 其他寄存器（`Dff`、`pending`、`fin`、`data`） | `aw_dff` 实例 `u_<名字>`，端口 `set` / `next` / `val`，`val` 接到 `<名字>_val` |
-| 子状态机调用 | 被调用方实例 `u_<方法名>`，端口按调用时的对象字面量连接，`start` 接调用状态的 move（§5） |
-| 被调用方 | 隐式入口状态 `IDLE`，端口 `start` / `done`（/ `result`；调用点在异常区域内时加 `abort`） |
+| 子状态机调用 | 被调用方实例 `u_<方法名>`（同一方法第二个调用点起 `u_<方法名>_1`…），端口按调用时的对象字面量连接，`start` 接调用状态的 `move_to_*`，`done` / `result` 接 `<方法名>_done` / `<方法名>_result`（§5） |
+| 被调用方 | 隐式入口状态 `IDLE`，端口 `start` / `done`（有 `return 值` 时加 `result`；调用点在异常区域内时加 `abort`，未实现） |
+| `if` / `else` 分支 | 每个分支都写 `begin` / `end`（§6.5 第 2 条） |
 | 异常区域 `try { Escape(c) }` | 区域内每个状态分支最前面的 `if (c)`，外层在前（§3.7） |
 
 - 次态、move 与 leave 由同一个 `always_comb` 的同一个分支写出（§6.5 第 2 条），离开条件只出现一次。
@@ -1673,7 +2313,7 @@ state_next_o = move_to_S 时输出成员 S；state_set_o = 0 时取 state_val_o
 | `@FsmGroup` class | 文件头之后的注释块，说明这组状态机 |
 | 状态机方法（顶层或子状态机，注释写在装饰器之前） | 对应 `module` 之前的注释块 |
 
-- 状态、端口、分支的细节不搬运，读 RTL 的人按文件头里的 SoT 路径去看 `.mjs` 源码里的注释。源码里其他位置的注释（`//`、`/* … */`、别处的 `/** … */`）不搬运，也不报错。
+- 状态、分支的细节不搬运，读 RTL 的人按文件头里的 SoT 路径去看 `.mjs` 源码里的注释。端口参数里独占一行的 `//` 注释是分组标题，例外地搬进端口表（§2.2）。源码里其他位置的注释（`//`、`/* … */`、别处的 `/** … */`）不搬运，也不报错。
 - 「紧挨在前面」指两者之间只有空白。
 - 去掉每行开头的 `*` 和首尾空行后，每行生成一行 `// `。
 - 文本原样搬运，不翻译。仓库的英文约束管的是生成器自己写的注释；作者用什么语言由作者决定，RTL 文件按 UTF-8 写出。
@@ -1691,8 +2331,10 @@ export class CounterCtl {
    */
   @Fsm
   async act_demo({
+    // host control
     go = Input(1),      // start request from the host
     stop = Input(1),
+    // counter
     cnt_clr = Output(1),
     active = Dff(1),
   }) {
@@ -1715,7 +2357,7 @@ export class CounterCtl {
 // Counter control blocks.
 
 package act_demo_pkg;
-  typedef enum logic [0:0] {IDLE, Run} state_t;
+  typedef enum logic [0:0] {IDLE, RUN} state_t;
 endpackage
 
 // Counter control.
@@ -1723,27 +2365,30 @@ endpackage
 module act_demo
   import act_demo_pkg::*;
 (
+  // clock and reset
   input  logic clk,
   input  logic rst_n,
+  // host control
   input  logic go,
   input  logic stop,
+  // counter
   output logic cnt_clr,
   output logic active
 );
   state_t state_val, state_next;
-  logic   move_to_Run, move_to_IDLE;
+  logic   move_to_RUN, move_to_IDLE;
 
   always_comb begin
     state_next   = state_val;
-    move_to_Run  = 1'b0;
+    move_to_RUN  = 1'b0;
     move_to_IDLE = 1'b0;
     unique case (state_val)
       IDLE:
         if (go) begin
-          state_next  = Run;
-          move_to_Run = 1'b1;
+          state_next  = RUN;
+          move_to_RUN = 1'b1;
         end
-      Run:
+      RUN:
         if (stop) begin
           state_next   = IDLE;
           move_to_IDLE = 1'b1;
@@ -1757,10 +2402,10 @@ module act_demo
     if (!rst_n) state_val <= IDLE;
     else        state_val <= state_next;
 
-  assign cnt_clr = move_to_Run;                                 // cnt_clr.pulse()
+  assign cnt_clr = move_to_RUN;                                 // cnt_clr.pulse()
   aw_dff u_active (.clk, .rst_n,
-    .set(move_to_Run | move_to_IDLE),                           // active.set(1) / active.set(0)
-    .next(move_to_Run), .val(active));
+    .set(move_to_RUN | move_to_IDLE),                           // active.set(1) / active.set(0)
+    .next(move_to_RUN), .val(active));
 endmodule
 ```
 
@@ -1841,6 +2486,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 |---|---|
 | 一个模块里的 `@FsmGroup` class 都是顶层 `export class`；class 只含 async 方法，拒绝 `constructor`、字段、`static`、getter / setter、`extends`；`this` 只用于 `this.方法名({...})` | §2.2 |
 | 方法参数是一个对象解构模式，每个属性的默认值是端口声明；内建名按 import 绑定识别 | §2.2、§8.2 |
+| 端口每行一个，第一个端口不和 `({` 同行 | §2.2 |
 | 端口方向：`Input` 不能被动作驱动，`Output` 不能被读 | §2 |
 | 运算符白名单（拼接、移位、变量下标报错）；位宽一致；字面量位宽和取值范围；`bits` 的下标为字面量且在范围内 | §2.1 |
 | 标签：按所挂语句分为状态名 / 循环名 / 块名，挂在其他语句上报错；一条语句只能有一个标签；状态标签所在语句的形状；方法内唯一、合法 SV 标识符；三类名字不重名 | §3.5、§3.6 |
@@ -1849,6 +2495,8 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | 异常区域：`Escape` 只在 `try` 块开头；`catch` 不绑定变量；拒绝 `finally`；`throw` 只能写 `throw Raise()` 且必须有外围 `try` | §3.7 |
 | `read()` 的结果只用在分支条件里 | §4 |
 | `const` / `let`：`let` 只允许「声明不赋值、在带标签的调用或 `pop` 语句里赋值一次」；`let` 重新赋值或多段赋值报错，提示改用 `Dff` | §2.4 |
+| 未读的 `Input`、未用的组合 `const`、从未 `pulse` 的 `Output`、从未 `set` 的 `Dff`、方法体里从未读 `.val` 的 `Dff`：报错（否则生成的 SV 在 `-Wall` 下报未使用） | §2.2、§6.5 |
+| 同一段写同一目标两次、走不到的状态和动作、不经 `await` 的环、走到顶层方法末尾：报错 | §3.4、§3.6、§6.1 |
 | 悬空 Future | §6.3 |
 | 同一段或 `Promise.all` 的并行分支对同一目标多驱动 | §6.1 |
 | 多个 `return` 的位宽一致 | §5 |
@@ -1878,7 +2526,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 
 ## 10. 开放问题
 
-1. 计数循环：外部计数器的标准写法是否要做成内建（例如 `Counter(N)`，带 `clear` / `inc` 脉冲和 `done` 条件），还是留给用户（§3.6）。
+1. 计数循环：外部计数器的标准写法是否要做成内建（例如 `Counter(N)`，带 `clear` / `inc` 脉冲和 `done` 条件），还是留给用户（§3.6）。现在的写法是私有 `Dff` 加用户函数（§5.2 的 `inc7`）。
 2. 用户函数签名与 package 源码的一致性：现在只靠 SV 编译器报错（§2.3）。若 hdxml 将来在 RtlIndex 里记录 package 函数签名，检查器可以改为对照检查，`SvFunction` 的位宽也可以省略。另外，形参或返回值是 packed struct 等用户类型时怎么声明未定。
 3. 共享子状态机实例（§5.1 第二步）与互斥被调用方之间的局部寄存器复用（第三步）：如何证明互斥（同一状态机内的顺序调用可证；跨状态机不可证），以及复用后的复位语义。
 4. 端口寄存器选项的 API（§6.4）。
@@ -1898,12 +2546,12 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | 项 | 决定 |
 |---|---|
 | 命令 | `plugin fsm run`，与 `plugin wishbone run` 同为类型 A 插件；`--force` 全部重写，缺省增量写（[cli.md](../cli.md)） |
-| 输出 | `plugins_dir/fsm/<组名>.sv`（一个 `@FsmGroup` 一个文件）和模板 `plugins_dir/fsm/aw_dff.sv`；按 [workspace/toml.md](../workspace/toml.md) 只写 `plugins_dir/<plugin-id>/`。这些文件是分析输入叶子，进分析 filelist |
-| DSL 入口 | `autowire.toml` 里每个源一个段，形式照 `[wishbone.<id>] ts=`；具体键名实现时按 toml.md 补 |
-| import 路径 | 内建名从 `.autowire/dsl/fsm/` 导入，与 wishbone 一样由 `src/cli/pack.ts` 每次运行时重写（自愈缓存）；副本只含空实现，另带 `.d.ts` 给编辑器补全 |
+| 输出 | `plugins_dir/fsm/<class 名>.sv`（一个 `@FsmGroup` 一个文件）和模板 `plugins_dir/fsm/aw_dff.sv`；按 [workspace/toml.md](../workspace/toml.md) 只写 `plugins_dir/<plugin-id>/`。这些文件是分析输入叶子，进分析 filelist |
+| DSL 入口 | `[fsm.<id>] mjs = "<相对工作区的 .mjs>"`，只有这一个键；两个源定义同名 class 报错 |
+| import 路径 | 内建名从 `.autowire/dsl/fsm/dsl.mjs` 导入，与 wishbone 一样由 `src/cli/pack.ts` 打包、每次 `plugin fsm run` 重新物化（自愈缓存）；`dsl.mjs` 只含空实现，另带 `dsl.d.ts` 给编辑器补全 |
 | 解析器 | `@babel/parser` 写死版本，懒加载（§8.2） |
 | 生成物登记 | 输出目录加进 `AGENTS.md` 的「Generated and MUST NOT be hand-edited」清单 |
-| 文档与帮助 | 新增 `help/fsm.txt`，在 `help status` 登记；本文状态从「设计草案」改为已落地的部分；`demo/state/` 放一个能跑的示例，与本文对照示例一致 |
+| 文档与帮助 | `help/fsm.txt`，在 `help status` 登记；`demo/state/` 是能跑的示例（`counter_ctl.mjs` = §7.1，`loop_ctl.mjs` = §3.6 / §3.6.1，`reg_ctl.mjs` = §6.5），`test/fsm.test.ts` 检查它与本文的 SV 一致 |
 
 **MVP 的 ES 子集（决定）**：不支持 `switch`；组内不允许只内联、不生成模块的辅助方法；变量只允许 §2.4 列出的 `const` / `let` 用法；其余语法一律编译期报错，带 `文件:行:列`。以后放宽见 §10。
 
@@ -1911,7 +2559,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 
 ```mermaid
 flowchart LR
-  P0["P0 骨架<br/>解析、检查器（class / 参数 / 标签 / const-let）<br/>CFG：wait / read / if / while / break / continue<br/>次态块 + enum + pulse / Dff + 文件头"] --> P1["P1 交互<br/>push / pop / Promise.all<br/>子状态机 start / done / result（每调用点一实例）<br/>SvPackage、bits"]
+  P0["P0 骨架（已落地）<br/>解析、检查器（class / 参数 / 标签 / const-let）<br/>CFG：wait / read / if / while / break / continue<br/>次态块 + enum + pulse / Dff + 文件头"] --> P1["P1 交互<br/>push / pop / Promise.all<br/>子状态机 start / done / result（每调用点一实例，已落地）<br/>SvPackage、bits、?:（已落地）"]
   P1 --> P2["P2 异常与观测<br/>try / Escape / Raise / abort<br/>exportState / stateValues / stateReg"]
   P2 --> P3["P3 优化<br/>共享实例、寄存器复用<br/>§10 推迟项"]
 ```

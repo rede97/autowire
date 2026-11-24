@@ -32,6 +32,7 @@ bun index.ts connect check [unit]
 bun index.ts connect run [unit]
 bun index.ts connect web [unit]
 bun index.ts plugin wishbone run
+bun index.ts plugin fsm run
 bun index.ts dtsim run|regr|plan|list|groups|results|env
 bun run lint
 bun run build:web
@@ -51,6 +52,7 @@ Driving dtsim as an agent: `dtsim list`, `groups`, `plan <group>` read the confi
 
 - Author HTML: `[connect.<id>]` / `[sim.<id>]` `html=` in `autowire.toml`. One toml per workspace. `deps` are direct edges only.
 - Wishbone SoT: TypeScript `Regfile(...)` / `Bus(...)`. Excel, C, and `uvm_reg` are exports, not sources.
+- FSM SoT: `.mjs` `@FsmGroup` class (`[fsm.<id>] mjs=`, `help fsm`, `docs/state/async-fsm.md`). `plugin fsm run` writes `plugins_dir/fsm/`; the source is parsed, never executed.
 - Simulation SoT: `dt/config/*.ts` (`Workspace`, `Case`, `Group`, grader, tool, launcher, hooks). `dt/config/.dtsim/dsl/` is rewritten from the embedded DSL on every dtsim load; import from it, do not edit it.
 - Leaf ports: RtlIndex under `.autowire/hdxml/`. Do not reparse RTL in the page.
 - Printer input: `aw-render` only. Do not treat `aw-content` as the netlist.

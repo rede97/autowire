@@ -45,4 +45,38 @@ export function registerPlugin(program: Command): void {
 				}
 			},
 		);
+
+	plugin
+		.command("fsm")
+		.description("async/await state machine DSL → SystemVerilog")
+		.command("run")
+		.description("Compile every [fsm.<id>] mjs= source into plugins_dir/fsm")
+		.option(
+			"--workspace <path>",
+			"workspace dir or autowire.toml path (default: search upward from CWD)",
+		)
+		.option("--force", "rewrite outputs even when the bytes already match")
+		.option("--only <name>", "one [fsm.<name>] source from autowire.toml")
+		.action(
+			async (opts: { workspace?: string; force?: boolean; only?: string }) => {
+				const ws = await requireWorkspace(opts.workspace ?? process.cwd());
+				const healed = await ensureWishboneDsl(ws.root);
+				if (healed.freshDir)
+					console.log(`restored .autowire/dsl/ (${healed.files.length} files)`);
+				if (ws.fsmSources.length === 0) {
+					console.error("autowire.toml: no [fsm.<source_id>] mjs= for fsm");
+					process.exit(1);
+				}
+				try {
+					// Lazy: keeps the fsm compiler and @babel/parser off every other command (§8.2).
+					const { generateAll } = await import("../plugins/fsm/generate.ts");
+					const paths = await generateAll(ws, opts.only, opts.force ?? false);
+					for (const p of paths) console.log(p);
+					if (paths.length === 0) console.log("fsm: outputs unchanged");
+				} catch (e) {
+					console.error(e instanceof Error ? e.message : e);
+					process.exit(1);
+				}
+			},
+		);
 }

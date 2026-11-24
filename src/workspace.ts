@@ -99,6 +99,8 @@ export interface WorkspaceConfig {
 	simUnits: ConnectUnit[];
 	/** Type-A wishbone SoT sources ([wishbone.<source_id>] ts=) */
 	wishboneSources: WishboneSource[];
+	/** Type-A fsm DSL sources ([fsm.<source_id>] mjs=), docs/state/async-fsm.md §11 */
+	fsmSources: FsmSource[];
 	/** Optional Excel workbook path ([plugins.wishbone] export); packed docs */
 	wishboneExcelExport: string | null;
 	/** Optional C header directory ([plugins.wishbone] c); packed layout+map */
@@ -435,6 +437,7 @@ export async function loadWorkspace(
 	}
 	const wishbone = isObj(doc.wishbone) ? doc.wishbone : {};
 	const wishboneSources = parseWishboneSources(wishbone, rel);
+	const fsmSources = parseFsmSources(isObj(doc.fsm) ? doc.fsm : {}, rel);
 	const plugins = isObj(doc.plugins) ? doc.plugins : {};
 	if (plugins.regfile !== undefined) {
 		throw new Error(
@@ -512,6 +515,7 @@ export async function loadWorkspace(
 		connectUnits,
 		simUnits,
 		wishboneSources,
+		fsmSources,
 		wishboneExcelExport,
 		wishboneCExport,
 		wishboneUvmExport,
@@ -633,6 +637,36 @@ function parseWishboneSources(
 			}
 		}
 		out.push({ id, ts: rel(raw.ts), exports });
+	}
+	out.sort((a, b) => a.id.localeCompare(b.id));
+	return out;
+}
+
+/** One [fsm.<source_id>] entry: an .mjs holding one @FsmGroup class. */
+export interface FsmSource {
+	id: string;
+	/** Absolute path to the .mjs */
+	mjs: string;
+}
+
+function parseFsmSources(
+	table: Record<string, unknown>,
+	rel: (p: string) => string,
+): FsmSource[] {
+	const out: FsmSource[] = [];
+	for (const [id, raw] of Object.entries(table)) {
+		if (!isObj(raw))
+			throw new Error(`autowire.toml: [fsm.${id}] must be a table`);
+		if (typeof raw.mjs !== "string" || raw.mjs.length === 0)
+			throw new Error(
+				`autowire.toml: [fsm.${id}] mjs= is required (path to the DSL .mjs)`,
+			);
+		const extra = Object.keys(raw).filter((k) => k !== "mjs");
+		if (extra.length > 0)
+			throw new Error(
+				`autowire.toml: [fsm.${id}] unknown key ${extra.join(", ")} (only mjs=)`,
+			);
+		out.push({ id, mjs: rel(raw.mjs) });
 	}
 	out.sort((a, b) => a.id.localeCompare(b.id));
 	return out;

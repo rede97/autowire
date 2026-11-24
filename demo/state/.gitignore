@@ -1,0 +1,3 @@
+# plugin fsm run outputs and the self-healing DSL cache
+gen/
+.autowire/

@@ -69,11 +69,14 @@ export async function collectPackFiles(root: string): Promise<PackedFile[]> {
 	if (await contract.exists())
 		out.push({ path: "AGENTS.md", bytes: await contract.bytes() });
 	// DSL sources for standalone SoT authoring (init writes them under dsl/;
-	// relative imports between them stay valid). Closure of wishbone-bus/dsl.ts.
+	// relative imports between them stay valid). Closure of wishbone-bus/dsl.ts,
+	// plus the fsm builtins (.mjs no-ops + .d.ts; the fsm compiler never runs them).
 	for (const dsl of [
 		"src/plugins/wishbone-bus/dsl.ts",
 		"src/plugins/wishbone-regfile/dsl.ts",
 		"src/plugins/wishbone-regfile/layout.ts",
+		"src/plugins/fsm/dsl.mjs",
+		"src/plugins/fsm/dsl.d.ts",
 	]) {
 		const f = Bun.file(join(root, dsl));
 		if (await f.exists())

@@ -1,0 +1,42 @@
+fsm — async/await state machine DSL → SystemVerilog (docs/state/async-fsm.md)
+
+Entry
+  autowire plugin fsm run [--only <id>] [--force] [--workspace <path>]
+  dev: bun index.ts plugin fsm run
+  Type A plugin: compiles every [fsm.<id>] mjs= source; does not call connect.
+  Writes are incremental (same bytes → skipped); --force rewrites.
+
+Source (.mjs, never executed; the compiler reads the AST)
+  import { FsmGroup, Fsm, Input, Output, Dff, Const, ALWAYS_0, ALWAYS_1,
+           SvPackage, SvFunction } from "<rel>/.autowire/dsl/fsm/dsl.mjs";
+  One @FsmGroup class per file → plugins_dir/fsm/<Class>.sv
+  @Fsm async method    top-level: body is one while (true) { ... }, never returns
+  @Fsm({ statePrefix: "LPDDRPHY", stateEncoding: "binary" | "onehot" })
+                       enum members LPDDRPHY_<STATE>; omit stateEncoding to let synthesis pick
+  undecorated method   sub-FSM: implicit IDLE waits for start; return [value] → done / result
+  Ports: one destructured parameter, defaults declare them:
+    x = Input(N)   y = Output(N) (y.pulse(v) on the move, 0 otherwise)
+    r = Dff(N[, { reset, external }])
+  Port layout: one port per line; a `// title` line above a group of ports is
+    copied into the SV port list (with generated `// clock and reset`, `// call handshake`)
+  State: [Label:] await <channel>.wait(v)   one await = one state, >= 1 cycle
+         labels become UPPER_SNAKE enum members (SendMsg → SEND_MSG)
+  Call:  [Label:] [r =] await this.sub({ port: channel, ... })   with `let r;` declared;
+         r is valid only in the segment right after the call: latch it with Dff.set(r)
+  Branch / loop conditions: await x.read() or a 1-bit channel expression
+  Loops: while, do ... while, break [L], continue [L]; labeled blocks; no for
+  Operators: & | ^ ~ ! && || === !== < > <= >= ?: x.bits(i) x.bits(hi, lo)
+  No arithmetic: declare SV functions with SvPackage("pkg", { f: SvFunction({ args: { a: 8 }, ret: 8 }) })
+    and call pkg.f(x); the user package is compiled before the generated .sv
+  Trap state: await ALWAYS_0.wait(1)
+
+Output
+  plugins_dir/fsm/<Class>.sv   generated, do not edit (SoT is the .mjs)
+  plugins_dir/fsm/aw_dff.sv    reference DFF (parameter type T); add both to
+                               the analysis / simulation filelist
+  every if / else branch is written with begin / end
+
+Not yet (compile error names the feature): push / pop ports, Promise.all,
+try / Escape / Raise / abort, @Fsm exportState / stateValues / stateReg,
+connecting a Dff port of a sub-FSM.
+Errors: <file>:<line>:<col>: <message>. Demo: demo/state (bun ../../index.ts plugin fsm run).

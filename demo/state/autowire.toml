@@ -1,0 +1,34 @@
+# autowire workspace config (contract: docs/workspace/toml.md)
+# fsm demo: the async/await state machine DSL of docs/state/async-fsm.md.
+# Run from this directory: bun ../../index.ts plugin fsm run
+# Output: gen/plugins/fsm/<Group>.sv + aw_dff.sv (generated; do not edit).
+
+[workspace]
+name = "state"
+
+[workspace.dump]
+plugins_dir = "gen/plugins"
+
+# §7.1: file header and business comments
+[fsm.counter_ctl]
+mjs = "fsm/counter_ctl.mjs"
+
+# §3.6 nested loops / leave_S, §3.6.1 break Outer
+[fsm.loop_ctl]
+mjs = "fsm/loop_ctl.mjs"
+
+# §6.5 external Dff ports
+[fsm.reg_ctl]
+mjs = "fsm/reg_ctl.mjs"
+
+# §6.1.1 multi-bit Output: fixed and forwarded messages, ?: select
+[fsm.msg_ctl]
+mjs = "fsm/msg_ctl.mjs"
+
+# §6.5 @Fsm({ statePrefix, stateEncoding })
+[fsm.phy_ctl]
+mjs = "fsm/phy_ctl.mjs"
+
+# §5.2 sub-FSM: scan a dump regfile, count pattern matches (user functions: rtl/dump_pkg.sv)
+[fsm.dump_check]
+mjs = "fsm/dump_check.mjs"

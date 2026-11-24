@@ -16,6 +16,10 @@ Landed
                             Saves are browser downloads. The page does not write files.
   aw-tb-mod / [sim.<id>]    TB top + type=raw + body includes; connect run → sim_dir/<id>.sv
   plugin wishbone run       Type A: regfile + bus → plugins_dir/wishbone/{regfile,bus}/ (docs/cli.md)
+  plugin fsm run            Type A: [fsm.<id>] mjs= async/await DSL → plugins_dir/fsm/<Class>.sv
+                            + aw_dff.sv; states, branches, loops, pulses (multi-bit), Dff, ?:,
+                            SvPackage functions, sub-FSM calls with results, statePrefix /
+                            stateEncoding (docs/state/async-fsm.md §11); demo/state (help fsm)
   autowire dtsim ...        simulation runner: <project>/dt/ testbench, dt/config/dtsim.config.ts,
                             dt/simout/ outputs; `ln -s autowire.js dtsim` runs it directly;
                             demo/dtsim (fake tools), demo/soc + demo/hbm smokes (docs/dtsim/README.md)
