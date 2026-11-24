@@ -2,6 +2,13 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.5] - 2026-11-24
+
+- **新命令 `plugin fsm run`**：类型 A 插件，把 ECMAScript async/await 写的控制状态机编译成 SystemVerilog（[`docs/state/async-fsm.md`](docs/state/async-fsm.md)，`help fsm`）。`autowire.toml` 里每个源一段 `[fsm.<id>] mjs = "..."`，每个 `@FsmGroup` class 写出 `plugins_dir/fsm/<class 名>.sv`，另写共用的 `plugins_dir/fsm/aw_dff.sv`；增量写，`--force` 全部重写，`--only <id>` 只处理一个源。源码只解析、不执行；解析器 `@babel/parser` 写死 8.1.3，只在这条命令里懒加载。内建名从 `.autowire/dsl/fsm/dsl.mjs` 导入（每次运行重新写出，附 `dsl.d.ts`）。
+- **已支持的写法**：`await x.wait(v)` 状态、`await x.read()` 分支、`while` / `do…while` / `break` / `continue`（含标签）、`pulse()` / 多位 `pulse(v)`、`Dff`（端口、`external`、`reset`、方法体私有）、`const` / `let` 绑定、`?:`、`bits()`、`SvPackage` 用户函数、子状态机调用与 `return` 结果（`let r; S: r = await this.sub({...})`）、`@Fsm({ statePrefix, stateEncoding: "binary" | "onehot" })`。错误带 `文件:行:列`；push / pop、`Promise.all`、`try` / `Escape`、`exportState` / `stateValues` / `stateReg` 编译期报 not implemented yet。
+- **生成的 SV 风格**：主状态是本模块内的 `always_ff` 加一个写次态、move 和 leave 的 `always_comb`，按 Yosys `fsm_detect` 的识别条件生成；enum 成员由状态标签转成大写下划线（`SendMsg` → `SEND_MSG`），缺省不写数值；每个 `if` / `else` 分支都写 `begin` / `end`；端口每行一个，作者在端口之间独占一行的 `//` 注释作为分组标题搬进端口表，生成器另加 `// clock and reset` 和 `// call handshake`。
+- **demo/state**：可运行的示例工作区（`bun ../../index.ts plugin fsm run`），与文档的对照示例逐字一致，包括 dump 寄存器堆扫描子状态机（软件配置起始地址、步长、字数和比较值，返回匹配次数）。测试比对文档 SV，并用 Verilator 做 `-Wall` lint 和周期级仿真。
+
 ## [2.9.4] - 2026-11-23
 
 - **波形按 case 命名**：VCS 每个 seed 输出 `<case id>.fsdb`，Verilator 输出 `<case id>.fst`，不再统一叫 `verilog.fsdb` / `wave.fst`。VCS `dump.tcl` 用 `$env(output_dir)/$env(DTSIM_CASE).fsdb`，`run_verdi` 用 `"${output_dir}/${DTSIM_CASE}.fsdb"` 定位同一个文件；Verilator 通过运行时 `+DTSIM_WAVE_FILE=<seed dir>/<case id>.fst` 传路径，同一编译组仍可服务多个 case。
