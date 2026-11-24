@@ -56,7 +56,7 @@ IP 源码就位（submodule / vendored 目录；**本地补丁只放 `demo/soc/p
   - GPL 边界：`sdspisim` 只进 Verilator C++ harness；固件侧用 MIT `fw/common/sdspi_regs.h`。
   - aw-tb-mod：`./dt/verilator/run.sh --tb-mod` → dump 的 `rtl/gen/sim/soc_tb.sv`（`--binary --timing`；`dt/tb_board.svh` + `tb_sim.svh` + `tb_jtag.svh`；flash 用 `spiflash_vl`，pad 显式 OE 解析，无 inout Z）。
   - VCS：`./dt/vcs/run.sh [basic_smoke|regfile_smoke]` → 同一 `tb_top`（aw-tb-mod dump），无 C++ harness；`--sd` 不走 VCS（`sdspisim` 是 C++ 模型）。注意：VCS 是 4 态——叶子/模型里未复位的寄存器是 X（`spiflash_vl.dummycount`、`smoke_wb.fifo_count` 都踩过）；`-timescale=1ns/1ps` 兜生成包装模（ITSFM），binutils ≥2.34 要 `-LDFLAGS "-Wl,--no-as-needed"`。
-- **仿真构建走 dtsim**：`dt/config/dtsim.config.ts` 一份配置两个仿真器（`tools: [VerilatorTool(), VcsTool(...)]`），定义用例 basic_smoke / regfile_smoke（两边都跑，差异在 `byTool`）与 sd_sha256 / tb_mod / sv_reg_smoke（`tools: ["verilator"]`）；每次运行都重新编译到全新的 `dt/simout/<tool>/<case>/`，脏二进制不可能再跑旧 RTL。波形由 backend 的 `wave` 选项决定（Verilator `wave.fst`，VCS `verilog.fsdb`）。
+- **仿真构建走 dtsim**：`dt/config/dtsim.config.ts` 一份配置两个仿真器（`tools: [VerilatorTool(), VcsTool(...)]`），定义用例 basic_smoke / regfile_smoke（两边都跑，差异在 `byTool`）与 sd_sha256 / tb_mod / sv_reg_smoke（`tools: ["verilator"]`）；每次运行都重新编译到全新的 `dt/simout/<tool>/<case>/`，脏二进制不可能再跑旧 RTL。波形由 backend 的 `wave` 选项决定（Verilator `<case id>.fst`，VCS `<case id>.fsdb`）。
 - C 固件 SoT 是 **`.c` + Makefile**，不是手改 hex；hex 为构建产物（`fw/**/build/` gitignore）。
 - 仿真 SRAM 上电为 **X**：消息缓冲必须由固件显式清零/写入，不能假设上电为 0。
 - 已知答案测试（KAT）：`hashlib` / IP bench 向量；寄存器侧为 **每 32-bit 字字节反序**。

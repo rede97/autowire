@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.4] - 2026-11-23
+
+- **波形按 case 命名**：VCS 每个 seed 输出 `<case id>.fsdb`，Verilator 输出 `<case id>.fst`，不再统一叫 `verilog.fsdb` / `wave.fst`。VCS `dump.tcl` 用 `$env(output_dir)/$env(DTSIM_CASE).fsdb`，`run_verdi` 用 `"${output_dir}/${DTSIM_CASE}.fsdb"` 定位同一个文件；Verilator 通过运行时 `+DTSIM_WAVE_FILE=<seed dir>/<case id>.fst` 传路径，同一编译组仍可服务多个 case。
+- **Verdi 集群提交脚本后台运行**：LSF `bjob_verdi` 和 Slurm `srun_verdi` 的提交命令末尾加 `&`，启动 GUI 后立即返回；`bjob_sim` / `srun_sim` 与编译提交脚本仍等待作业结束。`ToolContext.submitScript` 新增可选 `{ background: true }`。
+
 ## [2.9.3] - 2026-11-20
 
 - **Verilator 的 seed 生效**：之前 `run_sim` 一律给仿真加 VCS 的 `+ntb_random_seed=<seed>`，Verilator 不认，所以 `--seeds` / `--random` 的每个 seed 在 Verilator 上跑出完全相同的随机序列。`SimTool` 新增 `seedArg`（`run_sim` 追加的一个 bash 词，`$SEED` 是 seed，默认 `+ntb_random_seed=$SEED`）；`VerilatorTool` 改为 `+verilator+seed+<seed>`，seed 0 发成 1（显式的 `+verilator+seed+0` 表示“随机挑一个”，结果不可复现）。C++ harness 需把 argv 交给 `contextp->commandArgs()`。

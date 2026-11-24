@@ -48,7 +48,7 @@ describe("launchers", () => {
 		const ws = await makeWorkspace(
 			withTask(
 				'{ launcher: LsfLauncher({ queue: "normal" }), maxSlots: 2, maxCompiles: 1 }',
-			),
+			).replace("tools: [VcsTool()],", "tools: [VcsTool()],\n\twave: true,"),
 		);
 		const log = join(ws.dir, "launch.log");
 		const result = await runDtsim(ws, ["regr", "base", "--plain"], {
@@ -64,6 +64,16 @@ describe("launchers", () => {
 		// base: three compile groups (different defines / compile env), three sims
 		expect(lines.filter((l) => / compile_\S+ vcs /.test(l))).toHaveLength(3);
 		expect(lines.filter((l) => / bash /.test(l))).toHaveLength(3);
+		const wrappers = [...new Bun.Glob("**/srun_*").scanSync(ws.dir)];
+		const verdi = wrappers.filter((f) => f.endsWith("srun_verdi"));
+		expect(verdi).toHaveLength(3);
+		for (const script of verdi) {
+			const text = await Bun.file(join(ws.dir, script)).text();
+			expect(text.trimEnd().endsWith(" &")).toBe(true);
+		}
+		const sim = wrappers.find((f) => f.endsWith("srun_sim")) as string;
+		const simText = await Bun.file(join(ws.dir, sim)).text();
+		expect(simText.trimEnd().endsWith(" &")).toBe(false);
 	});
 
 	test("a workspace can ship its own launcher; its passthrough reaches the child", async () => {
@@ -131,6 +141,10 @@ const tagged = defineLauncher({
 		);
 		// the submitted run script is an absolute path, not the bare name
 		expect(text).toMatch(/'bash' '[^']*\/run_sim'/);
+		expect(text.trimEnd().endsWith(" &")).toBe(false);
+		const verdi = found.find((f) => f.endsWith("bjob_verdi")) as string;
+		const verdiText = await Bun.file(join(ws.dir, verdi)).text();
+		expect(verdiText.trimEnd().endsWith(" &")).toBe(true);
 	});
 
 	test("local bypasses the wrapper scripts", async () => {
