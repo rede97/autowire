@@ -5,8 +5,6 @@
 export interface Channel {
 	/** State: wait until this channel equals `v` (§3.1). */
 	wait(v: number): Promise<void>;
-	/** Sample in a branch or loop condition, zero cycles (§4). */
-	read(): Promise<Channel>;
 	/** Bit select: bits(i) or bits(hi, lo) (§2.1). */
 	bits(hi: number, lo?: number): Channel;
 }

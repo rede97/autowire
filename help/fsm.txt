@@ -23,7 +23,12 @@ Source (.mjs, never executed; the compiler reads the AST)
          labels become UPPER_SNAKE enum members (SendMsg → SEND_MSG)
   Call:  [Label:] [r =] await this.sub({ port: channel, ... })   with `let r;` declared;
          r is valid only in the segment right after the call: latch it with Dff.set(r)
-  Branch / loop conditions: await x.read() or a 1-bit channel expression
+  await appears only in a state (wait / sub-FSM call); anything else awaited is an error
+  Branch / loop conditions: a plain 1-bit channel expression, e.g. if (a & !b), sampled
+         on the cycle that leaves the previous state, zero cycles
+  Combinational logic: const c = expr before while (true) → assign (reuse, waveform name);
+         an expression written in place → inlined into always_comb
+  Race: await (a | b).wait(1); then if (a) { ... } else { ... }  (if order = priority)
   Loops: while, do ... while, break [L], continue [L]; labeled blocks; no for
   Operators: & | ^ ~ ! && || === !== < > <= >= ?: x.bits(i) x.bits(hi, lo)
   No arithmetic: declare SV functions with SvPackage("pkg", { f: SvFunction({ args: { a: 8 }, ret: 8 }) })

@@ -8,6 +8,7 @@ import type {
 	VariableDeclaration,
 } from "@babel/types";
 import {
+	AWAIT_IS_STATE,
 	atom,
 	constSig,
 	type ExprCx,
@@ -558,7 +559,7 @@ export class BodyCompiler {
 	/** Condition plus the let results it reads (checked when the state's exits expand). */
 	private cond(test: Expression): [Sv | boolean, Call[]] {
 		this.touched = [];
-		const sig = evalSig(this.ecx, test, { cond: true });
+		const sig = evalSig(this.ecx, test);
 		const needs = this.touched;
 		this.touched = [];
 		if (sig.width !== 1)
@@ -704,11 +705,6 @@ export class BodyCompiler {
 					"only a sub-FSM result can be assigned: r = await this.sub({...})",
 				);
 			if (isMethodCall(a, "wait")) return this.wait(a, stmt, k, label);
-			if (isMethodCall(a, "read"))
-				src.fail(
-					e,
-					"the read() value is unused; read() belongs in an if / while condition (§4)",
-				);
 			if (a.type === "CallExpression" && a.callee.type === "MemberExpression") {
 				if (
 					a.callee.object.type === "Identifier" &&
@@ -716,7 +712,7 @@ export class BodyCompiler {
 				)
 					notYet(src, a, "Promise.all (§6.3)");
 			}
-			return src.fail(e, "await x.wait(v) is the only state in this version");
+			return src.fail(e, AWAIT_IS_STATE);
 		}
 		if (isMethodCall(e) && e.callee.object.type === "Identifier") {
 			const verb = e.callee.property.name;

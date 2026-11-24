@@ -5,7 +5,6 @@
 function channel() {
 	const c = {
 		wait: async () => {},
-		read: async () => c,
 		bits: () => channel(),
 		pulse() {},
 		set() {},

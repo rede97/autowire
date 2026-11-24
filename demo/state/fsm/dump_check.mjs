@@ -70,7 +70,7 @@ export class DumpCheck {
       addr.set(dump_pkg.add32(addr.val, cfg_step));
       idx.set(idx_next);
       hits.set(hits_next);
-    } while (await (idx_next !== cfg_num).read());
+    } while (idx_next !== cfg_num);
     return hits_next;                       // includes the last word
   }
 }

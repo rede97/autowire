@@ -31,7 +31,7 @@ const cases: [string, string, string][] = [
 	[
 		"loop without await",
 		fsm(
-			"while (true) { S: await go.wait(1); d.set(1); while (await b.read()) { x.pulse(); } }",
+			"while (true) { S: await go.wait(1); d.set(1); while (b) { x.pulse(); } }",
 		),
 		"combinational loop",
 	],
@@ -79,11 +79,18 @@ const cases: [string, string, string][] = [
 		"state U is unreachable",
 	],
 	[
-		"read outside a condition",
+		"await outside a state",
 		fsm(
-			"while (true) { S: await go.wait(1); x.pulse(); d.set(await b.read()); }",
+			"while (true) { S: await go.wait(1); x.pulse(); if (await b) d.set(1); }",
 		),
-		"read() is only allowed",
+		"await marks a state",
+	],
+	[
+		"await as a bare statement that is not a state",
+		fsm(
+			"while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); await b; }",
+		),
+		"await marks a state",
 	],
 	[
 		"multi-bit pulse needs a value",
@@ -134,7 +141,7 @@ const cases: [string, string, string][] = [
 	],
 	[
 		"sub-FSM that can finish in its start cycle",
-		`${fsm("let r;\nwhile (true) { S: await go.wait(1); C: r = await this.s({ a: b }); d.set(r); x.pulse(); }", ports1)}\nasync s(${P("a = Input(1)")}) { if (await a.read()) return a; W: await a.wait(1); return a; }`,
+		`${fsm("let r;\nwhile (true) { S: await go.wait(1); C: r = await this.s({ a: b }); d.set(r); x.pulse(); }", ports1)}\nasync s(${P("a = Input(1)")}) { if (a) return a; W: await a.wait(1); return a; }`,
 		"ends the sub-FSM in its start cycle",
 	],
 	[

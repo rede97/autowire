@@ -1,6 +1,6 @@
 # async/await 状态机 DSL 设计（草案）
 
-> 状态：**部分落地**。`plugin fsm run` 已编译：状态、`read` 分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、子状态机调用与 `return` 结果、`@Fsm({ statePrefix, stateEncoding })`（`help fsm`，示例 `demo/state/`）。还没有实现：push / pop、`Promise.all`、`try` / `Escape` / `abort`、`exportState` / `stateValues` / `stateReg`，用到时编译期报「not implemented yet」。
+> 状态：**部分落地**。`plugin fsm run` 已编译：状态、分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、子状态机调用与 `return` 结果、`@Fsm({ statePrefix, stateEncoding })`（`help fsm`，示例 `demo/state/`）。还没有实现：push / pop、`Promise.all`、`try` / `Escape` / `abort`、`exportState` / `stateValues` / `stateReg`，用到时编译期报「not implemented yet」。
 > 来源：初稿 `demo/state/demo.md` 与值模型试验 `demo/state/demo.ts`，已并入本文后删除；原文见 git 提交 `21cb9ca`。本文是这套设计的唯一来源。
 > 初稿没说清的地方标为「决定」（本文给出的取舍）或「开放」（§10，需作者拍板）。
 > 作者源码是 **ECMAScript**（`.mjs`），不是 TypeScript：一组状态机写成带 `@FsmGroup` 的 class，对外的状态机是带 `@Fsm` 的 async 方法，端口是方法的解构参数（§2.2）；状态名用原生标签语句（§3.5）。选型理由见 §8.2。
@@ -54,7 +54,7 @@
 
 规则：
 
-- 作者代码拿不到「当前值」去做 JS 计算。对 channel 只能做三件事：组合运算得到新 channel（§2.1）、等待（`wait`）、采样做分支（`read`，§4）。
+- 作者代码拿不到「当前值」去做 JS 计算。对 channel 只能做三件事：组合运算得到新 channel（§2.1）、等待（`wait`，产生状态）、直接写进分支或循环条件（§2.5、§4）。
 - 每拍从每个 channel 读到一个值。`Const` / `ALWAYS_0` / `ALWAYS_1` 每拍读到同一个常数。
 - 多位常量写 `Const(N, v)`；参与 §2.1 的运算时也可以直接写数字字面量，位宽取另一侧。
 
@@ -76,12 +76,12 @@
 - 数字字面量取另一侧 channel 的位宽，不必写 `Const(8, 0xff)`。值超出位宽、或两侧都是字面量时，编译期报错。
 - 其余运算符编译期报错：`==` / `!=`（统一写 `===` / `!==`）、`+ - * / %`、`<< >> >>>`、`**`。这些计算写成用户 SV 函数（§2.3）。
 - 位选的下标必须是整数字面量，满足 `N > hi ≥ lo ≥ 0`，否则编译期报错。不支持变量下标：那是一个多路选择器，写成用户函数。
-- 位选写成方法调用 `bits`，不用 `[]`：SV 的 `x[hi:lo]` 在 ES 里是语法错误，而 `x[hi, lo]` 是逗号表达式，ES 会把它读成 `x[lo]`，容易误读。`bits` 是检查器认识的内建方法，和 `wait` / `read` 一样只作用于 channel。
+- 位选写成方法调用 `bits`，不用 `[]`：SV 的 `x[hi:lo]` 在 ES 里是语法错误，而 `x[hi, lo]` 是逗号表达式，ES 会把它读成 `x[lo]`，容易误读。`bits` 是检查器认识的内建方法，和 `wait` 一样只作用于 channel。
 - 被选的对象必须是有名字的 channel（端口、`Dff` 的 `val`、`const` 绑定的 channel）或用户函数调用结果。生成器在需要时先把它落成一根线再选，因为 SV 不允许对表达式或函数调用结果直接位选。
 - **不支持拼接和移位（决定）**。ES 没有拼接运算符，数组字面量 `[a, b]` 不被解释为拼接，编译期报错；`<<` / `>>` / `>>>` 同样报错。这两类变换写成用户函数（§2.3）。
 - 比较只按无符号（**决定**）。DSL 不提供有符号类型，也不提供有符号比较；需要有符号判断时调用用户函数，这是 §2.3 的典型用法。
 - 位宽不一致编译期报错（**决定**）。
-- `?:` 原样生成 SV 的 `?:`，这是 DSL 里唯一的选择器；两臂都是数字字面量时取上下文的位宽（例如 `x.pulse(c ? 1 : 2)`），否则取另一臂的位宽。条件可以是 `await x.read()`（只在分支和循环条件里）。
+- `?:` 原样生成 SV 的 `?:`，这是 DSL 里唯一的选择器；两臂都是数字字面量时取上下文的位宽（例如 `x.pulse(c ? 1 : 2)`），否则取另一臂的位宽。
 - 优先级沿用 ES 解析结果。ES 的 `===` 比 `&` 结合得紧，与 SV 中 `==` 和 `&` 的相对次序一致；生成 SV 时统一加满括号，不依赖两边优先级逐条相同。
 
 这些运算符在 ES 运行时对对象没有意义：Bun 实测 `{} & !{}` 得 `0`，`==` 比较引用；TC39 的运算符重载提案已于 2023-11 撤回。DSL 源码从不执行（§8.2），运算符的含义由编译器从 AST 赋予。初稿里 `msg_valid & !skip & (msg_val == const_val)` 的写法因此成立，只需把 `==` 改成 `===`：
@@ -143,7 +143,7 @@ export class MsgCtl {
   |---|---|---|---|
   | 参数里 `x = Dff(N)` | 模块内 `aw_dff` | 一个输出口 `x`，即 `val` | 给外部的电平标志：active、busy、enable（§6.1） |
   | 参数里 `x = Dff(N, { external: true })` | 模块外，属于别人 | `x_set` / `x_next` 输出，`x_val` 输入 | regfile 字段、别的模块也读写的寄存器（§6.5） |
-  | 方法体里 `const x = Dff(N)` | 模块内 `aw_dff` | 无 | 状态机私有的寄存器，例如锁存 `read()` 的结果（§4） |
+  | 方法体里 `const x = Dff(N)` | 模块内 `aw_dff` | 无 | 状态机私有的寄存器，例如把某一拍的组合值留到后面的段用（§2.5） |
 
   `Output(N)` 只表示由动作驱动的组合输出（脉冲），不带寄存器；N 可以大于 1，用 `x.pulse(v)` 在 move 那一拍输出 `v`，其余拍为 0（§6.1.1）。
 
@@ -283,7 +283,7 @@ endmodule
 规则：
 
 - `SvPackage(...)` 必须是模块顶层的 `const`（在 class 之外），参数是字面量。`args` 按声明顺序对应 SV 形参，值是位宽；`ret` 是返回值位宽。
-- 调用结果是一个普通 channel，位宽为 `ret`，可以参与 §2.1 的运算、`wait`、`read`、`Dff.set` 和 `push` 的数据。实参只能是 channel 或数字字面量；字面量取对应形参的位宽。
+- 调用结果是一个普通 channel，位宽为 `ret`，可以参与 §2.1 的运算、`wait`、分支条件、`Dff.set` 和 `push` 的数据。实参只能是 channel 或数字字面量；字面量取对应形参的位宽。
 - 实参个数和位宽在编译期检查（§8.3）。签名与 package 源码是否一致，DSL 不检查：RtlIndex 只按名字记录 package（[hdxml/module-info.md](../hdxml/module-info.md) B-5），不含函数签名；不一致由 SV 编译器（Verilator 等）报错。见 §10。
 - 生成的 SV 一律用作用域调用 `pkg::fn(...)`，不写 `import pkg::*`，避免与状态 enum 成员重名。
 - 相同函数加相同实参只生成一根线（`fn_<函数名>_<序号>`），被条件和动作共用。
@@ -302,8 +302,23 @@ endmodule
 | `let r;` 后在带标签的调用或接收语句里赋值一次：`StepB: r = await this.sub({...});`、`Recv: d = await fifo.pop();` | 子状态机的 `result`（§5）或 `pop` 的数据（§6.2） | 唯一允许的 `let` 用法 |
 | `let x = …` 之后重新赋值，或在多个段里赋值 | 编译期报错，提示改用 `Dff` | 重新赋值意味着需要寄存器或按状态的选择器，assign 表达不了 |
 
-- `const` 绑定的组合信号可以在多个段里读，它每一拍都有值；`read()` 的结果不能绑定到变量上（§4）。
-- `let r` 拿到的 `result` 只在 `done` 那一拍有效，与 `read()` 相同；只能在紧跟调用状态的那一段里读（动作或分支条件），要在后面的段里用，先 `Dff.set(r)`（§5）。在别的段、`const` 定义、`wait` 条件或调用的实参里读 `r`，编译期报错。`pop` 的写法还没有实现。
+- `const` 绑定的组合信号可以在多个段里读，它每一拍都有值。
+- `let r` 拿到的 `result` 只在 `done` 那一拍有效；只能在紧跟调用状态的那一段里读（动作或分支条件），要在后面的段里用，先 `Dff.set(r)`（§5）。在别的段、`const` 定义、`wait` 条件或调用的实参里读 `r`，编译期报错。`pop` 的写法还没有实现。
+
+### 2.5 组合逻辑的两种写法
+
+`await` 只标记状态（§3.1）：`ch.wait(v)`、`this.sub(...)`，以及以后的 `Promise.all` / `pop`。分支条件、循环条件和动作的值都是当前这一拍的组合值，直接写 channel 表达式，不写 `await`（**决定**）。组合逻辑有两种写法，对应 SV 的 `assign` 与 `always_comb`：
+
+| 写法 | 生成 | 适用 |
+|---|---|---|
+| `const c = a & !b;`，写在方法体顶部、`while (true)` 之前 | `logic c; assign c = …;` | 同一个条件在多处用（例如既 `wait` 又 `if`）、要在波形里看、有业务含义的名字 |
+| 表达式直接写进 `if (…)`、`while (…)`、`.wait(…)`、`pulse(v)`、`set(v)` 或调用实参 | 内联进 `always_comb` 的 case 分支或驱动表达式，不生成线 | 只用一次的条件 |
+
+- 分支在离开上一个状态的那一拍取样，只决定次态和这条边上的动作，不占拍。嵌套几层都是 `always_comb` 里嵌套的 `if`（§4）。
+- 多个事件竞争再分支：先等它们的或，再用 `if` 分辨，`if` 的顺序就是优先级。例如 `Wait: await (a_done | err).wait(1);` 之后写 `if (err) { … } else { … }`；两者都要用时，把 `a_done | err` 写成 `const`。
+- 不提供 `Promise.race`：`Promise.*` 只用于 `push` 返回的 Future（§6.3），电平之间的竞争用 `|` 加 `if` 已经写得清楚。
+- 组合值不能跨段保存：要在后面的段用，先 `Dff.set(v)`（§2.2）。
+- 其他位置写 `await`（例如 `if (await c)`、单独一句 `await c;`），编译期报错。
 
 ## 3. 状态与节拍
 
@@ -312,7 +327,6 @@ endmodule
 | 原语 | 占用拍数 | 是否生成状态 | 生成 |
 |---|---|---|---|
 | `await ch.wait(v)` | ≥ 1 | 是 | `state_is_S & (ch == v)` 作为离开 S 的条件 |
-| `await ch.read()` | 0 | 否 | 在当前段所在的那一拍采样，只用于分支（§4） |
 | `await this.sub({...})` | ≥ 1 | 是（调用状态） | 子状态机的 `start` / `done` / `result`（§5） |
 | `ch.push(v)` | 发起 0 拍，完成 ≥ 0 拍 | 否，返回 Future | 握手子状态机（§6.2） |
 | `await Promise.all([...])` | 等全部 Future 完成 | 是 | fork / join（§6.3） |
@@ -530,7 +544,7 @@ ES 规定 `break L` / `continue L` 只能指向**包住**当前语句的那条�
 
 循环在编译器里只是控制流图上的回边。编译器的做法不变：从一个 `await` 沿源码往下走，走到下一个 `await` 为止，途中的代码就是这次离开要做的事；循环只是让这条路可能拐回循环开头。状态数仍等于 `await` 的个数，与嵌套层数无关。
 
-支持的写法：`while (cond) { … }`、`do { … } while (cond)`、`break`、`continue`，可以带循环标签；带标签的块配合 `break` 使用（§3.6.1）。循环条件和分支条件一样，写成 `await x.read()` 或组合 channel，不占拍，并进前一个状态的离开条件。
+支持的写法：`while (cond) { … }`、`do { … } while (cond)`、`break`、`continue`，可以带循环标签；带标签的块配合 `break` 使用（§3.6.1）。循环条件和分支条件一样，直接写组合 channel（§2.5），不占拍，并进前一个状态的离开条件。
 
 规则：
 
@@ -562,10 +576,10 @@ async burst_ctl({
 }) {
   while (true) {
     IDLE: await go.wait(1);
-    while (await more.read()) {
+    while (more) {
       req.pulse();
       Fetch: await req_rdy.wait(1);
-      while (await burst.read()) {
+      while (burst) {
         Beat: await beat_vld.wait(1);
         beat_ack.pulse();
       }
@@ -672,7 +686,7 @@ endmodule
 
 | DSL | SV |
 |---|---|
-| `while (await more.read())` | `IDLE` 和 `ACK` 分支里的 `if (more)`：进入与回边各写一次 |
+| `while (more)` | `IDLE` 和 `ACK` 分支里的 `if (more)`：进入与回边各写一次 |
 | 循环体开头的 `req.pulse()` | `move_to_FETCH`，在两个前驱分支里各置一次 |
 | `Beat:` 之后、内层条件之前的 `beat_ack.pulse()` | `leave_BEAT`：不管去 `BEAT` 还是 `ACK` 都发 |
 | 外层循环退出、循环体末尾 | `state_next = IDLE`：回到 `while (true)` 开头（§3.4） |
@@ -707,11 +721,11 @@ async scan_ctl({
 }) {
   while (true) {
     IDLE: await go.wait(1);
-    Outer: while (await row_more.read()) {
+    Outer: while (row_more) {
       Row: await row_rdy.wait(1);
-      while (await col_more.read()) {
+      while (col_more) {
         Col: await col_rdy.wait(1);
-        if (await hit.read()) break Outer;   // found: stop the whole scan
+        if (hit) break Outer;   // found: stop the whole scan
       }
     }
     found.pulse();
@@ -839,7 +853,7 @@ async work_ctl({
       Escape(fatal);                        // 外层：致命错误
       try {
         Escape(err);                        // 内层：可恢复错误
-        while (await more.read()) {
+        while (more) {
           Work0: await a_done.wait(1);
           Work1: await b_done.wait(1);
         }
@@ -1130,13 +1144,13 @@ async err_ctl({
     IDLE: await go.wait(1);
     try {
       Escape(e0 | e1 | e2);                  // any level leaves WORK
-      while (await more.read()) {
+      while (more) {
         Work0: await a_done.wait(1);
         Work1: await b_done.wait(1);
       }
     } catch {
-      if (await (e1 | e2).read()) {          // sampled in the escape cycle
-        if (await e2.read()) {
+      if (e1 | e2) {                         // sampled in the escape cycle
+        if (e2) {
           c2_start.pulse();
           Clean2: await c2_done.wait(1);
         }
@@ -1286,14 +1300,14 @@ endmodule
 | DSL | SV |
 |---|---|
 | `Escape(e0 \| e1 \| e2)` | `WORK0` / `WORK1` 分支最前面的 `if (e0 \| e1 \| e2)`，每个工作状态只写一次 |
-| `catch` 里的 `read()` | 在出错那一拍采样，并进同一个分支，选出第一个清理状态 |
+| `catch` 里的分支条件 | 在出错那一拍采样，并进同一个分支，选出第一个清理状态 |
 | 嵌套 `if` 之后的代码 | 清理状态之间固定的向下跳转：`CLEAN2 → CLEAN1 → CLEAN0` |
 | `catch` 走完、循环体末尾 | `CLEAN0` 的 `c0_done` → `IDLE` |
 
 - **进入点**：WORK 期间出现哪一级就直接进哪一级的清理，不经过更高等级的清理状态。同一拍出现多级时，嵌套 `if` 的顺序决定先处理高等级；因为每条路线都会经过所有更低等级，低等级的清理不会漏。
 - **清理期间的新错误**：`catch` 不在自己的 `Escape` 范围内，清理不会被打断。`Clean2` 期间来的 `e1` 不需要处理，后面本来就会经过 `Clean1`；`Clean0` 期间来的 `e2` 不处理，回到 `IDLE`、重新进入 WORK 时若仍为高，会再触发一次。需要清理中途升级时，把升级条件写进对应清理状态的 `await` 条件，或在清理段里加分支。
 - **为什么不用 `do…while` + `break` 退出 WORK**：`break` 只在它所在的段执行时生效，也就是前一个 `await` 条件成立、离开状态的那一拍。停在 `Work0` 等不来 `a_done` 时，`break` 没有机会执行。要用 `break`，每个 `await` 都得改成 `await (a_done | e0 | e1 | e2).wait(1)` 再加判断分支；`Escape` 就是替作者在区域内每个状态、每一拍检查出错条件。
-- 错误等级通常是保持为高的电平。若是单拍脉冲，它在出错那一拍有效，`catch` 的 `read()` 也在同一拍采样，不会丢。
+- 错误等级通常是保持为高的电平。若是单拍脉冲，它在出错那一拍有效，`catch` 的分支条件也在同一拍采样，不会丢。
 
 ## 4. 分支
 
@@ -1301,13 +1315,13 @@ endmodule
 
 ```js
 StepA: await cond_a.wait(1);
-if (await rg_user_config_do_step_b.read()) {
+if (rg_user_config_do_step_b) {
   StepB: await this.do_step_b({ go: b_go, cnt_clr: b_cnt_clr, send_vld: b_send_vld });
 }
 StepC: await cond_c.wait(1);
 ```
 
-- `read()` 不占拍、不生成状态：在 `(state_val == STEP_A) & cond_a` 那一拍采样。生成的是次态选择，不是新状态。
+- 分支条件不占拍、不生成状态（§2.5）：在 `(state_val == STEP_A) & cond_a` 那一拍采样。生成的是次态选择，不是新状态。
 
 生成的 SV（调用方部分；`do_step_b` 的端口见 §5）：
 
@@ -1352,8 +1366,8 @@ do_step_b u_do_step_b (
 
 - 分支只改变次态选择：`STEP_A` 分支里是一个两路选择，叶子都是常量，符合 §6.5 的识别条件。
 - 只有被用到的 move 才生成信号。这里 `move_to_STEP_B` 驱动子状态机的 `start`；`move_to_STEP_C` 没有动作，不生成。
-- 同一段里的多个 `read()` 采样同一拍。
-- `read()` 的结果只能直接用在分支条件里。**决定**：不允许存进 JS 变量留到后面的段再用，因为那需要一个寄存器；要用请显式写 `Dff`（§2.2）。
+- 同一段里的多个分支条件采样同一拍。
+- **决定**：某一拍的条件值不能留到后面的段再用，因为那需要一个寄存器；要用请显式写 `Dff`（§2.5）。
 - 初稿里 `do_step_b()` 没有 `await`。按 §6.3 的规则，没有被 join 的 Future 是编译期错误，所以这里必须写 `await this.do_step_b({...})`。
 
 ## 5. 子状态机与调用
@@ -1473,7 +1487,7 @@ endmodule
 
 `abort` 在被调用方里优先于一切条件：`if (abort) state_next = IDLE; else unique case …`，并清零被调用方的 `pending` / `fin`，不发 `done`，不执行末段动作。没有调用点处在异常区域内时不生成 `abort` 口，上面 `do_step_b` 的 SV 就是这种情况。
 
-调用方停在调用状态 S_call，离开条件是 `state_is_S_call & do_step_b_done`。`result` 与 `read()` 一样只在 `done` 那一拍可用；后面还要用就锁进 DFF。
+调用方停在调用状态 S_call，离开条件是 `state_is_S_call & do_step_b_done`。`result` 只在 `done` 那一拍可用；后面还要用就锁进 DFF。
 
 被调用方没有任何 `await` 时，它只是一段动作，目标是按内联处理、不生成调用状态（**决定**）。第一版还不内联：从 `start` 不经过任何 `await` 就能走到结束的子状态机（包括没有 `await` 的、或在第一个 `await` 之前 `return` 的），`done` 会落在调用方进入调用状态之前的那一拍，调用方等不到，所以编译期报错。
 
@@ -1568,7 +1582,7 @@ export class DumpCheck {
       addr.set(dump_pkg.add32(addr.val, cfg_step));
       idx.set(idx_next);
       hits.set(hits_next);
-    } while (await (idx_next !== cfg_num).read());
+    } while (idx_next !== cfg_num);
     return hits_next;                       // includes the last word
   }
 }
@@ -1781,7 +1795,7 @@ endmodule
 | `(rd_data === cfg_pattern) ? ... : hits.val` | 组合线 `hits_next`，SV 的 `?:` |
 
 - 每次读多占一拍 `ISSUE`：64 个字约 `2 × 64` 拍加握手等待。要背靠背读，把地址加法前移到请求那一拍（`rd_addr.pulse(...)` 直接用加法结果），代价是加法器进入请求的组合路径。
-- `cfg_num` 为 0 时会读满 128 个字（7 位计数回绕），软件只写 1..64；需要硬件保护时在调用前加一个 `if (await (cfg_num === 0).read())` 分支。
+- `cfg_num` 为 0 时会读满 128 个字（7 位计数回绕），软件只写 1..64；需要硬件保护时在调用前加一个 `if (cfg_num === 0)` 分支。
 - 读口是单拍脉冲接口（`rd_req` 一拍，`rd_ack` 带数据回来）。接 valid / ready 握手时改用 `PushPort` / `PopPort`（§6.2，未实现）。
 
 ## 6. 动作
@@ -2419,8 +2433,8 @@ endmodule
 
 | 写法 | 运行时执行时发生什么 | 硬件需要什么 |
 |---|---|---|
-| `if (await c.read())` | JS 只走进一个分支，另一个分支的代码根本不执行 | 两个分支都要生成状态 |
-| `while (await c.read())` | 循环要么不进、要么永不结束 | 一条回边 |
+| `if (c)` | `c` 是对象，JS 里恒为真，只走进 then 分支，另一个分支的代码根本不执行 | 两个分支都要生成状态 |
+| `while (c)` | 恒为真，永不结束 | 一条回边 |
 | `await` | 只能得到「之后继续执行」，拿不到续体（continuation），不能回退、不能分叉 | 每个等待点的完整后继图 |
 | 段内的 JS 局部变量 | 只有一次执行的具体值 | 要么是常量，要么是寄存器 |
 
@@ -2429,7 +2443,7 @@ endmodule
 | 方案 | 做法 | 问题 |
 |---|---|---|
 | 组合子 | `If(cond, () => …)`、`While(cond, () => …)` 代替原生 `if` / `while` | 可行，与 Wishbone DSL 同风格；但放弃了原生 async/await 的可读性，`await` 只剩装饰作用 |
-| 重放 | 多次执行函数，每次让 `read()` 返回预定的真假，按 `await` 调用点（调用栈 + 源码位置）识别状态 | 路径数随分支指数增长；循环要靠「回到同一调用点」检测；段内 JS 变量跨次执行不一致，结果不可靠 |
+| 重放 | 把条件改成 `await c.read()` 这类可注入真假的调用，多次执行函数，按 `await` 调用点（调用栈 + 源码位置）识别状态 | 条件里多了一个不是状态的 `await`（§2.5）；路径数随分支指数增长；循环要靠「回到同一调用点」检测；段内 JS 变量跨次执行不一致，结果不可靠 |
 
 ### 8.2 推荐：ES 源码 + `@babel/parser`，自写后端
 
@@ -2493,7 +2507,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | 循环：每个环至少经过一个 `await`；拒绝 `for`；`while (true)` 循环体里第一个 `await` 之前不得有循环；子状态机必须能走到方法结束 | §3.4、§3.6 |
 | 有结束与无结束：`@Fsm` 方法体只有一条 `while (true)`（之前只允许 `const` 组合定义），不得 `return`、不得 `break` 出 `while (true)`（后接陷阱状态除外）、不能走到方法末尾；`while (true)` 循环体第一个 `await` 之前没有动作 | §3.4 |
 | 异常区域：`Escape` 只在 `try` 块开头；`catch` 不绑定变量；拒绝 `finally`；`throw` 只能写 `throw Raise()` 且必须有外围 `try` | §3.7 |
-| `read()` 的结果只用在分支条件里 | §4 |
+| `await` 只出现在状态位置（`wait`、子状态机调用）；条件是普通 channel 表达式 | §2.5 |
 | `const` / `let`：`let` 只允许「声明不赋值、在带标签的调用或 `pop` 语句里赋值一次」；`let` 重新赋值或多段赋值报错，提示改用 `Dff` | §2.4 |
 | 未读的 `Input`、未用的组合 `const`、从未 `pulse` 的 `Output`、从未 `set` 的 `Dff`、方法体里从未读 `.val` 的 `Dff`：报错（否则生成的 SV 在 `-Wall` 下报未使用） | §2.2、§6.5 |
 | 同一段写同一目标两次、走不到的状态和动作、不经 `await` 的环、走到顶层方法末尾：报错 | §3.4、§3.6、§6.1 |
@@ -2559,7 +2573,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 
 ```mermaid
 flowchart LR
-  P0["P0 骨架（已落地）<br/>解析、检查器（class / 参数 / 标签 / const-let）<br/>CFG：wait / read / if / while / break / continue<br/>次态块 + enum + pulse / Dff + 文件头"] --> P1["P1 交互<br/>push / pop / Promise.all<br/>子状态机 start / done / result（每调用点一实例，已落地）<br/>SvPackage、bits、?:（已落地）"]
+  P0["P0 骨架（已落地）<br/>解析、检查器（class / 参数 / 标签 / const-let）<br/>CFG：wait / if / while / break / continue<br/>次态块 + enum + pulse / Dff + 文件头"] --> P1["P1 交互<br/>push / pop / Promise.all<br/>子状态机 start / done / result（每调用点一实例，已落地）<br/>SvPackage、bits、?:（已落地）"]
   P1 --> P2["P2 异常与观测<br/>try / Escape / Raise / abort<br/>exportState / stateValues / stateReg"]
   P2 --> P3["P3 优化<br/>共享实例、寄存器复用<br/>§10 推迟项"]
 ```

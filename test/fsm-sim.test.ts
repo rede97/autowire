@@ -36,13 +36,13 @@ async edges({
   const seen = Dff(1, { reset: 1 });
   while (true) {
     IDLE: await go.wait(1);
-    if (await wr.read()) {
+    if (wr) {
       mode.set(cmd.bits(3, 0));
       Busy: await (mode.val === 9).wait(0);
       seen.set(0);
     } else {
       mode.set(5);
-      if (await seen.val.read()) continue;
+      if (seen.val) continue;
       halt.pulse();
       FATAL: await ALWAYS_0.wait(1);
     }

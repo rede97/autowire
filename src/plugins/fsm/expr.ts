@@ -93,14 +93,17 @@ export function sized(src: Src, node: Node, v: bigint, width: number): Sig {
 	return constSig(width, v);
 }
 
-/** Evaluate to a channel. `cond`: inside an if / loop condition, where
- *  `await x.read()` is allowed. `width` sizes a bare literal. */
+/** `await` is a state; anything else awaited is an error (§3.1, §2.5). */
+export const AWAIT_IS_STATE =
+	"await marks a state: only await x.wait(v) and await this.sub({...}) (§3.1); a branch or loop condition is a plain channel expression, e.g. if (a & b) (§2.5)";
+
+/** Evaluate to a channel. `width` sizes a bare literal. */
 export function evalSig(
 	cx: ExprCx,
 	node: Expression,
-	o: { cond?: boolean; width?: number } = {},
+	o: { width?: number } = {},
 ): Sig {
-	const v = evalVal(cx, node, o.cond ?? false, o.width);
+	const v = evalVal(cx, node, o.width);
 	if (!isLit(v)) {
 		if (o.width !== undefined && v.width !== o.width)
 			cx.src.fail(node, `width mismatch: expected ${o.width}, got ${v.width}`);
@@ -125,12 +128,7 @@ const CMP_OPS: Record<string, string> = {
 };
 
 /** `hint`: the width the context expects; sizes a ?: whose arms are both bare numbers. */
-function evalVal(
-	cx: ExprCx,
-	node: Expression,
-	cond: boolean,
-	hint?: number,
-): Val {
+function evalVal(cx: ExprCx, node: Expression, hint?: number): Val {
 	const src: Src = cx.src;
 	switch (node.type) {
 		case "NumericLiteral":
@@ -154,27 +152,14 @@ function evalVal(
 			}
 			return src.fail(node, "only <Dff>.val can be read from an object");
 		}
-		case "AwaitExpression": {
-			const a = node.argument;
-			if (isMethodCall(a, "read") && a.arguments.length === 0) {
-				if (!cond)
-					src.fail(
-						node,
-						"read() is only allowed in an if / while condition (§4); latch the value with a Dff",
-					);
-				return evalVal(cx, a.callee.object as Expression, false);
-			}
-			return src.fail(
-				node,
-				"only `await x.read()` may appear inside an expression",
-			);
-		}
+		case "AwaitExpression":
+			return src.fail(node, AWAIT_IS_STATE);
 		case "CallExpression":
-			return call(cx, node, cond);
+			return call(cx, node);
 		case "UnaryExpression": {
 			if (node.operator !== "!" && node.operator !== "~")
 				src.fail(node, `operator ${node.operator} is not supported (§2.1)`);
-			const arg = evalVal(cx, node.argument, cond);
+			const arg = evalVal(cx, node.argument);
 			if (isLit(arg))
 				src.fail(node, `${node.operator} on a bare number; write Const(N, v)`);
 			if (node.operator === "!" && arg.width !== 1)
@@ -187,19 +172,19 @@ function evalVal(
 		case "LogicalExpression": {
 			if (node.operator === "??")
 				src.fail(node, "operator ?? is not supported");
-			const l = evalSig(cx, node.left, { cond, width: 1 });
-			const r = evalSig(cx, node.right, { cond, width: 1 });
+			const l = evalSig(cx, node.left, { width: 1 });
+			const r = evalSig(cx, node.right, { width: 1 });
 			return {
 				sv: { k: "bin", op: node.operator, l: l.sv, r: r.sv },
 				width: 1,
 			};
 		}
 		case "ConditionalExpression": {
-			const c = evalVal(cx, node.test, cond);
+			const c = evalVal(cx, node.test);
 			if (isLit(c) || c.width !== 1)
 				src.fail(node.test, "the ?: condition is a 1-bit channel");
-			const av = evalVal(cx, node.consequent, cond);
-			const bv = evalVal(cx, node.alternate, cond);
+			const av = evalVal(cx, node.consequent);
+			const bv = evalVal(cx, node.alternate);
 			if (isLit(av) && isLit(bv) && hint === undefined)
 				src.fail(
 					node,
@@ -227,8 +212,8 @@ function evalVal(
 				);
 			if (node.left.type === "PrivateName")
 				return src.fail(node, "unsupported operand");
-			const lv = evalVal(cx, node.left, cond);
-			const rv = evalVal(cx, node.right, cond);
+			const lv = evalVal(cx, node.left);
+			const rv = evalVal(cx, node.right);
 			if (isLit(lv) && isLit(rv))
 				src.fail(node, "both operands are bare numbers");
 			const w = isLit(lv) ? (rv as Sig).width : lv.width;
@@ -284,11 +269,7 @@ function ident(cx: ExprCx, name: string, node: Node): Sig {
 	}
 }
 
-function call(
-	cx: ExprCx,
-	node: Expression & { type: "CallExpression" },
-	cond: boolean,
-): Sig {
+function call(cx: ExprCx, node: Expression & { type: "CallExpression" }): Sig {
 	const src: Src = cx.src;
 	if (
 		node.callee.type === "Identifier" &&
@@ -324,13 +305,13 @@ function call(
 			const args = node.arguments.map((a, i) =>
 				a.type === "SpreadElement" || a.type === "ArgumentPlaceholder"
 					? src.fail(a, "unsupported argument")
-					: evalSig(cx, a, { cond, width: fn.args[i] }),
+					: evalSig(cx, a, { width: fn.args[i] }),
 			);
 			return cx.userCall(pkg, callee.property.name, args, node);
 		}
 	}
 	if (isMethodCall(node, "bits")) {
-		const obj = evalVal(cx, node.callee.object as Expression, cond);
+		const obj = evalVal(cx, node.callee.object as Expression);
 		if (isLit(obj) || !obj.named)
 			src.fail(
 				node,

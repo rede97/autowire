@@ -18,10 +18,10 @@ export class LoopCtl {
   }) {
     while (true) {
       IDLE: await go.wait(1);
-      while (await more.read()) {
+      while (more) {
         req.pulse();
         Fetch: await req_rdy.wait(1);
-        while (await burst.read()) {
+        while (burst) {
           Beat: await beat_vld.wait(1);
           beat_ack.pulse();
         }
@@ -47,11 +47,11 @@ export class LoopCtl {
   }) {
     while (true) {
       IDLE: await go.wait(1);
-      Outer: while (await row_more.read()) {
+      Outer: while (row_more) {
         Row: await row_rdy.wait(1);
-        while (await col_more.read()) {
+        while (col_more) {
           Col: await col_rdy.wait(1);
-          if (await hit.read()) break Outer;   // found: stop the whole scan
+          if (hit) break Outer;   // found: stop the whole scan
         }
       }
       found.pulse();
