@@ -64,7 +64,8 @@ Agent workflow
   5. dtsim regr <group> --plain; the stdout ends with a results tree and a
      Summary table; `results --dir dt/simout/regression` re-reads it later.
   Statuses: PASS, PASS WITH ERRORS, FAIL, NO SIM LOG, ABORTED (from sim.log
-  via the grader, never the exit code).
+  via the grader, never the exit code). Each run starts compile.log / sim.log
+  empty, so a rerun in the same dir is graded on its own output.
 
 DSL (import from ./.dtsim/dsl/index.ts)
   Workspace(opts) or Workspace(regEnv, opts | ((mode:"run"|"regr") => opts)).

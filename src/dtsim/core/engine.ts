@@ -1,6 +1,6 @@
 // Shared execution engine for single-case and regression runs: environment
 // assembly, tool invocation, hooks, grading, and per-directory artifacts.
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type {
@@ -396,6 +396,9 @@ export async function executeCompile(
 	if (opts.verbose) process.stderr.write(`${envStatsLine(env.stats)}\n`);
 	// Preparing argv is pure; it gives preCompile the compile log path.
 	const prepared = tool.compile(ctx);
+	// The phase log collects hook and tool output by appending; a rerun in the
+	// same dir starts it empty so the grader never reads a previous run.
+	rmSync(prepared.log, { force: true });
 	const stage = (s: HookStage) =>
 		hookBase(ws, c, s, compileDir, prepared.log, env.env);
 	// preCompile may generate sources or the filelists themselves; then each
@@ -501,6 +504,7 @@ export async function executeSim(
 	writeGitRev(seedDir, ws.verify);
 
 	const prepared = tool.simulate(ctx);
+	rmSync(prepared.log, { force: true });
 	const runSim = writeRunSim({
 		dir: seedDir,
 		seed,

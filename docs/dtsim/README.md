@@ -549,6 +549,8 @@ compilation and the compile key. `output_dir`, `verify`, `WORKSPACE`,
 
 Logs stay in files by default. Grading reads `sim.log`, not the exit code:
 `PASS`, `PASS WITH ERRORS` (exit 0), `FAIL`, `NO SIM LOG`, `ABORTED`.
+Each compile or sim step starts its phase log empty, so a rerun in the same
+directory is graded on its own output only.
 Every compile directory has `run_compile`: the compile env, the tool command,
 and as a comment the command as submitted through the launcher (`bsub ...`).
 It is a record to read or rerun by hand; dtsim runs the full command itself.

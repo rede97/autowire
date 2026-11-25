@@ -468,6 +468,30 @@ describe("verilator backend", () => {
 		expect(log).toContain("UNRELATED_SECRET=");
 		expect(log).not.toContain("+UVM_TESTNAME");
 	});
+
+	test("a rerun in the same seed dir grades only its own sim.log", async () => {
+		const body = CASES_TS.replace(
+			"tools: [VcsTool()],",
+			"tools: [VerilatorTool()],",
+		).replace(
+			'import { DefaultGrader, VcsTool } from "./.dtsim/dsl/index.ts";',
+			'import { DefaultGrader, VerilatorTool } from "./.dtsim/dsl/index.ts";',
+		);
+		const ws = await makeWorkspace(body);
+		const pass = await runDtsim(ws, ["run", "test_hello_world", "-s", "3"]);
+		expect(pass.code).toBe(0);
+		// The captured log is appended while the sim runs; the earlier PASS
+		// must not survive into the failing rerun.
+		const fail = await runDtsim(ws, ["run", "test_hello_world", "-s", "3"], {
+			DTSIM_MOCK_SIMV_FAIL: "1",
+		});
+		expect(fail.code).not.toBe(0);
+		const log = await Bun.file(
+			join(ws.out, "test_hello_world", "3", "sim.log"),
+		).text();
+		expect(log).toContain("mock verilator fatal");
+		expect(log).not.toContain("TEST PASSED");
+	});
 });
 
 describe("several tools", () => {
