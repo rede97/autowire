@@ -18,7 +18,7 @@ Source (.mjs, never executed; the compiler reads the AST)
                        the class /** */ comment is copied above the typedef, enums 1 blank line apart
   One @FsmGroup class per file → plugins_dir/fsm/<Class>.sv; any @FsmPort classes
   @FsmGroup({ file: "dphy_rdi_sm" })   writes plugins_dir/fsm/dphy_rdi_sm.sv instead;
-                       stems are unique per workspace, case-insensitive; aw_dff is reserved
+                       stems are unique per workspace, case-insensitive
   @Fsm async method    a module: body is one while (true) { ... }, never returns
   @Fsm({ statePrefix: "LPDDRPHY", stateEncoding: "binary" | "onehot" })
                        enum members LPDDRPHY_<STATE>; omit stateEncoding to let synthesis pick
@@ -97,11 +97,11 @@ Output
   plugins_dir/fsm/<file>.sv    generated, do not edit (SoT is the .mjs); <file> is the
                                @FsmGroup({ file }) stem, default the class name; [plugins.fsm] dir =
                                "<workspace-relative dir>" writes there instead (e.g. the RTL tree)
-  plugins_dir/fsm/aw_dff.sv    reference DFF (parameter type T); add both to
-                               the analysis / simulation filelist
+  every Dff / the state register is an inline always_ff; every always block is named
+                               (comb_state, ff_state, ff_<reg>, comb_<push>_<field>)
   every if / else branch is written with begin / end
   a group that is instantiated from another file must itself be an [fsm.<id>] source
 
 Not yet (compile error names the feature): push / pop without await (Future),
-Promise.all, @Fsm stateReg, connecting an external Dff port of an instance.
+Promise.all, connecting an external Dff port of an instance.
 Errors: <file>:<line>:<col>: <message>. Demo: demo/state (bun ../../index.ts plugin fsm run).

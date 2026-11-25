@@ -128,7 +128,7 @@ wishbone 可以登记自己的相位和参数，例如只印 regfile、只印某
 
 `run` 默认按 SoT 指纹增量。`--force` 重写所选范围。`--only <name>` 只处理 toml 里的一个 `[wishbone.<name>]` 源；不是 `RegfileDef.name`。被它挂接且指纹变了的叶子必须一起重写。不写 `--only` 时处理配置里的全部 wishbone 源。
 
-`plugin fsm run` 编译 toml 里每个 `[fsm.<id>] mjs=` 源（[`state/async-fsm.md`](./state/async-fsm.md) §11）：解析 `.mjs`（不执行）→ 检查器 → 控制流图 → `plugins_dir/fsm/<class 名>.sv` 与 `aw_dff.sv`。增量写；`--force` 全部重写；`--only <id>` 只处理一个源。错误带 `文件:行:列`。
+`plugin fsm run` 编译 toml 里每个 `[fsm.<id>] mjs=` 源（[`state/async-fsm.md`](./state/async-fsm.md) §11）：解析 `.mjs`（不执行）→ 检查器 → 控制流图 → `plugins_dir/fsm/<class 名>.sv`。增量写；`--force` 全部重写；`--only <id>` 只处理一个源。错误带 `文件:行:列`。
 
 ## 5. 不改的边界
 

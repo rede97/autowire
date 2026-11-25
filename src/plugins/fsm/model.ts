@@ -80,8 +80,8 @@ export interface DffReg {
 	width: number;
 	enum?: EnumType;
 	reset: bigint;
-	/** port: internal aw_dff, `val` is the output port; external: _set/_next/_val
-	 *  ports; body: private aw_dff with a <name>_val wire. */
+	/** port: ff_<name> block drives the output port; external: _set/_next/_val
+	 *  ports; body: private ff_<name> block on a <name>_val signal. */
 	place: "port" | "external" | "body";
 	node: Node;
 	sites: Action[];

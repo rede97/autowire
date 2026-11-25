@@ -1,6 +1,7 @@
 // Fsm → SystemVerilog (§6.5, §7). One file per @FsmGroup: per state machine a
 // package with the state enum and a module with one always_comb (next state,
-// moves, leaves) and one always_ff (state register).
+// moves, leaves), one always_ff for the state register and one per Dff. Every
+// always block is named: comb_<x> / ff_<x>.
 
 import { lit, svText, valName } from "./expr.ts";
 import type {
@@ -66,6 +67,51 @@ const paren = (s: string) => (/[ ]/.test(s) ? `(${s})` : s);
 /** The control signals live in one packed struct, `action` (§4). */
 const act = (s: Signal) => `action.${s.name}`;
 
+/** `if (a | b | c) begin`, one OR term per line when the line would pass 100 columns. */
+function ifHead(head: string, cond: string, out: string[]) {
+	const parts = topOrs(cond);
+	const one = `${head}${cond}) begin`;
+	if (parts.length < 2 || one.length < 100) {
+		out.push(one);
+		return;
+	}
+	const pad = " ".repeat(head.length - 2);
+	out.push(`${head}${parts[0]}`);
+	parts.slice(1).forEach((p, i) => {
+		out.push(`${pad}| ${p}${i === parts.length - 2 ? ") begin" : ""}`);
+	});
+}
+
+/** `always_ff ... begin : ff_<name>`: reset value, then `next` when `set` (no `set`: every cycle). */
+function ffBlock(
+	name: string,
+	q: string,
+	rst: string,
+	set: string | null,
+	next: string,
+	c?: string,
+): string[] {
+	const out = [
+		commented(
+			`  always_ff @(posedge clk or negedge rst_n) begin : ff_${name}`,
+			c,
+		),
+		"    if (!rst_n) begin",
+		`      ${q} <= ${rst};`,
+	];
+	if (set) ifHead("    end else if (", set, out);
+	else out.push("    end else begin");
+	out.push(`      ${q} <= ${next};`, "    end", "  end");
+	return out;
+}
+
+/** Constant `v` of type `t`: the enum member with that value, else a sized literal (cast). */
+function constOf(t: Ty, v: bigint): string {
+	if (!t.enum) return svText(lit(t.width, v));
+	const m = [...t.enum.members.values()].find((x) => x.value === v);
+	return m ? `${t.enum.pkg}::${m.sv}` : castTo(t, svText(lit(t.width, v)));
+}
+
 /** Next state and the control signals; `order` lists the struct members. */
 function nextState(f: Fsm): { lines: string[]; order: string[] } {
 	const order: string[] = [];
@@ -113,7 +159,7 @@ function nextState(f: Fsm): { lines: string[]; order: string[] } {
 			items.push("        end");
 		}
 	}
-	const out = ["  always_comb begin"];
+	const out = ["  always_comb begin : comb_state"];
 	printSts(
 		[
 			asg("state_next", "state_val"),
@@ -185,23 +231,25 @@ function hsDrivers(p: HsPort): Drv[] {
 		const texts = vals.map((v) => svText(v.sv));
 		if (new Set(texts).size === 1)
 			return { k: "asg", lhs: `${p.name}_${f.name}`, rhs: texts[0] as string };
-		// Priority-free select by state; a 0 term drops out, a 1-bit 1 is the decode itself.
-		const terms = vals.flatMap((v, i) => {
-			if (v.value === 0n) return [];
-			if (f.width === 1 && v.value === 1n) return [paren(dec[i] as string)];
-			return [
-				f.width === 1
-					? `(${dec[i]}) & ${paren(svText(v.sv))}`
-					: `({${f.width}{${dec[i]}}} & ${paren(svText(v.sv))})`,
-			];
-		});
-		const rhs =
-			terms.length === 0
-				? svText(lit(f.width, 0n))
-				: terms.length === 1
-					? (terms[0] as string).replace(/^\((.*)\)$/, "$1")
-					: terms.join(" | ");
-		return { k: "asg", lhs: `${p.name}_${f.name}`, rhs: castTo(f, rhs) };
+		// One value per waiting state: a case on state_val; 0 is the default.
+		const lhs = `${p.name}_${f.name}`;
+		const rows: [string, string][] = vals.flatMap((v, i): [string, string][] =>
+			v.value === 0n
+				? []
+				: [[`${p.sites[i]?.state.member}:`, texts[i] as string]],
+		);
+		rows.push(["default:", constOf(f, 0n)]);
+		const w = Math.max(...rows.map(([l]) => l.length));
+		return {
+			k: "raw",
+			lines: [
+				`  always_comb begin : comb_${lhs}`,
+				"    case (state_val)",
+				...rows.map(([l, t]) => `      ${l.padEnd(w)} ${lhs} = ${t};`),
+				"    endcase",
+				"  end",
+			],
+		};
 	});
 	return [{ k: "asg", lhs: `${p.name}_vld`, rhs: held, c }, ...data];
 }
@@ -232,30 +280,16 @@ function drivers(f: Fsm): string[] {
 			items.push({ k: "asg", lhs: `${p.name}_next`, rhs: nextExpr(f, p) });
 			continue;
 		}
-		const params = [
-			...(p.enum
-				? [`.T(${enumText(p.enum)})`]
-				: p.width > 1
-					? [`.T(logic ${range(p.width)})`]
-					: []),
-			...(p.reset !== 0n
-				? [
-						`.RST(${
-							p.enum
-								? `${p.enum.pkg}::${[...p.enum.members.values()].find((m) => m.value === p.reset)?.sv}`
-								: svText(lit(p.width, p.reset))
-						})`,
-					]
-				: []),
-		];
-		const ps = params.length > 0 ? ` #(${params.join(", ")})` : "";
 		items.push({
 			k: "raw",
-			lines: [
-				`  aw_dff${ps} u_${p.name} (.clk, .rst_n,`,
-				commented(`    .set(${set(p.sites)}),`, texts(p.sites)),
-				`    .next(${nextExpr(f, p)}), .val(${valName(p)}));`,
-			],
+			lines: ffBlock(
+				p.name,
+				valName(p),
+				constOf(p, p.reset),
+				set(p.sites),
+				nextExpr(f, p),
+				texts(p.sites),
+			),
 		});
 	}
 	const out: string[] = [];
@@ -389,9 +423,10 @@ function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
 		out.push("");
 	}
 	out.push(...comb, "");
-	out.push("  always_ff @(posedge clk or negedge rst_n)");
-	out.push(`    if (!rst_n) state_val <= ${f.entry.member};`);
-	out.push("    else        state_val <= state_next;", "");
+	out.push(
+		...ffBlock("state", "state_val", f.entry.member, null, "state_next"),
+		"",
+	);
 	for (const inst of f.insts) {
 		const w = Math.max(...inst.conn.map(([p]) => p.length));
 		out.push(`  ${inst.module} ${inst.name} (`, "    .clk, .rst_n,");

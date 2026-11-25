@@ -1,11 +1,11 @@
 # async/await 状态机 DSL 设计（草案）
 
-> 状态：**部分落地**。`plugin fsm run` 已编译：状态、分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、`@SvEnum` 枚举类型、子状态机平铺展开与 `return` 结果、`push` / `pop`（含多字段消息）与 `Chan`、`Instance` 例化、`Caller`、`@FsmPort` 接口、跨文件 import、`try` / `Escape` / `Raise` 异常区域、`@Fsm({ statePrefix, stateEncoding, stateValues, exportState })`（`help fsm`，示例 `demo/state/`）。还没有实现：不带 `await` 的 push / pop（Future）、`Promise.all`、`stateReg`，用到时编译期报「not implemented yet」。
+> 状态：**部分落地**。`plugin fsm run` 已编译：状态、分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、`@SvEnum` 枚举类型、子状态机平铺展开与 `return` 结果、`push` / `pop`（含多字段消息）与 `Chan`、`Instance` 例化、`Caller`、`@FsmPort` 接口、跨文件 import、`try` / `Escape` / `Raise` 异常区域、`@Fsm({ statePrefix, stateEncoding, stateValues, exportState })`（`help fsm`，示例 `demo/state/`）。还没有实现：不带 `await` 的 push / pop（Future）、`Promise.all`，用到时编译期报「not implemented yet」。
 > 来源：初稿 `demo/state/demo.md` 与值模型试验 `demo/state/demo.ts`，已并入本文后删除；原文见 git 提交 `21cb9ca`。本文是这套设计的唯一来源。
 > 初稿没说清的地方标为「决定」（本文给出的取舍）或「开放」（§10，需作者拍板）。
 > 作者源码是 **ECMAScript**（`.mjs`），不是 TypeScript：一组状态机写成带 `@FsmGroup` 的 class，对外的状态机是带 `@Fsm` 的 async 方法，端口是方法的解构参数（§2.2）；状态名用原生标签语句（§3.5）。选型理由见 §8.2。
 > **术语**：「信号」指每拍都有值的线（`Input`、`Output`、`Dff`、组合表达式）；「channel」只指带 vld / rdy 握手的消息通道（`PushPort`、`PopPort`、`Chan`，§6.2）。
-> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例与 §6.5 的 `aw_dff` 一起要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。除 §7.1 外，SV 示例省略文件头（§7.1）。示例、生成规则任何一方改动，都要同步更新另一方。已落地部分的示例（§2.3、§2.6、§2.8、§3.6、§3.6.1、§3.7、§3.7.1、§3.7.2、§4、§5.2、§5.3、§5.4、§6.1、§6.1.1、§6.5、§7.1）就是生成器的实际输出，`test/fsm.test.ts` 逐字比对，`demo/state/` 是它们的可运行副本；未落地部分的示例（§3.2 用到 `Promise.all`）按同样的格式手写。
+> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。除 §7.1 外，SV 示例省略文件头（§7.1）。示例、生成规则任何一方改动，都要同步更新另一方。已落地部分的示例（§2.3、§2.6、§2.8、§3.6、§3.6.1、§3.7、§3.7.1、§3.7.2、§4、§5.2、§5.3、§5.4、§6.1、§6.1.1、§6.5、§7.1）就是生成器的实际输出，`test/fsm.test.ts` 逐字比对，`demo/state/` 是它们的可运行副本；未落地部分的示例（§3.2 用到 `Promise.all`）按同样的格式手写。
 
 ## 背景
 
@@ -52,7 +52,7 @@ DSL 只有三层概念，其余写法都能展开成它们（**决定**）：
 
 | 层 | 概念 | 硬件 |
 |---|---|---|
-| 原子 | 信号（组合）、寄存器（`Dff`）、状态寄存器 | `assign`、`aw_dff`、`always_ff` |
+| 原子 | 信号（组合）、寄存器（`Dff`）、状态寄存器 | `assign`、`always_ff`（`ff_<名字>`）、`always_ff`（`ff_state`） |
 | 进程 | `@Fsm`：一个状态寄存器和它驱动的逻辑 | 一个 `module` |
 | 通信 | channel：vld / rdy 加一组数据字段，双方握手交接一个消息 | 一组线 |
 
@@ -158,7 +158,7 @@ export class MsgCtl {
 }
 ```
 
-- `@FsmGroup` 标记一组状态机，一个 class 生成一个 `.sv` 文件，文件名缺省是 class 名（`CounterCtl.sv`）。要沿用 RTL 树已有的命名，在装饰器里写文件名：`@FsmGroup({ file: "dphy_rdi_sm" })` 生成 `dphy_rdi_sm.sv`。文件名和 module 名（方法名）、package 名（`@SvEnum`）一样写在源码里，`autowire.toml` 的 `[fsm.<id>]` 只登记源文件，与 Wishbone 的 `Regfile("name", ...)` 决定输出名一致。`file` 只能由字母、数字和 `_` 组成，`aw_dff` 保留给参考 DFF；同一工作区里两个组的 `file` 相同（不区分大小写，Windows / macOS 文件系统不分大小写）时报错。class 上的 `/** … */` 是文件级业务注释（§7.1）。
+- `@FsmGroup` 标记一组状态机，一个 class 生成一个 `.sv` 文件，文件名缺省是 class 名（`CounterCtl.sv`）。要沿用 RTL 树已有的命名，在装饰器里写文件名：`@FsmGroup({ file: "dphy_rdi_sm" })` 生成 `dphy_rdi_sm.sv`。文件名和 module 名（方法名）、package 名（`@SvEnum`）一样写在源码里，`autowire.toml` 的 `[fsm.<id>]` 只登记源文件，与 Wishbone 的 `Regfile("name", ...)` 决定输出名一致。`file` 只能由字母、数字和 `_` 组成；同一工作区里两个组的 `file` 相同（不区分大小写，Windows / macOS 文件系统不分大小写）时报错。class 上的 `/** … */` 是文件级业务注释（§7.1）。
 - `@Fsm` 标记对外的顶层状态机，方法名就是生成的 `module` 名。选项写在装饰器参数里：`@Fsm({ exportState: true })`（§6.5）。
 - 不带装饰器的 async 方法是组内子状态机，调用时平铺展开（§5）；`@Fsm` 方法只能用 `Instance(...)` 例化（§5.3）。
 - 参数必须是一个对象解构模式，每个属性都写默认值，默认值是端口声明。属性名就是 SV 端口名。默认值不是运行时语义：源码从不执行（§8.2），编译器只从 AST 读出方向和位宽。
@@ -172,9 +172,9 @@ export class MsgCtl {
 
   | 声明 | 寄存器 | 生成的端口 | 典型用途 |
   |---|---|---|---|
-  | 参数里 `x = Dff(N)` | 模块内 `aw_dff` | 一个输出口 `x`，即 `val` | 给外部的电平标志：active、busy、enable（§6.1） |
+  | 参数里 `x = Dff(N)` | 模块内 `always_ff`（`ff_x`） | 一个输出口 `x`，即 `val` | 给外部的电平标志：active、busy、enable（§6.1） |
   | 参数里 `x = Dff(N, { external: true })` | 模块外，属于别人 | `x_set` / `x_next` 输出，`x_val` 输入（从不读 `x.val` 时不生成） | regfile 字段、别的模块也读写的寄存器（§6.5） |
-  | 方法体里 `const x = Dff(N)` | 模块内 `aw_dff` | 无 | 状态机私有的寄存器，例如把某一拍的组合值留到后面的段用（§2.5） |
+  | 方法体里 `const x = Dff(N)` | 模块内 `always_ff`（`ff_x`） | 无 | 状态机私有的寄存器，例如把某一拍的组合值留到后面的段用（§2.5） |
 
   `Output(N)` 只表示由动作驱动的组合输出（脉冲），不带寄存器；N 可以大于 1，用 `x.pulse(v)` 在 move 那一拍输出 `v`，其余拍为 0（§6.1.1）。
 
@@ -283,7 +283,7 @@ module cmp_fsm
   assign fn_lt_s8_0 = num_pkg::lt_s8(err, limit);
   assign fn_abs8_0  = num_pkg::abs8(err);
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -301,13 +301,21 @@ module cmp_fsm
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
-  aw_dff #(.T(logic [7:0])) u_mag (.clk, .rst_n,
-    .set(action.enter_HOLD),                                    // mag.set(num_pkg.abs8(err))
-    .next(fn_abs8_0), .val(mag));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_mag      // mag.set(num_pkg.abs8(err))
+    if (!rst_n) begin
+      mag <= 8'h00;
+    end else if (action.enter_HOLD) begin
+      mag <= fn_abs8_0;
+    end
+  end
   assign alarm = action.enter_HOLD;                             // alarm.pulse()
 endmodule
 ```
@@ -457,7 +465,7 @@ module cfg_load
   cfg_load_state_e  state_val, state_next;
   cfg_load_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -481,21 +489,33 @@ module cfg_load
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign done    = action.enter_IDLE;                           // done.pulse()
   assign rd_req  = action.enter_LO_WAIT                         // this.req.pulse()
                  | action.enter_HI_WAIT;
   assign rd_addr = ({8{action.enter_LO_WAIT}} & 8'h10)          // this.addr.pulse(a)
                  | ({8{action.enter_HI_WAIT}} & 8'h14);
-  aw_dff #(.T(logic [15:0])) u_lo (.clk, .rst_n,
-    .set(action.enter_HI_WAIT),                                 // lo.set(a)
-    .next(rd_data), .val(lo));
-  aw_dff #(.T(logic [15:0])) u_hi (.clk, .rst_n,
-    .set(action.enter_IDLE),                                    // hi.set(b)
-    .next(rd_data), .val(hi));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_lo       // lo.set(a)
+    if (!rst_n) begin
+      lo <= 16'h0000;
+    end else if (action.enter_HI_WAIT) begin
+      lo <= rd_data;
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_hi       // hi.set(b)
+    if (!rst_n) begin
+      hi <= 16'h0000;
+    end else if (action.enter_IDLE) begin
+      hi <= rd_data;
+    end
+  end
 endmodule
 ```
 
@@ -547,7 +567,7 @@ fsm 源文件除了 import DSL 内建名字，还可以 import 别的 fsm 源文
 - 取值：`E.MEMBER`，生成 `pkg::<prefix>_MEMBER`，总是带 package 前缀，不同枚举、状态名之间不会撞名。
 - 运算：枚举值只能 `===` / `!==` 比较（两边同一个枚举）和 `?:` 选择（两臂同一个枚举）；位运算、`!`、`bits()`、`x.wait(v)` 都是编译期错误，写成 `await (x === E.M).wait(1)`。
 - 赋值：写进枚举类型的端口、寄存器、消息字段时，值必须是同一个枚举；裸数字、别的枚举、普通信号都报错。枚举值可以写进同宽的普通信号（SV 里枚举到 `logic` 是合法转换）。
-- 生成：package 写在声明枚举的那个文件的 `.sv` 最前面，每个成员一行。端口与内部线的类型是 `pkg::name`；有多个写入点的与-或选择是普通位向量，生成器用 `pkg::name'(...)` 转回枚举。`Dff(E)` 实例化为 `aw_dff #(.T(pkg::name))`，复位值写 `{ reset: E.M }`，缺省为数值 0。
+- 生成：package 写在声明枚举的那个文件的 `.sv` 最前面，每个成员一行。端口与内部线的类型是 `pkg::name`；有多个写入点的与-或选择是普通位向量，生成器用 `pkg::name'(...)` 转回枚举。`Dff(E)` 的寄存器类型是 `pkg::name`，复位值写 `{ reset: E.M }`，缺省为数值 0（生成时写成值为 0 的成员，没有时写 `pkg::name'(0)`）。
 
 DSL：
 
@@ -636,7 +656,7 @@ module cmd_post
   cmd_post_state_e  state_val, state_next;
   cmd_post_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -664,17 +684,30 @@ module cmd_post
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
-  assign cmd_vld  = (state_val == SEND)                         // cmd.push({ op: last.val, addr: 0x10 }) / cmd.push({ op: Cmd.FLUSH, addr: 0x10 })
-                  | (state_val == FLUSH);
-  assign cmd_op   = cmd_pkg::cmd_e'(({3{state_val == SEND}} & last) | ({3{state_val == FLUSH}} & cmd_pkg::CMD_FLUSH));
+  assign cmd_vld = (state_val == SEND) | (state_val == FLUSH);  // cmd.push({ op: last.val, addr: 0x10 }) / cmd.push({ op: Cmd.FLUSH, addr: 0x10 })
+  always_comb begin : comb_cmd_op
+    case (state_val)
+      SEND:    cmd_op = last;
+      FLUSH:   cmd_op = cmd_pkg::CMD_FLUSH;
+      default: cmd_op = cmd_pkg::CMD_NOP;
+    endcase
+  end
   assign cmd_addr = 8'h10;
-  aw_dff #(.T(cmd_pkg::cmd_e)) u_last (.clk, .rst_n,
-    .set(action.enter_SEND),                                    // last.set(we ? Cmd.WRITE : Cmd.READ)
-    .next(we ? cmd_pkg::CMD_WRITE : cmd_pkg::CMD_READ), .val(last));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_last     // last.set(we ? Cmd.WRITE : Cmd.READ)
+    if (!rst_n) begin
+      last <= cmd_pkg::CMD_NOP;
+    end else if (action.enter_SEND) begin
+      last <= we ? cmd_pkg::CMD_WRITE : cmd_pkg::CMD_READ;
+    end
+  end
   assign sent = cmd_pkg::cmd_e'(({3{action.leave_SEND}} & last) | ({3{action.leave_FLUSH}} & cmd_pkg::CMD_FLUSH));  // sent.pulse(last.val) / sent.pulse(Cmd.FLUSH)
 endmodule
 ```
@@ -682,7 +715,7 @@ endmodule
 | DSL | SV |
 |---|---|
 | `@SvEnum({ pkg: "cmd_pkg", name: "cmd_e", prefix: "CMD" })` | `package cmd_pkg` 里的 `typedef enum logic [2:0] {...} cmd_e`，位宽由最大值 5 定为 3 |
-| `PushPort({ op: Cmd, addr: 8 })`、`Dff(Cmd)`、`Output(Cmd)` | 端口类型 `cmd_pkg::cmd_e`；寄存器是 `aw_dff #(.T(cmd_pkg::cmd_e))` |
+| `PushPort({ op: Cmd, addr: 8 })`、`Dff(Cmd)`、`Output(Cmd)` | 端口类型 `cmd_pkg::cmd_e`；寄存器 `last` 的类型也是它 |
 | `Cmd.WRITE` | `cmd_pkg::CMD_WRITE` |
 | 两个 push 写同一个 `op` 字段、`sent.pulse` 的两个写入点 | 与-或选择外面套 `cmd_pkg::cmd_e'(...)`；不发脉冲时为数值 0，即 `CMD_NOP` |
 
@@ -792,23 +825,23 @@ module fsm_drive_signal
 
   assign join_SEND_MSG = (a_done | a_fin_val) & (b_done | b_fin_val);
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
       IDLE:
         if (cond_init) begin
-          state_next              = SEND_MSG;
+          state_next            = SEND_MSG;
           action.enter_SEND_MSG = 1'b1;
         end
       SEND_MSG:
         if (join_SEND_MSG) begin
-          state_next              = MSG_SENT;
+          state_next            = MSG_SENT;
           action.enter_MSG_SENT = 1'b1;
         end
       MSG_SENT:
         if (cond_a) begin
-          state_next          = IDLE;
+          state_next        = IDLE;
           action.enter_IDLE = 1'b1;
         end
       default:
@@ -816,21 +849,37 @@ module fsm_drive_signal
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   // fifo_a.push(0x00): vld held in SEND_MSG until the handshake
   assign fifo_a_vld  = (state_val == SEND_MSG) & ~a_fin_val;
   assign fifo_a_data = 8'h00;
   assign a_done      = fifo_a_vld & fifo_a_rdy;
-  aw_dff u_a_fin (.clk, .rst_n, .set(a_done | action.enter_MSG_SENT), .next(~action.enter_MSG_SENT), .val(a_fin_val));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_a_fin
+    if (!rst_n) begin
+      a_fin_val <= 1'b0;
+    end else if (a_done | action.enter_MSG_SENT) begin
+      a_fin_val <= ~action.enter_MSG_SENT;
+    end
+  end
 
   // fifo_b.push(0x10)
   assign fifo_b_vld  = (state_val == SEND_MSG) & ~b_fin_val;
   assign fifo_b_data = 8'h10;
   assign b_done      = fifo_b_vld & fifo_b_rdy;
-  aw_dff u_b_fin (.clk, .rst_n, .set(b_done | action.enter_MSG_SENT), .next(~action.enter_MSG_SENT), .val(b_fin_val));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_b_fin
+    if (!rst_n) begin
+      b_fin_val <= 1'b0;
+    end else if (b_done | action.enter_MSG_SENT) begin
+      b_fin_val <= ~action.enter_MSG_SENT;
+    end
+  end
 
   // exportState
   assign state_set_o  = |action;
@@ -1002,7 +1051,7 @@ module burst_ctl
   burst_ctl_state_e  state_val, state_next;
   burst_ctl_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -1046,9 +1095,13 @@ module burst_ctl
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign req      = action.enter_FETCH;                         // req.pulse()
   assign beat_ack = action.leave_BEAT;                          // beat_ack.pulse()
@@ -1143,7 +1196,7 @@ module scan_ctl
   scan_ctl_state_e  state_val, state_next;
   scan_ctl_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -1190,9 +1243,13 @@ module scan_ctl
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign found = action.enter_REPORT;                           // found.pulse()
 endmodule
@@ -1304,7 +1361,7 @@ module work_ctl
   work_ctl_state_e  state_val, state_next;
   work_ctl_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -1354,14 +1411,22 @@ module work_ctl
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign clr = action.enter_RECOVERY;                           // clr.pulse()
-  aw_dff u_halt (.clk, .rst_n,
-    .set(action.enter_FATAL),                                   // halt.set(1)
-    .next(1'b1), .val(halt));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_halt     // halt.set(1)
+    if (!rst_n) begin
+      halt <= 1'b0;
+    end else if (action.enter_FATAL) begin
+      halt <= 1'b1;
+    end
+  end
 endmodule
 ```
 
@@ -1454,7 +1519,7 @@ module soft_rst_ctl
   soft_rst_ctl_state_e  state_val, state_next;
   soft_rst_ctl_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -1483,13 +1548,21 @@ module soft_rst_ctl
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
-  aw_dff u_active (.clk, .rst_n,
-    .set(action.enter_RUN | action.RUN_to_IDLE | action.enter_RESET),  // active.set(1) / active.set(0)
-    .next(action.enter_RUN), .val(active));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_active   // active.set(1) / active.set(0)
+    if (!rst_n) begin
+      active <= 1'b0;
+    end else if (action.enter_RUN | action.RUN_to_IDLE | action.enter_RESET) begin
+      active <= action.enter_RUN;
+    end
+  end
   assign clean_start = action.enter_RESET;                      // clean_start.pulse()
 endmodule
 ```
@@ -1627,7 +1700,7 @@ module err_ctl
   err_ctl_state_e  state_val, state_next;
   err_ctl_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -1696,9 +1769,13 @@ module err_ctl
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign c0_start = action.enter_CLEAN0;                        // c0_start.pulse()
   assign c1_start = action.enter_CLEAN1;                        // c1_start.pulse()
@@ -1798,7 +1875,7 @@ module step_ctl
   step_ctl_state_e  state_val, state_next;
   step_ctl_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -1825,9 +1902,13 @@ module step_ctl
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= STEP_A;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= STEP_A;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign b_cnt_clr  = action.enter_STEP_B_BUSY;                 // cnt_clr.pulse()
   assign b_send_vld = action.leave_STEP_B_BUSY;                 // send_vld.pulse()
@@ -2046,7 +2127,7 @@ module dump_check
   assign fn_inc7_1      = dump_pkg::inc7(scan_hits_val);
   assign fn_add32_0     = dump_pkg::add32(scan_addr_val, cfg_step);
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -2075,32 +2156,52 @@ module dump_check
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
-  aw_dff #(.T(logic [6:0])) u_hit_cnt (.clk, .rst_n,
-    .set(action.enter_IDLE),                                    // hit_cnt.set(hits)
-    .next(scan_hits_next), .val(hit_cnt));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_hit_cnt  // hit_cnt.set(hits)
+    if (!rst_n) begin
+      hit_cnt <= 7'h00;
+    end else if (action.enter_IDLE) begin
+      hit_cnt <= scan_hits_next;
+    end
+  end
   assign check_done = action.enter_IDLE;                        // check_done.pulse()
   assign rd_req     = action.enter_SCAN_WAIT_ACK;               // rd_req.pulse()
   assign rd_addr    = {32{action.enter_SCAN_WAIT_ACK}} & scan_addr_val;  // rd_addr.pulse(addr.val)
-  aw_dff #(.T(logic [31:0])) u_scan_addr (.clk, .rst_n,
-    .set(action.leave_IDLE | action.leave_SCAN_WAIT_ACK),       // addr.set(cfg_base) / addr.set(dump_pkg.add32(addr.val, cfg_step))
-    .next(({32{action.leave_IDLE}} & cfg_base) | ({32{action.leave_SCAN_WAIT_ACK}} & fn_add32_0)), .val(scan_addr_val));
-  aw_dff #(.T(logic [6:0])) u_scan_idx (.clk, .rst_n,
-    .set(action.leave_IDLE | action.leave_SCAN_WAIT_ACK),       // idx.set(0) / idx.set(idx_next)
-    .next({7{action.leave_SCAN_WAIT_ACK}} & fn_inc7_0), .val(scan_idx_val));
-  aw_dff #(.T(logic [6:0])) u_scan_hits (.clk, .rst_n,
-    .set(action.leave_IDLE | action.leave_SCAN_WAIT_ACK),       // hits.set(0) / hits.set(hits_next)
-    .next({7{action.leave_SCAN_WAIT_ACK}} & scan_hits_next), .val(scan_hits_val));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_addr  // addr.set(cfg_base) / addr.set(dump_pkg.add32(addr.val, cfg_step))
+    if (!rst_n) begin
+      scan_addr_val <= 32'h00000000;
+    end else if (action.leave_IDLE | action.leave_SCAN_WAIT_ACK) begin
+      scan_addr_val <= ({32{action.leave_IDLE}} & cfg_base) | ({32{action.leave_SCAN_WAIT_ACK}} & fn_add32_0);
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_idx  // idx.set(0) / idx.set(idx_next)
+    if (!rst_n) begin
+      scan_idx_val <= 7'h00;
+    end else if (action.leave_IDLE | action.leave_SCAN_WAIT_ACK) begin
+      scan_idx_val <= {7{action.leave_SCAN_WAIT_ACK}} & fn_inc7_0;
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_hits  // hits.set(0) / hits.set(hits_next)
+    if (!rst_n) begin
+      scan_hits_val <= 7'h00;
+    end else if (action.leave_IDLE | action.leave_SCAN_WAIT_ACK) begin
+      scan_hits_val <= {7{action.leave_SCAN_WAIT_ACK}} & scan_hits_next;
+    end
+  end
 endmodule
 ```
 
 | DSL | SV |
 |---|---|
 | `Scan: hits = await this.dump_scan({...})` | 不生成模块：`dump_scan` 的 `Issue` / `WaitAck` 成为 `SCAN_ISSUE` / `SCAN_WAIT_ACK`；端口按名字换成调用方的 `rd_req`、`cfg_base` 等 |
-| `dump_scan` 里的 `const addr = Dff(32)` 等 | 每个调用点一份：`u_scan_addr` / `scan_addr_val`，名字加调用标签前缀 |
+| `dump_scan` 里的 `const addr = Dff(32)` 等 | 每个调用点一份：`ff_scan_addr` / `scan_addr_val`，名字加调用标签前缀 |
 | 第一个 `await` 之前的三个 `set` | `leave_IDLE`：在离开 `IDLE`、进入扫描的那一拍执行 |
 | `return hits_next` 与 `hit_cnt.set(hits)` | `hits` 就是 `scan_hits_next`，与 `return` 同属离开 `SCAN_WAIT_ACK` 的那一段：`u_hit_cnt.next = scan_hits_next` |
 | `Issue: await ALWAYS_1.wait(1)` | 条件恒成立：`SCAN_ISSUE` 分支不写 `if`，下一拍就离开，让 `addr` 先装好 |
@@ -2273,7 +2374,7 @@ module dump_server
   assign fn_inc7_1      = dump_pkg::inc7(scan_hits_val);
   assign fn_add32_0     = dump_pkg::add32(scan_addr_val, cfg_step);
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -2306,30 +2407,54 @@ module dump_server
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= CMD;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= CMD;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign req_rdy  = state_val == CMD;                           // req.pop()
   assign rsp_vld  = state_val == RSP;                           // rsp.push(count.val)
   assign rsp_data = count_val;
   assign rd_req   = action.enter_SCAN_WAIT_ACK;                 // rd_req.pulse()
   assign rd_addr  = {32{action.enter_SCAN_WAIT_ACK}} & scan_addr_val;  // rd_addr.pulse(addr.val)
-  aw_dff #(.T(logic [31:0])) u_pattern (.clk, .rst_n,
-    .set(action.leave_CMD),                                     // pattern.set(p)
-    .next(req_data), .val(pattern_val));
-  aw_dff #(.T(logic [6:0])) u_count (.clk, .rst_n,
-    .set(action.enter_RSP),                                     // count.set(hits)
-    .next(scan_hits_next), .val(count_val));
-  aw_dff #(.T(logic [31:0])) u_scan_addr (.clk, .rst_n,
-    .set(action.leave_CMD | action.leave_SCAN_WAIT_ACK),        // addr.set(cfg_base) / addr.set(dump_pkg.add32(addr.val, cfg_step))
-    .next(({32{action.leave_CMD}} & cfg_base) | ({32{action.leave_SCAN_WAIT_ACK}} & fn_add32_0)), .val(scan_addr_val));
-  aw_dff #(.T(logic [6:0])) u_scan_idx (.clk, .rst_n,
-    .set(action.leave_CMD | action.leave_SCAN_WAIT_ACK),        // idx.set(0) / idx.set(idx_next)
-    .next({7{action.leave_SCAN_WAIT_ACK}} & fn_inc7_0), .val(scan_idx_val));
-  aw_dff #(.T(logic [6:0])) u_scan_hits (.clk, .rst_n,
-    .set(action.leave_CMD | action.leave_SCAN_WAIT_ACK),        // hits.set(0) / hits.set(hits_next)
-    .next({7{action.leave_SCAN_WAIT_ACK}} & scan_hits_next), .val(scan_hits_val));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_pattern  // pattern.set(p)
+    if (!rst_n) begin
+      pattern_val <= 32'h00000000;
+    end else if (action.leave_CMD) begin
+      pattern_val <= req_data;
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_count    // count.set(hits)
+    if (!rst_n) begin
+      count_val <= 7'h00;
+    end else if (action.enter_RSP) begin
+      count_val <= scan_hits_next;
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_addr  // addr.set(cfg_base) / addr.set(dump_pkg.add32(addr.val, cfg_step))
+    if (!rst_n) begin
+      scan_addr_val <= 32'h00000000;
+    end else if (action.leave_CMD | action.leave_SCAN_WAIT_ACK) begin
+      scan_addr_val <= ({32{action.leave_CMD}} & cfg_base) | ({32{action.leave_SCAN_WAIT_ACK}} & fn_add32_0);
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_idx  // idx.set(0) / idx.set(idx_next)
+    if (!rst_n) begin
+      scan_idx_val <= 7'h00;
+    end else if (action.leave_CMD | action.leave_SCAN_WAIT_ACK) begin
+      scan_idx_val <= {7{action.leave_SCAN_WAIT_ACK}} & fn_inc7_0;
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_hits  // hits.set(0) / hits.set(hits_next)
+    if (!rst_n) begin
+      scan_hits_val <= 7'h00;
+    end else if (action.leave_CMD | action.leave_SCAN_WAIT_ACK) begin
+      scan_hits_val <= {7{action.leave_SCAN_WAIT_ACK}} & scan_hits_next;
+    end
+  end
 endmodule
 ```
 
@@ -2376,7 +2501,7 @@ module dump_client
   logic [31:0]         req_data;
   logic [6:0]          rsp_data;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -2398,9 +2523,13 @@ module dump_client
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   dump_server u_dump_server (
     .clk, .rst_n,
@@ -2419,9 +2548,13 @@ module dump_client
     .rd_data  (rd_data)
   );
 
-  aw_dff #(.T(logic [6:0])) u_hit_cnt (.clk, .rst_n,
-    .set(action.enter_IDLE),                                    // hit_cnt.set(hits)
-    .next(rsp_data), .val(hit_cnt));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_hit_cnt  // hit_cnt.set(hits)
+    if (!rst_n) begin
+      hit_cnt <= 7'h00;
+    end else if (action.enter_IDLE) begin
+      hit_cnt <= rsp_data;
+    end
+  end
   assign check_done = action.enter_IDLE;                        // check_done.pulse()
   assign req_vld    = state_val == REQ;                         // req.push(cfg_pattern)
   assign req_data   = cfg_pattern;
@@ -2604,7 +2737,7 @@ module reg_mgr
   logic [31:0]     reg_req_wdata;
   logic [31:0]     reg_rsp_data;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -2635,9 +2768,13 @@ module reg_mgr
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   reg_mgr_reg u_reg (
     .clk, .rst_n,
@@ -2658,16 +2795,36 @@ module reg_mgr
   );
 
   assign done = action.enter_IDLE;                              // done.pulse()
-  aw_dff #(.T(logic [31:0])) u_status (.clk, .rst_n,
-    .set(action.enter_WR_REQ),                                  // status.set(v)
-    .next(reg_rsp_data), .val(status));
-  assign reg_req_vld   = (state_val == RD_REQ)                  // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
-                       | (state_val == WR_REQ);
-  assign reg_req_addr  = ({8{state_val == RD_REQ}} & 8'h10) | ({8{state_val == WR_REQ}} & 8'h14);
-  assign reg_req_wdata = {32{state_val == WR_REQ}} & status;
-  assign reg_req_we    = state_val == WR_REQ;
-  assign reg_rsp_rdy   = (state_val == RD_RSP)                  // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
-                       | (state_val == WR_RSP);
+  always_ff @(posedge clk or negedge rst_n) begin : ff_status   // status.set(v)
+    if (!rst_n) begin
+      status <= 32'h00000000;
+    end else if (action.enter_WR_REQ) begin
+      status <= reg_rsp_data;
+    end
+  end
+  assign reg_req_vld = (state_val == RD_REQ)                    // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
+                     | (state_val == WR_REQ);
+  always_comb begin : comb_reg_req_addr
+    case (state_val)
+      RD_REQ:  reg_req_addr = 8'h10;
+      WR_REQ:  reg_req_addr = 8'h14;
+      default: reg_req_addr = 8'h00;
+    endcase
+  end
+  always_comb begin : comb_reg_req_wdata
+    case (state_val)
+      WR_REQ:  reg_req_wdata = status;
+      default: reg_req_wdata = 32'h00000000;
+    endcase
+  end
+  always_comb begin : comb_reg_req_we
+    case (state_val)
+      WR_REQ:  reg_req_we = 1'b1;
+      default: reg_req_we = 1'b0;
+    endcase
+  end
+  assign reg_rsp_rdy = (state_val == RD_RSP)                    // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
+                     | (state_val == WR_RSP);
 endmodule
 ```
 
@@ -2720,7 +2877,7 @@ module reg_mgr_reg
   logic [31:0]         arg_wdata_val;
   logic [31:0]         result_val;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -2748,9 +2905,13 @@ module reg_mgr_reg
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign bus_req   = action.enter_RUN_WAIT;                     // bus_req.pulse()
   assign bus_we    = action.enter_RUN_WAIT & arg_we_val;        // bus_we.pulse(we)
@@ -2759,18 +2920,34 @@ module reg_mgr_reg
   assign req_rdy   = state_val == IDLE;                         // req.pop()
   assign rsp_vld   = state_val == DONE;                         // rsp.push(result.val)
   assign rsp_data  = result_val;
-  aw_dff #(.T(logic [7:0])) u_arg_addr (.clk, .rst_n,
-    .set(action.enter_LOAD),                                    // arg_addr.set(m.addr)
-    .next(req_addr), .val(arg_addr_val));
-  aw_dff #(.T(logic [31:0])) u_arg_wdata (.clk, .rst_n,
-    .set(action.enter_LOAD),                                    // arg_wdata.set(m.wdata)
-    .next(req_wdata), .val(arg_wdata_val));
-  aw_dff u_arg_we (.clk, .rst_n,
-    .set(action.enter_LOAD),                                    // arg_we.set(m.we)
-    .next(req_we), .val(arg_we_val));
-  aw_dff #(.T(logic [31:0])) u_result (.clk, .rst_n,
-    .set(action.enter_DONE),                                    // result.set(r)
-    .next(bus_rdata), .val(result_val));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_arg_addr  // arg_addr.set(m.addr)
+    if (!rst_n) begin
+      arg_addr_val <= 8'h00;
+    end else if (action.enter_LOAD) begin
+      arg_addr_val <= req_addr;
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_arg_wdata  // arg_wdata.set(m.wdata)
+    if (!rst_n) begin
+      arg_wdata_val <= 32'h00000000;
+    end else if (action.enter_LOAD) begin
+      arg_wdata_val <= req_wdata;
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_arg_we   // arg_we.set(m.we)
+    if (!rst_n) begin
+      arg_we_val <= 1'b0;
+    end else if (action.enter_LOAD) begin
+      arg_we_val <= req_we;
+    end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin : ff_result   // result.set(r)
+    if (!rst_n) begin
+      result_val <= 32'h00000000;
+    end else if (action.enter_DONE) begin
+      result_val <= bus_rdata;
+    end
+  end
 endmodule
 ```
 
@@ -2875,7 +3052,7 @@ module act_demo
   act_demo_state_e  state_val, state_next;
   act_demo_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -2894,14 +3071,22 @@ module act_demo
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign cnt_clr = action.enter_RUN;                            // cnt_clr.pulse()
-  aw_dff u_active (.clk, .rst_n,
-    .set(action.enter_RUN | action.enter_IDLE),                 // active.set(1) / active.set(0)
-    .next(action.enter_RUN), .val(active));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_active   // active.set(1) / active.set(0)
+    if (!rst_n) begin
+      active <= 1'b0;
+    end else if (action.enter_RUN | action.enter_IDLE) begin
+      active <= action.enter_RUN;
+    end
+  end
 endmodule
 ```
 
@@ -2975,7 +3160,7 @@ module msg_fwd
   msg_fwd_state_e  state_val, state_next;
   msg_fwd_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -2994,9 +3179,13 @@ module msg_fwd
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign wr_en   = action.enter_FWD | action.enter_IDLE;        // wr_en.pulse()
   assign wr_data = ({8{action.enter_FWD}} & 8'ha5)              // wr_data.pulse(0xa5) / wr_data.pulse(rx_err ? 0xee : rx_msg)
@@ -3022,7 +3211,7 @@ leave S on x_rdy                    // 握手那一拍离开，执行 S 后面�
 
 `r = await x.pop()` 对称：`x_rdy = state_is_S`，`x_vld` 那一拍离开；`r` 就是 `x_data`，只在离开 S 的那一段有效（§2.4），后面要用就 `Dff.set(r)`。
 
-- 这是唯一由状态译码直接驱动的输出，不违反「停留期间不执行动作」：`vld` / `rdy` 是等待本身，不是段里的动作。几个状态在同一个 channel 端上收发时，`vld` / `rdy` 是这些状态译码的或，`data` 是按状态选择的与-或（只有一个值时直接接）。
+- 这是唯一由状态译码直接驱动的输出，不违反「停留期间不执行动作」：`vld` / `rdy` 是等待本身，不是段里的动作。几个状态在同一个 channel 端上收发时，`vld` / `rdy` 是这些状态译码的或，`data` 只有一个值时直接接，否则是一个按状态取值的 `always_comb`（块名 `comb_<端口>_<字段>`）：`case (state_val)` 每个状态一行，值为 0 的状态和其余状态走 `default` 的 0。
 - `vld` / `rdy` 只来自状态寄存器，不组合依赖对端，所以两个这样的状态机直连不会有组合环（§5.3）。
 - 至少一拍：进入 S 的那一拍属于前一个状态（§3.3），握手最早在进入后的下一拍完成。
 - `v` 不是锁存的：它在停留期间每拍都要有值，不能读只在一段内有效的 `let`（检查器报错），需要在进入时定下的值，先 `Dff.set` 再 `push(d.val)`。不做隐式数据寄存器，存储都是作者看得见的。
@@ -3073,26 +3262,24 @@ move 脉冲是 Mealy 输出：同拍的输入条件经组合逻辑到达输出�
 - `next`：要写入的值。
 - `val`：寄存器当前值，可以参与条件。
 
-主状态在语义上也是这样一个 DFF，但现阶段生成为本模块内的 `always_ff`，以 EDA 工具能识别为状态机为准（见下）。状态机本体因此是：一个产出全部驱动信号的 `always_comb`，加一个只做状态寄存的 `always_ff`。
+主状态在语义上也是这样一个 DFF。状态和每个 `Dff` 都直接展开成本模块内的 `always_ff`，不例化共用模块（**决定**）。状态机本体因此是：一个产出全部驱动信号的 `always_comb`（块名 `comb_state`），一个只做状态寄存的 `always_ff`（`ff_state`，见下），每个 `Dff` 一个 `always_ff`。
 
-内部 DFF 生成为 `aw_dff` 实例：
+DFF 按下面的模板展开，`x` 是寄存器名，`RST` 是复位值，`set` / `next` 是上面接口的两个值：
 
-```systemverilog
-module aw_dff #(parameter type T = logic, parameter T RST = T'(0)) (
-  input  logic clk, rst_n,
-  input  logic set,
-  input  T     next,
-  output T     val
-);
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n)   val <= RST;
-    else if (set) val <= next;
-endmodule
+```text
+  always_ff @(posedge clk or negedge rst_n) begin : ff_x
+    if (!rst_n) begin
+      x <= RST;
+    end else if (set) begin
+      x <= next;
+    end
+  end
 ```
 
-- 多个 move 写同一个 DFF：move 互斥，`set` 是这些 move 的或，`next` 是不带优先级的与-或选择。
-- 复位与仓库现有 RTL 一致：`negedge rst_n` 异步低有效。复位值写在 `Dff(N, { reset: v })`，缺省 0；`external: true` 时复位值由寄存器的拥有者决定，不能写 `reset`。
-- `parameter type` 需要工具支持。Verilator 5.050 `--lint-only -Wall` 通过（实测）；iverilog 未验证（本机 `iverilog.exe` 缺 DLL 起不来）。
+- **块名（决定）**：每个 `always` 块都有块名：`comb_state`、`ff_state`、`ff_<寄存器名>`，以及按状态取值的 push 字段 `comb_<端口>_<字段>`（§6.2）。块名与信号同在模块作用域里，所以作者的名字不能以 `comb_` / `ff_` 开头，与 `state_`、`fn_` 一样是保留前缀（检查器报错）。
+- 多个 move 写同一个 DFF：move 互斥，`set` 是这些 move 的或，`next` 是不带优先级的与-或选择。`set` 写成一行超过 100 列时，每个 `|` 项一行。
+- 复位与仓库现有 RTL 一致：`negedge rst_n` 异步低有效。复位值写在 `Dff(N, { reset: v })`，缺省 0；enum 寄存器的复位值写成成员名（没有这个值的成员时写 `pkg::name'(v)`）。`external: true` 时复位值由寄存器的拥有者决定，不能写 `reset`。
+- 寄存器写成端口时（`Dff(N)`），`x` 就是输出口；方法体私有的 `Dff` 写到 `<名字>_val`。
 
 寄存器放在模块外（例如 regfile 字段）时，端口声明成 `Dff(N, { external: true })`，同一组接口展开成三个端口；状态机从不读 `x.val` 时（只写的 RWW 字段）不生成 `x_val` 输入，免得留下未用端口。DSL：
 
@@ -3142,7 +3329,7 @@ module reg_demo
   reg_demo_state_e  state_val, state_next;
   reg_demo_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -3160,9 +3347,13 @@ module reg_demo
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign mode_set  = action.enter_CHECK;                        // mode.set(0x5a)
   assign mode_next = 8'h5a;
@@ -3182,7 +3373,7 @@ state.next = 目标状态
 
 **主状态的生成形式（缺省）**面向 Synopsys / Cadence 综合工具的状态机识别来写：状态寄存器由单个带异步复位的 `always_ff` 驱动，D 输入是一棵叶子只有 enum 常量或旧状态值的 mux 树，次态逻辑里状态值只与常量比较。不考虑 Yosys。生成规则：
 
-1. `always_ff` 只写 `state_val <= state_next`，带异步复位到入口状态；不写使能。`set = 0` 由 `state_next` 缺省等于 `state_val` 表达。
+1. `always_ff`（块名 `ff_state`）只写 `state_val <= state_next`，带异步复位到入口状态；不写使能。`set = 0` 由 `state_next` 缺省等于 `state_val` 表达。
 2. 次态和控制信号在同一个 `always_comb` 里（**决定**）：所有 `enter_*` / `leave_*` 是 packed struct `action`（类型 `<模块名>_action_t`，与状态类型一起放在 `<模块名>_pkg` 里，成员只含有消费者的信号）。块内先写缺省值 `state_next = state_val;` 和 `action = '0;`，再 `unique case (state_val)`；每个分支 `if (条件) begin state_next = 常量; action.enter_S = 1'b1; end`。离开条件只写一次，次态和 move 不会写出两份可能不一致的条件。**每个 `if` / `else if` / `else` 分支都写 `begin` / `end`**，哪怕里面只有一条赋值（决定）；`case` 分支本身不加。没有任何控制信号时不生成 struct。
 3. `state_val` 只出现在 `case` 和 `state_val == 常量` 里；move 不再单独写成 `(state_val == S) & cond`。
 4. `state_val` 是 enum 类型，不做位选。
@@ -3205,8 +3396,6 @@ state.next = 目标状态
 | `stateEncoding` | 缺省（不写） | enum 不写数值，交给综合器（上面第 5 条） |
 | | `"binary"` | 按声明顺序写出 `IDLE = 2'd0, ...`，W = ⌈log2(状态数)⌉ |
 | | `"onehot"` | 写出 one-hot 数值 `IDLE = 3'b001, ...`，W = 状态数 |
-| `stateReg`（未实现） | `"always_ff"`（缺省） | 主状态按上面第 1-5 条生成在本模块内 |
-| | `"dff"` | 主状态是 `aw_dff` 实例；放弃工具识别，现阶段不推荐 |
 | `exportState` | `true` | 模块多出输出口 `state_set_o` / `state_next_o` / `state_val_o`，类型是该状态机的状态类型（DFF 接口形状，三个都是输出），端口组标题为 `// exportState` |
 | `stateType` | SV 类型名字符串 | 状态 enum 的类型名，缺省 `<模块名>_state_e`；它与成员一起放在 `<模块名>_pkg` 里 |
 | `stateValues` | enum 成员名 → 数值 | 逐个写出数值，位宽同 `"binary"`。必须列全全部状态、互不相同、放得进 W 位，与 `stateEncoding` 互斥，由检查器检查 |
@@ -3270,7 +3459,7 @@ module phy_init
   phy_init_state_e  state_val, state_next;
   phy_init_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -3294,13 +3483,21 @@ module phy_init
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= LPDDRPHY_IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= LPDDRPHY_IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
-  aw_dff u_ready (.clk, .rst_n,
-    .set(action.enter_READY | action.enter_IDLE),               // ready.set(1) / ready.set(0)
-    .next(action.enter_READY), .val(ready));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_ready    // ready.set(1) / ready.set(0)
+    if (!rst_n) begin
+      ready <= 1'b0;
+    end else if (action.enter_READY | action.enter_IDLE) begin
+      ready <= action.enter_READY;
+    end
+  end
   assign cal_req = action.enter_CALIB;                          // cal_req.pulse()
 endmodule
 ```
@@ -3324,7 +3521,6 @@ state_val_o  = state_val
 - 用途：`state_val_o` 接 wishbone-regfile 的 RO 字段（`ro_<field>` 输入）上报当前状态，RO 字段位宽等于 W；`state_set_o` 是状态变化事件，可接计数器、中断或调试 trace。
 - 软件按成员值解读上报值。缺省编码随声明顺序变化：增删或重排状态会改变已有状态的值。要给软件一个稳定的编码，写 `stateValues`。
 - 导出的状态只用于观测。原则 4 仍然成立：其他模块的功能逻辑不应译码 `state_val_o`，需要电平信号时用 `Dff`。这一条在模块外，检查器管不到。
-- 两种 `stateReg` 下导出口的形状和值完全一样，切换寄存器生成方式不影响外部连线。
 
 DSL（导出状态，固定编码）：
 
@@ -3382,7 +3578,7 @@ module phy_mon
   phy_mon_state_e  state_val, state_next;
   phy_mon_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -3406,9 +3602,13 @@ module phy_mon
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign cal_req = action.enter_CALIB;                          // cal_req.pulse()
 
@@ -3427,7 +3627,7 @@ endmodule
 
 ## 7. 生成 SV 的约定
 
-完整的对照示例在各节里：§2.1（运算与位选）、§2.3（用户函数）、§2.6（接口）、§3.2（顺序、push、join、`exportState`）、§3.6（嵌套循环与 `leave_S`）、§3.6.1（`break` 外层循环）、§3.7（异常区域与陷阱状态）、§3.7.1（软复位）、§3.7.2（多级错误逐级退出）、§4（分支与平铺展开的子状态机）、§5.2（带返回值的子状态机）、§5.3（例化与 channel）、§6.1（脉冲与 DFF 输出）、§6.5（`Dff(N)` 端口）、§7.1（文件头与业务注释）。其中完整模块与 `aw_dff` 一起过了 Verilator 5.050 `--lint-only -Wall -Wno-DECLFILENAME`（实测）。本节只列它们共同遵守的约定。
+完整的对照示例在各节里：§2.1（运算与位选）、§2.3（用户函数）、§2.6（接口）、§3.2（顺序、push、join、`exportState`）、§3.6（嵌套循环与 `leave_S`）、§3.6.1（`break` 外层循环）、§3.7（异常区域与陷阱状态）、§3.7.1（软复位）、§3.7.2（多级错误逐级退出）、§4（分支与平铺展开的子状态机）、§5.2（带返回值的子状态机）、§5.3（例化与 channel）、§6.1（脉冲与 DFF 输出）、§6.5（`Dff(N)` 端口）、§7.1（文件头与业务注释）。其中完整模块都过了 Verilator 5.050 `--lint-only -Wall -Wno-DECLFILENAME`（实测）。本节只列它们共同遵守的约定。
 
 | DSL | SV |
 |---|---|
@@ -3435,13 +3635,13 @@ endmodule
 | `@Fsm` 方法 `m` | `package m_pkg`（状态 enum）+ `module m`；子状态机不生成模块（§5） |
 | 状态标签 `S:` | 状态类型 `<模块名>_state_e`（或 `stateType`）的成员，标签转大写下划线（§3.5），可加 `statePrefix`；缺省不写数值，`stateEncoding` 可选二进制或 one-hot（§6.5） |
 | 进入 `S` 的 move | `action.enter_S`（`<模块名>_action_t` 的成员），只在有消费者时生成（§4） |
-| 解构参数里的端口 | 同名端口；`PushPort(N)` 展开为 `<name>_vld` 出 / `<name>_rdy` 入 / `<name>_data` 出，`PopPort(N)` 方向相反；`Dff(N)` 是输出口 `<name>`（`aw_dff` 的 `val`）；`Dff(N, { external: true })` 展开为 `<name>_set` / `<name>_next` / `<name>_val`；接口 `new C(...)` 展开为 `<name>_<字段>` |
+| 解构参数里的端口 | 同名端口；`PushPort(N)` 展开为 `<name>_vld` 出 / `<name>_rdy` 入 / `<name>_data` 出，`PopPort(N)` 方向相反；`Dff(N)` 是输出口 `<name>`（由 `ff_<name>` 直接驱动）；`Dff(N, { external: true })` 展开为 `<name>_set` / `<name>_next` / `<name>_val`；接口 `new C(...)` 展开为 `<name>_<字段>` |
 | 端口参数里独占一行的 `//` 注释 | SV 端口表里同位置的分组标题；生成器另加 `// clock and reset`（§2.2） |
 | 条件之前的动作 | `action.leave_S`，只在有消费者时生成（§3.6） |
 | 用户函数调用 | `fn_<函数名>_<序号> = pkg::fn(...)`，相同调用共用一根线（§2.3） |
 | 时钟、复位 | 生成器加上 `clk` / `rst_n`（`negedge` 异步低有效） |
 | 主状态 | 本模块内的 `state_val` / `state_next`，一个 `always_comb` + 一个 `always_ff`（§6.5） |
-| 其他寄存器（`Dff`、`fin`） | `aw_dff` 实例 `u_<名字>`，端口 `set` / `next` / `val`，`val` 接到 `<名字>_val` |
+| 其他寄存器（`Dff`、`fin`） | 一个 `always_ff`，块名 `ff_<名字>`，按 §6.5 的模板展开；私有寄存器写到 `<名字>_val` |
 | 子状态机调用 `L: await this.m({...})` | 被调用方的状态 `<L>_<STATE>`、私有寄存器与线 `<l>_<名字>` 并入本模块（§5） |
 | `Instance(this.m, {...})` | 实例 `u_<模块名>`（第二个起 `u_<模块名>_1`…），端口按对象字面量连接，接口和 channel 端口逐根展开（§5.3） |
 | `const c = Chan(N \| {...})` / push / pop 状态 | `logic c_vld, c_rdy;` 加每个消息字段一根 `c_<字段>`；`c_vld = state_val == S`（几个状态时取或），字段按状态与-或（§6.2） |
@@ -3491,7 +3691,7 @@ module act_demo
   act_demo_state_e  state_val, state_next;
   act_demo_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -3510,14 +3710,22 @@ module act_demo
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign cnt_clr = action.enter_RUN;                            // cnt_clr.pulse()
-  aw_dff u_active (.clk, .rst_n,
-    .set(action.enter_RUN | action.enter_IDLE),                 // active.set(1) / active.set(0)
-    .next(action.enter_RUN), .val(active));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_active   // active.set(1) / active.set(0)
+    if (!rst_n) begin
+      active <= 1'b0;
+    end else if (action.enter_RUN | action.enter_IDLE) begin
+      active <= action.enter_RUN;
+    end
+  end
 endmodule
 ```
 
@@ -3604,7 +3812,7 @@ module act_demo
   act_demo_state_e  state_val, state_next;
   act_demo_action_t action;
 
-  always_comb begin
+  always_comb begin : comb_state
     state_next = state_val;
     action     = '0;
     unique case (state_val)
@@ -3623,14 +3831,22 @@ module act_demo
     endcase
   end
 
-  always_ff @(posedge clk or negedge rst_n)
-    if (!rst_n) state_val <= IDLE;
-    else        state_val <= state_next;
+  always_ff @(posedge clk or negedge rst_n) begin : ff_state
+    if (!rst_n) begin
+      state_val <= IDLE;
+    end else begin
+      state_val <= state_next;
+    end
+  end
 
   assign cnt_clr = action.enter_RUN;                            // cnt_clr.pulse()
-  aw_dff u_active (.clk, .rst_n,
-    .set(action.enter_RUN | action.enter_IDLE),                 // active.set(1) / active.set(0)
-    .next(action.enter_RUN), .val(active));
+  always_ff @(posedge clk or negedge rst_n) begin : ff_active   // active.set(1) / active.set(0)
+    if (!rst_n) begin
+      active <= 1'b0;
+    end else if (action.enter_RUN | action.enter_IDLE) begin
+      active <= action.enter_RUN;
+    end
+  end
 endmodule
 ```
 
@@ -3734,7 +3950,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | `Instance`：只写在 `@Fsm` 顶部，目标是 `@Fsm` 方法；端口连全；`Output` 只被实例驱动，不再 `pulse()`；同组内无例化环 | §5.3 |
 | `Caller`：只写在 `@Fsm` 顶部，目标是子状态机；没绑定的端口只能是 `Input`；被调用方端口名不占 `req` / `rsp` / `result` / `arg_*`；调用带标签，参数键齐全、不读 `let`；无返回值时不写 `r =` | §5.4 |
 | 消息：字段名唯一、不叫 `vld` / `rdy`；`push` 给齐全部字段；record 消息只读 `r.<字段>`；`pop` 出来的字段都要被读 | §6.2 |
-| `@Fsm({...})` 的选项名和取值（`stateReg`、`exportState`、`stateValues`）；`@FsmGroup({...})` 只认 `file`，取值是文件名字符串；`Dff` 的选项（`reset`、`external`，两者不能同时出现） | §2.2、§6.5 |
+| `@Fsm({...})` 的选项名和取值（`exportState`、`stateValues`、`stateType`、`wrap` 等）；`@FsmGroup({...})` 只认 `file`，取值是文件名字符串；`Dff` 的选项（`reset`、`external`，两者不能同时出现） | §2.2、§6.5 |
 | `SvPackage(...)` 是模块顶层 `const`，参数是字面量；调用的实参个数、位宽与声明一致 | §2.3 |
 | 子集：拒绝闭包捕获可变变量、内建方法与 `this.方法名`、`组.方法名`、接口方法以外的任意 JS 调用、动态属性 | §8.2 |
 
@@ -3763,7 +3979,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 4. 端口寄存器选项的 API（§6.4）。
 5. 软件怎么拿到状态成员值或 `stateValues`（随 regfile 的 C / UVM 导出，或由本编译器单独导出头文件）（§6.5）。
 6. 导出口的命名（`state_set_o` / `state_next_o` / `state_val_o`）与仓库 connect、regfile 端口命名惯例对齐；接 regfile 时再定。
-7. 用 Synopsys DC / Cadence Genus 实测 §2.3 / §3.2 / §3.6 / §3.6.1 / §3.7 / §3.7.1 / §3.7.2 / §4 / §5 / §6.1 / §6.5 / §7.1 的 SV（含 `action` struct 与直接导出的 `state_val_o`）能被识别为状态机，以及 VCS FSM 覆盖率能否提取（本机暂无这些工具）。`stateReg: "dff"` 是否也能被识别，同样待测。
+7. 用 Synopsys DC / Cadence Genus 实测 §2.3 / §3.2 / §3.6 / §3.6.1 / §3.7 / §3.7.1 / §3.7.2 / §4 / §5 / §6.1 / §6.5 / §7.1 的 SV（含 `action` struct 与直接导出的 `state_val_o`）能被识别为状态机，以及 VCS FSM 覆盖率能否提取（本机暂无这些工具）。
 8. 一个 `.mjs` 里是否允许多个 `@FsmGroup` class（§2.2 目前一个文件一个组；跨文件调用已由 §2.7 解决）。
 9. 出错放弃在途 `push` / `pop` 时，是否需要可选的「等握手完成再离开」模式，以满足不允许中途撤 `vld` / `rdy` 的协议（§3.7）。
 10. 同步硬复位：是否提供 `SyncReset()` 端口，语义为下一拍回到入口状态、不执行任何动作、所有模块内 `Dff`（含 `fin`）回到复位值、实例经 `srst` 一起复位。生成形式是次态块外层的 `if (force_reset) state_next = <入口>; else unique case …`。软复位用 §3.7.1 的写法即可，目前没有硬复位需求，暂不加。
@@ -3777,7 +3993,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | 项 | 决定 |
 |---|---|
 | 命令 | `plugin fsm run`，与 `plugin wishbone run` 同为类型 A 插件；`--force` 全部重写，缺省增量写（[cli.md](../cli.md)） |
-| 输出 | `plugins_dir/fsm/<class 名>.sv`（一个 `@FsmGroup` 一个文件）和模板 `plugins_dir/fsm/aw_dff.sv`；按 [workspace/toml.md](../workspace/toml.md) 只写 `plugins_dir/<plugin-id>/`。这些文件是分析输入叶子，进分析 filelist |
+| 输出 | `plugins_dir/fsm/<class 名>.sv`（一个 `@FsmGroup` 一个文件），没有共用的模板文件；按 [workspace/toml.md](../workspace/toml.md) 只写 `plugins_dir/<plugin-id>/`。这些文件是分析输入叶子，进分析 filelist |
 | DSL 入口 | `[fsm.<id>] mjs = "<相对工作区的 .mjs>"`，只有这一个键；两个源定义同名 class 报错 |
 | import 路径 | 内建名从 `.autowire/dsl/fsm/dsl.mjs` 导入，与 wishbone 一样由 `src/cli/pack.ts` 打包、每次 `plugin fsm run` 重新物化（自愈缓存）；`dsl.mjs` 只含空实现，另带 `dsl.d.ts` 给编辑器补全 |
 | 解析器 | `@babel/parser` 写死版本，懒加载（§8.2） |
@@ -3791,7 +4007,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 ```mermaid
 flowchart LR
   P0["P0 骨架（已落地）<br/>解析、检查器（class / 参数 / 标签 / const-let）<br/>CFG：wait / if / while / break / continue<br/>次态块 + enum + pulse / Dff + 文件头"] --> P1["P1 交互（已落地，Promise.all 除外）<br/>push / pop 状态、多字段消息、Chan、Instance、Caller<br/>子状态机平铺展开、@FsmPort 接口、跨文件 import<br/>SvPackage、bits、?:"]
-  P1 --> P2["P2 异常与观测（已落地，Future / Promise.all / stateReg 除外）<br/>try / Escape / Raise<br/>exportState / stateValues<br/>Future + Promise.all、stateReg 未实现"]
+  P1 --> P2["P2 异常与观测（已落地，Future / Promise.all 除外）<br/>try / Escape / Raise<br/>exportState / stateValues<br/>Future + Promise.all 未实现"]
   P2 --> P3["P3 优化<br/>寄存器复用、带缓存的 Chan<br/>§10 推迟项"]
 ```
 

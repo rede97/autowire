@@ -1,7 +1,7 @@
 # autowire workspace config (contract: docs/workspace/toml.md)
 # fsm demo: the async/await state machine DSL of docs/state/async-fsm.md.
 # Run from this directory: bun ../../index.ts plugin fsm run
-# Output: gen/plugins/fsm/<Group>.sv + aw_dff.sv (generated; do not edit).
+# Output: gen/plugins/fsm/<Group>.sv (generated; do not edit).
 
 [workspace]
 name = "state"

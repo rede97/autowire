@@ -345,8 +345,6 @@ function groupFile(src: Src, e: Expression, name: string): string {
 				v,
 				'file is a file stem string of letters, digits and _, e.g. "dphy_rdi_sm"',
 			);
-		if (v.value === "aw_dff")
-			return src.fail(v, "aw_dff is the shared Dff file; pick another stem");
 		file = v.value;
 	}
 	return file;
@@ -442,8 +440,6 @@ function fsmOptions(
 				);
 			checkSvId(src, v, v.value, "state type name");
 			out.stateType = v.value;
-		} else if (key === "stateReg") {
-			notYet(src, p, "@Fsm option stateReg (§6.5)");
 		} else {
 			src.fail(p, `unknown @Fsm option ${key}`);
 		}
@@ -456,13 +452,16 @@ function fsmOptions(
 	return out;
 }
 
-/** Names the generator owns; an author name must not take them. */
+/** Names the generator owns; an author name must not take them (comb_ / ff_ name the
+ *  always blocks). */
 export function reservedName(name: string): boolean {
 	return (
 		name === "clk" ||
 		name === "rst_n" ||
 		name.startsWith("state_") ||
 		name === "action" ||
+		name.startsWith("comb_") ||
+		name.startsWith("ff_") ||
 		name.startsWith("fn_")
 	);
 }

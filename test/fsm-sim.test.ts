@@ -4,7 +4,6 @@ import { describe, expect } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AW_DFF_SV } from "../src/plugins/fsm/generate.ts";
 import {
 	compileBody,
 	compileDemo,
@@ -133,12 +132,10 @@ describe("verilator", () => {
 					units.push([m[1] ?? "", sv]);
 			}
 			withDir("aw-fsm-lint-", (dir) => {
-				const dff = join(dir, "aw_dff.sv");
-				writeFileSync(dff, AW_DFF_SV);
 				for (const [top, sv] of units) {
 					const file = join(dir, `${top}.sv`);
 					writeFileSync(file, sv);
-					const r = verilatorLint({ top, sources: [dff, ...USER_PKGS, file] });
+					const r = verilatorLint({ top, sources: [...USER_PKGS, file] });
 					expect(r.exitCode, `${top}\n${r.log}`).toBe(0);
 				}
 			});
@@ -166,15 +163,12 @@ describe("verilator", () => {
 					? (await compileDemo(`fsm/${file}.mjs`)).sv
 					: await compileBody(RAISE);
 				withDir("aw-fsm-sim-", (dir) => {
-					const dff = join(dir, "aw_dff.sv");
 					const dutFile = join(dir, "dut.sv");
-					writeFileSync(dff, AW_DFF_SV);
 					writeFileSync(dutFile, sv);
 					const r = verilatorSim({
 						dir: join(dir, "obj"),
 						top: "tb",
 						sources: [
-							dff,
 							...USER_PKGS,
 							dutFile,
 							join(import.meta.dir, `fixtures/fsm/${tb}_tb.sv`),

@@ -65,7 +65,6 @@ export interface FsmOptions {
 	/** State enum type name in <module>_pkg; default <module>_state_e. */
 	stateType?: string;
 	stateValues?: Record<string, number>;
-	stateReg?: "always_ff" | "dff";
 }
 
 export interface FsmGroupOptions {

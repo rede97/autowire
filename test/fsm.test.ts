@@ -11,7 +11,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AW_DFF_SV } from "../src/plugins/fsm/generate.ts";
 import {
 	compileBody,
 	compileDemo,
@@ -112,7 +111,6 @@ test("plugin fsm run writes plugins_dir/fsm and is incremental", async () => {
 		const first = run();
 		expect(first.exitCode, first.stderr.toString()).toBe(0);
 		const out = join(ws, "gen/plugins/fsm");
-		expect(readFileSync(join(out, "aw_dff.sv"), "utf8")).toBe(AW_DFF_SV);
 		const counter = await compileDemo("fsm/counter_ctl.mjs");
 		expect(readFileSync(join(out, "CounterCtl.sv"), "utf8")).toBe(counter.sv);
 		readFileSync(join(ws, ".autowire/dsl/fsm/dsl.mjs"));
