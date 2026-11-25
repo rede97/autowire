@@ -432,6 +432,9 @@ export interface FsmMethod {
 	ports: Port[];
 	options: FsmOptions;
 	sub: boolean;
+	/** Undecorated method without `async`: actions and branches only, no states;
+	 *  called as a statement and inlined into the calling segment (§5). */
+	sync: boolean;
 	group: Group;
 }
 

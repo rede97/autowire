@@ -296,14 +296,14 @@ function group(
 		)
 			return src.fail(
 				m,
-				"an @FsmGroup class holds only async methods (no constructor, fields, static, getters or setters)",
+				"an @FsmGroup class holds only methods (no constructor, fields, static, getters or setters)",
 			);
-		if (!m.async || m.generator)
-			src.fail(m, "a state machine method must be `async`");
+		if (m.generator) src.fail(m, "a state machine method is not a generator");
 		const name = m.key.name;
 		checkSvId(src, m.key, name, "module name");
 		const [d0, d1] = m.decorators ?? [];
 		if (d1) src.fail(d1, "one @Fsm decorator per method");
+		if (d0 && !m.async) src.fail(m, "an @Fsm method must be `async`");
 		const { params, ports } = methodPorts(unit, m);
 		g.methods.push({
 			node: m,
@@ -311,6 +311,7 @@ function group(
 			comment: docComment(src, m),
 			options: d0 ? fsmOptions(src, d0.expression, unit.builtins, name) : {},
 			sub: !d0,
+			sync: !m.async,
 			params,
 			ports,
 			group: g,

@@ -36,7 +36,9 @@ Source (.mjs, never executed; the compiler reads the AST)
                        enter_<T> every edge into T, leave_<S> every edge out of S,
                        <A>_to_<B> one edge, keep_<S> the self-loop S -> S (not S_to_S);
                        the comb block defaults action = '0
-  undecorated method   sub-FSM, inlined at each call: no module, no start / done
+  undecorated async method   sub-FSM, inlined at each call: no module, no start / done
+  undecorated plain method   actions / branches only, no states: call it as a statement
+                       this.clr({ a, b }); no await, no label; not a value, Caller or Instance
   Ports: one destructured parameter, defaults declare them:
     x = Input(N)   y = Output(N) (y.pulse(v) on the move, 0 otherwise)
     r = Dff(N[, { reset, external }])

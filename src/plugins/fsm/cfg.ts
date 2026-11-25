@@ -466,10 +466,7 @@ export class BodyCompiler {
 	private declare(d: VariableDeclaration, top: boolean) {
 		const src: Src = this.src;
 		if (this.sync)
-			src.fail(
-				d,
-				"a sync interface method holds actions only; no declarations",
-			);
+			src.fail(d, "a sync method holds actions only; no declarations");
 		if (d.kind === "let") {
 			for (const x of d.declarations) {
 				if (x.id.type !== "Identifier")
@@ -612,7 +609,9 @@ export class BodyCompiler {
 		if (target.sub)
 			src.fail(
 				t,
-				`${target.name} is a sub-FSM: call it with await this.${target.name}({...}) (§5); Instance takes an @Fsm method`,
+				target.sync
+					? `${target.name} is a sync method: call it as a statement this.${target.name}({...}) (§5); Instance takes an @Fsm method`
+					: `${target.name} is a sub-FSM: call it with await this.${target.name}({...}) (§5); Instance takes an @Fsm method`,
 			);
 		const n = this.instCount.get(target.name) ?? 0;
 		this.instCount.set(target.name, n + 1);
@@ -996,8 +995,14 @@ export class BodyCompiler {
 			const a = awaited.argument;
 			const to = assign ? this.letTarget(e) : undefined;
 			const callee = a.type === "CallExpression" ? this.callee(a) : undefined;
-			if (callee && a.type === "CallExpression")
+			if (callee && a.type === "CallExpression") {
+				if (callee.k === "sub" && callee.m.sync)
+					src.fail(
+						a,
+						`${callee.m.name} is not async: it has no states, call it as a statement without await or a label (§5)`,
+					);
 				return this.inline(callee, a, label, k, to, true);
+			}
 			if (isMethodCall(a, "call")) {
 				const cb = this.ref(a.callee.object);
 				if (cb?.k === "caller") return this.callerCall(cb, a, label, k, to);
@@ -1027,10 +1032,9 @@ export class BodyCompiler {
 		if (e.type === "CallExpression") {
 			const callee = this.callee(e);
 			if (callee) {
-				if (callee.k === "sub" || callee.m.async)
+				if (callee.k === "sub" ? !callee.m.sync : callee.m.async)
 					src.fail(e, "an async call is a state: write await (§5)");
-				if (label)
-					src.fail(label, "a sync interface method has no states to name");
+				if (label) src.fail(label, "a sync method has no states to name");
 				return this.inline(callee, e, undefined, k, undefined, false);
 			}
 		}
@@ -1521,6 +1525,8 @@ export class BodyCompiler {
 				t,
 				`${callee.name} is an @Fsm method: instantiate it with Instance (§5.3); Caller takes a sub-FSM`,
 			);
+		if (callee.sync)
+			src.fail(t, `${callee.name} is not async: Caller takes an async sub-FSM`);
 		for (const p of callee.params.keys())
 			if (p === "req" || p === "rsp" || p === "result" || p.startsWith("arg_"))
 				src.fail(
@@ -1921,7 +1927,9 @@ export class BodyCompiler {
 		if (c.k === "sub" || c.m.async)
 			return this.src.fail(
 				node,
-				`${name} is async: a call is a state, write it as a statement with await (§5)`,
+				c.k === "sub" && c.m.sync
+					? `${name} is a sync method: call it as a statement, not as a value (§5)`
+					: `${name} is async: a call is a state, write it as a statement with await (§5)`,
 			);
 		const [only, extra] = c.m.body.body;
 		if (only?.type !== "ReturnStatement" || !only.argument || extra)

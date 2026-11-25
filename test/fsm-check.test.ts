@@ -20,6 +20,16 @@ const caller = (body: string) =>
 
 const cases: [string, string, string][] = [
 	[
+		"a sync group method called with await",
+		`${fsm("while (true) { S: await go.wait(1); C: await this.clr({ d }); x.pulse(); }")}\nclr(${P("d = Dff(4)")}) { d.set(0); }`,
+		"clr is not async",
+	],
+	[
+		"Caller on a sync group method",
+		`${fsm("const c = Caller(this.clr, {});\nwhile (true) { S: await go.wait(1); x.pulse(); d.set(1); }")}\nclr(${P("d = Dff(4)")}) { d.set(0); }`,
+		"Caller takes an async sub-FSM",
+	],
+	[
 		"throw Raise() outside a try",
 		fsm(
 			"while (true) { S: await go.wait(1); if (b) throw Raise(); x.pulse(); }",

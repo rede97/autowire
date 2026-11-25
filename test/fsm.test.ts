@@ -220,3 +220,34 @@ async keep_ctl({
 	expect(sv).toMatch(/assign b = action\.leave_IDLE;/);
 	expect(sv).not.toContain("RUN_to_RUN");
 });
+
+test("a sync group method inlines its actions into the calling segment, no state", async () => {
+	const sv = await compileBody(`@Fsm
+async h({
+  go = Input(1),
+  a = Dff(1),
+  b = Dff(4),
+}) {
+  while (true) {
+    IDLE: await go.wait(1);
+    this.clr({ a, b });
+    RUN: await go.wait(0);
+    a.set(1);
+  }
+}
+clr({
+  a = Dff(1),
+  b = Dff(4),
+}) {
+  a.set(0);
+  b.set(0);
+}`);
+	// Two states only: the call adds none; a is cleared on entering RUN, set on leaving it.
+	expect(sv).toMatch(/typedef enum logic \[0:0\] \{\n {4}IDLE,\n {4}RUN\n/);
+	expect(sv).toContain(
+		"    end else if (action.enter_RUN | action.enter_IDLE) begin\n      a <= action.enter_IDLE;\n",
+	);
+	expect(sv).toContain(
+		"    end else if (action.enter_RUN) begin\n      b <= 4'h0;\n",
+	);
+});
