@@ -24,7 +24,7 @@ import {
 import { envStatsLine } from "./env.ts";
 import { CaseMonitor } from "./monitor.ts";
 import { elapsedLine, fmtElapsed } from "./scripts.ts";
-import { block, status, table } from "./ui.ts";
+import { block, pathBlock, status, table } from "./ui.ts";
 
 export function readSeeds(defaults: readonly string[]): string[] {
 	if (defaults.length === 0) throw new Error("dtsim: no seeds");
@@ -189,10 +189,12 @@ export async function runSingle(
 	}
 	const cov = writeCovMerge(ws, c, compileDir, [c.id], `cov_merge_${c.id}`);
 	if (cov) {
-		printBlock("Coverage", [
-			["Database", cov.db],
-			["Merge", `${cov.script} (not run by dtsim)`],
-		]);
+		console.log(
+			pathBlock("Coverage (not merged by dtsim; run the script by hand)", [
+				["Database", cov.db],
+				["Merge", cov.script],
+			]),
+		);
 	}
 	console.log(chalk.dim(elapsedLine(t0)));
 	return worst;

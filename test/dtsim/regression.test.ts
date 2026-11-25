@@ -118,14 +118,16 @@ describe("regression", () => {
 		const all = await Bun.file(join(regDir, "run_cov_merge_all")).text();
 		expect(all.match(/'-dir'/g)?.length).toBe(3);
 		expect(all).toContain('"$@"');
-		// The Coverage block names each build's database and the merge scripts.
+		// The Coverage lines name each build's database (whole paths, no
+		// table wrapping) and the merge scripts.
 		const name = helloBuild
 			.split(/[\\/]/)
 			.pop()
 			?.replace(/^compile_/, "");
-		const block = result.stdout.slice(result.stdout.indexOf("\nCoverage\n"));
-		expect(block).toContain(`│ ${name}`);
-		expect(block).toContain("simv.vdb");
+		expect(result.stdout).toContain("Coverage (not merged by dtsim");
+		expect(result.stdout).toContain(
+			`  ${name}  ${join(helloBuild, "simv.vdb")}`,
+		);
 		expect(result.stdout).toContain("run_cov_merge_all");
 		const helloSeeds = await seedDirs(join(regDir, "test_hello_world"));
 		const runSim = await Bun.file(

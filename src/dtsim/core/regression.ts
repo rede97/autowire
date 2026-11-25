@@ -31,7 +31,7 @@ import {
 	writeRunScript,
 } from "./scripts.ts";
 import { covLabel, readSeeds, seedsFor, waveLabel } from "./single.ts";
-import { block, plain, status, type TreeNode, tree } from "./ui.ts";
+import { block, pathBlock, plain, status, type TreeNode, tree } from "./ui.ts";
 
 export type CompileGroup = {
 	index: number;
@@ -41,6 +41,8 @@ export type CompileGroup = {
 	representative: MergedCase;
 	cases: MergedCase[];
 	dir: string;
+	/** Coverage is on and the backend collects it. */
+	cov: boolean;
 };
 
 export function regressionDir(ws: ResolvedWorkspace, label?: string): string {
@@ -93,6 +95,7 @@ export function planGroups(
 			name,
 			fingerprint: fp,
 			representative,
+			cov: representative.cov.enabled && ws.tool.coverage !== undefined,
 			cases,
 			dir: join(regressionDir(ws, label), `compile_${name}`),
 		};
@@ -144,7 +147,7 @@ export function planText(
 	for (const g of groups) {
 		const many = g.cases.length === 1 ? "case" : "cases";
 		const c = g.representative;
-		const cov = c.cov.enabled ? `, cov ${c.cov.metrics}` : "";
+		const cov = g.cov ? `, cov ${c.cov.metrics}` : "";
 		lines.push(
 			`${chalk.bold.cyan("compile")} ${chalk.bold(g.name)}  ${chalk.dim(`top ${c.top}, wave ${waveLabel(c.wave)}${cov}, ${g.cases.length} ${many}`)}`,
 		);
@@ -466,7 +469,11 @@ async function finishRegression(
 		]),
 	);
 	const cov = coverageScripts(ws, groups, regDir, run.failedBuilds);
-	if (cov) console.log(block("Coverage", cov));
+	if (cov) {
+		console.log(
+			pathBlock("Coverage (not merged by dtsim; run the scripts by hand)", cov),
+		);
+	}
 
 	return results.every(
 		(r) => r.status === "PASS" || r.status === "PASS WITH ERRORS",

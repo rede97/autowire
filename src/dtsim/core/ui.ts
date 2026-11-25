@@ -88,6 +88,19 @@ export function block(
 	return `${chalk.bold(title)}\n${table(shown.map(([k, v]) => [chalk.cyan(k), v]))}`;
 }
 
+/** A titled list of `label  value` lines with no borders and no wrapping,
+ *  for paths the user copies (the terminal soft-wraps a long one). */
+export function pathBlock(
+	title: string,
+	rows: ReadonlyArray<readonly [string, string]>,
+): string {
+	const width = Math.max(0, ...rows.map(([k]) => k.length));
+	return [
+		chalk.bold(title),
+		...rows.map(([k, v]) => `  ${chalk.cyan(k.padEnd(width))}  ${v}`),
+	].join("\n");
+}
+
 export type TreeNode = { label: string; children?: readonly TreeNode[] };
 
 /** `├─` / `└─` tree, one node per line. */
