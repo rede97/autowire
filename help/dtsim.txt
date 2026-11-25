@@ -42,14 +42,14 @@ Tools, top, wave and coverage (config-owned)
   own, derived cases inherit it. top, and with wave on also depth/scope, are in
   the compile key. A --wave flag is a config's registered WAVE option.
   Wave files are <case id>.fsdb (VCS) / <case id>.fst (Verilator) in each seed
-  dir. run_verdi uses ${output_dir}/${DTSIM_CASE}.fsdb; bjob_verdi/srun_verdi end
+  dir. run_verdi uses ${output_dir}/${DTSIM_CASE}.fsdb; bsub_verdi/srun_verdi end
   in & to return immediately (compile/sim wrappers still wait).
   cov (default false) and covMetrics (VCS -cm syntax, default
   line+cond+fsm+tgl+branch+assert) work like wave: Workspace defaults, case
   override, in the compile key when on. Only backends with `coverage` collect
   it (VCS); Verilator ignores cov. dtsim never merges: VCS writes per build
   run_verdi_cov + run_cov_merge (urg -> merge.vdb, urgReport) and per
-  regression run_cov_merge_all; cluster launchers add bjob_/srun_ wrappers.
+  regression run_cov_merge_all; cluster launchers add bsub_/srun_ wrappers.
   At the end a Coverage table lists each database and the merge scripts.
   No DTSIM_COV* env vars; a --cov flag is a config's registered COV option.
 
@@ -81,16 +81,18 @@ DSL (import from ./.dtsim/dsl/index.ts)
                 coverage: { db, merge, mergeAll }, ... }), ...];
             casePlusarg (default "TEST") sends +TEST=<case>; false sends none.
             Case toolOptions override these per key.
-  filelists dtsim never reads them: each is -f <abs path>, compiled with the
-            project root as cwd (relative entries, nested -f, -F, $VAR are the
-            simulator's); case filelists append to the workspace's.
+  filelists dtsim never reads them: each is -f <abs path>. The compile runs in
+            the compile dir (sims in their seed dirs), so relative entries
+            resolve there: name sources $WORKSPACE/... (set to the project
+            root; autowire analysis expands it too). Nested -f, -F, $VAR are
+            the simulator's; case filelists append to the workspace's.
   bareDefaults  lowest-priority case options; every case inherits them.
   task      { launcher, maxSlots, maxCompiles }; launcher LocalLauncher() (default)
             | LsfLauncher({ queue, args }) | SlurmLauncher(...) | defineLauncher(...)
             | a probe list [Lsf, Slurm, Local] tried in order, first on PATH wins
             (probed concurrently). DTSIM_TASK_TYPE=local|lsf|slurm forces one;
             DTSIM_TASK_QUEUE sets the queue. Cluster launchers also write
-            bjob_*/srun_* submit wrappers beside run_sim/run_compile/run_verdi.
+            bsub_*/srun_* submit wrappers beside run_sim/run_compile/run_verdi.
             maxSlots/maxCompiles: a number, or (ctx:{tool,launcher})=>number,
             evaluated after tool+launcher resolve (no manual probe needed).
   vcsBaseFlags({ timescale?, jobs?, debugaccess?, kdb?, add? }) → [-full64, -sverilog,

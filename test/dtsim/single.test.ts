@@ -26,10 +26,11 @@ describe("single case", () => {
 		expect(await Bun.file(join(caseDir, "vcs.log")).exists()).toBe(true);
 		// No --wave: no dump.tcl, simv runs without UCLI.
 		expect(await Bun.file(join(caseDir, "dump.tcl")).exists()).toBe(false);
-		// Filelists reach VCS untouched as -f, compiled from the project root.
+		// Filelists reach VCS untouched as -f; VCS runs in the compile dir, so
+		// its stray outputs stay out of the project root.
 		const vcsLog = await Bun.file(join(caseDir, "vcs.log")).text();
 		// MSYS bash prints /tmp/... for C:/msys64/tmp/...: compare the tail.
-		expect(vcsLog).toMatch(/\ncwd=\S*\/proj\n/);
+		expect(vcsLog).toMatch(/\ncwd=\S*\/proj\/dt\/simout\/test_hello_world\n/);
 		expect(vcsLog).toContain("dt/config/file.lst");
 		expect(await Bun.file(join(caseDir, "filelist.f")).exists()).toBe(false);
 		// run_compile records the compile command with its env.

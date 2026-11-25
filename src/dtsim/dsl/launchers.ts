@@ -51,7 +51,7 @@ export function LsfLauncher(opts: ClusterOpts = {}): Launcher {
 		passthrough: ["LSF_*", "LSB_*"],
 		summary: clusterSummary(opts, args),
 		probe: ["bsub"],
-		scriptPrefix: "bjob",
+		scriptPrefix: "bsub",
 		wrap(argv, ctx) {
 			const queue = ctx.queue || opts.queue;
 			return [

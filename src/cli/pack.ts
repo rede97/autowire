@@ -161,7 +161,10 @@ async function ipClosure(root: string): Promise<Set<string>> {
 					stack.push(abs);
 				} else if (entry.isFile() && entry.name.endsWith(".f")) {
 					for (const line of (await Bun.file(abs).text()).split("\n")) {
-						const item = line.replace(/#.*/, "").trim();
+						const item = line
+							.replace(/#.*/, "")
+							.trim()
+							.replace(/^\$\{?WORKSPACE\}?\//, "");
 						if (!item.startsWith("ip/")) continue;
 						// Parent dirs too: skip() filters directories before the
 						// walk descends into them.

@@ -2,6 +2,12 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.6] - 2026-11-25
+
+- **破坏性：LSF 提交脚本改名 `bsub_*`**：`bjob_compile` / `bjob_sim` / `bjob_verdi` / `bjob_verdi_cov` / `bjob_cov_merge` / `bjob_cov_merge_all` 改为 `bsub_*`（与命令同名，Slurm 仍是 `srun_*`）；`LsfLauncher` 的 `scriptPrefix` 改为 `"bsub"`。
+- **破坏性：编译在编译目录里运行**：VCS 与 Verilator 的编译 cwd 从项目根改为各自的编译目录，和仿真在 seed 目录、`run_verdi` 在自己目录一致，`ucli.key` 等 VCS 杂项不再落到项目根。filelist 里的相对路径因此按编译目录解析：条目改写成 `$WORKSPACE/...`（dtsim 在每个编译 / 仿真环境里设为项目根），或用自己透传的变量、绝对路径；嵌套 `-f` 也一样。
+- **`autowire analysis` 支持 `$WORKSPACE`**：`analysis run` 把 `WORKSPACE` 设为工作区根交给 hdxml，自己检查 dump 目录条目、`docs pack` 计算 `ip/` 闭包时也按它展开，所以被仿真 filelist 嵌套的分析 filelist 可以用同一写法。demo/soc（`rtl/soc.f`、`rtl/gen.f`、`dt/config/*.f`）、demo/hbm（`rtl/hbm.f`、`dt/config/hbm.f`）与 demo/dtsim 的 filelist 已改为 `$WORKSPACE/...`。
+
 ## [2.9.5] - 2026-11-24
 
 - **新命令 `plugin fsm run`**：类型 A 插件，把 ECMAScript async/await 写的控制状态机编译成 SystemVerilog（[`docs/state/async-fsm.md`](docs/state/async-fsm.md)，`help fsm`）。`autowire.toml` 里每个源一段 `[fsm.<id>] mjs = "..."`，每个 `@FsmGroup` class 写出 `plugins_dir/fsm/<class 名>.sv`，另写共用的 `plugins_dir/fsm/aw_dff.sv`；增量写，`--force` 全部重写，`--only <id>` 只处理一个源。源码只解析、不执行；解析器 `@babel/parser` 写死 8.1.3，只在这条命令里懒加载。内建名从 `.autowire/dsl/fsm/dsl.mjs` 导入（每次运行重新写出，附 `dsl.d.ts`）。

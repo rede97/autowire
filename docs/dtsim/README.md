@@ -281,12 +281,17 @@ root), `${verify}` (`dt/config`), `${output_dir}`, `${case}`, `${seed}`,
 dtsim never reads a filelist. `Workspace({ filelists })` lists the ones every
 case compiles (default: none); a case's `filelists` (and each derived level,
 `byTool`, `bareDefaults`) append to them, so a case extends the workspace set
-with its own. Each becomes one `-f <absolute path>` on the compile command,
-and the compile runs with the project root as its cwd: entries relative to
-the project root (the `autowire.toml` rule), nested `-f`, `-F` (relative to
-its own file) and `$VAR` (from the compile environment) are the simulator's
-standard handling. Outputs still go to the compile dir (VCS `-Mdir` / `-o`,
-Verilator `-Mdir`), so the project root gets no files. Only one check runs
+with its own. Each becomes one `-f <absolute path>` on the compile command.
+The compile runs in the compile dir, as the sims run in their seed dirs, so
+everything the simulator writes (VCS `csrc` / `simv` / `ucli.key`, Verilator
+`obj_dir`) stays under `dt/simout/` and the project root gets no files.
+Relative filelist entries therefore resolve against the compile dir: name
+sources as `$WORKSPACE/...` (dtsim sets `WORKSPACE` to the project root in
+every compile and sim environment), or with your own variable passed through
+`env.passthrough`, or absolute. Nested `-f`, `-F` (relative to its own file)
+and `$VAR` are the simulator's standard handling. `autowire analysis` also
+expands `$WORKSPACE`, so an analysis filelist nested in a simulation one
+(demo/soc `-f $WORKSPACE/rtl/soc.f`) uses the same form. Only one check runs
 before the tool: every listed filelist exists (after `preCompile`, which may
 generate one). Backends get the list as `ctx.filelists`.
 
@@ -443,7 +448,7 @@ VCS 的做法：
 - 回归目录写 `run_cov_merge_all`：一条 `urg` 合并所有覆盖率编译组到 `<regression>/merge.vdb` 与
   `urgReport`，额外参数原样传给 urg。define 不同的编译组合并不一定有意义。
 - 这些脚本都带编译阶段的环境（exports），和 `run_verdi` 一样，cluster 启动器在旁边写提交脚本：
-  `bjob_verdi_cov` / `bjob_cov_merge` / `bjob_cov_merge_all`（Slurm 为 `srun_*`），local 不写。
+  `bsub_verdi_cov` / `bsub_cov_merge` / `bsub_cov_merge_all`（Slurm 为 `srun_*`），local 不写。
 
 命令行开覆盖率：注册 `{ name: "COV", flags: "--cov" }`，回调里写 `cov: process.env.COV === "1"`
 （demo/dtsim、demo/hbm）。
@@ -492,7 +497,7 @@ serialise. A single launcher is an explicit choice and is not probed. Built in:
 | `SlurmLauncher({ queue, args })` | `srun --pty [--qos <queue>] --job-name <job> <args> <cmd>` | `SLURM_*` |
 
 `args` is a string array, e.g. `["-R", "rusage[mem=8000]"]` or
-`["--partition", "eda"]`. `LsfLauncher` probes `bsub` and writes `bjob_*`
+`["--partition", "eda"]`. `LsfLauncher` probes `bsub` and writes `bsub_*`
 wrappers; `SlurmLauncher` probes `srun` and writes `srun_*`; `LocalLauncher`
 has neither, so it is always available and writes no wrapper. A site wrapper
 is `defineLauncher(...)`:
@@ -525,9 +530,9 @@ fails before an output directory is created.
 built-ins' own `queue`; it is `""` when unset.
 
 Next to `run_sim`, `run_compile` and (VCS) `run_verdi`, a cluster launcher also
-writes a submit wrapper — `bjob_*` for LSF, `srun_*` for Slurm — that submits
-that script through the launcher (e.g. `./bjob_sim` runs `bsub … bash run_sim`). They are backups to
-resubmit by hand; dtsim submits inline and does not run them. `bjob_verdi` and
+writes a submit wrapper — `bsub_*` for LSF, `srun_*` for Slurm — that submits
+that script through the launcher (e.g. `./bsub_sim` runs `bsub … bash run_sim`). They are backups to
+resubmit by hand; dtsim submits inline and does not run them. `bsub_verdi` and
 `srun_verdi` end in `&` so launching the GUI returns immediately; compile and
 sim wrappers still wait for their jobs. `LocalLauncher` writes none.
 

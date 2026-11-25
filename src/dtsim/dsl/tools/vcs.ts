@@ -212,8 +212,10 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 			}
 		},
 
-		// Runs in the project root: the filelists' relative entries, $VARs
-		// and -F are VCS's own business. Every output goes to the compile dir.
+		// Runs in the compile dir, like simv in its seed dir: every output
+		// (csrc, simv, ucli.key, ...) lands there. Relative filelist entries
+		// resolve against it, so filelists name sources as $WORKSPACE/...;
+		// $VARs, nested -f and -F are VCS's own business.
 		compile(ctx) {
 			const cov = ctx.caseOpts.cov;
 			const o = { ...opts, ...ctx.caseOpts.toolOptions };
@@ -250,7 +252,7 @@ export function VcsTool(opts: VcsOpts = {}): SimTool {
 			].map((a) => ctx.expand(a));
 			return {
 				argv,
-				cwd: ctx.workspace,
+				cwd: ctx.dir,
 				log: join(ctx.dir, "vcs.log"),
 				logMode: "tool",
 				executable: join(ctx.dir, "simv"),

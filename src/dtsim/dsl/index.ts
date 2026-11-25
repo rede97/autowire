@@ -62,7 +62,7 @@ export type CaseOpts = {
 	covMetrics?: string;
 	/** Filelists (paths relative to dt/config), appended to the workspace's
 	 *  and the parent's. dtsim never reads them: each reaches the tool as -f,
-	 *  which runs in the project root. */
+	 *  which runs in the compile dir (name sources as $WORKSPACE/...). */
 	filelists?: readonly string[];
 	/** Grader for this case and its derived cases (default: Workspace.grader). */
 	grader?: Grader;
@@ -398,7 +398,7 @@ export type ToolContext = {
 	/** Project root: the RTL design dir that owns dt/. */
 	workspace: string;
 	/** Filelists of this case, absolute, workspace's first. Contents are the
-	 *  tool's business: pass each as -f with the project root as cwd. */
+	 *  tool's business: pass each as -f, with the compile dir as cwd. */
 	filelists: string[];
 	regression: boolean;
 	/** `run --interactive`: the terminal is attached to the simulator. */
@@ -411,7 +411,7 @@ export type ToolContext = {
 	/** Same placeholders plus shell variables (${HOME}), then absolute against
 	 *  dt/config; unknown names throw. For paths a backend reads or writes. */
 	resolvePath: (text: string) => string;
-	/** Write a cluster submit wrapper (bjob_ / srun_ prefix) next to a run script a
+	/** Write a cluster submit wrapper (bsub_ / srun_ prefix) next to a run script a
 	 *  backend generated, e.g. submitScript("run_verdi"); no-op on local.
 	 *  background returns from the wrapper without waiting for a GUI. */
 	submitScript: (scriptName: string, opts?: { background?: boolean }) => void;
@@ -467,7 +467,7 @@ export type SimTool = {
 	/** Coverage support. Without it a case's `cov` is ignored and the Run /
 	 *  Regression tables say so. dtsim never merges: it writes each merge
 	 *  command into a run script (compile env) plus a cluster submit wrapper
-	 *  (bjob_ / srun_), and prints the databases and scripts at the end. */
+	 *  (bsub_ / srun_), and prints the databases and scripts at the end. */
 	coverage?: {
 		/** Where a build's coverage database is (VCS: `<dir>/simv.vdb`). */
 		db: (dir: string) => string;
@@ -521,7 +521,7 @@ export type Launcher = {
 	 *  available (local). */
 	probe?: readonly string[];
 	/** Prefix for the backup submit scripts dtsim writes next to run_sim /
-	 *  run_verdi / run_compile (`bjob`, `srun`). Absent = none (local). */
+	 *  run_verdi / run_compile (`bsub`, `srun`). Absent = none (local). */
 	scriptPrefix?: string;
 };
 

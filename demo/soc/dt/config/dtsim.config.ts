@@ -2,8 +2,8 @@
 //   bun ../../index.ts dtsim run basic_smoke             (Verilator, the default)
 //   SIM_TOOL=vcs bun ../../index.ts dtsim run basic_smoke  (or ./dt/vcs/run.sh)
 //   bun ../../index.ts dtsim regr smoke --wave     (fst / fsdb per seed)
-// Filelists are relative to the project root (demo/soc); dtsim passes each
-// to the simulator as -f. Outputs: dt/simout/<tool>/<case>/.
+// Filelists name sources as $WORKSPACE/... (the project root, demo/soc): the
+// simulator compiles in dt/simout/<tool>/<case>/, which is also the output.
 // Every bench's top module is tb_top (the Workspace default): the Verilator
 // C++ harness (tb_main.cpp), the pure-SV aw-tb-mod dump and the sv_reg smoke.
 // byTool holds what differs per simulator. The SD, tb_mod and sv_reg cases

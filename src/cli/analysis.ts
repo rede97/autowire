@@ -71,7 +71,9 @@ function scanFilelistDumpEntries(cfg: DumpDirs): FilelistDumpEntry[] {
 				.replace(/#.*/, "")
 				.trim();
 			if (!line || line.startsWith("-") || line.startsWith("+")) continue;
-			const abs = isAbsolute(line) ? line : join(cfg.root, line);
+			// $WORKSPACE (what hdxml and the simulators expand) is the root.
+			const path = line.replace(/^\$\{?WORKSPACE\}?(?=\/|$)/, cfg.root);
+			const abs = isAbsolute(path) ? path : join(cfg.root, path);
 			const kind = kindOf(abs);
 			if (kind)
 				entries.push({ path: posix(abs), kind, onDisk: existsSync(abs) });
@@ -226,6 +228,9 @@ export function registerAnalysis(program: Command): void {
 				if (opts.force) args.push("--refresh");
 				const proc = Bun.spawnSync({
 					cmd: [findHdxml(opts.hdxml, cfg.hdxmlBin), ...args],
+					// Filelists may name sources as $WORKSPACE/... (the form a
+					// simulator compiling outside the root needs).
+					env: { ...process.env, WORKSPACE: cfg.root },
 					stdout: "inherit",
 					stderr: "inherit",
 				});

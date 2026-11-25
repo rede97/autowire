@@ -126,7 +126,7 @@ export function writeRunScript(args: {
 }
 
 /**
- * A cluster submit wrapper (bjob_sim, srun_verdi, ...) written next to a run
+ * A cluster submit wrapper (bsub_sim, srun_verdi, ...) written next to a run
  * script. It submits `bash <run script>` through the chosen launcher so the
  * user can resubmit by hand; dtsim submits inline and does not run this file.
  * Written only for launchers with a scriptPrefix (local bypasses).

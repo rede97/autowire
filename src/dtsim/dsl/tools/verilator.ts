@@ -101,8 +101,9 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 			);
 		},
 
-		// Runs in the project root: the filelists' relative entries, $VARs
-		// and -F are Verilator's own business. -Mdir is under the compile dir.
+		// Runs in the compile dir (-Mdir is under it). Relative filelist
+		// entries resolve against it, so filelists name sources as
+		// $WORKSPACE/...; $VARs, nested -f and -F are Verilator's business.
 		compile(ctx) {
 			const wave = ctx.caseOpts.wave;
 			const { mdir, main, command } = resolved(ctx.caseOpts.toolOptions);
@@ -124,7 +125,7 @@ export function VerilatorTool(opts: VerilatorOpts = {}): SimTool {
 					...ctx.caseOpts.defines.map((d) => `-D${d}`),
 					...ctx.caseOpts.compileArgs,
 				].map((a) => ctx.expand(a)),
-				cwd: ctx.workspace,
+				cwd: ctx.dir,
 				log: join(ctx.dir, "compile.log"),
 				logMode: "tee",
 				executable: join(
