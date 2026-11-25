@@ -81,7 +81,8 @@ Exception regions
   Leaving a push / pop state by an escape withdraws vld / rdy before the handshake
 
 Output
-  plugins_dir/fsm/<Class>.sv   generated, do not edit (SoT is the .mjs)
+  plugins_dir/fsm/<Class>.sv   generated, do not edit (SoT is the .mjs); [plugins.fsm] dir =
+                               "<workspace-relative dir>" writes there instead (e.g. the RTL tree)
   plugins_dir/fsm/aw_dff.sv    reference DFF (parameter type T); add both to
                                the analysis / simulation filelist
   every if / else branch is written with begin / end

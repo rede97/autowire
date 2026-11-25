@@ -218,7 +218,7 @@ export async function generateAll(
 	const norm = (p: string) =>
 		process.platform === "win32" ? p.toLowerCase() : p;
 	const registered = new Set(ws.fsmSources.map((s) => norm(s.mjs)));
-	const dir = join(ws.pluginsDir, "fsm");
+	const dir = ws.fsmDir;
 	const groups = new Map<string, string>();
 	const pkgs = new Map<string, string>();
 	const outputs: { path: string; text: string }[] = [];

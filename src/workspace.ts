@@ -56,6 +56,8 @@ export interface WorkspaceConfig {
 	/** Wishbone bus RTL dir ([plugins.wishbone] bus_dir).
 	 *  Default plugins_dir/wishbone/bus. */
 	wishboneBusDir: string;
+	/** fsm plugin output dir ([plugins.fsm] dir). Default plugins_dir/fsm. */
+	fsmDir: string;
 	/** Param style ([style] param_inline, default true): inline simple overrides
 	 *  into the instance; false folds every override into Mod__Inst__Param. */
 	styleParamInline: boolean;
@@ -451,14 +453,16 @@ export async function loadWorkspace(
 	}
 	const pluginsWishbone = isObj(plugins.wishbone) ? plugins.wishbone : {};
 	const pluginsDirAbs = rel(pluginsDirRel);
-	const wishboneRegfileDir = wishboneRtlDir(
+	const wishboneRegfileDir = pluginRtlDir(
 		pluginsWishbone,
+		"wishbone",
 		"regfile_dir",
 		join(pluginsDirAbs, "wishbone", "regfile"),
 		rel,
 	);
-	const wishboneBusDir = wishboneRtlDir(
+	const wishboneBusDir = pluginRtlDir(
 		pluginsWishbone,
+		"wishbone",
 		"bus_dir",
 		join(pluginsDirAbs, "wishbone", "bus"),
 		rel,
@@ -467,6 +471,13 @@ export async function loadWorkspace(
 		rel(connectDirRel),
 		rel(simDirRel),
 	]);
+	const fsmDir = pluginRtlDir(
+		isObj(plugins.fsm) ? plugins.fsm : {},
+		"fsm",
+		"dir",
+		join(pluginsDirAbs, "fsm"),
+		rel,
+	);
 	const wishboneExcelExport = optPluginPath(pluginsWishbone, "export", rel);
 	const wishboneCExport = optPluginPath(pluginsWishbone, "c", rel);
 	const wishboneUvmExport = optPluginPath(pluginsWishbone, "uvm", rel);
@@ -501,6 +512,7 @@ export async function loadWorkspace(
 		pluginsDir: pluginsDirAbs,
 		wishboneRegfileDir,
 		wishboneBusDir,
+		fsmDir,
 		styleParamInline: style.param_inline !== false,
 		stylePortAlign: style.port_align === true,
 		styleParamAlign: style.param_align === true,
@@ -540,8 +552,9 @@ function optPluginPath(
 }
 
 /** Optional RTL sink. Omitted keeps the historical plugins_dir location. */
-function wishboneRtlDir(
+function pluginRtlDir(
 	table: Record<string, unknown>,
+	plugin: string,
 	key: string,
 	fallback: string,
 	rel: (p: string) => string,
@@ -550,12 +563,12 @@ function wishboneRtlDir(
 	if (v === undefined) return fallback;
 	if (typeof v !== "string" || v.length === 0) {
 		throw new Error(
-			`autowire.toml: [plugins.wishbone] ${key} must be a non-empty workspace-relative path`,
+			`autowire.toml: [plugins.${plugin}] ${key} must be a non-empty workspace-relative path`,
 		);
 	}
 	if (isAbsolute(v) || /^[A-Za-z]:[\\/]/.test(v)) {
 		throw new Error(
-			`autowire.toml: [plugins.wishbone] ${key} must be workspace-relative, not absolute`,
+			`autowire.toml: [plugins.${plugin}] ${key} must be workspace-relative, not absolute`,
 		);
 	}
 	return rel(v);

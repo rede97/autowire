@@ -1,7 +1,14 @@
 // fsm DSL compiler (docs/state/async-fsm.md): doc examples are the golden
 // inputs, demo/state is the runnable copy, plugin fsm run writes plugins_dir.
 import { describe, expect, test } from "bun:test";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AW_DFF_SV } from "../src/plugins/fsm/generate.ts";
@@ -109,6 +116,36 @@ test("plugin fsm run writes plugins_dir/fsm and is incremental", async () => {
 		expect(readFileSync(join(out, "CounterCtl.sv"), "utf8")).toBe(counter.sv);
 		readFileSync(join(ws, ".autowire/dsl/fsm/dsl.mjs"));
 		expect(run().stdout.toString()).toContain("fsm: outputs unchanged");
+	} finally {
+		rmSync(ws, { recursive: true, force: true });
+	}
+}, 60_000);
+
+test("[plugins.fsm] dir moves the fsm output into the RTL tree", () => {
+	const ws = mkdtempSync(join(tmpdir(), "aw-fsm-dir-"));
+	try {
+		const toml = readFileSync(join(demo, "autowire.toml"), "utf8");
+		writeFileSync(
+			join(ws, "autowire.toml"),
+			`${toml}\n[plugins.fsm]\ndir = "rtl/fsm"\n`,
+		);
+		cpSync(join(demo, "fsm"), join(ws, "fsm"), { recursive: true });
+		const r = Bun.spawnSync({
+			cmd: [
+				"bun",
+				join(root, "index.ts"),
+				"plugin",
+				"fsm",
+				"run",
+				"--workspace",
+				ws,
+			],
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		expect(r.exitCode, r.stderr.toString()).toBe(0);
+		expect(existsSync(join(ws, "rtl/fsm/CmdCtl.sv"))).toBe(true);
+		expect(existsSync(join(ws, "gen/plugins/fsm"))).toBe(false);
 	} finally {
 		rmSync(ws, { recursive: true, force: true });
 	}
