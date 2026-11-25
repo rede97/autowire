@@ -25,7 +25,7 @@ mjs = "fsm/reg_ctl.mjs"
 [fsm.msg_ctl]
 mjs = "fsm/msg_ctl.mjs"
 
-# §6.5 @Fsm({ statePrefix, stateEncoding })
+# §6.5 @Fsm({ statePrefix, stateEncoding, exportState, stateValues })
 [fsm.phy_ctl]
 mjs = "fsm/phy_ctl.mjs"
 
@@ -45,3 +45,11 @@ mjs = "fsm/cfg_load.mjs"
 # §5.4 Caller: a register-access sub-FSM as one shared server, called twice
 [fsm.reg_mgr]
 mjs = "fsm/reg_mgr.mjs"
+
+# §3.7 try / Escape: nested error regions, soft reset, multi-level cleanup
+[fsm.escape_ctl]
+mjs = "fsm/escape_ctl.mjs"
+
+# §2.8 @SvEnum: an enum-typed command channel; cmd_pkg is emitted into CmdCtl.sv
+[fsm.cmd_ctl]
+mjs = "fsm/cmd_ctl.mjs"

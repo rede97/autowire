@@ -1,7 +1,15 @@
 // Signal expressions (§2.1): typing, width rules, SV printing.
 
 import type { Expression, Node } from "@babel/types";
-import type { Binding, DffReg, LetBinding, Sig, Sv, SvPkg } from "./model.ts";
+import type {
+	Binding,
+	DffReg,
+	EnumType,
+	LetBinding,
+	Sig,
+	Sv,
+	SvPkg,
+} from "./model.ts";
 import type { Src } from "./source.ts";
 
 export function lit(width: number, v: bigint): Sv {
@@ -59,6 +67,8 @@ export interface ExprCx {
 	builtin(name: string): string | undefined;
 	/** User SV package declared at the top level (§2.3). */
 	pkg(name: string): SvPkg | undefined;
+	/** @SvEnum class by local name (§2.8). */
+	enumType(name: string): EnumType | undefined;
 	/** One wire per distinct call: `fn_<fn>_<n> = pkg::fn(args)`. */
 	userCall(pkg: SvPkg, fn: string, args: Sig[], node: Node): Sig;
 	/** `let r` (or `r.<field>` of a record message): the popped data or inlined
@@ -102,18 +112,28 @@ export function sized(src: Src, node: Node, v: bigint, width: number): Sig {
 export const AWAIT_IS_STATE =
 	"await marks a state: only await x.wait(v), x.push(v), x.pop() and a sub-FSM call (§3.1); a branch or loop condition is a plain signal expression, e.g. if (a & b) (§2.5)";
 
-/** Evaluate to a signal. `width` sizes a bare literal. */
+/** Evaluate to a signal. `width` sizes a bare literal; `enum` requires a value of that type. */
 export function evalSig(
 	cx: ExprCx,
 	node: Expression,
-	o: { width?: number } = {},
+	o: { width?: number; enum?: EnumType } = {},
 ): Sig {
 	const v = evalVal(cx, node, o.width);
 	if (!isLit(v)) {
+		if (o.enum && v.enum !== o.enum)
+			cx.src.fail(
+				node,
+				`expected a ${o.enum.cls} value (${o.enum.cls}.<MEMBER>), got ${v.enum ? `a ${v.enum.cls} value` : `a ${v.width}-bit signal`}`,
+			);
 		if (o.width !== undefined && v.width !== o.width)
 			cx.src.fail(node, `width mismatch: expected ${o.width}, got ${v.width}`);
 		return v;
 	}
+	if (o.enum)
+		cx.src.fail(
+			node,
+			`expected a ${o.enum.cls} value (${o.enum.cls}.<MEMBER>), not a number`,
+		);
 	if (o.width === undefined)
 		cx.src.fail(
 			node,
@@ -121,6 +141,9 @@ export function evalSig(
 		);
 	return sized(cx.src, node, v.lit, o.width);
 }
+
+const NO_ENUM_OP =
+	"an enum value only compares (=== / !==) and selects (?:) (§2.8)";
 
 const BIT_OPS: Record<string, true> = { "&": true, "|": true, "^": true };
 const CMP_OPS: Record<string, string> = {
@@ -150,6 +173,11 @@ function evalVal(cx: ExprCx, node: Expression, hint?: number): Val {
 			const bi = cx.builtin(node.name);
 			if (bi === "ALWAYS_0") return constSig(1, 0n);
 			if (bi === "ALWAYS_1") return constSig(1, 1n);
+			if (cx.enumType(node.name))
+				return src.fail(
+					node,
+					`${node.name} is an enum type; its values are ${node.name}.<MEMBER>`,
+				);
 			return src.fail(
 				node,
 				bi ? `${node.name} is not a signal` : `unknown name ${node.name}`,
@@ -158,12 +186,34 @@ function evalVal(cx: ExprCx, node: Expression, hint?: number): Val {
 		case "ThisExpression":
 			return src.fail(node, "read a field of this interface: this.<field>");
 		case "MemberExpression": {
+			if (
+				node.object.type === "Identifier" &&
+				node.property.type === "Identifier" &&
+				!node.computed &&
+				!cx.lookup(node.object.name)
+			) {
+				const t = cx.enumType(node.object.name);
+				if (t) {
+					const m = t.members.get(node.property.name);
+					if (!m)
+						return src.fail(
+							node.property,
+							`${t.cls} has no member ${node.property.name} (${[...t.members.keys()].join(", ")})`,
+						);
+					return { sv: atom(`${t.pkg}::${m.sv}`), width: t.width, enum: t };
+				}
+			}
 			if (node.property.type === "Identifier" && !node.computed) {
 				const f = node.property.name;
 				const b = cx.ref(node.object);
 				if (b?.k === "dff" && f === "val") {
 					b.read = true;
-					return { sv: atom(valName(b)), width: b.width, named: true };
+					return {
+						sv: atom(valName(b)),
+						width: b.width,
+						named: true,
+						enum: b.enum,
+					};
 				}
 				if (b?.k === "let") return cx.useLet(b, f, node);
 			}
@@ -184,6 +234,7 @@ function evalVal(cx: ExprCx, node: Expression, hint?: number): Val {
 			const arg = evalVal(cx, node.argument);
 			if (isLit(arg))
 				src.fail(node, `${node.operator} on a bare number; write Const(N, v)`);
+			if (arg.enum) src.fail(node, NO_ENUM_OP);
 			if (node.operator === "!" && arg.width !== 1)
 				src.fail(node, `! needs a 1-bit operand, got ${arg.width} bits`);
 			return {
@@ -221,7 +272,16 @@ function evalVal(cx: ExprCx, node: Expression, hint?: number): Val {
 			const b = isLit(bv) ? sized(src, bv.node, bv.lit, w) : bv;
 			if (a.width !== b.width)
 				src.fail(node, `width mismatch: ${a.width} vs ${b.width} bits`);
-			return { sv: { k: "tern", c: c.sv, a: a.sv, b: b.sv }, width: w };
+			if (a.enum !== b.enum)
+				src.fail(
+					node,
+					"both ?: arms are values of the same enum, or neither is (§2.8)",
+				);
+			return {
+				sv: { k: "tern", c: c.sv, a: a.sv, b: b.sv },
+				width: w,
+				enum: a.enum,
+			};
 		}
 		case "BinaryExpression": {
 			const op = node.operator;
@@ -243,6 +303,14 @@ function evalVal(cx: ExprCx, node: Expression, hint?: number): Val {
 			const r = isLit(rv) ? sized(src, rv.node, rv.lit, w) : rv;
 			if (l.width !== r.width)
 				src.fail(node, `width mismatch: ${l.width} vs ${r.width} bits`);
+			if (l.enum || r.enum) {
+				if (op !== "===" && op !== "!==") src.fail(node, NO_ENUM_OP);
+				if (l.enum !== r.enum)
+					src.fail(
+						node,
+						`compare a ${(l.enum ?? r.enum)?.cls} value with another one (${(l.enum ?? r.enum)?.cls}.<MEMBER>)`,
+					);
+			}
 			const cmp = CMP_OPS[op];
 			return cmp
 				? { sv: { k: "bin", op: cmp, l: l.sv, r: r.sv }, width: 1 }
@@ -263,7 +331,7 @@ function bindingSig(cx: ExprCx, b: Binding, name: string, node: Node): Sig {
 	switch (b.k) {
 		case "input":
 			b.used = true;
-			return { sv: atom(b.name), width: b.width, named: true };
+			return { sv: atom(b.name), width: b.width, named: true, enum: b.enum };
 		case "output":
 			return src.fail(
 				node,
@@ -351,6 +419,7 @@ function call(cx: ExprCx, node: Expression & { type: "CallExpression" }): Sig {
 				node,
 				"bits() selects from a named signal: a port, a const, or a Dff .val",
 			);
+		if (obj.enum) src.fail(node, NO_ENUM_OP);
 		const args = node.arguments;
 		if (args.length < 1 || args.length > 2)
 			src.fail(node, "bits(i) or bits(hi, lo)");

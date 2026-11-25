@@ -3,7 +3,23 @@
 // moves, leaves) and one always_ff (state register).
 
 import { lit, svText, valName } from "./expr.ts";
-import type { Action, DffReg, Fsm, HsPort, Signal, Tree } from "./model.ts";
+import type {
+	Action,
+	DffReg,
+	EnumType,
+	Fsm,
+	HsPort,
+	Signal,
+	Tree,
+	Ty,
+} from "./model.ts";
+
+/** SV type of an @SvEnum value (§2.8). */
+const enumText = (t: EnumType) => `${t.pkg}::${t.name}`;
+
+/** An and-or select is plain bits: cast it back when the target is an enum. */
+const castTo = (t: Ty, expr: string) =>
+	t.enum ? `${enumText(t.enum)}'(${expr})` : expr;
 
 type St =
 	| { k: "asg"; lhs: string; rhs: string }
@@ -67,16 +83,23 @@ function nextState(f: Fsm): string[] {
 	};
 	const items: string[] = [];
 	for (const s of f.states) {
-		const exit = f.exits.get(s) ?? null;
+		const exit = f.exits.get(s);
+		const lv = f.leave.get(s);
+		// leave_S is high on every way out of S, escapes included (§3.7).
+		const leaving = (t: Tree): St[] => [...(lv ? [note(lv)] : []), ...tree(t)];
+		const arms: { cond: string | null; body: St[] }[] = (
+			exit?.escapes ?? []
+		).map((e) => ({ cond: svText(e.cond), body: leaving(e.tree) }));
 		let body: St[];
-		if (exit === null) body = [asg("state_next", s.member)];
-		else {
-			const lv = f.leave.get(s);
-			const inner = [...(lv ? [note(lv)] : []), ...tree(exit)];
+		if (!exit?.tree)
 			body =
-				typeof s.cond === "boolean"
-					? inner
-					: [{ k: "if", arms: [{ cond: svText(s.cond), body: inner }] }];
+				arms.length > 0 ? [{ k: "if", arms }] : [asg("state_next", s.member)];
+		else {
+			const inner = leaving(exit.tree);
+			if (typeof s.cond !== "boolean")
+				arms.push({ cond: svText(s.cond), body: inner });
+			else if (arms.length > 0) arms.push({ cond: null, body: inner });
+			body = arms.length > 0 ? [{ k: "if", arms }] : inner;
 		}
 		items.push(`      ${s.member}:`);
 		if (body.length === 1) printSts(body, "        ", items);
@@ -101,7 +124,8 @@ const siteSig = (f: Fsm, a: Action) =>
 	ors((f.drive.get(a) ?? []).map((s) => s.name));
 
 /** Priority-free and-or select of the written values; 0 when no site fires (§6.1, §6.5). */
-function andOr(f: Fsm, width: number, sites: Action[]): string {
+function andOr(f: Fsm, ty: Ty, sites: Action[]): string {
+	const { width } = ty;
 	const ones: string[] = [];
 	const terms: string[] = [];
 	for (const a of sites) {
@@ -122,7 +146,10 @@ function andOr(f: Fsm, width: number, sites: Action[]): string {
 		...(ones.length > 0 ? [ors(ones)] : []),
 		...(ones.length + terms.length > 1 ? terms.map(paren) : terms),
 	];
-	return parts.length > 0 ? parts.join(" | ") : svText(lit(width, 0n));
+	return castTo(
+		ty,
+		parts.length > 0 ? parts.join(" | ") : svText(lit(width, 0n)),
+	);
 }
 
 /** `next` of a register: the one written value, else the and-or select. */
@@ -130,7 +157,7 @@ function nextExpr(f: Fsm, d: DffReg): string {
 	const first = d.sites[0]?.value;
 	if (first && d.sites.every((a) => svText(a.value.sv) === svText(first.sv)))
 		return svText(first.sv);
-	return andOr(f, d.width, d.sites);
+	return andOr(f, d, d.sites);
 }
 
 type Drv =
@@ -168,7 +195,7 @@ function hsDrivers(p: HsPort): Drv[] {
 				: terms.length === 1
 					? (terms[0] as string).replace(/^\((.*)\)$/, "$1")
 					: terms.join(" | ");
-		return { k: "asg", lhs: `${p.name}_${f.name}`, rhs };
+		return { k: "asg", lhs: `${p.name}_${f.name}`, rhs: castTo(f, rhs) };
 	});
 	return [{ k: "asg", lhs: `${p.name}_vld`, rhs: held, c }, ...data];
 }
@@ -184,7 +211,7 @@ function drivers(f: Fsm): string[] {
 			items.push({
 				k: "asg",
 				lhs: p.name,
-				rhs: andOr(f, p.width, p.sites),
+				rhs: andOr(f, p, p.sites),
 				c: texts(p.sites),
 			});
 		if (p.k === "push" || p.k === "pop") items.push(...hsDrivers(p));
@@ -200,8 +227,20 @@ function drivers(f: Fsm): string[] {
 			continue;
 		}
 		const params = [
-			...(p.width > 1 ? [`.T(logic ${range(p.width)})`] : []),
-			...(p.reset !== 0n ? [`.RST(${svText(lit(p.width, p.reset))})`] : []),
+			...(p.enum
+				? [`.T(${enumText(p.enum)})`]
+				: p.width > 1
+					? [`.T(logic ${range(p.width)})`]
+					: []),
+			...(p.reset !== 0n
+				? [
+						`.RST(${
+							p.enum
+								? `${p.enum.pkg}::${[...p.enum.members.values()].find((m) => m.value === p.reset)?.sv}`
+								: svText(lit(p.width, p.reset))
+						})`,
+					]
+				: []),
 		];
 		const ps = params.length > 0 ? ` #(${params.join(", ")})` : "";
 		items.push({
@@ -270,12 +309,15 @@ function emitFsm(f: Fsm): string[] {
 	const count = f.states.length;
 	const bits =
 		enc === "onehot" ? count : Math.max(1, Math.ceil(Math.log2(count)));
+	const values = f.options.stateValues?.values;
 	const members = f.states.map((s, i) =>
-		enc === "binary"
-			? `${s.member} = ${bits}'d${i}`
-			: enc === "onehot"
-				? `${s.member} = ${bits}'b${(1n << BigInt(i)).toString(2).padStart(bits, "0")}`
-				: s.member,
+		values
+			? `${s.member} = ${bits}'d${values.get(s.member)}`
+			: enc === "binary"
+				? `${s.member} = ${bits}'d${i}`
+				: enc === "onehot"
+					? `${s.member} = ${bits}'b${(1n << BigInt(i)).toString(2).padStart(bits, "0")}`
+					: s.member,
 	);
 	const out = [
 		`package ${n}_pkg;`,
@@ -287,52 +329,71 @@ function emitFsm(f: Fsm): string[] {
 		`  import ${n}_pkg::*;`,
 		"(",
 	];
-	// [dir, width, name, group header lines printed above the port]
-	const ports: [string, number, string, string[]?][] = [
-		["input", 1, "clk", ["clock and reset"]],
-		["input", 1, "rst_n"],
+	// [dir, type ("state": state_t), name, group header lines printed above the port]
+	type PortTy = Ty | "state";
+	const one: Ty = { width: 1 };
+	const ports: [string, PortTy, string, string[]?][] = [
+		["input", one, "clk", ["clock and reset"]],
+		["input", one, "rst_n"],
 	];
 	for (const p of f.ports) {
 		switch (p.k) {
 			case "input":
 			case "output":
-				ports.push([p.k, p.width, p.name, p.group]);
+				ports.push([p.k, p, p.name, p.group]);
 				break;
 			case "push":
 			case "pop": {
 				const [o, i] =
 					p.k === "push" ? ["output", "input"] : ["input", "output"];
 				ports.push(
-					[o, 1, `${p.name}_vld`, p.group],
-					[i, 1, `${p.name}_rdy`],
-					...p.msg.fields.map((m): [string, number, string] => [
+					[o, one, `${p.name}_vld`, p.group],
+					[i, one, `${p.name}_rdy`],
+					...p.msg.fields.map((m): [string, PortTy, string] => [
 						o,
-						m.width,
+						m,
 						`${p.name}_${m.name}`,
 					]),
 				);
 				break;
 			}
 			case "dff":
-				if (p.place === "port")
-					ports.push(["output", p.width, p.name, p.group]);
+				if (p.place === "port") ports.push(["output", p, p.name, p.group]);
 				else
 					ports.push(
-						["output", 1, `${p.name}_set`, p.group],
-						["output", p.width, `${p.name}_next`],
-						["input", p.width, `${p.name}_val`],
+						["output", one, `${p.name}_set`, p.group],
+						["output", p, `${p.name}_next`],
+						["input", p, `${p.name}_val`],
 					);
 		}
 	}
+	if (f.options.exportState)
+		ports.push(
+			["output", one, "state_set_o", ["exportState"]],
+			["output", "state", "state_next_o"],
+			["output", "state", "state_val_o"],
+		);
 	// The author's ports never sit under a generated group without their own header.
 	const firstUser = ports[2];
 	if (firstUser && !firstUser[3]) firstUser[3] = ["ports"];
-	const rw = Math.max(...ports.map(([, w]) => range(w).length));
-	for (const [i, [dir, w, name, group]] of ports.entries()) {
+	const plain = (t: PortTy) => (t === "state" || t.enum ? undefined : t.width);
+	const rw = Math.max(
+		...ports.map(([, t]) => {
+			const w = plain(t);
+			return w === undefined ? 0 : range(w).length;
+		}),
+	);
+	const typeOf = (t: PortTy) =>
+		t === "state"
+			? "state_t"
+			: t.enum
+				? enumText(t.enum)
+				: `logic${rw > 0 ? ` ${range(t.width).padEnd(rw)}` : ""}`;
+	const pw = Math.max(...ports.map(([, t]) => typeOf(t).length));
+	for (const [i, [dir, t, name, group]] of ports.entries()) {
 		for (const g of group ?? []) out.push(g === "" ? "  //" : `  // ${g}`);
-		const r = rw > 0 ? ` ${range(w).padEnd(rw)}` : "";
 		out.push(
-			`  ${dir.padEnd(6)} logic${r} ${name}${i + 1 < ports.length ? "," : ""}`,
+			`  ${dir.padEnd(6)} ${typeOf(t).padEnd(pw)} ${name}${i + 1 < ports.length ? "," : ""}`,
 		);
 	}
 	out.push(");");
@@ -340,21 +401,24 @@ function emitFsm(f: Fsm): string[] {
 	const ctl = comb
 		.slice(2)
 		.flatMap((l) => /^ {4}(\S+)\s+= 1'b0;$/.exec(l)?.[1] ?? []);
-	const data = [
-		...f.chans.flatMap((c) => [
-			[1, `${c.name}_vld`] as const,
-			[1, `${c.name}_rdy`] as const,
-			...c.msg.fields.map((m) => [m.width, `${c.name}_${m.name}`] as const),
+	const data: [Ty, string][] = [
+		...f.chans.flatMap((c): [Ty, string][] => [
+			[one, `${c.name}_vld`],
+			[one, `${c.name}_rdy`],
+			...c.msg.fields.map((m): [Ty, string] => [m, `${c.name}_${m.name}`]),
 		]),
-		...f.wires.map((w) => [w.width, w.name] as const),
-		...f.privateDffs.map((d) => [d.width, valName(d)] as const),
+		...f.wires.map((w): [Ty, string] => [w, w.name]),
+		...f.privateDffs.map((d): [Ty, string] => [d, valName(d)]),
 	];
-	const narrow = data.filter(([w]) => w === 1).map(([, name]) => name);
+	const narrow = data
+		.filter(([t]) => t.width === 1 && !t.enum)
+		.map(([, name]) => name);
 	const decls: [string, string][] = [["state_t", "state_val, state_next"]];
 	if (ctl.length > 0) decls.push(["logic", ctl.join(", ")]);
 	if (narrow.length > 0) decls.push(["logic", narrow.join(", ")]);
-	for (const [w, name] of data)
-		if (w > 1) decls.push([`logic ${range(w)}`, name]);
+	for (const [t, name] of data)
+		if (t.enum) decls.push([enumText(t.enum), name]);
+		else if (t.width > 1) decls.push([`logic ${range(t.width)}`, name]);
 	const tw = Math.max(...decls.map(([t]) => t.length));
 	for (const [t, names] of decls) out.push(`  ${t.padEnd(tw)} ${names};`);
 	out.push("");
@@ -377,12 +441,46 @@ function emitFsm(f: Fsm): string[] {
 			);
 		out.push("  );", "");
 	}
-	out.push(...drivers(f), "endmodule");
+	const dr = drivers(f);
+	out.push(...dr);
+	if (f.options.exportState) {
+		if (dr.length > 0) out.push("");
+		out.push(...exportState(f, ctl));
+	}
+	out.push("endmodule");
 	return out;
 }
 
+/** state_val_o / state_set_o / state_next_o: enum members re-selected from comparisons
+ *  and moves, never state_val itself (§6.5). */
+function exportState(f: Fsm, ctl: string[]): string[] {
+	const byMove = new Map(f.states.map((s) => [`move_to_${s.name}`, s.member]));
+	const moves = ctl.filter((n) => byMove.has(n));
+	const w = Math.max(...f.states.map((s) => s.member.length + 1), 8) + 1;
+	return [
+		"  // exportState: enum members selected by comparisons, never state_val itself",
+		"  always_comb begin",
+		"    unique case (state_val)",
+		...f.states.map(
+			(s) => `      ${`${s.member}:`.padEnd(w)}state_val_o = ${s.member};`,
+		),
+		`      ${"default:".padEnd(w)}state_val_o = ${f.entry.member};`,
+		"    endcase",
+		"  end",
+		`  assign state_set_o = ${moves.length > 0 ? moves.join(" | ") : "1'b0"};`,
+		"  always_comb begin",
+		"    state_next_o = state_val_o;",
+		...moves.flatMap((m) => [
+			`    if (${m}) begin`,
+			`      state_next_o = ${byMove.get(m)};`,
+			"    end",
+		]),
+		"  end",
+	];
+}
+
 export function emitGroup(
-	g: { name: string; comment: string[]; fsms: Fsm[] },
+	g: { name: string; comment: string[]; fsms: Fsm[]; enums: EnumType[] },
 	file: string,
 ): string {
 	const out = [
@@ -391,6 +489,20 @@ export function emitGroup(
 	];
 	if (g.comment.length > 0)
 		out.push(...g.comment.map((l) => (l === "" ? "//" : `// ${l}`)), "");
+	const pkgs = [...new Set(g.enums.map((t) => t.pkg))];
+	for (const p of pkgs) {
+		out.push(`package ${p};`);
+		for (const t of g.enums.filter((x) => x.pkg === p)) {
+			const ms = [...t.members.values()];
+			out.push(`  typedef enum logic [${t.width - 1}:0] {`);
+			for (const [i, m] of ms.entries())
+				out.push(
+					`    ${m.sv} = ${t.width}'d${m.value}${i + 1 < ms.length ? "," : ""}`,
+				);
+			out.push(`  } ${t.name};`);
+		}
+		out.push("endpackage", "");
+	}
 	g.fsms.forEach((f, i) => {
 		if (i > 0) out.push("");
 		out.push(...emitFsm(f));

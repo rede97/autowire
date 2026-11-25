@@ -7,6 +7,7 @@ import type {
 	Action,
 	CNode,
 	Edge,
+	Exit,
 	Fsm,
 	FsmMethod,
 	LetSource,
@@ -117,31 +118,43 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 		return src.fail(body.head.node, "the while (true) body has no await");
 	const entry = n.state;
 
-	const exits = new Map<State, Tree | null>();
+	const exits = new Map<State, Exit>();
 	const edges: Edge[] = [];
 	const queue = [entry];
 	const reached = new Set([entry]);
 	while (queue.length > 0) {
 		const s = queue.shift() as State;
-		if (s.cond === false) {
-			exits.set(s, null);
-			continue;
-		}
 		const before = edges.length;
-		exits.set(
-			s,
-			expand(
+		// An escape leaves without the handshake: no let value of S is live (§3.7).
+		const escapes = s.escapes.map((e) => ({
+			cond: e.cond,
+			tree: expand(
 				src,
 				m.node,
-				s.next,
+				e.to,
 				s,
 				[],
 				new Set(),
-				undefined,
+				e.node,
 				edges,
-				new Set(s.produces ? [s.produces] : []),
+				new Set(),
 			),
-		);
+		}));
+		const tree =
+			s.cond === false
+				? null
+				: expand(
+						src,
+						m.node,
+						s.next,
+						s,
+						[],
+						new Set(),
+						undefined,
+						edges,
+						new Set(s.produces ? [s.produces] : []),
+					);
+		exits.set(s, { escapes, tree });
 		for (const e of edges.slice(before))
 			if (!reached.has(e.to)) {
 				reached.add(e.to);
@@ -215,6 +228,13 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 		}
 		drive.set(a, chosen);
 	}
+	// exportState: state_next_o selects the target member from move_to_<T> (§6.5).
+	if (m.options.exportState)
+		for (const s of states) {
+			const set = into.get(s) as Set<Edge>;
+			if (set.size > 0) sig(`move_to_${s.name}`, "move", set);
+		}
+	checkValues(src, m, states);
 	const onEdge = new Map<Edge, Signal[]>(edges.map((e) => [e, []]));
 	const leave = new Map<State, Signal>();
 	for (const s of signals.values()) {
@@ -238,6 +258,36 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 		onEdge,
 		leave,
 	};
+}
+
+/** stateValues lists every enum member once, each value fits the enum width (§6.5). */
+function checkValues(src: Src, m: FsmMethod, states: State[]) {
+	const sv = m.options.stateValues;
+	if (!sv) return;
+	const bits = Math.max(1, Math.ceil(Math.log2(states.length)));
+	const members = new Set(states.map((s) => s.member));
+	for (const [name, v] of sv.values) {
+		if (!members.has(name))
+			src.fail(
+				sv.node,
+				`stateValues: ${name} is not a state of ${m.name} (members: ${[...members].join(", ")})`,
+			);
+		if (v >= 1n << BigInt(bits))
+			src.fail(
+				sv.node,
+				`stateValues: ${name} = ${v} does not fit ${bits} bits`,
+			);
+	}
+	const missing = [...members].filter((n) => !sv.values.has(n));
+	if (missing.length > 0)
+		src.fail(sv.node, `stateValues misses ${missing.join(", ")}`);
+	const seen = new Map<bigint, string>();
+	for (const [name, v] of sv.values) {
+		const other = seen.get(v);
+		if (other)
+			src.fail(sv.node, `stateValues: ${other} and ${name} are both ${v}`);
+		seen.set(v, name);
+	}
 }
 
 /** Unused ports and names would be -Wall warnings in the SV; reject them at the source. */

@@ -32,6 +32,10 @@ export interface CompiledGroup {
 	sv: string;
 	/** Absolute paths of the groups this one instantiates (other files). */
 	instantiates: string[];
+	/** Absolute paths of the files whose @SvEnum types this one imports. */
+	enumFiles: string[];
+	/** SV packages this file declares (@SvEnum). */
+	packages: string[];
 }
 
 /** Parses fsm sources by absolute path, each once; `root` makes the printed paths relative. */
@@ -176,8 +180,19 @@ export async function compileFsm(
 				src.fail(m.node.key, `sub-FSM ${m.name} is never called (§5)`);
 	return {
 		name: g.name,
-		sv: emitGroup({ name: g.name, comment: g.comment, fsms }, src.file),
+		sv: emitGroup(
+			{ name: g.name, comment: g.comment, fsms, enums: unit.ownEnums },
+			src.file,
+		),
 		instantiates: [...instantiates],
+		enumFiles: [
+			...new Set(
+				[...unit.enums.values()]
+					.filter((t) => t.abs !== unit.abs)
+					.map((t) => t.abs),
+			),
+		],
+		packages: [...new Set(unit.ownEnums.map((t) => t.pkg))],
 	};
 }
 
@@ -205,15 +220,24 @@ export async function generateAll(
 	const registered = new Set(ws.fsmSources.map((s) => norm(s.mjs)));
 	const dir = join(ws.pluginsDir, "fsm");
 	const groups = new Map<string, string>();
+	const pkgs = new Map<string, string>();
 	const outputs: { path: string; text: string }[] = [];
 	for (const s of sources) {
 		const g = await compileFsm(parsed, s.mjs);
 		const file = parsed.file(s.mjs);
-		for (const t of g.instantiates)
+		for (const t of [...g.instantiates, ...g.enumFiles])
 			if (!registered.has(norm(t)))
 				throw new Error(
-					`fsm: ${file} instantiates a module of ${parsed.file(t)}, which is not an [fsm.<id>] source`,
+					`fsm: ${file} uses a module or an @SvEnum of ${parsed.file(t)}, which is not an [fsm.<id>] source`,
 				);
+		for (const p of g.packages) {
+			const other = pkgs.get(p);
+			if (other)
+				throw new Error(
+					`fsm: SV package ${p} is declared by @SvEnum in both ${other} and ${file}`,
+				);
+			pkgs.set(p, file);
+		}
 		const prev = groups.get(g.name);
 		if (prev)
 			throw new Error(

@@ -20,6 +20,73 @@ const caller = (body: string) =>
 
 const cases: [string, string, string][] = [
 	[
+		"throw Raise() outside a try",
+		fsm(
+			"while (true) { S: await go.wait(1); if (b) throw Raise(); x.pulse(); }",
+		),
+		"needs an enclosing try block",
+	],
+	[
+		"throw of something else",
+		fsm(
+			"while (true) { try { S: await go.wait(1); if (b) throw 1; x.pulse(); } catch { T: await b.wait(1); } }",
+		),
+		"throw takes Raise()",
+	],
+	[
+		"Escape after a statement",
+		fsm(
+			"while (true) { try { S: await go.wait(1); Escape(b); x.pulse(); } catch { T: await b.wait(1); } }",
+		),
+		"belongs at the start of a try block",
+	],
+	[
+		"catch binds a value",
+		fsm(
+			"while (true) { try { Escape(b); S: await go.wait(1); x.pulse(); } catch (e) { T: await b.wait(1); } }",
+		),
+		"there is no exception value",
+	],
+	[
+		"finally",
+		fsm(
+			"while (true) { try { Escape(b); S: await go.wait(1); x.pulse(); } catch { T: await b.wait(1); } finally { U: await go.wait(1); } }",
+		),
+		"finally is not supported",
+	],
+	[
+		"constant Escape condition",
+		fsm(
+			"while (true) { try { Escape(ALWAYS_1); S: await go.wait(1); x.pulse(); } catch { T: await b.wait(1); } }",
+		),
+		"Escape condition is a constant",
+	],
+	[
+		"Caller call inside a try",
+		`${fsm("const reg = Caller(this.s, {});\nlet r;\nwhile (true) { S: await go.wait(1); try { Escape(b); C: r = await reg.call({ a: go }); x.pulse(); } catch { T: await b.wait(1); } }", ports1)}\n${sub}`,
+		"cannot sit in a try block",
+	],
+	[
+		"stateValues misses a state",
+		`@Fsm({ stateValues: { S: 0 } })\nasync f(${ports}) {\nwhile (true) { S: await go.wait(1); x.pulse(); T: await b.wait(1); }\n}`,
+		"stateValues misses T",
+	],
+	[
+		"stateValues with stateEncoding",
+		`@Fsm({ stateEncoding: "binary", stateValues: { S: 0, T: 1 } })\nasync f(${ports}) {\nwhile (true) { S: await go.wait(1); x.pulse(); T: await b.wait(1); }\n}`,
+		"exclude each other",
+	],
+	[
+		"stateValues too wide",
+		`@Fsm({ stateValues: { S: 0, T: 2 } })\nasync f(${ports}) {\nwhile (true) { S: await go.wait(1); x.pulse(); T: await b.wait(1); }\n}`,
+		"does not fit 1 bits",
+	],
+	[
+		"stateValues repeats a value",
+		`@Fsm({ stateValues: { S: 1, T: 1 } })\nasync f(${ports}) {\nwhile (true) { S: await go.wait(1); x.pulse(); T: await b.wait(1); }\n}`,
+		"are both 1",
+	],
+	[
 		"return in @Fsm",
 		fsm(
 			"while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); return; }",
@@ -308,8 +375,80 @@ const cases: [string, string, string][] = [
 	],
 ];
 
+/** @SvEnum sources for the enum checks (§2.8). */
+const OP =
+	'@SvEnum({ pkg: "e_pkg" })\nclass Op { static A = 0; static B = 1; }\n';
+const EP = P("go = Input(1)", "i = Input(Op)", "o = Output(Op)");
+const eg = (body: string, head = OP) =>
+	`${head}@FsmGroup\nclass G {\n${fsm(body, EP)}\n}\n`;
 /** Whole sources (x.mjs plus imported files) for front-end errors. */
 const files: [string, string, Record<string, string>, string][] = [
+	[
+		"number into an enum output",
+		eg("while (true) { S: await go.wait(1); o.pulse(1); }"),
+		{},
+		"expected a Op value (Op.<MEMBER>), not a number",
+	],
+	[
+		"bit operator on an enum",
+		eg("while (true) { S: await (i | go).wait(1); o.pulse(Op.A); }"),
+		{},
+		"only compares",
+	],
+	[
+		"enum compared with a number",
+		eg("while (true) { S: await (i === 1).wait(1); o.pulse(Op.A); }"),
+		{},
+		"compare a Op value with another one",
+	],
+	[
+		"wait on an enum",
+		eg("while (true) { S: await i.wait(1); o.pulse(Op.A); }"),
+		{},
+		"compare an enum with a member",
+	],
+	[
+		"unknown enum member",
+		eg("while (true) { S: await (i === Op.C).wait(1); o.pulse(Op.A); }"),
+		{},
+		"Op has no member C",
+	],
+	[
+		"enum values repeat",
+		eg(
+			"while (true) { S: await go.wait(1); o.pulse(Op.A); }",
+			'@SvEnum({ pkg: "e_pkg" })\nclass Op { static A = 0; static B = 0; }\n',
+		),
+		{},
+		"Op.A and Op.B are both 0",
+	],
+	[
+		"enum without a package",
+		eg(
+			"while (true) { S: await go.wait(1); o.pulse(Op.A); }",
+			"@SvEnum({})\nclass Op { static A = 0; static B = 1; }\n",
+		),
+		{},
+		"names its SV package",
+	],
+	[
+		"enum width too small",
+		eg(
+			"while (true) { S: await go.wait(1); o.pulse(Op.A); }",
+			'@SvEnum({ pkg: "e_pkg", width: 1 })\nclass Op { static A = 0; static B = 2; }\n',
+		),
+		{},
+		"Op needs 2 bits for value 2, width is 1",
+	],
+	[
+		"two enums share an SV member",
+		eg(
+			"while (true) { S: await go.wait(1); o.pulse(Op.A); }",
+			`${OP}@SvEnum({ pkg: "e_pkg", prefix: "OP" })\nclass Op2 { static A = 0; }\n`,
+		),
+		{},
+		"e_pkg::OP_A is a member of Op too",
+	],
 	[
 		"sync interface method declares a const",
 		`@FsmPort\nclass Rd {\n  constructor() { this.req = Output(1); }\n  kick(a) { const z = a; this.req.pulse(z); }\n}\n@FsmGroup\nclass G {\n${fsm("while (true) { S: await (go & b).wait(1); rd.kick(go); x.pulse(); d.set(1); }", P("go = Input(1)", "b = Input(1)", "x = Output(1)", "d = Dff(4)", "rd = new Rd()"))}\n}\n`,
@@ -326,7 +465,7 @@ const files: [string, string, Record<string, string>, string][] = [
 		"import of a name the file does not export",
 		`import { Nope } from "./lib.mjs";\n@FsmGroup\nclass G {\n${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n}\n`,
 		{ "lib.mjs": 'export const pkg = SvPackage("p", {});\n' },
-		"exports no @FsmGroup, @FsmPort or SvPackage named Nope",
+		"exports no @FsmGroup, @FsmPort, @SvEnum or SvPackage named Nope",
 	],
 	[
 		"import cycle",

@@ -59,3 +59,8 @@ export function Escape() {}
 export function Raise() {
 	return new Error("Raise");
 }
+
+/** `@SvEnum({ pkg, name, width, prefix })` on a class of static members. */
+export function SvEnum() {
+	return (cls) => cls;
+}

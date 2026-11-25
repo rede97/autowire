@@ -32,10 +32,19 @@ describe("doc examples: generated SV equals the doc", () => {
 		"dump_client",
 		"reg_mgr",
 		"reg_mgr_reg",
+		"work_ctl",
+		"soft_rst_ctl",
+		"err_ctl",
+		"phy_mon",
+		"cmd",
 	];
 	// §5.3 imports the §5.2 source; a Caller server is compiled from its caller's DSL.
 	const more = () => ({ "dump_check.mjs": docDsl("dump_check").text });
-	const from: Record<string, string> = { reg_mgr_reg: "reg_mgr" };
+	// "cmd" is the §2.8 block: package cmd_pkg, then module cmd_post.
+	const from: Record<string, string> = {
+		reg_mgr_reg: "reg_mgr",
+		cmd: "cmd_post",
+	};
 	for (const name of modules)
 		test(name, async () => {
 			const dsl = docDsl(from[name] ?? name);
@@ -58,11 +67,13 @@ describe("doc examples: generated SV equals the doc", () => {
 		["loop_ctl", ["burst_ctl", "scan_ctl"]],
 		["reg_ctl", ["reg_demo"]],
 		["msg_ctl", ["msg_fwd"]],
-		["phy_ctl", ["phy_init"]],
+		["phy_ctl", ["phy_init", "phy_mon"]],
 		["dump_check", ["dump_check"]],
 		["dump_svc", ["dump_server", "dump_client"]],
 		["cfg_load", ["cfg_load"]],
 		["reg_mgr", ["reg_mgr", "reg_mgr_reg"]],
+		["escape_ctl", ["work_ctl", "soft_rst_ctl", "err_ctl"]],
+		["cmd_ctl", ["cmd"]],
 	];
 	for (const [file, names] of demos)
 		test(`demo/state/fsm/${file}.mjs carries the doc modules`, async () => {

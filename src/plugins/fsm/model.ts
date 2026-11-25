@@ -22,12 +22,38 @@ export interface Sig {
 	value?: bigint;
 	/** Named signal (port, wire, Dff val): bits() may select from it. */
 	named?: boolean;
+	/** A value of an @SvEnum type: only compares (===, !==) and selects (?:). */
+	enum?: EnumType;
+}
+
+/** `@SvEnum({ pkg, name, width, prefix }) class C { static M = v; ... }`: an SV enum
+ *  typedef the file's output declares in package `pkg` (§2.8). */
+export interface EnumType {
+	/** JS class name. */
+	cls: string;
+	/** SV typedef name. */
+	name: string;
+	pkg: string;
+	width: number;
+	/** JS member → SV enum member and value, declaration order. */
+	members: Map<string, { sv: string; value: bigint }>;
+	node: Node;
+	src: Src;
+	/** Absolute path of the declaring file, whose output holds the package. */
+	abs: string;
+}
+
+/** Width of a port, field or register, and its enum type when it has one. */
+export interface Ty {
+	width: number;
+	enum?: EnumType;
 }
 
 export interface InputPort {
 	k: "input";
 	name: string;
 	width: number;
+	enum?: EnumType;
 	node: Node;
 	used: boolean;
 	/** `// title` comment lines above the port: group header in the SV port list. */
@@ -38,6 +64,7 @@ export interface OutputPort {
 	k: "output";
 	name: string;
 	width: number;
+	enum?: EnumType;
 	node: Node;
 	sites: Action[];
 	group?: string[];
@@ -49,6 +76,7 @@ export interface DffReg {
 	k: "dff";
 	name: string;
 	width: number;
+	enum?: EnumType;
 	reset: bigint;
 	/** port: internal aw_dff, `val` is the output port; external: _set/_next/_val
 	 *  ports; body: private aw_dff with a <name>_val wire. */
@@ -63,6 +91,7 @@ export interface DffReg {
 export interface MsgField {
 	name: string;
 	width: number;
+	enum?: EnumType;
 }
 
 /** What a channel carries (§6.2): one N-bit `data`, or a record of named fields
@@ -143,6 +172,7 @@ export interface Iface {
 export interface Wire {
 	name: string;
 	width: number;
+	enum?: EnumType;
 	sv: Sv;
 	node: Node;
 	key: Key;
@@ -166,6 +196,7 @@ export interface SigBinding {
 export interface LetSource {
 	sv: Sv;
 	width: number;
+	enum?: EnumType;
 	/** For errors: "the pop in state RSP", "the Scan call". */
 	what: string;
 	/** pop data: reading it marks the port's fields as used. */
@@ -246,6 +277,16 @@ export interface State {
 	hs?: HsSite;
 	/** pop state with `r =`: the value its leaving segment may read. */
 	produces?: LetSource;
+	/** `Escape(c)` of the enclosing try blocks, outermost first, then in writing order (§3.7). */
+	escapes: EscapeExit[];
+}
+
+/** One `Escape(c)` that covers a state: while c holds, the state leaves into the catch (§3.7). */
+export interface EscapeExit {
+	cond: Sv;
+	/** First segment of the catch block. */
+	to: CNode;
+	node: Node;
 }
 
 /** Control-flow graph built from the method body. */
@@ -302,12 +343,23 @@ export interface Signal {
 	edges: Set<Edge>;
 }
 
-/** @Fsm({ statePrefix, stateEncoding }) (§6.5). */
+/** @Fsm({ statePrefix, stateEncoding, stateValues, exportState }) (§6.5). */
 export interface FsmOptions {
 	/** Prepended to every enum member: <prefix>_<STATE>. */
 	statePrefix?: string;
 	/** Omitted: no enum values, the synthesizer picks the encoding. */
 	stateEncoding?: "binary" | "onehot";
+	/** Enum member → value, every state listed; excludes stateEncoding. */
+	stateValues?: { values: Map<string, bigint>; node: Node };
+	/** Output ports state_set_o / state_next_o / state_val_o. */
+	exportState?: boolean;
+}
+
+/** How a state leaves: its escapes first (higher priority), then its own condition. */
+export interface Exit {
+	escapes: { cond: Sv; tree: Tree }[];
+	/** null for a trap state. */
+	tree: Tree | null;
 }
 
 export interface Fsm {
@@ -322,8 +374,8 @@ export interface Fsm {
 	insts: Inst[];
 	states: State[];
 	entry: State;
-	/** Per state: its exit tree, or null for a trap state. */
-	exits: Map<State, Tree | null>;
+	/** Per state: how it leaves. */
+	exits: Map<State, Exit>;
 	/** Signals driving each action site. */
 	drive: Map<Action, Signal[]>;
 	/** Signals asserted on each edge (move and edge kinds). */
@@ -395,10 +447,14 @@ export interface Unit {
 	packages: Map<string, SvPkg>;
 	/** @FsmPort classes by local name. */
 	ifaces: Map<string, IfaceClass>;
+	/** @SvEnum classes by local name, imported ones included. */
+	enums: Map<string, EnumType>;
+	/** @SvEnum classes declared in this file: their packages go into its output. */
+	ownEnums: EnumType[];
 	/** @FsmGroup classes by local name, imported ones included. */
 	groups: Map<string, Group>;
 	/** The file's own @FsmGroup class. */
 	group?: Group;
-	/** Exported names: groups, interfaces, packages. */
-	exports: Map<string, Group | IfaceClass | SvPkg>;
+	/** Exported names: groups, interfaces, packages, enums. */
+	exports: Map<string, Group | IfaceClass | SvPkg | EnumType>;
 }

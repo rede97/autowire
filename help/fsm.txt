@@ -8,13 +8,21 @@ Entry
 
 Source (.mjs, never executed; the compiler reads the AST)
   import { FsmGroup, Fsm, FsmPort, Input, Output, Dff, Const, PushPort, PopPort,
-           Chan, Instance, ALWAYS_0, ALWAYS_1, SvPackage, SvFunction }
+           Chan, Instance, Caller, Escape, Raise, SvEnum, ALWAYS_0, ALWAYS_1, SvPackage, SvFunction }
          from "<rel>/.autowire/dsl/fsm/dsl.mjs";
-  import { Group, Iface, pkg } from "./other.mjs"   exported names of another fsm source
+  import { Group, Iface, pkg, Enum } from "./other.mjs"   exported names of another fsm source
+  @SvEnum({ pkg: "my_pkg", name?, prefix?, width? }) export class Op { static IDLE = 0; static GO = 1; }
+                       an SV typedef enum in package my_pkg (emitted into this file's .sv);
+                       Input(Op) / Output(Op) / Dff(Op) / PushPort({ op: Op, ... }) are typed,
+                       Op.GO is my_pkg::OP_GO; enum values only compare (===, !==) and select (?:)
   One @FsmGroup class per file → plugins_dir/fsm/<Class>.sv; any @FsmPort classes
   @Fsm async method    a module: body is one while (true) { ... }, never returns
   @Fsm({ statePrefix: "LPDDRPHY", stateEncoding: "binary" | "onehot" })
                        enum members LPDDRPHY_<STATE>; omit stateEncoding to let synthesis pick
+  @Fsm({ stateValues: { IDLE: 0, RUN: 2 } })   explicit member values, every state, fits the
+                       binary width; excludes stateEncoding
+  @Fsm({ exportState: true })   outputs state_set_o / state_next_o / state_val_o (state_t),
+                       e.g. for a regfile RO field; selected from comparisons, never state_val
   undecorated method   sub-FSM, inlined at each call: no module, no start / done
   Ports: one destructured parameter, defaults declare them:
     x = Input(N)   y = Output(N) (y.pulse(v) on the move, 0 otherwise)
@@ -62,6 +70,16 @@ Logic
     async methods are inlined like sub-FSMs, `m(a) { return expr; }` works in expressions
   Trap state: await ALWAYS_0.wait(1)
 
+Exception regions
+  try { Escape(c); ... } catch { ... }   every state of the try block (loops, branches,
+                       inlined sub-FSM states, inner try blocks) leaves into the catch
+                       while c holds, before its own condition; outer Escapes first, then
+                       writing order; the catch itself is covered only by outer ones
+  throw Raise()        at the end of this segment jump into the nearest catch (in a catch:
+                       the outer one); its actions and the catch entry share the move
+  catch { has no binding; no finally; a Caller call may not sit in a try block
+  Leaving a push / pop state by an escape withdraws vld / rdy before the handshake
+
 Output
   plugins_dir/fsm/<Class>.sv   generated, do not edit (SoT is the .mjs)
   plugins_dir/fsm/aw_dff.sv    reference DFF (parameter type T); add both to
@@ -70,6 +88,5 @@ Output
   a group that is instantiated from another file must itself be an [fsm.<id>] source
 
 Not yet (compile error names the feature): push / pop without await (Future),
-Promise.all, try / Escape / Raise, @Fsm exportState / stateValues / stateReg,
-connecting an external Dff port of an instance.
+Promise.all, @Fsm stateReg, connecting an external Dff port of an instance.
 Errors: <file>:<line>:<col>: <message>. Demo: demo/state (bun ../../index.ts plugin fsm run).

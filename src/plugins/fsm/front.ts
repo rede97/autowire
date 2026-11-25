@@ -14,6 +14,7 @@ import type {
 import { intLit, widthLit } from "./expr.ts";
 import type {
 	DffReg,
+	EnumType,
 	FsmOptions,
 	Group,
 	HsPort,
@@ -25,9 +26,10 @@ import type {
 	Port,
 	SvFn,
 	SvPkg,
+	Ty,
 	Unit,
 } from "./model.ts";
-import { checkSvId, FsmError, type Src } from "./source.ts";
+import { checkSvId, FsmError, type Src, upperSnake } from "./source.ts";
 
 const BUILTINS: Record<string, true> = {
 	FsmGroup: true,
@@ -46,14 +48,9 @@ const BUILTINS: Record<string, true> = {
 	SvFunction: true,
 	Escape: true,
 	Raise: true,
+	SvEnum: true,
 	ALWAYS_0: true,
 	ALWAYS_1: true,
-};
-
-/** Builtins of a later phase (docs/state/async-fsm.md §11): rejected with a clear error. */
-export const NOT_YET: Record<string, string> = {
-	Escape: "exception regions (§3.7)",
-	Raise: "exception regions (§3.7)",
 };
 
 /** Port declarations a parameter default or an interface field may use. */
@@ -113,6 +110,8 @@ const emptyUnit = (src: Src, abs: string): Unit => ({
 	builtins: new Map(),
 	packages: new Map(),
 	ifaces: new Map(),
+	enums: new Map(),
+	ownEnums: [],
 	groups: new Map(),
 	exports: new Map(),
 });
@@ -140,6 +139,7 @@ export function parseSynthetic(src: Src, from: Unit): Unit {
 	for (const b of Object.keys(BUILTINS)) unit.builtins.set(b, b);
 	for (const [k, v] of from.packages) unit.packages.set(k, v);
 	for (const [k, v] of from.ifaces) unit.ifaces.set(k, v);
+	for (const [k, v] of from.enums) unit.enums.set(k, v);
 	for (const [k, v] of from.groups) unit.groups.set(k, v);
 	fillUnit(unit, parseText(src));
 	return unit;
@@ -168,20 +168,42 @@ function fillUnit(unit: Unit, file: File) {
 		if (decl?.type !== "ClassDeclaration")
 			return src.fail(
 				stmt,
-				"the top level holds imports, SvPackage consts, @FsmPort classes and one @FsmGroup class",
+				"the top level holds imports, SvPackage consts, @SvEnum / @FsmPort classes and one @FsmGroup class",
 			);
 		const decos = decl.decorators ?? [];
 		const deco = decos[0]?.expression;
+		const head = deco?.type === "CallExpression" ? deco.callee : deco;
 		const kind =
-			deco?.type === "Identifier" ? unit.builtins.get(deco.name) : undefined;
-		if (decos.length !== 1 || (kind !== "FsmGroup" && kind !== "FsmPort"))
+			head?.type === "Identifier" ? unit.builtins.get(head.name) : undefined;
+		if (
+			decos.length !== 1 ||
+			(kind !== "FsmGroup" && kind !== "FsmPort" && kind !== "SvEnum") ||
+			(kind !== "SvEnum" && deco?.type === "CallExpression")
+		)
 			src.fail(
 				decl,
-				"a class needs exactly one decorator: @FsmGroup or @FsmPort",
+				"a class needs exactly one decorator: @FsmGroup, @FsmPort or @SvEnum({...})",
 			);
 		if (decl.superClass)
 			src.fail(decl.superClass, "an fsm class cannot extend");
 		if (!decl.id) return src.fail(decl, "the class needs a name");
+		if (kind === "SvEnum") {
+			const t = svEnum(src, decl, deco, unit.abs);
+			for (const o of unit.ownEnums)
+				if (o.pkg === t.pkg && o.name === t.name)
+					src.fail(decl, `${t.pkg}::${t.name} is declared twice`);
+				else if (o.pkg === t.pkg)
+					for (const m of t.members.values())
+						if ([...o.members.values()].some((x) => x.sv === m.sv))
+							src.fail(
+								decl,
+								`${t.pkg}::${m.sv} is a member of ${o.cls} too; give one of them a prefix`,
+							);
+			unit.enums.set(t.cls, t);
+			unit.ownEnums.push(t);
+			if (exported) unit.exports.set(t.cls, t);
+			continue;
+		}
 		if (kind === "FsmPort") {
 			const c = ifaceClass(unit, decl);
 			unit.ifaces.set(c.name, c);
@@ -227,9 +249,10 @@ async function importDecl(
 		if (!x)
 			src.fail(
 				s,
-				`${stmt.source.value} exports no @FsmGroup, @FsmPort or SvPackage named ${name}`,
+				`${stmt.source.value} exports no @FsmGroup, @FsmPort, @SvEnum or SvPackage named ${name}`,
 			);
 		if ("fns" in x) unit.packages.set(local, x);
+		else if ("members" in x) unit.enums.set(local, x);
 		else if ("fields" in x) unit.ifaces.set(local, x);
 		else unit.groups.set(local, x);
 	}
@@ -326,16 +349,45 @@ function fsmOptions(
 					'stateEncoding is "binary" or "onehot" (omit it to let synthesis choose)',
 				);
 			out.stateEncoding = v.value;
-		} else if (
-			key === "exportState" ||
-			key === "stateValues" ||
-			key === "stateReg"
-		) {
-			notYet(src, p, `@Fsm option ${key} (§6.5)`);
+		} else if (key === "exportState") {
+			if (v.type !== "BooleanLiteral")
+				return src.fail(v, "exportState is true or false");
+			if (v.value) out.exportState = true;
+		} else if (key === "stateValues") {
+			if (v.type !== "ObjectExpression")
+				return src.fail(
+					v,
+					"stateValues maps every enum member to a number: { IDLE: 0, ... }",
+				);
+			const values = new Map<string, bigint>();
+			for (const q of v.properties) {
+				if (
+					q.type !== "ObjectProperty" ||
+					q.key.type !== "Identifier" ||
+					q.value.type !== "NumericLiteral" ||
+					!Number.isInteger(q.value.value) ||
+					q.value.value < 0
+				)
+					return src.fail(
+						q,
+						"stateValues entry: MEMBER: <non-negative integer>",
+					);
+				if (values.has(q.key.name))
+					src.fail(q, `stateValues lists ${q.key.name} twice`);
+				values.set(q.key.name, BigInt(q.value.value));
+			}
+			out.stateValues = { values, node: v };
+		} else if (key === "stateReg") {
+			notYet(src, p, "@Fsm option stateReg (§6.5)");
 		} else {
 			src.fail(p, `unknown @Fsm option ${key}`);
 		}
 	}
+	if (out.stateValues && out.stateEncoding)
+		src.fail(
+			out.stateValues.node,
+			"stateValues and stateEncoding exclude each other (§6.5)",
+		);
 	return out;
 }
 
@@ -417,9 +469,7 @@ function methodPorts(
 					"a port default is a port declaration: Input(N), Output(N), Dff(N), PushPort(N), PopPort(N) or new Iface(...)",
 				);
 			const [a0, a1] = init.arguments;
-			const port = portDecl(src, kind, name, a0, a1, p, (n) =>
-				widthLit(src, n),
-			);
+			const port = portDecl(src, kind, name, a0, a1, p, (n) => tyOf(unit, n));
 			params.set(name, port);
 			made = [port];
 		}
@@ -437,7 +487,7 @@ function portDecl(
 	a0: Node | undefined,
 	opts: Node | undefined,
 	node: Node,
-	widthOf: (n: Node | undefined) => number,
+	tyOfArg: (n: Node | undefined) => Ty,
 ): Port {
 	if (kind === "PushPort" || kind === "PopPort") {
 		if (opts)
@@ -445,26 +495,32 @@ function portDecl(
 		return hsPort(
 			kind === "PushPort" ? "push" : "pop",
 			name,
-			msgShape(src, a0, widthOf),
+			msgShape(src, a0, tyOfArg),
 			"port",
 			node,
 		);
 	}
-	const width = widthOf(a0);
-	if (kind === "Dff") return dffDecl(src, name, node, width, opts, true);
+	const ty = tyOfArg(a0);
+	if (kind === "Dff") return dffDecl(src, name, node, ty, opts, true);
 	if (opts) src.fail(opts, `${kind}(N) takes one width`);
-	if (kind === "Input") return { k: "input", name, width, node, used: false };
-	return { k: "output", name, width, node, sites: [] };
+	if (kind === "Input") return { k: "input", ...ty, name, node, used: false };
+	return { k: "output", ...ty, name, node, sites: [] };
+}
+
+/** A width literal, or an @SvEnum class name: its width and type (§2.8). */
+export function tyOf(unit: Unit, n: Node | undefined): Ty {
+	const t = n?.type === "Identifier" ? unit.enums.get(n.name) : undefined;
+	return t ? { width: t.width, enum: t } : { width: widthLit(unit.src, n) };
 }
 
 /** `N` (one data field) or `{ addr: 8, we: 1 }` (named fields; `{}` is a token) (§6.2). */
 export function msgShape(
 	src: Src,
 	a0: Node | undefined,
-	widthOf: (n: Node | undefined) => number,
+	tyOfArg: (n: Node | undefined) => Ty,
 ): MsgShape {
 	if (a0?.type !== "ObjectExpression")
-		return { k: "data", fields: [{ name: "data", width: widthOf(a0) }] };
+		return { k: "data", fields: [{ name: "data", ...tyOfArg(a0) }] };
 	const fields: MsgField[] = [];
 	for (const p of a0.properties) {
 		if (
@@ -479,7 +535,7 @@ export function msgShape(
 			src.fail(p.key, `field name ${name} is the handshake itself`);
 		if (fields.some((f) => f.name === name))
 			src.fail(p.key, `field ${name} is declared twice`);
-		fields.push({ name, width: widthOf(p.value) });
+		fields.push({ name, ...tyOfArg(p.value) });
 	}
 	return { k: "record", fields };
 }
@@ -593,13 +649,14 @@ function fieldPort(
 ): Port {
 	const src: Src = cls.unit.src;
 	const [w, opts] = f.args;
-	const widthOf = (n: Node | undefined) => {
+	const tyOfArg = (n: Node | undefined): Ty => {
 		const v = n?.type === "Identifier" ? env.get(n.name) : undefined;
-		const width = v !== undefined ? Number(v) : widthLit(src, n);
+		if (v === undefined) return tyOf(cls.unit, n);
+		const width = Number(v);
 		if (width < 1 || width > 4096) src.fail(n, "width must be 1..4096");
-		return width;
+		return { width };
 	};
-	return portDecl(src, f.kind, name, w, opts, node, widthOf);
+	return portDecl(src, f.kind, name, w, opts, node, tyOfArg);
 }
 
 /** Dff(N, { reset?, external? }) as a port (`param`) or in the method body. */
@@ -607,10 +664,11 @@ export function dffDecl(
 	src: Src,
 	name: string,
 	node: Node,
-	width: number,
+	ty: Ty,
 	opts: Node | undefined,
 	param: boolean,
 ): DffReg {
+	const { width } = ty;
 	let reset = 0n;
 	let external = false;
 	let resetNode: Node | undefined;
@@ -623,7 +681,21 @@ export function dffDecl(
 					? p.key.name
 					: "";
 			if (key === "reset" && p.type === "ObjectProperty") {
-				reset = intLit(src, p.value, "reset value");
+				const v = p.value;
+				if (ty.enum) {
+					const m =
+						v.type === "MemberExpression" &&
+						!v.computed &&
+						v.property.type === "Identifier"
+							? ty.enum.members.get(v.property.name)
+							: undefined;
+					if (!m)
+						return src.fail(
+							v,
+							`reset of a ${ty.enum.name} register is ${ty.enum.cls}.<MEMBER>`,
+						);
+					reset = m.value;
+				} else reset = intLit(src, v, "reset value");
 				resetNode = p;
 				if (reset >= 1n << BigInt(width))
 					src.fail(p.value, `reset value does not fit in ${width} bit(s)`);
@@ -645,7 +717,7 @@ export function dffDecl(
 	return {
 		k: "dff",
 		name,
-		width,
+		...ty,
 		reset,
 		place: external ? "external" : param ? "port" : "body",
 		node,
@@ -726,6 +798,93 @@ function svPackage(
 		fns.set(p.key.name, { args, ret });
 	}
 	return [x.id.name, { name: name.value, fns }];
+}
+
+/** `@SvEnum({ pkg, name?, width?, prefix? }) class C { static M = 0; ... }` (§2.8). */
+function svEnum(
+	src: Src,
+	decl: ClassDeclaration,
+	deco: Expression | undefined,
+	abs: string,
+): EnumType {
+	const cls = decl.id?.name ?? "";
+	const shape =
+		'@SvEnum({ pkg: "my_pkg" }) class Op { static IDLE = 0; static GO = 1; }';
+	const opts =
+		deco?.type === "CallExpression" && deco.arguments.length === 1
+			? deco.arguments[0]
+			: undefined;
+	if (opts?.type !== "ObjectExpression")
+		return src.fail(deco ?? decl, `@SvEnum takes one options object: ${shape}`);
+	let pkg = "";
+	let name = `${upperSnake(cls).toLowerCase()}_e`;
+	let prefix = upperSnake(cls);
+	let width: number | undefined;
+	for (const p of opts.properties) {
+		const key =
+			p.type === "ObjectProperty" && p.key.type === "Identifier"
+				? p.key.name
+				: "";
+		if (p.type !== "ObjectProperty")
+			return src.fail(p, "@SvEnum options: pkg, name, width, prefix");
+		const v = p.value;
+		if (key === "width") width = widthLit(src, v);
+		else if (key === "pkg" || key === "name" || key === "prefix") {
+			if (v.type !== "StringLiteral")
+				return src.fail(v, `@SvEnum ${key} is a string`);
+			if (key !== "prefix" || v.value !== "")
+				checkSvId(src, v, v.value, `enum ${key}`);
+			if (key === "pkg") pkg = v.value;
+			else if (key === "name") name = v.value;
+			else prefix = v.value;
+		} else src.fail(p, `unknown @SvEnum option ${key}`);
+	}
+	if (!pkg) src.fail(opts, `@SvEnum names its SV package: ${shape}`);
+	const members = new Map<string, { sv: string; value: bigint }>();
+	const seen = new Map<bigint, string>();
+	for (const m of decl.body.body) {
+		if (
+			m.type !== "ClassProperty" ||
+			!m.static ||
+			m.computed ||
+			m.key.type !== "Identifier"
+		)
+			return src.fail(
+				m,
+				`an @SvEnum class holds static members only: ${shape}`,
+			);
+		const key = m.key.name;
+		const value = intLit(src, m.value ?? m, `${cls}.${key}`);
+		const other = seen.get(value);
+		if (other)
+			src.fail(m, `${cls}.${other} and ${cls}.${key} are both ${value}`);
+		seen.set(value, key);
+		const sv = prefix ? `${prefix}_${key}` : key;
+		checkSvId(src, m.key, sv, "enum member");
+		members.set(key, { sv, value });
+	}
+	if (members.size === 0)
+		src.fail(decl, `an @SvEnum class needs members: ${shape}`);
+	const max = [...members.values()].reduce(
+		(a, b) => (b.value > a ? b.value : a),
+		0n,
+	);
+	const need = Math.max(1, max.toString(2).length);
+	if (width !== undefined && width < need)
+		src.fail(
+			opts,
+			`${cls} needs ${need} bits for value ${max}, width is ${width}`,
+		);
+	return {
+		cls,
+		name,
+		pkg,
+		width: width ?? need,
+		members,
+		node: decl,
+		src,
+		abs,
+	};
 }
 
 /** `/** ... *\/` directly above `node` (only whitespace between) as comment lines (§7.1). */

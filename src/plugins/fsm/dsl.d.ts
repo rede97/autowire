@@ -47,8 +47,14 @@ export interface CallerPort {
 	call(args?: Record<string, Signal | number>): Promise<Signal>;
 }
 
-/** `N` for one data field, or `{ name: width, ... }` (`{}` is a bare token). */
-export type Shape = number | Record<string, number>;
+/** An @SvEnum class used as a port, field or register type (§2.8). */
+export type EnumClass = abstract new (...args: never[]) => unknown;
+
+/** Width `N` or an @SvEnum class. */
+export type Width = number | EnumClass;
+
+/** `N` (or an @SvEnum class) for one data field, or `{ name: width, ... }` (`{}` is a bare token). */
+export type Shape = Width | Record<string, Width>;
 
 export interface FsmOptions {
 	statePrefix?: string;
@@ -64,12 +70,12 @@ export declare function Fsm<T>(method: T, ctx?: unknown): T;
 export declare function Fsm(
 	options: FsmOptions,
 ): <T>(method: T, ctx?: unknown) => T;
-export declare function Input(width: number): Signal;
-export declare function Output(width: number): OutputPort;
+export declare function Input(width: Width): Signal;
+export declare function Output(width: Width): OutputPort;
 export declare function Const(width: number, value: number): Signal;
 export declare function Dff(
-	width: number,
-	options?: { reset?: number; external?: boolean },
+	width: Width,
+	options?: { reset?: number | Signal; external?: boolean },
 ): DffReg;
 export declare function PushPort(shape: Shape): PushEnd;
 export declare function PopPort(shape: Shape): PopEnd;
@@ -96,3 +102,11 @@ export declare function SvFunction(sig: {
 }): unknown;
 export declare function Escape(cond: Signal): void;
 export declare function Raise(): Error;
+/** `@SvEnum({ pkg: "my_pkg" }) class Op { static IDLE = 0; static GO = 1; }`: the
+ *  members become `my_pkg::OP_IDLE` ... of `typedef enum ... op_e` (§2.8). */
+export declare function SvEnum(options: {
+	pkg: string;
+	name?: string;
+	width?: number;
+	prefix?: string;
+}): <T>(cls: T, ctx?: unknown) => T;

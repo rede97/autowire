@@ -19,7 +19,8 @@ Landed
   plugin fsm run            Type A: [fsm.<id>] mjs= async/await DSL → plugins_dir/fsm/<Class>.sv
                             + aw_dff.sv; states, branches, loops, pulses (multi-bit), Dff, ?:,
                             SvPackage functions, inlined sub-FSMs, push / pop, Chan + Instance,
-                            @FsmPort interfaces, cross-file import, statePrefix / stateEncoding
+                            @FsmPort interfaces, @SvEnum types, cross-file import, try / Escape /
+                            Raise, statePrefix / stateEncoding / stateValues / exportState
                             (docs/state/async-fsm.md §11); demo/state (help fsm)
   autowire dtsim ...        simulation runner: <project>/dt/ testbench, dt/config/dtsim.config.ts,
                             dt/simout/ outputs; `ln -s autowire.js dtsim` runs it directly;

@@ -19,16 +19,15 @@ import {
 	lit,
 	sized,
 	svText,
-	widthLit,
 } from "./expr.ts";
 import {
 	dffDecl,
 	hsPort,
 	msgShape,
-	NOT_YET,
 	notYet,
 	parseSynthetic,
 	reservedName,
+	tyOf,
 } from "./front.ts";
 import type {
 	Action,
@@ -38,6 +37,8 @@ import type {
 	Chan,
 	CNode,
 	DffReg,
+	EnumType,
+	EscapeExit,
 	FsmMethod,
 	Group,
 	HsPort,
@@ -57,6 +58,19 @@ import type {
 	Wire,
 } from "./model.ts";
 import { checkSvId, Src, upperSnake } from "./source.ts";
+
+/** `Escape(c);` as a statement. */
+function escapeCall(
+	s: Statement | undefined,
+	builtins: Map<string, string>,
+): (Expression & { type: "CallExpression" }) | undefined {
+	const e = s?.type === "ExpressionStatement" ? s.expression : undefined;
+	return e?.type === "CallExpression" &&
+		e.callee.type === "Identifier" &&
+		builtins.get(e.callee.name) === "Escape"
+		? e
+		: undefined;
+}
 
 interface Frame {
 	kind: "loop" | "block";
@@ -209,6 +223,8 @@ export class BodyCompiler {
 	private readonly callers: CallerBinding[] = [];
 	private readonly servers: FsmMethod[] = [];
 	private methodName = "";
+	/** Enclosing try blocks, outermost first: their escapes and the catch entry. */
+	private regions: { escapes: EscapeExit[]; handler: CNode }[] = [];
 
 	constructor(
 		unit: Unit,
@@ -224,6 +240,7 @@ export class BodyCompiler {
 			ref: (n) => this.ref(n),
 			builtin: (n) => this.unit.builtins.get(n),
 			pkg: (n) => this.unit.packages.get(n),
+			enumType: (n) => this.unit.enums.get(n),
 			userCall: (pkg, fn, args, node) => {
 				const sv: Sv = {
 					k: "call",
@@ -271,7 +288,12 @@ export class BodyCompiler {
 				if (field !== undefined)
 					return this.src.fail(node, `${b.name} has no field ${field}`);
 				src.port?.reads.add("data");
-				return { sv: src.sv, width: src.width, named: src.sv.k === "atom" };
+				return {
+					sv: src.sv,
+					width: src.width,
+					named: src.sv.k === "atom",
+					enum: src.enum,
+				};
 			},
 			macro: (node) => this.macro(node),
 		};
@@ -480,7 +502,6 @@ export class BodyCompiler {
 				init.type === "CallExpression" && init.callee.type === "Identifier"
 					? this.unit.builtins.get(init.callee.name)
 					: undefined;
-			if (kind && NOT_YET[kind]) notYet(src, init, NOT_YET[kind]);
 			if (
 				kind === "Input" ||
 				kind === "Output" ||
@@ -515,7 +536,7 @@ export class BodyCompiler {
 					src.fail(x.id, `name ${name} is reserved by the generator`);
 				const [a0, a1] = init.arguments;
 				if (kind === "Dff") {
-					const reg = dffDecl(src, sv, x, widthLit(src, a0), a1, false);
+					const reg = dffDecl(src, sv, x, tyOf(this.unit, a0), a1, false);
 					this.claim(`${sv}_val`, x);
 					this.claim(`u_${sv}`, x);
 					this.privateDffs.push(reg);
@@ -529,7 +550,7 @@ export class BodyCompiler {
 					);
 				if (a1)
 					src.fail(a1, "Chan takes one width or one { field: width } object");
-				const msg = msgShape(src, a0, (n) => widthLit(src, n));
+				const msg = msgShape(src, a0, (n) => tyOf(this.unit, n));
 				const c: Chan = {
 					k: "chan",
 					name: sv,
@@ -558,6 +579,7 @@ export class BodyCompiler {
 			const wire: Wire = {
 				name: sv,
 				width: sig.width,
+				enum: sig.enum,
 				sv: sig.sv,
 				node: x,
 				key: this.at(x),
@@ -566,7 +588,7 @@ export class BodyCompiler {
 			this.wires.push(wire);
 			this.scope.map.set(name, {
 				k: "sig",
-				sig: { sv: atom(sv), width: sig.width, named: true },
+				sig: { sv: atom(sv), width: sig.width, named: true, enum: sig.enum },
 				start,
 				wire,
 			});
@@ -660,7 +682,8 @@ export class BodyCompiler {
 			} else {
 				this.touched = [];
 				text = svText(
-					evalSig(this.ecx, v as Expression, { width: p.width }).sv,
+					evalSig(this.ecx, v as Expression, { width: p.width, enum: p.enum })
+						.sv,
 				);
 				if (this.touched.length > 0) src.fail(v, LET_LATE);
 			}
@@ -669,10 +692,10 @@ export class BodyCompiler {
 		}
 		const b = given ?? this.ref(v);
 		if (p.k === "output" || (p.k === "dff" && p.place === "port")) {
-			if (b?.k !== "output" || b.width !== p.width)
+			if (b?.k !== "output" || b.width !== p.width || b.enum !== p.enum)
 				return src.fail(
 					v,
-					`${p.name} is a ${p.width}-bit output of ${inst.module}: connect a ${p.width}-bit Output of this method`,
+					`${p.name} is a ${p.enum ? p.enum.cls : `${p.width}-bit`} output of ${inst.module}: connect an Output of this method of that type`,
 				);
 			if (b.byInst)
 				src.fail(v, `${b.name} is already driven by ${b.byInst.name}`);
@@ -729,7 +752,8 @@ export class BodyCompiler {
 				if (
 					(s.type === "BreakStatement" ||
 						s.type === "ContinueStatement" ||
-						s.type === "ReturnStatement") &&
+						s.type === "ReturnStatement" ||
+						s.type === "ThrowStatement") &&
 					i + 1 < list.length
 				)
 					this.src.fail(
@@ -757,6 +781,51 @@ export class BodyCompiler {
 		return s.type === "BlockStatement"
 			? this.block(s.body, k)
 			: this.stmt(s, k);
+	}
+
+	/** Escape exits of a new state: every enclosing try block, outermost first (§3.7). */
+	private escapes(): EscapeExit[] {
+		return this.regions.flatMap((r) => r.escapes);
+	}
+
+	/** `try { Escape(c); ... } catch { ... }` (§3.7). The catch is outside its own region. */
+	private tryStmt(s: Statement & { type: "TryStatement" }, k: CNode): CNode {
+		const src: Src = this.src;
+		if (s.finalizer) src.fail(s.finalizer, "finally is not supported (§3.7)");
+		const h = s.handler;
+		if (!h) return src.fail(s, "a try block needs a catch (§3.7)");
+		if (h.param)
+			src.fail(
+				h.param,
+				"write catch { ... }: there is no exception value (§3.7)",
+			);
+		const handler = this.block(h.body.body, k);
+		const list = s.block.body;
+		const escapes: EscapeExit[] = [];
+		let i = 0;
+		for (; i < list.length; i++) {
+			const e = escapeCall(list[i], this.unit.builtins);
+			if (!e) break;
+			const c = e.arguments[0];
+			if (
+				e.arguments.length !== 1 ||
+				!c ||
+				c.type === "SpreadElement" ||
+				c.type === "ArgumentPlaceholder"
+			)
+				return src.fail(e, "Escape(c) takes one condition");
+			const [cond, needs] = this.cond(c as Expression);
+			if (needs.length > 0) src.fail(c, LET_LATE);
+			if (typeof cond === "boolean")
+				return src.fail(c, "the Escape condition is a constant");
+			escapes.push({ cond, to: handler, node: e });
+		}
+		this.regions.push({ escapes, handler });
+		try {
+			return this.block(list.slice(i), k);
+		} finally {
+			this.regions.pop();
+		}
 	}
 
 	/** Condition plus the let values it reads (checked when the state's exits expand). */
@@ -809,8 +878,24 @@ export class BodyCompiler {
 			case "ReturnStatement":
 				return this.return(s);
 			case "TryStatement":
-			case "ThrowStatement":
-				return notYet(src, s, "exception regions (§3.7)");
+				return this.tryStmt(s, k);
+			case "ThrowStatement": {
+				const a = s.argument;
+				if (
+					a.type !== "CallExpression" ||
+					a.callee.type !== "Identifier" ||
+					this.unit.builtins.get(a.callee.name) !== "Raise" ||
+					a.arguments.length > 0
+				)
+					return src.fail(s, "throw takes Raise(): throw Raise() (§3.7)");
+				const r = this.regions.at(-1);
+				if (!r)
+					return src.fail(
+						s,
+						"throw Raise() needs an enclosing try block; in a catch it goes to the outer one (§3.7)",
+					);
+				return { k: "jump", to: r.handler, node: s };
+			}
 			case "ForStatement":
 			case "ForInStatement":
 			case "ForOfStatement":
@@ -933,6 +1018,12 @@ export class BodyCompiler {
 				notYet(src, a, "Promise.all (§6.3)");
 			return src.fail(e, AWAIT_IS_STATE);
 		}
+		if (e.type === "CallExpression" && e.callee.type === "Identifier") {
+			const b = this.unit.builtins.get(e.callee.name);
+			if (b === "Escape")
+				src.fail(e, "Escape(c) belongs at the start of a try block (§3.7)");
+			if (b === "Raise") src.fail(e, "write throw Raise() (§3.7)");
+		}
 		if (e.type === "CallExpression") {
 			const callee = this.callee(e);
 			if (callee) {
@@ -961,7 +1052,7 @@ export class BodyCompiler {
 						`${b.name} is ${b.width} bits: write ${src.textOf(e.callee.object)}.pulse(value)`,
 					);
 				const value = arg
-					? evalSig(this.ecx, arg, { width: b.width })
+					? evalSig(this.ecx, arg, { width: b.width, enum: b.enum })
 					: { sv: lit(1, 1n), width: 1, value: 1n };
 				const act: Action = {
 					k: "pulse",
@@ -983,7 +1074,7 @@ export class BodyCompiler {
 					v.type === "ArgumentPlaceholder"
 				)
 					return src.fail(e, "set(v) takes one value");
-				const value = evalSig(this.ecx, v, { width: b.width });
+				const value = evalSig(this.ecx, v, { width: b.width, enum: b.enum });
 				const act: Action = {
 					k: "set",
 					dff: b,
@@ -1072,6 +1163,7 @@ export class BodyCompiler {
 			key: this.at(node),
 			cond,
 			next: k,
+			escapes: this.escapes(),
 		};
 		this.states.push(state);
 		return state;
@@ -1089,6 +1181,11 @@ export class BodyCompiler {
 		this.touched = [];
 		const sig = evalSig(this.ecx, call.callee.object as Expression);
 		if (this.touched.length > 0) src.fail(call, LET_LATE);
+		if (sig.enum)
+			src.fail(
+				call,
+				`compare an enum with a member: await (x === ${sig.enum.cls}.<MEMBER>).wait(1) (§2.8)`,
+			);
 		const arg = call.arguments[0];
 		if (call.arguments.length !== 1 || !arg)
 			return src.fail(call, "wait(v) takes one value");
@@ -1166,9 +1263,9 @@ export class BodyCompiler {
 		this.touched = [];
 		let out: Sig[];
 		if (msg.k === "data") {
-			const f = msg.fields[0] as { width: number };
+			const f = msg.fields[0] as MsgField;
 			if (!v) return src.fail(at, "push(v) takes the data");
-			out = [evalSig(this.ecx, v, { width: f.width })];
+			out = [evalSig(this.ecx, v, { width: f.width, enum: f.enum })];
 		} else if (
 			msg.fields.length === 0 &&
 			(!v || (v.type === "ObjectExpression" && v.properties.length === 0))
@@ -1186,7 +1283,10 @@ export class BodyCompiler {
 				msg.fields.map((f) => f.name),
 			);
 			out = msg.fields.map((f) =>
-				evalSig(this.ecx, given.get(f.name) as Expression, { width: f.width }),
+				evalSig(this.ecx, given.get(f.name) as Expression, {
+					width: f.width,
+					enum: f.enum,
+				}),
 			);
 		}
 		if (this.touched.length > 0) src.fail(v ?? at, LET_LATE);
@@ -1216,6 +1316,7 @@ export class BodyCompiler {
 			key: this.at(node),
 			cond: atom(`${port.name}_${push ? "rdy" : "vld"}`),
 			next: k,
+			escapes: this.escapes(),
 		};
 		this.states.push(state);
 		state.hs = { port, state, values, text, key: state.key };
@@ -1227,16 +1328,18 @@ export class BodyCompiler {
 					node,
 					`${port.name} carries no data; drop \`${to.name} =\``,
 				);
-			const fieldSig = (f: { name: string; width: number }) => ({
+			const fieldSig = (f: MsgField) => ({
 				sv: atom(`${port.name}_${f.name}`),
 				width: f.width,
 				named: true,
+				enum: f.enum,
 			});
 			to.src =
 				msg.k === "data"
 					? {
 							sv: atom(`${port.name}_data`),
 							width: msg.fields[0]?.width ?? 0,
+							enum: msg.fields[0]?.enum,
 							what,
 							port,
 						}
@@ -1300,12 +1403,20 @@ export class BodyCompiler {
 			pname: string,
 			v: Expression,
 			pnode: Node,
-			width?: number,
+			ty?: { width: number; enum?: EnumType },
 		) => {
+			const width = ty?.width;
 			const lb = v.type === "Identifier" ? this.scope.get(v.name) : undefined;
 			if (lb?.k === "let") {
-				if (width !== undefined && lb.src && lb.src.width !== width)
-					src.fail(v, `width mismatch: expected ${width}, got ${lb.src.width}`);
+				if (
+					lb.src &&
+					ty &&
+					(lb.src.width !== ty.width || lb.src.enum !== ty.enum)
+				)
+					src.fail(
+						v,
+						`type mismatch: expected ${ty.enum ? ty.enum.cls : `${ty.width} bits`}, got ${lb.src.enum ? lb.src.enum.cls : `${lb.src.width} bits`}`,
+					);
 				scope.map.set(pname, lb);
 				return;
 			}
@@ -1323,7 +1434,7 @@ export class BodyCompiler {
 				scope.map.set(pname, { k: "sig", sig, start: 0, use, lit: bare });
 			} else {
 				this.touched = [];
-				const sig = evalSig(this.ecx, v, width === undefined ? {} : { width });
+				const sig = evalSig(this.ecx, v, ty ?? {});
 				if (this.touched.length > 0) src.fail(v, LET_LATE);
 				scope.map.set(pname, { k: "sig", sig, start: 0, use });
 			}
@@ -1360,7 +1471,7 @@ export class BodyCompiler {
 		for (const [pname, p] of c.m.params) {
 			const v = given.get(pname) as Expression;
 			if (p.k === "input") {
-				value(pname, v, p.node, p.width);
+				value(pname, v, p.node, p);
 				continue;
 			}
 			const b = this.ref(v);
@@ -1441,7 +1552,7 @@ export class BodyCompiler {
 					binds ?? init,
 					`${pname} of ${callee.name} is not an Input: bind it in Caller(...); only Inputs are call arguments`,
 				);
-			else args.push({ name: pname, width: p.width });
+			else args.push({ name: pname, width: p.width, enum: p.enum });
 		}
 		const result = this.resultWidth(callee);
 		const inst: Inst = {
@@ -1522,6 +1633,11 @@ export class BodyCompiler {
 			return src.fail(
 				a,
 				`label the call: its states are <LABEL>_REQ / <LABEL>_RSP (§5.4)`,
+			);
+		if (this.regions.length > 0)
+			src.fail(
+				a,
+				`a Caller call cannot sit in a try block: an escape would leave ${cb.name}'s server mid-call (§3.7, §5.4)`,
 			);
 		if (a.arguments.length > 1)
 			src.fail(a, `${cb.name}.call({ args }) takes one object`);
@@ -1776,6 +1892,7 @@ export class BodyCompiler {
 			if (res && res.width === 0) {
 				res.sv = sig.sv;
 				res.width = sig.width;
+				res.enum = sig.enum;
 			} else if (res && svText(res.sv) !== svText(sig.sv))
 				src.fail(
 					v,

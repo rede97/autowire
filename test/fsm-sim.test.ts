@@ -22,6 +22,8 @@ const DEMOS = [
 	"dump_svc",
 	"cfg_load",
 	"reg_mgr",
+	"escape_ctl",
+	"cmd_ctl",
 ];
 const USER_PKGS = [join(demo, "rtl/dump_pkg.sv")];
 
@@ -52,6 +54,32 @@ async edges({
   }
 }`;
 
+/** throw Raise() (§3.7): no doc example; the raising segment and the catch entry share a move. */
+const RAISE = `@Fsm
+async raise_ctl({
+  // control
+  go = Input(1),
+  bad = Input(1),
+  done = Input(1),
+  // outputs
+  mark = Output(1),
+  fix = Output(1),
+}) {
+  while (true) {
+    IDLE: await go.wait(1);
+    try {
+      if (bad) {
+        mark.pulse();
+        throw Raise();
+      }
+      Work: await done.wait(1);
+    } catch {
+      fix.pulse();
+      Fix: await done.wait(1);
+    }
+  }
+}`;
+
 function withDir<T>(prefix: string, f: (dir: string) => T): T {
 	const dir = mkdtempSync(join(tmpdir(), prefix));
 	try {
@@ -65,7 +93,10 @@ describe("verilator", () => {
 	verilatorTest(
 		"generated SV is -Wall clean",
 		async () => {
-			const units: [string, string][] = [["edges", await compileBody(EDGES)]];
+			const units: [string, string][] = [
+				["edges", await compileBody(EDGES)],
+				["raise_ctl", await compileBody(RAISE)],
+			];
 			for (const f of DEMOS) {
 				const sv = (await compileDemo(`fsm/${f}.mjs`)).sv;
 				for (const m of sv.matchAll(/^module (\w+)/gm))
@@ -93,11 +124,17 @@ describe("verilator", () => {
 		["dump_client", "dump_svc", "dump_check", "dump_client"],
 		["cfg_load", "cfg_load", "cfg_load", ""],
 		["reg_mgr", "reg_mgr", "reg_mgr", ""],
+		["escape_ctl", "escape_ctl", "escape_ctl", ""],
+		["phy_mon", "phy_ctl", "phy_mon", ""],
+		["raise_ctl", "", "raise_ctl", ""],
+		["cmd_post", "cmd_ctl", "cmd_post", ""],
 	] as const)
 		verilatorTest(
 			`${top}: cycle behavior`,
 			async () => {
-				const sv = (await compileDemo(`fsm/${file}.mjs`)).sv;
+				const sv = file
+					? (await compileDemo(`fsm/${file}.mjs`)).sv
+					: await compileBody(RAISE);
 				withDir("aw-fsm-sim-", (dir) => {
 					const dff = join(dir, "aw_dff.sv");
 					const dutFile = join(dir, "dut.sv");

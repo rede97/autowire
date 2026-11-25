@@ -20,4 +20,20 @@ export class PhyCtl {
       ready.set(0);
     }
   }
+
+  @Fsm({ exportState: true, stateValues: { IDLE: 0, CALIB: 2, READY: 3 } })
+  async phy_mon({
+    // control
+    start = Input(1),
+    // calibration
+    cal_done = Input(1),
+    cal_req = Output(1),
+  }) {
+    while (true) {
+      Idle:  await start.wait(1);
+      cal_req.pulse();
+      Calib: await cal_done.wait(1);
+      Ready: await start.wait(0);
+    }
+  }
 }

@@ -1,11 +1,11 @@
 # async/await 状态机 DSL 设计（草案）
 
-> 状态：**部分落地**。`plugin fsm run` 已编译：状态、分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、子状态机平铺展开与 `return` 结果、`push` / `pop`（含多字段消息）与 `Chan`、`Instance` 例化、`Caller`、`@FsmPort` 接口、跨文件 import、`@Fsm({ statePrefix, stateEncoding })`（`help fsm`，示例 `demo/state/`）。还没有实现：不带 `await` 的 push / pop（Future）、`Promise.all`、`try` / `Escape`、`exportState` / `stateValues` / `stateReg`，用到时编译期报「not implemented yet」。
+> 状态：**部分落地**。`plugin fsm run` 已编译：状态、分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、`@SvEnum` 枚举类型、子状态机平铺展开与 `return` 结果、`push` / `pop`（含多字段消息）与 `Chan`、`Instance` 例化、`Caller`、`@FsmPort` 接口、跨文件 import、`try` / `Escape` / `Raise` 异常区域、`@Fsm({ statePrefix, stateEncoding, stateValues, exportState })`（`help fsm`，示例 `demo/state/`）。还没有实现：不带 `await` 的 push / pop（Future）、`Promise.all`、`stateReg`，用到时编译期报「not implemented yet」。
 > 来源：初稿 `demo/state/demo.md` 与值模型试验 `demo/state/demo.ts`，已并入本文后删除；原文见 git 提交 `21cb9ca`。本文是这套设计的唯一来源。
 > 初稿没说清的地方标为「决定」（本文给出的取舍）或「开放」（§10，需作者拍板）。
 > 作者源码是 **ECMAScript**（`.mjs`），不是 TypeScript：一组状态机写成带 `@FsmGroup` 的 class，对外的状态机是带 `@Fsm` 的 async 方法，端口是方法的解构参数（§2.2）；状态名用原生标签语句（§3.5）。选型理由见 §8.2。
 > **术语**：「信号」指每拍都有值的线（`Input`、`Output`、`Dff`、组合表达式）；「channel」只指带 vld / rdy 握手的消息通道（`PushPort`、`PopPort`、`Chan`，§6.2）。
-> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例与 §6.5 的 `aw_dff` 一起要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。除 §7.1 外，SV 示例省略文件头（§7.1）。示例、生成规则任何一方改动，都要同步更新另一方。已落地部分的示例（§2.3、§2.6、§3.6、§3.6.1、§4、§5.2、§5.3、§5.4、§6.1、§6.1.1、§6.5、§7.1）就是生成器的实际输出，`test/fsm.test.ts` 逐字比对，`demo/state/` 是它们的可运行副本；未落地部分的示例按同样的格式手写。
+> **文档规范**：每段 DSL 示例紧跟它生成的 SystemVerilog，两者一一对照；SV 示例与 §6.5 的 `aw_dff` 一起要能过 Verilator `--lint-only -Wall -Wno-DECLFILENAME`。除 §7.1 外，SV 示例省略文件头（§7.1）。示例、生成规则任何一方改动，都要同步更新另一方。已落地部分的示例（§2.3、§2.6、§2.8、§3.6、§3.6.1、§3.7、§3.7.1、§3.7.2、§4、§5.2、§5.3、§5.4、§6.1、§6.1.1、§6.5、§7.1）就是生成器的实际输出，`test/fsm.test.ts` 逐字比对，`demo/state/` 是它们的可运行副本；未落地部分的示例（§3.2 用到 `Promise.all`）按同样的格式手写。
 
 ## 背景
 
@@ -501,17 +501,169 @@ endmodule
 
 ### 2.7 跨文件 import
 
-fsm 源文件除了 import DSL 内建名字，还可以 import 别的 fsm 源文件 `export` 出来的三类东西（**决定**）：
+fsm 源文件除了 import DSL 内建名字，还可以 import 别的 fsm 源文件 `export` 出来的四类东西（**决定**）：
 
 | export | import 之后 |
 |---|---|
 | `export const pkg = SvPackage(...)` | 当作本文件声明的用户 package 用（§2.3） |
 | `export class C` 带 `@FsmPort` | 当作本文件的接口用（§2.6） |
+| `export class E` 带 `@SvEnum` | 当作本文件的枚举类型用（§2.8）；SV package 仍在声明它的文件里生成 |
 | `export class G` 带 `@FsmGroup` | `await G.sub({...})` 平铺展开它的子状态机（§5），`Instance(G.fsm, {...})` 例化它的顶层状态机（§5.3） |
 
 - import 路径相对源文件，以 `.mjs` 结尾；循环 import 编译期报错。
-- 被 `Instance` 例化的组必须也是 `autowire.toml` 里的 `[fsm.<id>]`，它的 `.sv` 才会生成；只被 import 来平铺展开或取 package 的文件不需要登记。
+- 被 `Instance` 例化的组、被 import 了 `@SvEnum` 的文件，都必须也是 `autowire.toml` 里的 `[fsm.<id>]`，它的 `.sv` 才会生成；只被 import 来平铺展开或取用户 package 的文件不需要登记。
 - 导出的 `@FsmGroup` 可以没有 `@Fsm` 方法（只放子状态机的库），它里面没被调用的子状态机也不报错。
+
+### 2.8 枚举类型：`@SvEnum`
+
+状态机向外发命令（action、opcode、报文类型）时，命令的取值写成枚举，SV 侧拿到的是 package 里的 `typedef enum`，不是裸数值（**决定**）。枚举是一个带 `@SvEnum` 装饰器的 class，成员是 `static` 字段：
+
+| 选项 | 缺省 | 作用 |
+|---|---|---|
+| `pkg` | 必填 | 生成的 SV package 名；同一文件里多个枚举可以放进同一个 package |
+| `name` | class 名转小写下划线再加 `_e`（`LtsmOp` → `ltsm_op_e`） | `typedef enum` 的类型名 |
+| `prefix` | class 名转大写下划线（`LtsmOp` → `LTSM_OP`） | SV 成员名 `<prefix>_<成员>`；写 `""` 不加前缀 |
+| `width` | 放得下最大值的最少位数 | 显式位宽，不能小于最少位数 |
+
+用法：
+
+- 类型：`Input(E)`、`Output(E)`、`Dff(E)`、`PushPort(E)` / `PopPort(E)` / `Chan(E)`，以及消息字段 `{ op: E, addr: 8 }`，凡是写位宽的地方都可以写枚举 class。
+- 取值：`E.MEMBER`，生成 `pkg::<prefix>_MEMBER`，总是带 package 前缀，不同枚举、状态名之间不会撞名。
+- 运算：枚举值只能 `===` / `!==` 比较（两边同一个枚举）和 `?:` 选择（两臂同一个枚举）；位运算、`!`、`bits()`、`x.wait(v)` 都是编译期错误，写成 `await (x === E.M).wait(1)`。
+- 赋值：写进枚举类型的端口、寄存器、消息字段时，值必须是同一个枚举；裸数字、别的枚举、普通信号都报错。枚举值可以写进同宽的普通信号（SV 里枚举到 `logic` 是合法转换）。
+- 生成：package 写在声明枚举的那个文件的 `.sv` 最前面，每个成员一行。端口与内部线的类型是 `pkg::name`；有多个写入点的与-或选择是普通位向量，生成器用 `pkg::name'(...)` 转回枚举。`Dff(E)` 实例化为 `aw_dff #(.T(pkg::name))`，复位值写 `{ reset: E.M }`，缺省为数值 0。
+
+DSL：
+
+```js
+/** Commands of the cmd channel. */
+@SvEnum({ pkg: "cmd_pkg", name: "cmd_e", prefix: "CMD" })
+export class Cmd {
+  static NOP = 0;
+  static READ = 1;
+  static WRITE = 2;
+  static FLUSH = 5;
+}
+
+@FsmGroup
+export class CmdCtl {
+  @Fsm
+  async cmd_post({
+    // control
+    go = Input(1),
+    we = Input(1),
+    // command channel
+    cmd = PushPort({ op: Cmd, addr: 8 }),
+    // status
+    last = Dff(Cmd),
+    sent = Output(Cmd),
+  }) {
+    while (true) {
+      IDLE: await go.wait(1);
+      last.set(we ? Cmd.WRITE : Cmd.READ);
+      Send: await cmd.push({ op: last.val, addr: 0x10 });
+      sent.pulse(last.val);
+      if (last.val === Cmd.WRITE) {
+        Flush: await cmd.push({ op: Cmd.FLUSH, addr: 0x10 });
+        sent.pulse(Cmd.FLUSH);
+      }
+    }
+  }
+}
+```
+
+生成的 SV（省略文件头）：
+
+```systemverilog
+package cmd_pkg;
+  typedef enum logic [2:0] {
+    CMD_NOP = 3'd0,
+    CMD_READ = 3'd1,
+    CMD_WRITE = 3'd2,
+    CMD_FLUSH = 3'd5
+  } cmd_e;
+endpackage
+
+package cmd_post_pkg;
+  typedef enum logic [1:0] {IDLE, SEND, FLUSH} state_t;
+endpackage
+
+module cmd_post
+  import cmd_post_pkg::*;
+(
+  // clock and reset
+  input  logic          clk,
+  input  logic          rst_n,
+  // control
+  input  logic          go,
+  input  logic          we,
+  // command channel
+  output logic          cmd_vld,
+  input  logic          cmd_rdy,
+  output cmd_pkg::cmd_e cmd_op,
+  output logic [7:0]    cmd_addr,
+  // status
+  output cmd_pkg::cmd_e last,
+  output cmd_pkg::cmd_e sent
+);
+  state_t state_val, state_next;
+  logic   move_to_SEND, leave_SEND, leave_FLUSH;
+
+  always_comb begin
+    state_next   = state_val;
+    move_to_SEND = 1'b0;
+    leave_SEND   = 1'b0;
+    leave_FLUSH  = 1'b0;
+    unique case (state_val)
+      IDLE:
+        if (go) begin
+          state_next   = SEND;
+          move_to_SEND = 1'b1;
+        end
+      SEND:
+        if (cmd_rdy) begin
+          leave_SEND = 1'b1;
+          if (last == cmd_pkg::CMD_WRITE) begin
+            state_next = FLUSH;
+          end else begin
+            state_next = IDLE;
+          end
+        end
+      FLUSH:
+        if (cmd_rdy) begin
+          leave_FLUSH = 1'b1;
+          state_next  = IDLE;
+        end
+      default:
+        state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  assign cmd_vld  = (state_val == SEND)                         // cmd.push({ op: last.val, addr: 0x10 }) / cmd.push({ op: Cmd.FLUSH, addr: 0x10 })
+                  | (state_val == FLUSH);
+  assign cmd_op   = cmd_pkg::cmd_e'(({3{state_val == SEND}} & last) | ({3{state_val == FLUSH}} & cmd_pkg::CMD_FLUSH));
+  assign cmd_addr = 8'h10;
+  aw_dff #(.T(cmd_pkg::cmd_e)) u_last (.clk, .rst_n,
+    .set(move_to_SEND),                                         // last.set(we ? Cmd.WRITE : Cmd.READ)
+    .next(we ? cmd_pkg::CMD_WRITE : cmd_pkg::CMD_READ), .val(last));
+  assign sent = cmd_pkg::cmd_e'(({3{leave_SEND}} & last) | ({3{leave_FLUSH}} & cmd_pkg::CMD_FLUSH));  // sent.pulse(last.val) / sent.pulse(Cmd.FLUSH)
+endmodule
+```
+
+| DSL | SV |
+|---|---|
+| `@SvEnum({ pkg: "cmd_pkg", name: "cmd_e", prefix: "CMD" })` | `package cmd_pkg` 里的 `typedef enum logic [2:0] {...} cmd_e`，位宽由最大值 5 定为 3 |
+| `PushPort({ op: Cmd, addr: 8 })`、`Dff(Cmd)`、`Output(Cmd)` | 端口类型 `cmd_pkg::cmd_e`；寄存器是 `aw_dff #(.T(cmd_pkg::cmd_e))` |
+| `Cmd.WRITE` | `cmd_pkg::CMD_WRITE` |
+| 两个 push 写同一个 `op` 字段、`sent.pulse` 的两个写入点 | 与-或选择外面套 `cmd_pkg::cmd_e'(...)`；不发脉冲时为数值 0，即 `CMD_NOP` |
+
+- 其他文件的 RTL 直接 `import cmd_pkg::*;` 使用这些类型和成员；filelist 里生成的 `.sv` 要排在用它的手写 RTL 前面。
+- 同一个 package 里两个枚举的 SV 成员名不能相同（用 `prefix` 区分）；同一个 package 名在两个 `[fsm.<id>]` 文件里声明是错误。
+- 只放枚举的文件也要有一个（可以为空的）`@FsmGroup` class，并登记为 `[fsm.<id>]`。
 
 ## 3. 状态与节拍
 
@@ -1101,12 +1253,12 @@ module work_ctl
   output logic halt
 );
   state_t state_val, state_next;
-  logic   move_to_RECOVERY, move_to_FATAL;
+  logic   move_to_FATAL, move_to_RECOVERY;
 
   always_comb begin
     state_next       = state_val;
-    move_to_RECOVERY = 1'b0;
     move_to_FATAL    = 1'b0;
+    move_to_RECOVERY = 1'b0;
     unique case (state_val)
       IDLE:
         if (go) begin
@@ -1177,13 +1329,13 @@ endmodule
 
 - **作用范围**：`Escape(c)` 作用于本 `try` 块里的每个状态，包括嵌套的循环、分支和内层区域；不作用于本区域自己的 `catch`。所以上例 `Recovery` 不会被 `err` 打断，但仍受外层 `fatal` 约束。
 - **优先级（决定）**：出错条件排在状态自身条件之前。多层同时成立时外层优先：外层包住内层，语义上更严重。同一个 `try` 里写多个 `Escape` 时按书写顺序。
-- **写法**：`Escape(...)` 只能写在 `try` 块开头；`catch` 必须写成 `catch {`，不能绑定变量（没有异常值可接）；不支持 `finally`。
-- **主动跳转**：分支里要主动进入 `catch` 时写 `throw Raise()`，它在当前段结束时跳进最近的 `catch`。内层 `catch` 里再写 `throw Raise()`，就把错误升级给外层。
+- **写法**：`Escape(...)` 只能写在 `try` 块开头，条件是 1 位信号表达式，不能是常量，不能读 `let`；`catch` 必须写成 `catch {`，不能绑定变量（没有异常值可接）；不支持 `finally`。`try` 块里可以不写 `Escape`，只用 `throw Raise()` 进入 `catch`。
+- **主动跳转**：分支里要主动进入 `catch` 时写 `throw Raise()`，它在当前段结束时跳进最近的 `catch`：这一段里 `throw` 之前的动作和 `catch` 第一段的动作在同一拍执行。内层 `catch` 里再写 `throw Raise()`，就把错误升级给外层。不在任何 `try` 块里的 `throw Raise()` 是编译期错误。平铺展开的子状态机里也可以写，跳到调用点外面最近的 `catch`。
 - **陷阱状态**：写成 `await ALWAYS_0.wait(1)`，复位之外永不离开。
 - **`catch` 的入口**：`catch` 里第一个 `await` 之前的动作，挂在所有出错出口共用的 `move_to_<catch 的第一个状态>` 上，与循环开头多前驱的处理一致（§3.6）。
-- **在途工作的清理（决定）**：经出错出口离开区域时，区域内发起、尚未 join 的 Future 被放弃：生成器把它们的 `fin` 辅助寄存器清零（§6.3）。平铺展开进来的子状态机状态就是区域内的状态，同样受 `Escape` 约束，不需要额外的 `abort` 口。例化的实例是独立进程，不受父级 `Escape` 影响；要它中止，父级通过 channel 发消息。作者声明的 `Dff` 保持原值，需要复位就在 `catch` 里显式 `set`。在 push / pop 状态经出错出口离开，会在握手前撤掉 `vld` / `rdy`，对端协议是否允许由作者负责（§10）。
+- **在途工作的清理（决定）**：平铺展开进来的子状态机状态就是区域内的状态，同样受 `Escape` 约束，不需要额外的 `abort` 口。例化的实例是独立进程，不受父级 `Escape` 影响；要它中止，父级通过 channel 发消息。`Caller` 的调用（§5.4）不能写在 `try` 块里：出错出口会把服务实例留在调用中途，下一次调用就会卡住。作者声明的 `Dff` 保持原值，需要复位就在 `catch` 里显式 `set`。在 push / pop 状态经出错出口离开，会在握手前撤掉 `vld` / `rdy`，对端协议是否允许由作者负责（§10）。Future（§6.3）实现后，区域内发起、尚未 join 的 Future 随出错出口放弃，生成器把它们的 `fin` 清零。
 - **`IDLE` 由作者写**：顶层状态机的初始状态就是第一个 `await` 的标签，`IDLE`、`FATAL`、`Recovery` 都是作者起的名字，不是保留字。
-- **出错出口不算 `leave_S`**：`leave_S` 只在 S 自己的 `await` 条件成立时发出（§3.6）；经 `Escape` 离开 S 时执行的是 `catch` 的第一段，不执行 S 后面的段。
+- **出错出口与 `leave_S`**：经 `Escape` 离开 S 时执行的是 `catch` 的第一段，不执行 S 后面的段。`leave_S` 表示「这一拍离开 S」，出错出口也算；所以 S 段里的动作只在 S 自己的条件成立时执行，带出错出口的状态，其段动作由 `move_S_to_T` 一类信号驱动，不会是 `leave_S`（§3.7.1 的 `move_RUN_to_IDLE`）。
 
 #### 3.7.1 示例：软复位
 
@@ -1242,12 +1394,12 @@ module soft_rst_ctl
   input  logic clean_done
 );
   state_t state_val, state_next;
-  logic   move_to_RUN, move_to_RESET, move_RUN_to_IDLE;
+  logic   move_to_RESET, move_to_RUN, move_RUN_to_IDLE;
 
   always_comb begin
     state_next       = state_val;
-    move_to_RUN      = 1'b0;
     move_to_RESET    = 1'b0;
+    move_to_RUN      = 1'b0;
     move_RUN_to_IDLE = 1'b0;
     unique case (state_val)
       IDLE:
@@ -1404,13 +1556,13 @@ module err_ctl
   output logic c2_start
 );
   state_t state_val, state_next;
-  logic   move_to_CLEAN0, move_to_CLEAN1, move_to_CLEAN2;
+  logic   move_to_CLEAN2, move_to_CLEAN1, move_to_CLEAN0;
 
   always_comb begin
     state_next     = state_val;
-    move_to_CLEAN0 = 1'b0;
-    move_to_CLEAN1 = 1'b0;
     move_to_CLEAN2 = 1'b0;
+    move_to_CLEAN1 = 1'b0;
+    move_to_CLEAN0 = 1'b0;
     unique case (state_val)
       IDLE:
         if (go) begin
@@ -2915,8 +3067,8 @@ state.next = 目标状态
 | | `"onehot"` | 写出 one-hot 数值 `IDLE = 3'b001, ...`，W = 状态数 |
 | `stateReg`（未实现） | `"always_ff"`（缺省） | 主状态按上面第 1-5 条生成在本模块内 |
 | | `"dff"` | 主状态是 `aw_dff` 实例；放弃工具识别，现阶段不推荐 |
-| `exportState`（未实现） | `true` | 模块多出输出口 `state_set_o` / `state_next_o` / `state_val_o`，类型 `state_t`（DFF 接口形状，三个都是输出） |
-| `stateValues`（未实现） | enum 成员名 → 数值 | 逐个写出数值。必须列全全部状态、互不相同、放得进 W 位，与 `stateEncoding` 互斥，由检查器检查 |
+| `exportState` | `true` | 模块多出输出口 `state_set_o` / `state_next_o` / `state_val_o`，类型 `state_t`（DFF 接口形状，三个都是输出），端口组标题为 `// exportState` |
+| `stateValues` | enum 成员名 → 数值 | 逐个写出数值，位宽同 `"binary"`。必须列全全部状态、互不相同、放得进 W 位，与 `stateEncoding` 互斥，由检查器检查 |
 
 DSL（前缀加 one-hot）：
 
@@ -3020,6 +3172,115 @@ state_next_o = move_to_S 时输出成员 S；state_set_o = 0 时取 state_val_o
 - 软件按成员值解读上报值。缺省编码随声明顺序变化：增删或重排状态会改变已有状态的值。要给软件一个稳定的编码，写 `stateValues`。
 - 导出的状态只用于观测。原则 4 仍然成立：其他模块的功能逻辑不应译码 `state_val_o`，需要电平信号时用 `Dff`。这一条在模块外，检查器管不到。
 - 两种 `stateReg` 下导出口的形状和值完全一样，切换寄存器生成方式不影响外部连线。
+
+DSL（导出状态，固定编码）：
+
+```js
+@Fsm({ exportState: true, stateValues: { IDLE: 0, CALIB: 2, READY: 3 } })
+async phy_mon({
+  // control
+  start = Input(1),
+  // calibration
+  cal_done = Input(1),
+  cal_req = Output(1),
+}) {
+  while (true) {
+    Idle:  await start.wait(1);
+    cal_req.pulse();
+    Calib: await cal_done.wait(1);
+    Ready: await start.wait(0);
+  }
+}
+```
+
+生成的 SV：
+
+```systemverilog
+package phy_mon_pkg;
+  typedef enum logic [1:0] {IDLE = 2'd0, CALIB = 2'd2, READY = 2'd3} state_t;
+endpackage
+
+module phy_mon
+  import phy_mon_pkg::*;
+(
+  // clock and reset
+  input  logic   clk,
+  input  logic   rst_n,
+  // control
+  input  logic   start,
+  // calibration
+  input  logic   cal_done,
+  output logic   cal_req,
+  // exportState
+  output logic   state_set_o,
+  output state_t state_next_o,
+  output state_t state_val_o
+);
+  state_t state_val, state_next;
+  logic   move_to_CALIB, move_to_READY, move_to_IDLE;
+
+  always_comb begin
+    state_next    = state_val;
+    move_to_CALIB = 1'b0;
+    move_to_READY = 1'b0;
+    move_to_IDLE  = 1'b0;
+    unique case (state_val)
+      IDLE:
+        if (start) begin
+          state_next    = CALIB;
+          move_to_CALIB = 1'b1;
+        end
+      CALIB:
+        if (cal_done) begin
+          state_next    = READY;
+          move_to_READY = 1'b1;
+        end
+      READY:
+        if (!start) begin
+          state_next   = IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  assign cal_req = move_to_CALIB;                               // cal_req.pulse()
+
+  // exportState: enum members selected by comparisons, never state_val itself
+  always_comb begin
+    unique case (state_val)
+      IDLE:    state_val_o = IDLE;
+      CALIB:   state_val_o = CALIB;
+      READY:   state_val_o = READY;
+      default: state_val_o = IDLE;
+    endcase
+  end
+  assign state_set_o = move_to_CALIB | move_to_READY | move_to_IDLE;
+  always_comb begin
+    state_next_o = state_val_o;
+    if (move_to_CALIB) begin
+      state_next_o = CALIB;
+    end
+    if (move_to_READY) begin
+      state_next_o = READY;
+    end
+    if (move_to_IDLE) begin
+      state_next_o = IDLE;
+    end
+  end
+endmodule
+```
+
+| DSL | SV |
+|---|---|
+| `stateValues` | enum 成员的显式数值；`CALIB` 是 2，`READY` 是 3，增删别的状态也不变 |
+| `exportState: true` | 三个导出口与末尾的导出块；每个有入边的状态都有 `move_to_<S>`，即使没有动作用它（这里的 `move_to_READY`、`move_to_IDLE`） |
+| `state_set_o` | 所有 `move_to_<S>` 之或，包括回到同一状态的 move |
 
 ## 7. 生成 SV 的约定
 
@@ -3246,7 +3507,9 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | 标签：按所挂语句分为状态名 / 循环名 / 块名，挂在其他语句上报错；一条语句只能有一个标签；状态标签所在语句的形状；方法内唯一、合法 SV 标识符；三类名字不重名 | §3.5、§3.6 |
 | 循环：每个环至少经过一个 `await`；拒绝 `for`；`while (true)` 循环体里第一个 `await` 之前不得有循环 | §3.4、§3.6 |
 | 有结束与无结束：`@Fsm` 方法体只有一条 `while (true)`（之前只允许 `const` / `let` 声明和 `Instance(...)`），不得 `return`、不得 `break` 出 `while (true)`（后接陷阱状态除外）、不能走到方法末尾；`while (true)` 循环体第一个 `await` 之前没有动作 | §3.4 |
-| 异常区域：`Escape` 只在 `try` 块开头；`catch` 不绑定变量；拒绝 `finally`；`throw` 只能写 `throw Raise()` 且必须有外围 `try` | §3.7 |
+| 异常区域：`Escape` 只在 `try` 块开头，条件不能是常量、不能读 `let`；`catch` 不绑定变量；拒绝 `finally`；`throw` 只能写 `throw Raise()` 且必须有外围 `try`；`Caller` 调用不能在 `try` 块里 | §3.7 |
+| `@SvEnum`：必须给 `pkg`；成员是 `static` 整数、互不相同、放得进 `width`；同一 package 里 SV 成员名不重复；枚举值只能比较和 `?:`，写进枚举类型的位置必须是同一枚举的值 | §2.8 |
+| `stateValues`：列全全部状态、互不相同、放得进 W 位、与 `stateEncoding` 互斥 | §6.5 |
 | `await` 只出现在状态位置（`wait`、`push`、`pop`、async 调用）；条件是普通信号表达式 | §2.5 |
 | `const` / `let`：`let` 只允许「声明不赋值、在带标签的调用或 `pop` 语句里赋值一次」；读在赋值之前、从不读、重新赋值都报错；`let` 的值只在来源结束的那一段可读 | §2.4 |
 | 未读的 `Input`、未用的组合 `const`、从未 `pulse` 的 `Output`、从未 `set` 的 `Dff`、方法体里从未读 `.val` 的 `Dff`：报错（否则生成的 SV 在 `-Wall` 下报未使用） | §2.2、§6.5 |
@@ -3307,7 +3570,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | import 路径 | 内建名从 `.autowire/dsl/fsm/dsl.mjs` 导入，与 wishbone 一样由 `src/cli/pack.ts` 打包、每次 `plugin fsm run` 重新物化（自愈缓存）；`dsl.mjs` 只含空实现，另带 `dsl.d.ts` 给编辑器补全 |
 | 解析器 | `@babel/parser` 写死版本，懒加载（§8.2） |
 | 生成物登记 | 输出目录加进 `AGENTS.md` 的「Generated and MUST NOT be hand-edited」清单 |
-| 文档与帮助 | `help/fsm.txt`，在 `help status` 登记；`demo/state/` 是能跑的示例（`counter_ctl.mjs` = §7.1，`loop_ctl.mjs` = §3.6 / §3.6.1，`reg_ctl.mjs` = §6.5，`dump_check.mjs` = §5.2，`dump_svc.mjs` = §5.3，`reg_mgr.mjs` = §5.4，`cfg_load.mjs` = §2.6），`test/fsm.test.ts` 检查它与本文的 SV 一致 |
+| 文档与帮助 | `help/fsm.txt`，在 `help status` 登记；`demo/state/` 是能跑的示例（`counter_ctl.mjs` = §7.1，`loop_ctl.mjs` = §3.6 / §3.6.1，`escape_ctl.mjs` = §3.7 / §3.7.1 / §3.7.2，`cmd_ctl.mjs` = §2.8，`reg_ctl.mjs` = §6.5，`phy_ctl.mjs` = §6.5 选项，`dump_check.mjs` = §5.2，`dump_svc.mjs` = §5.3，`reg_mgr.mjs` = §5.4，`cfg_load.mjs` = §2.6），`test/fsm.test.ts` 检查它与本文的 SV 一致 |
 
 **MVP 的 ES 子集（决定）**：不支持 `switch`；变量只允许 §2.4 列出的 `const` / `let` 用法；其余语法一律编译期报错，带 `文件:行:列`。以后放宽见 §10。
 
@@ -3316,7 +3579,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 ```mermaid
 flowchart LR
   P0["P0 骨架（已落地）<br/>解析、检查器（class / 参数 / 标签 / const-let）<br/>CFG：wait / if / while / break / continue<br/>次态块 + enum + pulse / Dff + 文件头"] --> P1["P1 交互（已落地，Promise.all 除外）<br/>push / pop 状态、多字段消息、Chan、Instance、Caller<br/>子状态机平铺展开、@FsmPort 接口、跨文件 import<br/>SvPackage、bits、?:"]
-  P1 --> P2["P2 异常与观测<br/>Future + Promise.all<br/>try / Escape / Raise<br/>exportState / stateValues / stateReg"]
+  P1 --> P2["P2 异常与观测（已落地，Future / Promise.all / stateReg 除外）<br/>try / Escape / Raise<br/>exportState / stateValues<br/>Future + Promise.all、stateReg 未实现"]
   P2 --> P3["P3 优化<br/>寄存器复用、带缓存的 Chan<br/>§10 推迟项"]
 ```
 
