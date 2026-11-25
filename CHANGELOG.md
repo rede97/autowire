@@ -2,6 +2,10 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.8] - 2026-11-26
+
+- **fsm 同步辅助方法**：`@FsmGroup` 里不带装饰器、也不带 `async` 的方法是只有动作和分支的同步方法，没有状态；调用写成语句 `this.m({...});`，不写 `await`、不带标签，动作并进调用所在的那一段执行。对它 `await`、把它当值用、交给 `Caller` 或 `Instance` 都在编译期报错。用于把一串固定的寄存器写入收成一个有名字的操作（[`docs/state/async-fsm.md`](docs/state/async-fsm.md) §5）。
+
 ## [2.9.7] - 2026-11-26
 
 - **破坏性：fsm 不再生成 `aw_dff`**：状态寄存器和每个 `Dff` 都直接展开成模块内的 `always_ff`（块名 `ff_state` / `ff_<寄存器>`），`plugin fsm run` 不再写 `aw_dff.sv`；filelist 里的 `aw_dff.sv` 条目要删掉。所有 `always` 块都带块名（`comb_state`、`ff_state`、`ff_<寄存器>`、`comb_<端口>_<字段>`），`comb_` / `ff_` 成为保留前缀。删除未实现的 `@Fsm({ stateReg })` 选项。
