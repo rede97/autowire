@@ -336,14 +336,16 @@ module cmp_fsm
     end
   end
 
-  always_ff @(posedge clk or negedge rst_n) begin : ff_mag      // mag.set(num_pkg.abs8(err))
+  // mag.set(num_pkg.abs8(err))
+  always_ff @(posedge clk or negedge rst_n) begin : ff_mag
     if (!rst_n) begin
       mag <= 8'h00;
     end else if (action.enter_HOLD) begin
       mag <= fn_abs8_0;
     end
   end
-  assign alarm = action.enter_HOLD;                             // alarm.pulse()
+  // alarm.pulse()
+  assign alarm = action.enter_HOLD;
 endmodule
 ```
 
@@ -524,19 +526,28 @@ module cfg_load
     end
   end
 
-  assign done    = action.enter_IDLE;                           // done.pulse()
-  assign rd_req  = action.enter_LO_WAIT                         // this.req.pulse()
-                 | action.enter_HI_WAIT;
-  assign rd_addr = ({8{action.enter_LO_WAIT}} & 8'h10)          // this.addr.pulse(a)
-                 | ({8{action.enter_HI_WAIT}} & 8'h14);
-  always_ff @(posedge clk or negedge rst_n) begin : ff_lo       // lo.set(a)
+  // done.pulse()
+  assign done   = action.enter_IDLE;
+  // this.req.pulse()
+  assign rd_req = action.enter_LO_WAIT | action.enter_HI_WAIT;
+  // this.addr.pulse(a)
+  always_comb begin : comb_rd_addr
+    unique case (1'b1)
+      action.enter_LO_WAIT: rd_addr = 8'h10;
+      action.enter_HI_WAIT: rd_addr = 8'h14;
+      default:              rd_addr = 8'h00;
+    endcase
+  end
+  // lo.set(a)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_lo
     if (!rst_n) begin
       lo <= 16'h0000;
     end else if (action.enter_HI_WAIT) begin
       lo <= rd_data;
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_hi       // hi.set(b)
+  // hi.set(b)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_hi
     if (!rst_n) begin
       hi <= 16'h0000;
     end else if (action.enter_IDLE) begin
@@ -550,7 +561,7 @@ endmodule
 |---|---|
 | `rd = new RdPort(8, 16)` | 端口 `rd_req` / `rd_addr[7:0]` / `rd_ack` / `rd_data[15:0]`：字段名加参数名前缀，位宽取构造参数 |
 | `Lo: a = await rd.read(0x10)` | `read` 平铺展开：它的 `Wait:` 状态成为 `LO_WAIT`；第二次调用是 `HI_WAIT` |
-| `this.issue(a)` | 同步方法，只有动作：`rd_req` / `rd_addr` 挂在进入 `LO_WAIT` / `HI_WAIT` 的 move 上，两处调用合成与-或 |
+| `this.issue(a)` | 同步方法，只有动作：`rd_req` / `rd_addr` 挂在进入 `LO_WAIT` / `HI_WAIT` 的 move 上，两处调用的 `rd_addr` 取不同值，生成按 move 选值的 `case`（§6.1.1） |
 | `return this.data` / `lo.set(a)` | `a` 就是 `rd_data`，在离开 `LO_WAIT` 那一段有效：`u_lo.next = rd_data` |
 
 规则：
@@ -594,7 +605,7 @@ fsm 源文件除了 import DSL 内建名字，还可以 import 别的 fsm 源文
 - 取值：`E.MEMBER`，生成 `pkg::<prefix>_MEMBER`，总是带 package 前缀，不同枚举、状态名之间不会撞名。
 - 运算：枚举值只能 `===` / `!==` 比较（两边同一个枚举）和 `?:` 选择（两臂同一个枚举）；位运算、`!`、`bits()`、`x.wait(v)` 都是编译期错误，写成 `await (x === E.M).wait(1)`。
 - 赋值：写进枚举类型的端口、寄存器、消息字段时，值必须是同一个枚举；裸数字、别的枚举、普通信号都报错。枚举值可以写进同宽的普通信号（SV 里枚举到 `logic` 是合法转换）。
-- 生成：package 写在声明枚举的那个文件的 `.sv` 最前面，每个成员一行。端口与内部线的类型是 `pkg::name`；有多个写入点的与-或选择是普通位向量，生成器用 `pkg::name'(...)` 转回枚举。`Dff(E)` 的寄存器类型是 `pkg::name`，复位值写 `{ reset: E.M }`，缺省为数值 0（生成时写成值为 0 的成员，没有时写 `pkg::name'(0)`）。
+- 生成：package 写在声明枚举的那个文件的 `.sv` 最前面，每个成员一行。端口与内部线的类型是 `pkg::name`；只有一个写入值时与 move 相与，结果是普通位向量，生成器用 `pkg::name'(...)` 转回枚举；有两个以上不同值时生成 `case`（§6.1.1），各分支直接写枚举值。`Dff(E)` 的寄存器类型是 `pkg::name`，复位值写 `{ reset: E.M }`，缺省为数值 0（生成时写成值为 0 的成员，没有时写 `pkg::name'(0)`）。
 
 DSL：
 
@@ -719,7 +730,8 @@ module cmd_post
     end
   end
 
-  assign cmd_vld = (state_val == SEND) | (state_val == FLUSH);  // cmd.push({ op: last.val, addr: 0x10 }) / cmd.push({ op: Cmd.FLUSH, addr: 0x10 })
+  // cmd.push({ op: last.val, addr: 0x10 }) / cmd.push({ op: Cmd.FLUSH, addr: 0x10 })
+  assign cmd_vld = (state_val == SEND) | (state_val == FLUSH);
   always_comb begin : comb_cmd_op
     case (state_val)
       SEND:    cmd_op = last;
@@ -728,14 +740,22 @@ module cmd_post
     endcase
   end
   assign cmd_addr = 8'h10;
-  always_ff @(posedge clk or negedge rst_n) begin : ff_last     // last.set(we ? Cmd.WRITE : Cmd.READ)
+  // last.set(we ? Cmd.WRITE : Cmd.READ)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_last
     if (!rst_n) begin
       last <= cmd_pkg::CMD_NOP;
     end else if (action.enter_SEND) begin
       last <= we ? cmd_pkg::CMD_WRITE : cmd_pkg::CMD_READ;
     end
   end
-  assign sent = cmd_pkg::cmd_e'(({3{action.leave_SEND}} & last) | ({3{action.leave_FLUSH}} & cmd_pkg::CMD_FLUSH));  // sent.pulse(last.val) / sent.pulse(Cmd.FLUSH)
+  // sent.pulse(last.val) / sent.pulse(Cmd.FLUSH)
+  always_comb begin : comb_sent
+    unique case (1'b1)
+      action.leave_SEND:  sent = last;
+      action.leave_FLUSH: sent = cmd_pkg::CMD_FLUSH;
+      default:            sent = cmd_pkg::CMD_NOP;
+    endcase
+  end
 endmodule
 ```
 
@@ -744,7 +764,7 @@ endmodule
 | `@SvEnum({ pkg: "cmd_pkg", name: "cmd_e", prefix: "CMD" })` | `package cmd_pkg` 里的 `typedef enum logic [2:0] {...} cmd_e`，位宽由最大值 5 定为 3 |
 | `PushPort({ op: Cmd, addr: 8 })`、`Dff(Cmd)`、`Output(Cmd)` | 端口类型 `cmd_pkg::cmd_e`；寄存器 `last` 的类型也是它 |
 | `Cmd.WRITE` | `cmd_pkg::CMD_WRITE` |
-| 两个 push 写同一个 `op` 字段、`sent.pulse` 的两个写入点 | 与-或选择外面套 `cmd_pkg::cmd_e'(...)`；不发脉冲时为数值 0，即 `CMD_NOP` |
+| 两个 push 写同一个 `op` 字段、`sent.pulse` 的两个写入点 | `cmd_op` 按状态 `case (state_val)`，`sent` 按 move `unique case (1'b1)`；都不写时为数值 0，即 `CMD_NOP` |
 
 - 其他文件的 RTL 直接 `import cmd_pkg::*;` 使用这些类型和成员；filelist 里生成的 `.sv` 要排在用它的手写 RTL 前面。
 - 同一个 package 里两个枚举的 SV 成员名不能相同（用 `prefix` 区分）；同一个 package 名在两个 `[fsm.<id>]` 文件里声明是错误。
@@ -1130,8 +1150,10 @@ module burst_ctl
     end
   end
 
-  assign req      = action.enter_FETCH;                         // req.pulse()
-  assign beat_ack = action.leave_BEAT;                          // beat_ack.pulse()
+  // req.pulse()
+  assign req      = action.enter_FETCH;
+  // beat_ack.pulse()
+  assign beat_ack = action.leave_BEAT;
 endmodule
 ```
 
@@ -1278,7 +1300,8 @@ module scan_ctl
     end
   end
 
-  assign found = action.enter_REPORT;                           // found.pulse()
+  // found.pulse()
+  assign found = action.enter_REPORT;
 endmodule
 ```
 
@@ -1446,8 +1469,10 @@ module work_ctl
     end
   end
 
-  assign clr = action.enter_RECOVERY;                           // clr.pulse()
-  always_ff @(posedge clk or negedge rst_n) begin : ff_halt     // halt.set(1)
+  // clr.pulse()
+  assign clr = action.enter_RECOVERY;
+  // halt.set(1)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_halt
     if (!rst_n) begin
       halt <= 1'b0;
     end else if (action.enter_FATAL) begin
@@ -1583,14 +1608,16 @@ module soft_rst_ctl
     end
   end
 
-  always_ff @(posedge clk or negedge rst_n) begin : ff_active   // active.set(1) / active.set(0)
+  // active.set(1) / active.set(0)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_active
     if (!rst_n) begin
       active <= 1'b0;
     end else if (action.enter_RUN | action.RUN_to_IDLE | action.enter_RESET) begin
       active <= action.enter_RUN;
     end
   end
-  assign clean_start = action.enter_RESET;                      // clean_start.pulse()
+  // clean_start.pulse()
+  assign clean_start = action.enter_RESET;
 endmodule
 ```
 
@@ -1804,9 +1831,12 @@ module err_ctl
     end
   end
 
-  assign c0_start = action.enter_CLEAN0;                        // c0_start.pulse()
-  assign c1_start = action.enter_CLEAN1;                        // c1_start.pulse()
-  assign c2_start = action.enter_CLEAN2;                        // c2_start.pulse()
+  // c0_start.pulse()
+  assign c0_start = action.enter_CLEAN0;
+  // c1_start.pulse()
+  assign c1_start = action.enter_CLEAN1;
+  // c2_start.pulse()
+  assign c2_start = action.enter_CLEAN2;
 endmodule
 ```
 
@@ -1937,8 +1967,10 @@ module step_ctl
     end
   end
 
-  assign b_cnt_clr  = action.enter_STEP_B_BUSY;                 // cnt_clr.pulse()
-  assign b_send_vld = action.leave_STEP_B_BUSY;                 // send_vld.pulse()
+  // cnt_clr.pulse()
+  assign b_cnt_clr  = action.enter_STEP_B_BUSY;
+  // send_vld.pulse()
+  assign b_send_vld = action.leave_STEP_B_BUSY;
 endmodule
 ```
 
@@ -1965,7 +1997,7 @@ endmodule
 - 被调用方方法体里的 `const` 线和 `Dff` 每个调用点一份，名字加小写前缀 `<调用标签>_`（例如 `scan_addr`）。用户函数调用照常按「函数加实参」共用一根线（§2.3）。
 - 实参是对象字面量，键是被调用方的端口名，每个端口都要连：
   - `Input` 接调用方的任意同宽信号表达式，也可以接调用方的 `let`（它的有效范围照常检查）。
-  - `Output` 接调用方的同宽 `Output`；被调用方的 `pulse()` 就是调用方这个输出的一个写入点，多处写入照常合成与-或。
+  - `Output` 接调用方的同宽 `Output`；被调用方的 `pulse()` 就是调用方这个输出的一个写入点，多处写入照常合并（§6.1.1）。
   - `Dff` 接调用方的同宽 `Dff`；`set` / `.val` 作用在调用方的寄存器上。
   - `PushPort` / `PopPort` 接调用方的同方向、同宽 channel 端（端口或 `Chan` 的一端）；接口端口接同类、同构造参数的接口。
 - 被调用方的端口必须在方法体里用到（读 `Input`、`pulse` `Output`、在 channel 上收发），否则编译期报错；`Dff` 端口可以只读。
@@ -2191,35 +2223,54 @@ module dump_check
     end
   end
 
-  always_ff @(posedge clk or negedge rst_n) begin : ff_hit_cnt  // hit_cnt.set(hits)
+  // hit_cnt.set(hits)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_hit_cnt
     if (!rst_n) begin
       hit_cnt <= 7'h00;
     end else if (action.enter_IDLE) begin
       hit_cnt <= scan_hits_next;
     end
   end
-  assign check_done = action.enter_IDLE;                        // check_done.pulse()
-  assign rd_req     = action.enter_SCAN_WAIT_ACK;               // rd_req.pulse()
-  assign rd_addr    = {32{action.enter_SCAN_WAIT_ACK}} & scan_addr_val;  // rd_addr.pulse(addr.val)
-  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_addr  // addr.set(cfg_base) / addr.set(dump_pkg.add32(addr.val, cfg_step))
+  // check_done.pulse()
+  assign check_done = action.enter_IDLE;
+  // rd_req.pulse()
+  assign rd_req     = action.enter_SCAN_WAIT_ACK;
+  // rd_addr.pulse(addr.val)
+  assign rd_addr    = {32{action.enter_SCAN_WAIT_ACK}} & scan_addr_val;
+  // addr.set(cfg_base) / addr.set(dump_pkg.add32(addr.val, cfg_step))
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_addr
     if (!rst_n) begin
       scan_addr_val <= 32'h00000000;
-    end else if (action.leave_IDLE | action.leave_SCAN_WAIT_ACK) begin
-      scan_addr_val <= ({32{action.leave_IDLE}} & cfg_base) | ({32{action.leave_SCAN_WAIT_ACK}} & fn_add32_0);
+    end else begin
+      unique case (1'b1)
+        action.leave_IDLE:          scan_addr_val <= cfg_base;
+        action.leave_SCAN_WAIT_ACK: scan_addr_val <= fn_add32_0;
+        default:                    ;
+      endcase
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_idx  // idx.set(0) / idx.set(idx_next)
+  // idx.set(0) / idx.set(idx_next)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_idx
     if (!rst_n) begin
       scan_idx_val <= 7'h00;
-    end else if (action.leave_IDLE | action.leave_SCAN_WAIT_ACK) begin
-      scan_idx_val <= {7{action.leave_SCAN_WAIT_ACK}} & fn_inc7_0;
+    end else begin
+      unique case (1'b1)
+        action.leave_IDLE:          scan_idx_val <= 7'h00;
+        action.leave_SCAN_WAIT_ACK: scan_idx_val <= fn_inc7_0;
+        default:                    ;
+      endcase
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_hits  // hits.set(0) / hits.set(hits_next)
+  // hits.set(0) / hits.set(hits_next)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_hits
     if (!rst_n) begin
       scan_hits_val <= 7'h00;
-    end else if (action.leave_IDLE | action.leave_SCAN_WAIT_ACK) begin
-      scan_hits_val <= {7{action.leave_SCAN_WAIT_ACK}} & scan_hits_next;
+    end else begin
+      unique case (1'b1)
+        action.leave_IDLE:          scan_hits_val <= 7'h00;
+        action.leave_SCAN_WAIT_ACK: scan_hits_val <= scan_hits_next;
+        default:                    ;
+      endcase
     end
   end
 endmodule
@@ -2442,44 +2493,65 @@ module dump_server
     end
   end
 
-  assign req_rdy  = state_val == CMD;                           // req.pop()
-  assign rsp_vld  = state_val == RSP;                           // rsp.push(count.val)
+  // req.pop()
+  assign req_rdy  = state_val == CMD;
+  // rsp.push(count.val)
+  assign rsp_vld  = state_val == RSP;
   assign rsp_data = count_val;
-  assign rd_req   = action.enter_SCAN_WAIT_ACK;                 // rd_req.pulse()
-  assign rd_addr  = {32{action.enter_SCAN_WAIT_ACK}} & scan_addr_val;  // rd_addr.pulse(addr.val)
-  always_ff @(posedge clk or negedge rst_n) begin : ff_pattern  // pattern.set(p)
+  // rd_req.pulse()
+  assign rd_req   = action.enter_SCAN_WAIT_ACK;
+  // rd_addr.pulse(addr.val)
+  assign rd_addr  = {32{action.enter_SCAN_WAIT_ACK}} & scan_addr_val;
+  // pattern.set(p)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_pattern
     if (!rst_n) begin
       pattern_val <= 32'h00000000;
     end else if (action.leave_CMD) begin
       pattern_val <= req_data;
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_count    // count.set(hits)
+  // count.set(hits)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_count
     if (!rst_n) begin
       count_val <= 7'h00;
     end else if (action.enter_RSP) begin
       count_val <= scan_hits_next;
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_addr  // addr.set(cfg_base) / addr.set(dump_pkg.add32(addr.val, cfg_step))
+  // addr.set(cfg_base) / addr.set(dump_pkg.add32(addr.val, cfg_step))
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_addr
     if (!rst_n) begin
       scan_addr_val <= 32'h00000000;
-    end else if (action.leave_CMD | action.leave_SCAN_WAIT_ACK) begin
-      scan_addr_val <= ({32{action.leave_CMD}} & cfg_base) | ({32{action.leave_SCAN_WAIT_ACK}} & fn_add32_0);
+    end else begin
+      unique case (1'b1)
+        action.leave_CMD:           scan_addr_val <= cfg_base;
+        action.leave_SCAN_WAIT_ACK: scan_addr_val <= fn_add32_0;
+        default:                    ;
+      endcase
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_idx  // idx.set(0) / idx.set(idx_next)
+  // idx.set(0) / idx.set(idx_next)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_idx
     if (!rst_n) begin
       scan_idx_val <= 7'h00;
-    end else if (action.leave_CMD | action.leave_SCAN_WAIT_ACK) begin
-      scan_idx_val <= {7{action.leave_SCAN_WAIT_ACK}} & fn_inc7_0;
+    end else begin
+      unique case (1'b1)
+        action.leave_CMD:           scan_idx_val <= 7'h00;
+        action.leave_SCAN_WAIT_ACK: scan_idx_val <= fn_inc7_0;
+        default:                    ;
+      endcase
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_hits  // hits.set(0) / hits.set(hits_next)
+  // hits.set(0) / hits.set(hits_next)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_scan_hits
     if (!rst_n) begin
       scan_hits_val <= 7'h00;
-    end else if (action.leave_CMD | action.leave_SCAN_WAIT_ACK) begin
-      scan_hits_val <= {7{action.leave_SCAN_WAIT_ACK}} & scan_hits_next;
+    end else begin
+      unique case (1'b1)
+        action.leave_CMD:           scan_hits_val <= 7'h00;
+        action.leave_SCAN_WAIT_ACK: scan_hits_val <= scan_hits_next;
+        default:                    ;
+      endcase
     end
   end
 endmodule
@@ -2575,17 +2647,21 @@ module dump_client
     .rd_data  (rd_data)
   );
 
-  always_ff @(posedge clk or negedge rst_n) begin : ff_hit_cnt  // hit_cnt.set(hits)
+  // hit_cnt.set(hits)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_hit_cnt
     if (!rst_n) begin
       hit_cnt <= 7'h00;
     end else if (action.enter_IDLE) begin
       hit_cnt <= rsp_data;
     end
   end
-  assign check_done = action.enter_IDLE;                        // check_done.pulse()
-  assign req_vld    = state_val == REQ;                         // req.push(cfg_pattern)
+  // check_done.pulse()
+  assign check_done = action.enter_IDLE;
+  // req.push(cfg_pattern)
+  assign req_vld    = state_val == REQ;
   assign req_data   = cfg_pattern;
-  assign rsp_rdy    = state_val == RSP;                         // rsp.pop()
+  // rsp.pop()
+  assign rsp_rdy    = state_val == RSP;
 endmodule
 ```
 
@@ -2821,16 +2897,18 @@ module reg_mgr
     .rsp_data  (reg_rsp_data)
   );
 
-  assign done = action.enter_IDLE;                              // done.pulse()
-  always_ff @(posedge clk or negedge rst_n) begin : ff_status   // status.set(v)
+  // done.pulse()
+  assign done = action.enter_IDLE;
+  // status.set(v)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_status
     if (!rst_n) begin
       status <= 32'h00000000;
     end else if (action.enter_WR_REQ) begin
       status <= reg_rsp_data;
     end
   end
-  assign reg_req_vld = (state_val == RD_REQ)                    // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
-                     | (state_val == WR_REQ);
+  // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
+  assign reg_req_vld = (state_val == RD_REQ) | (state_val == WR_REQ);
   always_comb begin : comb_reg_req_addr
     case (state_val)
       RD_REQ:  reg_req_addr = 8'h10;
@@ -2850,8 +2928,8 @@ module reg_mgr
       default: reg_req_we = 1'b0;
     endcase
   end
-  assign reg_rsp_rdy = (state_val == RD_RSP)                    // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
-                     | (state_val == WR_RSP);
+  // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
+  assign reg_rsp_rdy = (state_val == RD_RSP) | (state_val == WR_RSP);
 endmodule
 ```
 
@@ -2940,35 +3018,45 @@ module reg_mgr_reg
     end
   end
 
-  assign bus_req   = action.enter_RUN_WAIT;                     // bus_req.pulse()
-  assign bus_we    = action.enter_RUN_WAIT & arg_we_val;        // bus_we.pulse(we)
-  assign bus_addr  = {8{action.enter_RUN_WAIT}} & arg_addr_val;  // bus_addr.pulse(addr)
-  assign bus_wdata = {32{action.enter_RUN_WAIT}} & arg_wdata_val;  // bus_wdata.pulse(wdata)
-  assign req_rdy   = state_val == IDLE;                         // req.pop()
-  assign rsp_vld   = state_val == DONE;                         // rsp.push(result.val)
+  // bus_req.pulse()
+  assign bus_req   = action.enter_RUN_WAIT;
+  // bus_we.pulse(we)
+  assign bus_we    = action.enter_RUN_WAIT & arg_we_val;
+  // bus_addr.pulse(addr)
+  assign bus_addr  = {8{action.enter_RUN_WAIT}} & arg_addr_val;
+  // bus_wdata.pulse(wdata)
+  assign bus_wdata = {32{action.enter_RUN_WAIT}} & arg_wdata_val;
+  // req.pop()
+  assign req_rdy   = state_val == IDLE;
+  // rsp.push(result.val)
+  assign rsp_vld   = state_val == DONE;
   assign rsp_data  = result_val;
-  always_ff @(posedge clk or negedge rst_n) begin : ff_arg_addr  // arg_addr.set(m.addr)
+  // arg_addr.set(m.addr)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_arg_addr
     if (!rst_n) begin
       arg_addr_val <= 8'h00;
     end else if (action.enter_LOAD) begin
       arg_addr_val <= req_addr;
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_arg_wdata  // arg_wdata.set(m.wdata)
+  // arg_wdata.set(m.wdata)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_arg_wdata
     if (!rst_n) begin
       arg_wdata_val <= 32'h00000000;
     end else if (action.enter_LOAD) begin
       arg_wdata_val <= req_wdata;
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_arg_we   // arg_we.set(m.we)
+  // arg_we.set(m.we)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_arg_we
     if (!rst_n) begin
       arg_we_val <= 1'b0;
     end else if (action.enter_LOAD) begin
       arg_we_val <= req_we;
     end
   end
-  always_ff @(posedge clk or negedge rst_n) begin : ff_result   // result.set(r)
+  // result.set(r)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_result
     if (!rst_n) begin
       result_val <= 32'h00000000;
     end else if (action.enter_DONE) begin
@@ -3106,8 +3194,10 @@ module act_demo
     end
   end
 
-  assign cnt_clr = action.enter_RUN;                            // cnt_clr.pulse()
-  always_ff @(posedge clk or negedge rst_n) begin : ff_active   // active.set(1) / active.set(0)
+  // cnt_clr.pulse()
+  assign cnt_clr = action.enter_RUN;
+  // active.set(1) / active.set(0)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_active
     if (!rst_n) begin
       active <= 1'b0;
     end else if (action.enter_RUN | action.enter_IDLE) begin
@@ -3119,7 +3209,7 @@ endmodule
 
 `active` 在进入 `RUN` 的那一拍写 1、离开 `RUN` 的那一拍写 0，所以它与 `state_val == RUN` 同步为高，但输出直接来自寄存器，没有状态译码的组合路径（原则 3）。
 
-同一目标被多个段驱动：一个状态机同一拍只有一个 move，各段天然互斥，生成 OR（脉冲）或按 move 选择的与-或（多位输出和 DFF 数据）。同一段内写同一目标两次，或 `Promise.all` 的两个分支写同一目标，编译期报错。
+同一目标被多个段驱动：一个状态机同一拍只有一个 move，各段天然互斥，生成 OR（1 位脉冲、DFF 的 `set`），或按 move 选值（多位输出和多位 DFF 数据，见下）。同一段内写同一目标两次，或 `Promise.all` 的两个分支写同一目标，编译期报错。
 
 #### 6.1.1 多位输出：发送固定消息与转发消息
 
@@ -3214,17 +3304,24 @@ module msg_fwd
     end
   end
 
-  assign wr_en   = action.enter_FWD | action.enter_IDLE;        // wr_en.pulse()
-  assign wr_data = ({8{action.enter_FWD}} & 8'ha5)              // wr_data.pulse(0xa5) / wr_data.pulse(rx_err ? 0xee : rx_msg)
-                 | ({8{action.enter_IDLE}} & (rx_err ? 8'hee : rx_msg));
+  // wr_en.pulse()
+  assign wr_en = action.enter_FWD | action.enter_IDLE;
+  // wr_data.pulse(0xa5) / wr_data.pulse(rx_err ? 0xee : rx_msg)
+  always_comb begin : comb_wr_data
+    unique case (1'b1)
+      action.enter_FWD:  wr_data = 8'ha5;
+      action.enter_IDLE: wr_data = rx_err ? 8'hee : rx_msg;
+      default:           wr_data = 8'h00;
+    endcase
+  end
 endmodule
 ```
 
 | DSL | SV |
 |---|---|
-| `wr_data.pulse(0xa5)` | 字面量按 `wr_data` 的位宽写成 `8'ha5`，与 `enter_FWD` 相与 |
-| `wr_data.pulse(rx_err ? 0xee : rx_msg)` | `?:` 原样生成 SV 的 `?:`，与 `enter_IDLE` 相与 |
-| 两处写入 | 不带优先级的与-或；两个 move 互斥，空闲时为 0 |
+| `wr_data.pulse(0xa5)` | 字面量按 `wr_data` 的位宽写成 `8'ha5`，是 `action.enter_FWD` 那一行的值 |
+| `wr_data.pulse(rx_err ? 0xee : rx_msg)` | `?:` 原样生成 SV 的 `?:`，是 `action.enter_IDLE` 那一行的值 |
+| 两处写入 | 多位且值不同：`always_comb : comb_wr_data` 里 `unique case (1'b1)`，每个 move 一行（两个 move 互斥），`default` 为 0；1 位输出或只有一个值时仍是一条 `assign`（OR，或与 move 相与） |
 
 ### 6.2 push / pop：握手是一个等待状态
 
@@ -3304,7 +3401,7 @@ DFF 按下面的模板展开，`x` 是寄存器名，`RST` 是复位值，`set` 
 ```
 
 - **块名（决定）**：每个 `always` 块都有块名：`comb_state`、`ff_state`、`ff_<寄存器名>`，以及按状态取值的 push 字段 `comb_<端口>_<字段>`（§6.2）。块名与信号同在模块作用域里，所以作者的名字不能以 `comb_` / `ff_` 开头，与 `state_`、`fn_` 一样是保留前缀（检查器报错）。
-- 多个 move 写同一个 DFF：move 互斥，`set` 是这些 move 的或，`next` 是不带优先级的与-或选择。`set` 写成一行超过 100 列时，每个 `|` 项一行。
+- 多个 move 写同一个 DFF：move 互斥，只有一个写入值（或 1 位寄存器）时按上面的模板写，`set` 是这些 move 的或，1 位的 `next` 是与-或；`set` 写成一行超过 100 列时，每个 `|` 项一行。多位寄存器有两个以上不同写入值时不写 `set`：`else` 分支里是 `unique case (1'b1)`，每个 move 一行写 `x <= v`，`default: ;` 保持。`external` 寄存器的多位 `<名字>_next` 同理生成 `always_comb : comb_<名字>_next`。
 - 复位与仓库现有 RTL 一致：`negedge rst_n` 异步低有效。复位值写在 `Dff(N, { reset: v })`，缺省 0；enum 寄存器的复位值写成成员名（没有这个值的成员时写 `pkg::name'(v)`）。`external: true` 时复位值由寄存器的拥有者决定，不能写 `reset`。
 - 寄存器写成端口时（`Dff(N)`），`x` 就是输出口；方法体私有的 `Dff` 写到 `<名字>_val`。
 
@@ -3382,12 +3479,13 @@ module reg_demo
     end
   end
 
-  assign mode_set  = action.enter_CHECK;                        // mode.set(0x5a)
+  // mode.set(0x5a)
+  assign mode_set  = action.enter_CHECK;
   assign mode_next = 8'h5a;
 endmodule
 ```
 
-`mode_next` 只有一个写入点，直接是常量；有多个写入点时按 move 做与-或选择。
+`mode_next` 只有一个写入点，直接是常量；多位且有两个以上不同值时，生成 `always_comb : comb_mode_next` 里按 move 选值的 `unique case (1'b1)`。
 
 **主状态的语义**仍按 DFF 理解：
 
@@ -3518,14 +3616,16 @@ module phy_init
     end
   end
 
-  always_ff @(posedge clk or negedge rst_n) begin : ff_ready    // ready.set(1) / ready.set(0)
+  // ready.set(1) / ready.set(0)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_ready
     if (!rst_n) begin
       ready <= 1'b0;
     end else if (action.enter_READY | action.enter_IDLE) begin
       ready <= action.enter_READY;
     end
   end
-  assign cal_req = action.enter_CALIB;                          // cal_req.pulse()
+  // cal_req.pulse()
+  assign cal_req = action.enter_CALIB;
 endmodule
 ```
 
@@ -3637,7 +3737,8 @@ module phy_mon
     end
   end
 
-  assign cal_req = action.enter_CALIB;                          // cal_req.pulse()
+  // cal_req.pulse()
+  assign cal_req = action.enter_CALIB;
 
   // exportState
   assign state_set_o  = |action;
@@ -3671,7 +3772,7 @@ endmodule
 | 其他寄存器（`Dff`、`fin`） | 一个 `always_ff`，块名 `ff_<名字>`，按 §6.5 的模板展开；私有寄存器写到 `<名字>_val` |
 | 子状态机调用 `L: await this.m({...})` | 被调用方的状态 `<L>_<STATE>`、私有寄存器与线 `<l>_<名字>` 并入本模块（§5） |
 | `Instance(this.m, {...})` | 实例 `u_<模块名>`（第二个起 `u_<模块名>_1`…），端口按对象字面量连接，接口和 channel 端口逐根展开（§5.3） |
-| `const c = Chan(N \| {...})` / push / pop 状态 | `logic c_vld, c_rdy;` 加每个消息字段一根 `c_<字段>`；`c_vld = state_val == S`（几个状态时取或），字段按状态与-或（§6.2） |
+| `const c = Chan(N \| {...})` / push / pop 状态 | `logic c_vld, c_rdy;` 加每个消息字段一根 `c_<字段>`；`c_vld = state_val == S`（几个状态时取或），字段按状态 `case (state_val)`（§6.2） |
 | `const reg = Caller(this.sub, {...})` | 模块 `<方法>_reg`（与调用方同文件）、实例 `u_reg`、channel `reg_req_*` / `reg_rsp_*`；调用点状态 `<L>_REQ` / `<L>_RSP`（§5.4） |
 | `if` / `else` 分支 | 每个分支都写 `begin` / `end`（§6.5 第 2 条） |
 | 异常区域 `try { Escape(c) }` | 区域内每个状态分支最前面的 `if (c)`，外层在前（§3.7） |
@@ -3745,8 +3846,10 @@ module act_demo
     end
   end
 
-  assign cnt_clr = action.enter_RUN;                            // cnt_clr.pulse()
-  always_ff @(posedge clk or negedge rst_n) begin : ff_active   // active.set(1) / active.set(0)
+  // cnt_clr.pulse()
+  assign cnt_clr = action.enter_RUN;
+  // active.set(1) / active.set(0)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_active
     if (!rst_n) begin
       active <= 1'b0;
     end else if (action.enter_RUN | action.enter_IDLE) begin
@@ -3771,6 +3874,7 @@ endmodule
 - 去掉每行开头的 `*` 和首尾空行后，每行生成一行 `// `。
 - 文本原样搬运，不翻译。仓库的英文约束管的是生成器自己写的注释；作者用什么语言由作者决定，RTL 文件按 UTF-8 写出。
 - 解析器需要给出注释及其位置；`@babel/parser` 把注释挂在 AST 节点的 `leadingComments` 上（§8.2）。
+- **动作出处注释（决定）**：生成器给每条由动作驱动的语句（`assign`、`Dff` 的 `always_ff`）加一行 `// <DSL 动作>`，例如 `// last.set(we ? Cmd.WRITE : Cmd.READ)`，几处写入用 ` / ` 隔开。注释写在语句**上一行**，不写在行尾。
 
 DSL：
 
@@ -3866,8 +3970,10 @@ module act_demo
     end
   end
 
-  assign cnt_clr = action.enter_RUN;                            // cnt_clr.pulse()
-  always_ff @(posedge clk or negedge rst_n) begin : ff_active   // active.set(1) / active.set(0)
+  // cnt_clr.pulse()
+  assign cnt_clr = action.enter_RUN;
+  // active.set(1) / active.set(0)
+  always_ff @(posedge clk or negedge rst_n) begin : ff_active
     if (!rst_n) begin
       active <= 1'b0;
     end else if (action.enter_RUN | action.enter_IDLE) begin

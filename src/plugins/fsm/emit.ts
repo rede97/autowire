@@ -56,9 +56,8 @@ function printSts(sts: St[], ind: string, out: string[]) {
 	flush();
 }
 
-/** `code  // comment` with the comment at column 64 when it fits. */
-const commented = (code: string, c?: string) =>
-	c ? `${code.length < 63 ? code.padEnd(64) : `${code}  `}// ${c}` : code;
+/** The DSL text a statement comes from, as a comment line above it. */
+const above = (c?: string) => (c ? [`  // ${c}`] : []);
 
 const range = (w: number) => (w === 1 ? "" : `[${w - 1}:0]`);
 const ors = (sigs: string[]) => [...new Set(sigs)].join(" | ");
@@ -92,10 +91,8 @@ function ffBlock(
 	c?: string,
 ): string[] {
 	const out = [
-		commented(
-			`  always_ff @(posedge clk or negedge rst_n) begin : ff_${name}`,
-			c,
-		),
+		...above(c),
+		`  always_ff @(posedge clk or negedge rst_n) begin : ff_${name}`,
 		"    if (!rst_n) begin",
 		`      ${q} <= ${rst};`,
 	];
@@ -174,6 +171,74 @@ function nextState(f: Fsm): { lines: string[]; order: string[] } {
 }
 
 const siteSig = (f: Fsm, a: Action) => ors((f.drive.get(a) ?? []).map(act));
+
+/** A multi-bit target (wider than 1 bit, or an enum) written with two or more different values. */
+const caseSelect = (ty: Ty, sites: Action[], keepZero: boolean) =>
+	(ty.width > 1 || ty.enum !== undefined) &&
+	new Set(
+		sites
+			.filter((a) => keepZero || a.value.value !== 0n)
+			.map((a) => svText(a.value.sv)),
+	).size > 1;
+
+/** `unique case (1'b1)` over the sites' control signals (exclusive: one move per cycle);
+ *  `dflt` null leaves the target unchanged. Long item lists go one signal per line. */
+function siteCase(
+	f: Fsm,
+	sites: Action[],
+	keepZero: boolean,
+	stmt: (v: string) => string,
+	dflt: string | null,
+	ind: string,
+): string[] {
+	const rows = sites
+		.filter((a) => keepZero || a.value.value !== 0n)
+		.map((a): [string[], string] => [
+			[...new Set((f.drive.get(a) ?? []).map(act))],
+			stmt(svText(a.value.sv)),
+		]);
+	// The default row: hold (`;`) or the zero value.
+	rows.push([["default"], dflt ?? ";"]);
+	const label = (items: string[]) =>
+		items[0] === "default" ? "default:" : `${items.join(", ")}:`;
+	const tall = rows.some(([items]) => label(items).length > 48);
+	const w = Math.max(...rows.map(([items]) => label(items).length));
+	const out = [`${ind}unique case (1'b1)`];
+	for (const [items, s] of rows)
+		if (!tall || s === ";")
+			out.push(`${ind}  ${tall ? label(items) : label(items).padEnd(w)} ${s}`);
+		else {
+			for (const [i, it] of items.entries())
+				out.push(`${ind}  ${it}${i + 1 < items.length ? "," : ":"}`);
+			out.push(`${ind}    ${s}`);
+		}
+	out.push(`${ind}endcase`);
+	return out;
+}
+
+/** `always_comb begin : comb_<lhs>` holding a site case; 0 when no site fires. */
+function combCase(
+	f: Fsm,
+	lhs: string,
+	ty: Ty,
+	sites: Action[],
+	keepZero: boolean,
+	c?: string,
+): string[] {
+	return [
+		...above(c),
+		`  always_comb begin : comb_${lhs}`,
+		...siteCase(
+			f,
+			sites,
+			keepZero,
+			(v) => `${lhs} = ${v};`,
+			`${lhs} = ${constOf(ty, 0n)};`,
+			"    ",
+		),
+		"  end",
+	];
+}
 
 /** Priority-free and-or select of the written values; 0 when no site fires (§6.1, §6.5). */
 function andOr(f: Fsm, ty: Ty, sites: Action[]): string {
@@ -262,12 +327,19 @@ function drivers(f: Fsm): string[] {
 	const ends = f.chans.flatMap((c) => [c.tx, c.rx]);
 	for (const p of [...f.ports, ...ends, ...f.privateDffs]) {
 		if (p.k === "output" && !p.byInst)
-			items.push({
-				k: "asg",
-				lhs: p.name,
-				rhs: andOr(f, p, p.sites),
-				c: texts(p.sites),
-			});
+			items.push(
+				caseSelect(p, p.sites, false)
+					? {
+							k: "raw",
+							lines: combCase(f, p.name, p, p.sites, false, texts(p.sites)),
+						}
+					: {
+							k: "asg",
+							lhs: p.name,
+							rhs: andOr(f, p, p.sites),
+							c: texts(p.sites),
+						},
+			);
 		if (p.k === "push" || p.k === "pop") items.push(...hsDrivers(p));
 		if (p.k !== "dff") continue;
 		if (p.place === "external") {
@@ -277,19 +349,45 @@ function drivers(f: Fsm): string[] {
 				rhs: set(p.sites),
 				c: texts(p.sites),
 			});
-			items.push({ k: "asg", lhs: `${p.name}_next`, rhs: nextExpr(f, p) });
+			items.push(
+				caseSelect(p, p.sites, true)
+					? {
+							k: "raw",
+							lines: combCase(f, `${p.name}_next`, p, p.sites, true),
+						}
+					: { k: "asg", lhs: `${p.name}_next`, rhs: nextExpr(f, p) },
+			);
 			continue;
 		}
+		const q = valName(p);
 		items.push({
 			k: "raw",
-			lines: ffBlock(
-				p.name,
-				valName(p),
-				constOf(p, p.reset),
-				set(p.sites),
-				nextExpr(f, p),
-				texts(p.sites),
-			),
+			lines: caseSelect(p, p.sites, true)
+				? [
+						...above(texts(p.sites)),
+						`  always_ff @(posedge clk or negedge rst_n) begin : ff_${p.name}`,
+						"    if (!rst_n) begin",
+						`      ${q} <= ${constOf(p, p.reset)};`,
+						"    end else begin",
+						...siteCase(
+							f,
+							p.sites,
+							true,
+							(v) => `${q} <= ${v};`,
+							null,
+							"      ",
+						),
+						"    end",
+						"  end",
+					]
+				: ffBlock(
+						p.name,
+						q,
+						constOf(p, p.reset),
+						set(p.sites),
+						nextExpr(f, p),
+						texts(p.sites),
+					),
 		});
 	}
 	const out: string[] = [];
@@ -300,12 +398,13 @@ function drivers(f: Fsm): string[] {
 			const head = `  assign ${a.lhs.padEnd(w)} = `;
 			const parts = topOrs(a.rhs);
 			const one = `${head}${a.rhs};`;
-			if (parts.length < 2 || (one.length < 100 && (!a.c || one.length < 63))) {
-				out.push(commented(one, a.c));
+			out.push(...above(a.c));
+			if (parts.length < 2 || one.length < 100) {
+				out.push(one);
 				continue;
 			}
 			// One term per line, `|` under `=`.
-			out.push(commented(`${head}${parts[0]}`, a.c));
+			out.push(`${head}${parts[0]}`);
 			parts.slice(1).forEach((p, i) => {
 				out.push(
 					`${" ".repeat(head.length - 2)}| ${p}${i === parts.length - 2 ? ";" : ""}`,

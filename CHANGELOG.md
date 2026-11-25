@@ -9,6 +9,7 @@
 - **破坏性：fsm 状态类型改名**：状态 enum 缺省是 `<模块名>_state_e`（`@Fsm({ stateType })` 可指定），成员每行一个；生成文件先列全部 package，再列模块，最后是 `_wrap` 封装模块。
 - **fsm 新选项**：`@FsmGroup({ file })` 指定输出文件名（工作区内不区分大小写唯一）；`@Fsm({ wrap })` 另生成端口全为 `logic` 的 `<模块名>_wrap`，给连线器用；`[plugins.fsm] dir` 把输出写进 RTL 树。
 - **fsm 新写法**：`try { Escape(c); ... } catch { ... }` 与 `throw Raise()`；`@Fsm({ exportState, stateValues })`；`@SvEnum` 枚举类型，class 上的 `/** */` 注释搬到 `typedef` 上方，相邻 enum 之间空一行。按状态取不同值的 push 数据字段生成 `case (state_val)`。只写不读的 `external` Dff 不再生成 `_val` 输入。
+- **fsm 生成格式**：多位 `Output` 和多位 `Dff`（含 `external` 的 `_next`）有两个以上不同写入值时，按 move 生成 `unique case (1'b1)`，每个 move 一行，不再是一条很长的与-或语句；`Output` 放在 `always_comb : comb_<名字>` 里，缺省为 0；`Dff` 的 case 写在 `ff_<名字>` 里，缺省保持。动作出处注释（`// x.set(...)`）改写在语句上一行，不再写在行尾。
 - **文档**：[`docs/state/async-fsm.md`](docs/state/async-fsm.md) 新增 §1.2「一个进程的逻辑架构」：`(state_next, action) = f(state, input, dff)`，`dff' = set(action) ? next : dff`，`output = g(state, action, input, dff)`；拍平的子状态共用一个按对数位宽编码的状态寄存器。
 - **修复：dtsim 重跑按本次日志判分**：编译和仿真每步开始前清空 `compile.log` / `sim.log`；以前同一目录重跑时日志追加，旧的 PASS 会让失败的重跑判成 PASS。
 

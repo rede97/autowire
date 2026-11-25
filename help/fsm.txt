@@ -100,6 +100,9 @@ Output
   every Dff / the state register is an inline always_ff; every always block is named
                                (comb_state, ff_state, ff_<reg>, comb_<push>_<field>)
   every if / else branch is written with begin / end
+  each driven assign / Dff always_ff has its DSL action as a // line above it, not at line end
+  a multi-bit Output / Dff written with 2+ different values selects by move: unique case (1'b1)
+                               (comb_<x>, default 0; a Dff case sits in ff_<x>, default holds)
   a group that is instantiated from another file must itself be an [fsm.<id>] source
 
 Not yet (compile error names the feature): push / pop without await (Future),
