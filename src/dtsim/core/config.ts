@@ -13,6 +13,7 @@ import { DSL_FILES } from "../dsl/embedded.generated.ts";
 import {
 	type CaseDef,
 	type CaseOpts,
+	type CovSpec,
 	checkCaseOpts,
 	DefaultGrader,
 	type EnvValue,
@@ -59,6 +60,8 @@ export type MergedCase = {
 	top: string;
 	/** Waveform dump; scope defaults to `top`. */
 	wave: WaveSpec;
+	/** Coverage (the backend may not collect it: SimTool.coverage). */
+	cov: CovSpec;
 	/** The case's grader (bareDefaults and parents included), else the workspace's. */
 	grader: Grader;
 	/** Tools the case runs on; undefined = every Workspace tool. */
@@ -82,13 +85,15 @@ export type ResolvedWorkspace = {
 	seeds: string[];
 	/** Workspace filelists, absolute. */
 	filelists: string[];
-	/** Workspace `top` / `wave` / `waveDepth` / `waveScope` with defaults
-	 *  applied: the base every case inherits, below bareDefaults. */
+	/** Workspace `top` / `wave*` / `cov*` case defaults applied: the base
+	 *  every case inherits, below bareDefaults. */
 	caseDefaults: {
 		top: string;
 		wave: boolean;
 		waveDepth: number;
 		waveScope?: string;
+		cov: boolean;
+		covMetrics: string;
 	};
 	bareDefaults?: CaseOpts;
 	passthrough: string[];
@@ -226,7 +231,14 @@ function mergeOpts(base: CaseOpts, overlay: CaseOpts): CaseOpts {
 		out.toolOptions = { ...base.toolOptions, ...overlay.toolOptions };
 	}
 	if (overlay.owner !== undefined) out.owner = overlay.owner;
-	for (const key of ["top", "wave", "waveDepth", "waveScope"] as const) {
+	for (const key of [
+		"top",
+		"wave",
+		"waveDepth",
+		"waveScope",
+		"cov",
+		"covMetrics",
+	] as const) {
 		if (overlay[key] !== undefined) Object.assign(out, { [key]: overlay[key] });
 	}
 	if (overlay.random !== undefined) out.random = overlay.random;
@@ -331,6 +343,7 @@ export function mergeCase(ws: CaseSource, id: string): MergedCase {
 			depth: opts.waveDepth ?? 0,
 			scope: opts.waveScope ?? (opts.top as string),
 		},
+		cov: { enabled: opts.cov === true, metrics: opts.covMetrics as string },
 		grader,
 		...(opts.tools === undefined ? {} : { tools: [...opts.tools] }),
 	};
@@ -366,8 +379,10 @@ export function compileKey(c: MergedCase, tool: SimTool): string {
 	const base = JSON.stringify({
 		tool: tool.name,
 		top: c.top,
-		// Depth and scope only matter (and only split builds) with waves on.
+		// Depth and scope only matter (and only split builds) with waves on;
+		// coverage likewise, and only on a backend that collects it.
 		wave: c.wave.enabled ? c.wave : false,
+		cov: c.cov.enabled && tool.coverage ? c.cov : false,
 		defines: [...c.defines].sort(),
 		compileArgs: c.compileArgs,
 		env: compileEnvEntries(c.env),
@@ -639,6 +654,8 @@ export async function loadWorkspace(opts: {
 			wave: o.wave ?? false,
 			waveDepth: o.waveDepth ?? 0,
 			...(o.waveScope === undefined ? {} : { waveScope: o.waveScope }),
+			cov: o.cov ?? false,
+			covMetrics: o.covMetrics ?? "line+cond+fsm+tgl+branch+assert",
 		},
 		cases,
 		resolved: new Map(),

@@ -336,9 +336,13 @@ the value (`run_sim -s <seed>` overrides it); the default is
 `+ntb_random_seed=$SEED` (VCS). `VerilatorTool` sends `+verilator+seed+<seed>`,
 with seed 0 sent as 1 because Verilator reads 0 as "pick a random seed"; a
 C++ harness must hand argv to `contextp->commandArgs()` for it to apply.
-The context carries the case's `top` and `wave` (`ctx.caseOpts.top`,
-`ctx.caseOpts.wave` = `{ enabled, depth, scope }`); coverage is read with
-`covFromEnv()` at each compile and sim.
+The context carries the case's `top`, `wave` and `cov` (`ctx.caseOpts.top`,
+`ctx.caseOpts.wave` = `{ enabled, depth, scope }`, `ctx.caseOpts.cov` =
+`{ enabled, metrics }`). A backend that collects coverage also supplies
+`coverage: { db(dir), merge(ctx), mergeAll?(ctx) }`: where a build's database
+is and the argv of its per-build and regression-wide merge, which dtsim writes
+as scripts and never runs (see [覆盖率](#覆盖率)); without it a case's `cov` is
+ignored and the Run / Regression tables show `off (<tool> collects no coverage)`.
 
 ### Base flags
 
@@ -414,8 +418,35 @@ demo/soc 用一份配置跑 Verilator（C++ harness）与 VCS（纯 SV aw-tb-mod
 - 让用户从命令行开波形：注册 `{ name: "WAVE", flags: "--wave" }`，回调里写
   `wave: process.env.WAVE === "1"`（demo/hbm、demo/soc）。
 
-覆盖率由 `DTSIM_COV` / `DTSIM_COV_METRICS` / `DTSIM_COV_MERGE` 环境变量决定，backend 用
-`covFromEnv()` 读取；这些变量会进入 compile/sim 子进程和生成的 `run_compile` / `run_sim`。
+### 覆盖率
+
+覆盖率和波形一样是 Workspace 默认值加 case 继承（`bareDefaults` / `byTool` 也可写），不读环境变量：
+
+| 选项 | 在哪写 | 默认 | 含义 |
+|---|---|---|---|
+| `cov` | Workspace / Case | `false` | 覆盖率开关 |
+| `covMetrics` | Workspace / Case | `"line+cond+fsm+tgl+branch+assert"` | 指标（VCS `-cm` 语法） |
+
+`cov` 打开时它和 `covMetrics` 进入编译 key（覆盖率是编译进去的），所以开与不开、指标不同的用例各自编译；
+关闭时不影响分组。只有实现了 `coverage` 的后端会收集：目前是 VCS，Verilator 忽略 `cov`，
+Run / Regression 表的 `Coverage` 行写明 `off (verilator collects no coverage)`。
+
+dtsim 不合并覆盖率。结束时（`run` 与 `regr`）打印 **Coverage** 表：每个编译组的覆盖率数据库位置、
+合并脚本的位置，以及 cluster 启动器下的提交脚本名；由用户自己决定合并哪些、何时合并。
+
+VCS 的做法：
+
+- 编译和仿真加 `-cm <metrics>`，数据写进编译目录的 `simv.vdb`，每个 seed 用 `-cm_name <case>_<seed>`。
+- 编译目录写 `run_verdi_cov`（`verdi -cov`，有 `merge.vdb` 时打开它，否则打开 `simv.vdb`）。
+- 每个开了覆盖率、编译成功的编译组写 `run_cov_merge`（`urg -dir simv.vdb -dbname merge.vdb
+  -report urgReport`），`run` 也写一份在用例的编译目录。
+- 回归目录写 `run_cov_merge_all`：一条 `urg` 合并所有覆盖率编译组到 `<regression>/merge.vdb` 与
+  `urgReport`，额外参数原样传给 urg。define 不同的编译组合并不一定有意义。
+- 这些脚本都带编译阶段的环境（exports），和 `run_verdi` 一样，cluster 启动器在旁边写提交脚本：
+  `bjob_verdi_cov` / `bjob_cov_merge` / `bjob_cov_merge_all`（Slurm 为 `srun_*`），local 不写。
+
+命令行开覆盖率：注册 `{ name: "COV", flags: "--cov" }`，回调里写 `cov: process.env.COV === "1"`
+（demo/dtsim、demo/hbm）。
 
 ### Which cases share a build
 

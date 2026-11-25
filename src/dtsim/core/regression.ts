@@ -2,10 +2,9 @@
 // compile per group, and pipeline compile -> sim behind a shared slot pool.
 // Output: a header table, the plan tree, live build trees on stderr, then
 // the results tree and a summary table.
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
-import { covFromEnv } from "../dsl/env.ts";
 import {
 	compileKey,
 	type MergedCase,
@@ -20,15 +19,18 @@ import {
 	executeCompile,
 	executeSim,
 	type SeedResult,
+	toolPath,
+	writeCovMerge,
+	writeSubmitWrapper,
 } from "./engine.ts";
 import { type BuildNode, Progress, type TaskNode } from "./progress.ts";
-import { runProcess } from "./run.ts";
 import {
 	elapsedLine,
 	writeDresultsScript,
 	writeResultMarker,
+	writeRunScript,
 } from "./scripts.ts";
-import { readSeeds, seedsFor, waveLabel } from "./single.ts";
+import { covLabel, readSeeds, seedsFor, waveLabel } from "./single.ts";
 import { block, plain, status, type TreeNode, tree } from "./ui.ts";
 
 export type CompileGroup = {
@@ -141,8 +143,10 @@ export function planText(
 	];
 	for (const g of groups) {
 		const many = g.cases.length === 1 ? "case" : "cases";
+		const c = g.representative;
+		const cov = c.cov.enabled ? `, cov ${c.cov.metrics}` : "";
 		lines.push(
-			`${chalk.bold.cyan("compile")} ${chalk.bold(g.name)}  ${chalk.dim(`top ${g.representative.top}, wave ${waveLabel(g.representative.wave)}, ${g.cases.length} ${many}`)}`,
+			`${chalk.bold.cyan("compile")} ${chalk.bold(g.name)}  ${chalk.dim(`top ${c.top}, wave ${waveLabel(c.wave)}${cov}, ${g.cases.length} ${many}`)}`,
 		);
 		const defines = g.representative.defines;
 		lines.push(
@@ -191,6 +195,7 @@ function headerRows(
 		["Group", group],
 		["Tool", ws.tool.name],
 		["Wave", regressionWave(groups)],
+		["Coverage", regressionCov(ws, groups)],
 		["Launcher", launcher ? `${l.name} (${launcher})` : l.name],
 		["Tasks", `${groups.length} compiles, ${sims} sims`],
 		["Slots", `${ws.task.maxSlots} (compile ${ws.task.maxCompiles})`],
@@ -204,6 +209,19 @@ function regressionWave(groups: readonly CompileGroup[]): string {
 	const labels = new Set(groups.map((g) => waveLabel(g.representative.wave)));
 	if (labels.size <= 1) return [...labels][0] ?? "off";
 	const on = groups.filter((g) => g.representative.wave.enabled).length;
+	return `on in ${on} of ${groups.length} compiles (see plan)`;
+}
+
+/** One coverage label when every build agrees, else how many collect it. */
+function regressionCov(
+	ws: ResolvedWorkspace,
+	groups: readonly CompileGroup[],
+): string {
+	const labels = new Set(
+		groups.map((g) => covLabel(g.representative.cov, ws.tool)),
+	);
+	if (labels.size <= 1) return [...labels][0] ?? "off";
+	const on = groups.filter((g) => g.representative.cov.enabled).length;
 	return `on in ${on} of ${groups.length} compiles (see plan)`;
 }
 
@@ -253,6 +271,7 @@ export async function runRegression(
 	let nextCompile = 0;
 	let activeCompiles = 0;
 	let compilesFailed = 0;
+	const failedBuilds = new Set<string>();
 
 	const launchSim = (
 		c: MergedCase,
@@ -298,7 +317,10 @@ export async function runRegression(
 					...opts,
 					monitor: progress.observer(build),
 				});
-				if (!outcome.ok) compilesFailed += 1;
+				if (!outcome.ok) {
+					compilesFailed += 1;
+					failedBuilds.add(g.dir);
+				}
 				progress.finish(build, outcome.ok ? "OK" : "FAIL", outcome.log);
 				const nodes = [...build.sims];
 				for (const c of g.cases) {
@@ -364,9 +386,10 @@ export async function runRegression(
 	await Promise.all([...running]);
 	progress.stop();
 
-	return finishRegression(ws, groups, regDir, results, opts, {
+	return finishRegression(ws, groups, regDir, results, {
 		t0,
 		compilesFailed,
+		failedBuilds,
 	});
 }
 
@@ -402,8 +425,11 @@ async function finishRegression(
 	groups: readonly CompileGroup[],
 	regDir: string,
 	results: readonly SeedResult[],
-	opts: RegressionOptions,
-	run: { t0: number; compilesFailed: number },
+	run: {
+		t0: number;
+		compilesFailed: number;
+		failedBuilds: ReadonlySet<string>;
+	},
 ): Promise<number> {
 	const text = resultTree(results);
 	console.log(text);
@@ -439,42 +465,73 @@ async function finishRegression(
 			["Recheck", `${dresults} [--recheck]`],
 		]),
 	);
+	const cov = coverageScripts(ws, groups, regDir, run.failedBuilds);
+	if (cov) console.log(block("Coverage", cov));
 
-	let covOk = true;
-	const cov = covFromEnv();
-	if (cov.enabled) {
-		if (cov.merge) {
-			for (const g of groups) {
-				const env = childEnv(ws, g.representative, "compile", g.dir);
-				const code = await runProcess({
-					argv: [
-						"urg",
-						"-dir",
-						join(g.dir, "simv.vdb"),
-						"-dbname",
-						join(g.dir, "merge.vdb"),
-						"-report",
-						join(g.dir, "urgReport"),
-					],
-					cwd: g.dir,
-					env: env.env,
-					captureLog: join(g.dir, "urg.log"),
-					verbose: opts.verbose,
-					interactive: false,
-				});
-				if (code !== 0) covOk = false;
-			}
-		}
-		const dcov = join(regDir, "dcov");
-		await writeFile(
-			dcov,
-			'#!/bin/bash\n# Cross-group coverage merge. Different +define configs must not\n# be merged automatically; run this explicitly.\nurg -dir compile_*/simv.vdb -dbname merge.vdb -report urgReport "$@"\n',
-		);
-		await chmod(dcov, 0o755);
-	}
-
-	return covOk &&
-		results.every((r) => r.status === "PASS" || r.status === "PASS WITH ERRORS")
+	return results.every(
+		(r) => r.status === "PASS" || r.status === "PASS WITH ERRORS",
+	)
 		? 0
 		: 1;
+}
+
+/**
+ * Coverage after the sims, for a backend with `coverage`: each build that
+ * compiled with coverage on gets `run_cov_merge`, the regression dir gets
+ * `run_cov_merge_all` over all of them, each with a submit wrapper. dtsim
+ * merges nothing: the rows tell the user where the databases and the merge
+ * scripts are. Undefined: no coverage in this regression.
+ */
+function coverageScripts(
+	ws: ResolvedWorkspace,
+	groups: readonly CompileGroup[],
+	regDir: string,
+	failedBuilds: ReadonlySet<string>,
+): Array<[string, string]> | undefined {
+	const backend = ws.tool.coverage;
+	const builds = groups.filter(
+		(g) => g.representative.cov.enabled && !failedBuilds.has(g.dir),
+	);
+	const first = builds[0];
+	if (!backend || !first) return undefined;
+	const rows: Array<[string, string]> = [];
+	for (const g of builds) {
+		const written = writeCovMerge(
+			ws,
+			g.representative,
+			g.dir,
+			g.cases.map((x) => x.id),
+			`cov_merge_${g.name}`,
+		);
+		if (written) rows.push([g.name, written.db]);
+	}
+	rows.push(["Merge build", join(regDir, "compile_*", "run_cov_merge")]);
+	if (backend.mergeAll) {
+		const all = writeRunScript({
+			dir: regDir,
+			name: "run_cov_merge_all",
+			note: "merges every coverage build; builds with different defines may not merge meaningfully",
+			cwd: regDir,
+			exports: childEnv(ws, first.representative, "compile", regDir).env,
+			argv: backend.mergeAll({
+				regDir: toolPath(regDir),
+				builds: builds.map((g) => toolPath(g.dir)),
+			}),
+			passArgs: true,
+		});
+		writeSubmitWrapper(ws, regDir, "run_cov_merge_all", {
+			phase: "compile",
+			jobName: "cov_merge_all",
+			caseId: first.representative.id,
+			interactive: false,
+		});
+		rows.push(["Merge all", all]);
+	}
+	if (ws.task.launcher.scriptPrefix) {
+		rows.push([
+			"Submit",
+			`${ws.task.launcher.scriptPrefix}_cov_merge / ${ws.task.launcher.scriptPrefix}_cov_merge_all beside them`,
+		]);
+	}
+	return rows;
 }

@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { buildDirOf, makeWorkspace, runDtsim, seedDirs } from "./helpers.ts";
+import {
+	buildDirOf,
+	CASES_TS,
+	makeWorkspace,
+	mockEnv,
+	runDtsim,
+	seedDirs,
+} from "./helpers.ts";
 
 describe("regression", () => {
 	test("plan writes regression.txt without results", async () => {
@@ -90,17 +97,36 @@ describe("regression", () => {
 		).toContain("Error-[COMPFAIL]");
 	});
 
-	test("coverage: per-group urg merge, dcov script, failure propagates", async () => {
-		const ws = await makeWorkspace();
-		const result = await runDtsim(ws, ["regr", "base"], { DTSIM_COV: "1" });
+	test("coverage: config cov, scripts written and reported, nothing merged", async () => {
+		const ws = await makeWorkspace(
+			CASES_TS.replace(
+				"tools: [VcsTool()],",
+				"tools: [VcsTool()],\n\tcov: true,",
+			),
+		);
+		const result = await runDtsim(ws, ["regr", "base"]);
 		expect(result.code).toBe(0);
 		const regDir = join(ws.out, "regression");
 		const helloBuild = await buildDirOf(regDir, "test_hello_world");
-		expect(
-			await Bun.file(join(helloBuild, "urgReport", "dashboard.html")).exists(),
-		).toBe(true);
-		expect(existsSync(join(helloBuild, "merge.vdb"))).toBe(true);
-		expect(await Bun.file(join(regDir, "dcov")).exists()).toBe(true);
+		// dtsim merges nothing; the user runs the scripts.
+		expect(existsSync(join(helloBuild, "merge.vdb"))).toBe(false);
+		expect(await Bun.file(join(helloBuild, "run_cov_merge")).text()).toContain(
+			"'urg' '-dir'",
+		);
+		expect(existsSync(join(helloBuild, "run_verdi_cov"))).toBe(true);
+		// One urg over every build's simv.vdb; extra arguments pass on.
+		const all = await Bun.file(join(regDir, "run_cov_merge_all")).text();
+		expect(all.match(/'-dir'/g)?.length).toBe(3);
+		expect(all).toContain('"$@"');
+		// The Coverage block names each build's database and the merge scripts.
+		const name = helloBuild
+			.split(/[\\/]/)
+			.pop()
+			?.replace(/^compile_/, "");
+		const block = result.stdout.slice(result.stdout.indexOf("\nCoverage\n"));
+		expect(block).toContain(`│ ${name}`);
+		expect(block).toContain("simv.vdb");
+		expect(result.stdout).toContain("run_cov_merge_all");
 		const helloSeeds = await seedDirs(join(regDir, "test_hello_world"));
 		const runSim = await Bun.file(
 			join(helloSeeds[0] as string, "run_sim"),
@@ -108,13 +134,21 @@ describe("regression", () => {
 		expect(runSim).toContain("'-cm_name'");
 		expect(runSim).toContain("'test_hello_world_");
 		expect(runSim).toContain("-cm_dir");
-
-		const ws2 = await makeWorkspace();
-		const failed = await runDtsim(ws2, ["regr", "base"], {
-			DTSIM_COV: "1",
-			DTSIM_MOCK_URG_FAIL: "1",
+		// Running the written script merges.
+		const merge = Bun.spawnSync(["bash", join(helloBuild, "run_cov_merge")], {
+			env: mockEnv(),
 		});
-		expect(failed.code).toBe(1);
+		expect(merge.exitCode).toBe(0);
+		expect(existsSync(join(helloBuild, "merge.vdb"))).toBe(true);
+
+		// The DTSIM_COV environment variable is no longer read.
+		const ignored = await makeWorkspace();
+		const off = await runDtsim(ignored, ["regr", "base"], { DTSIM_COV: "1" });
+		expect(off.code).toBe(0);
+		expect(off.stdout).not.toContain("run_cov_merge");
+		expect(
+			existsSync(join(ignored.out, "regression", "run_cov_merge_all")),
+		).toBe(false);
 	});
 
 	test("results command reads markers and rechecks logs", async () => {

@@ -3,10 +3,10 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { RUN_ENV } from "../dsl/env.ts";
 import type {
 	CaseContext,
 	HookStage,
+	LaunchContext,
 	Status,
 	ToolContext,
 } from "../dsl/index.ts";
@@ -27,6 +27,7 @@ import {
 	writeGitRev,
 	writeResultMarker,
 	writeRunCompile,
+	writeRunScript,
 	writeRunSim,
 	writeSubmitScript,
 } from "./scripts.ts";
@@ -163,6 +164,7 @@ export function toolContext(
 			toolOptions: { ...c.toolOptions },
 			top: c.top,
 			wave: c.wave,
+			cov: c.cov,
 		},
 		dir,
 		compileDir,
@@ -175,12 +177,11 @@ export function toolContext(
 		env,
 		expand: expandFor(ws, c.id, dir, seed),
 		resolvePath: (text) => resolvePath(text, varsFor(ws, c.id, dir, seed)),
-		submitScript: (scriptName, submitOpts) => {
-			const launcher = ws.task.launcher;
-			if (!launcher.scriptPrefix) return;
-			const argv = wrapCommand(
-				["bash", toolPath(resolve(dir, scriptName))],
-				launcher,
+		submitScript: (scriptName, submitOpts) =>
+			writeSubmitWrapper(
+				ws,
+				dir,
+				scriptName,
 				{
 					phase,
 					jobName:
@@ -189,18 +190,66 @@ export function toolContext(
 							: compileJobName(c, compileDir, opts.regression),
 					caseId: c.id,
 					...(seed === undefined ? {} : { seed }),
-					cwd: dir,
 					interactive: phase === "sim" ? opts.interactive : false,
 				},
-			);
-			writeSubmitScript(
-				dir,
-				`${launcher.scriptPrefix}_${scriptName.replace(/^run_/, "")}`,
-				argv,
 				submitOpts,
-			);
-		},
+			),
 	};
+}
+
+/** The cluster submit wrapper (`<prefix>_<name without run_>`) beside a run
+ *  script in `dir`: `bash <script>` through the selected launcher. None on
+ *  launchers without a scriptPrefix (local). */
+export function writeSubmitWrapper(
+	ws: ResolvedWorkspace,
+	dir: string,
+	scriptName: string,
+	ctx: Omit<LaunchContext, "queue" | "cwd">,
+	submitOpts?: { background?: boolean },
+): void {
+	const launcher = ws.task.launcher;
+	if (!launcher.scriptPrefix) return;
+	const argv = wrapCommand(
+		["bash", toolPath(resolve(dir, scriptName))],
+		launcher,
+		{ ...ctx, cwd: dir },
+	);
+	writeSubmitScript(
+		dir,
+		`${launcher.scriptPrefix}_${scriptName.replace(/^run_/, "")}`,
+		argv,
+		submitOpts,
+	);
+}
+
+/** For a build compiled with coverage on a backend that collects it: writes
+ *  `run_cov_merge` (compile env, the backend's merge) and its submit wrapper,
+ *  and returns the coverage database and that script. dtsim never runs it;
+ *  the user merges by hand. */
+export function writeCovMerge(
+	ws: ResolvedWorkspace,
+	c: MergedCase,
+	dir: string,
+	caseIds: readonly string[],
+	jobName: string,
+): { db: string; script: string } | undefined {
+	const backend = ws.tool.coverage;
+	if (!backend || !c.cov.enabled) return undefined;
+	const script = writeRunScript({
+		dir,
+		name: "run_cov_merge",
+		note: "merges the coverage of this build's seeds; dtsim does not run it",
+		cwd: dir,
+		exports: childEnv(ws, c, "compile", dir).env,
+		argv: backend.merge({ dir: toolPath(dir), caseIds, cov: c.cov }),
+	});
+	writeSubmitWrapper(ws, dir, "run_cov_merge", {
+		phase: "compile",
+		jobName,
+		caseId: c.id,
+		interactive: false,
+	});
+	return { db: backend.db(toolPath(dir)), script };
 }
 
 export function childEnv(
@@ -223,23 +272,12 @@ export function childEnv(
 			project_home: ws.root,
 			verify: ws.verify,
 			output_dir: dir,
-			// Run switches as the backend read them.
-			...runSwitches(),
 			DTSIM_CASE: c.id,
 			DTSIM_PHASE: phase,
 			...(seed === undefined ? {} : { DTSIM_SEED: seed }),
 		},
 		expand: expandFor(ws, c.id, dir, seed),
 	});
-}
-
-function runSwitches(): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const name of RUN_ENV) {
-		const v = process.env[name];
-		if (v !== undefined) out[name] = v;
-	}
-	return out;
 }
 
 /** Fields hooks and graders share for one case directory (no `sh`). */
@@ -270,6 +308,7 @@ function caseContext(
 			filelists: [...c.filelists],
 			top: c.top,
 			wave: c.wave,
+			cov: c.cov,
 		},
 		env,
 		expand: (text) => expandVars(text, vars),

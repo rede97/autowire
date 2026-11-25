@@ -2,6 +2,7 @@
 // Run from demo/hbm:
 //   bun ../../index.ts dtsim regr                  (or ./dt/vcs/run.sh)
 //   bun ../../index.ts dtsim run hbm_rw_test --wave   (fsdb + run_verdi)
+//   bun ../../index.ts dtsim regr --cov   (simv.vdb per build; merge scripts listed at the end)
 // All cases share one compile group; each test is a +UVM_TESTNAME.
 // Grading is the built-in DefaultGrader: the UVM Report Summary marks a
 // finished run and any UVM_ERROR / UVM_FATAL message fails it.
@@ -37,10 +38,14 @@ export const concurrent = uvmTest("hbm_concurrent_test");
 // --wave sets WAVE before the factory runs; tb_top (dt/uvm/tb_top.sv) is
 // the default top, so it is also the dump scope.
 export default Workspace(
-	[{ name: "WAVE", values: "0|1", default: "0", flags: "--wave", desc: "dump fsdb" }],
+	[
+		{ name: "WAVE", values: "0|1", default: "0", flags: "--wave", desc: "dump fsdb" },
+		{ name: "COV", values: "0|1", default: "0", flags: "--cov", desc: "collect code coverage" },
+	],
 	() => ({
 		filelists: ["hbm.f"],
 		wave: process.env.WAVE === "1",
+		cov: process.env.COV === "1",
 		// Flags of the original run.sh: the backend defaults target newer VCS
 		// (O-2018.09 rejects -xlrm nettype_array and -lca breaks its UVM DPI).
 		tools: [

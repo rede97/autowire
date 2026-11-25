@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
-import type { WaveSpec } from "../dsl/index.ts";
+import type { CovSpec, SimTool, WaveSpec } from "../dsl/index.ts";
 import {
 	assertConcrete,
 	assertRunsOn,
@@ -19,6 +19,7 @@ import {
 	executeSim,
 	type SeedResult,
 	toolContext,
+	writeCovMerge,
 } from "./engine.ts";
 import { envStatsLine } from "./env.ts";
 import { CaseMonitor } from "./monitor.ts";
@@ -99,6 +100,7 @@ export async function runSingle(
 		["Tool", tool.name],
 		["Top", c.top],
 		["Wave", waveLabel(c.wave)],
+		["Coverage", covLabel(c.cov, ws.tool)],
 		["Test Name", c.id],
 		["Test Seq", c.uvm?.seq ?? ""],
 		["Seeds", seeds.join(",") + (c.random ? "" : " (no-random)")],
@@ -185,6 +187,13 @@ export async function runSingle(
 			worst = 1;
 		}
 	}
+	const cov = writeCovMerge(ws, c, compileDir, [c.id], `cov_merge_${c.id}`);
+	if (cov) {
+		printBlock("Coverage", [
+			["Database", cov.db],
+			["Merge", `${cov.script} (not run by dtsim)`],
+		]);
+	}
 	console.log(chalk.dim(elapsedLine(t0)));
 	return worst;
 }
@@ -216,4 +225,11 @@ export function printCaseEnv(
 export function waveLabel(w: WaveSpec): string {
 	if (!w.enabled) return "off";
 	return `on (depth ${w.depth}, scope ${w.scope})`;
+}
+
+/** "off", "on (<metrics>)", or why a requested coverage is not collected. */
+export function covLabel(cov: CovSpec, tool: SimTool): string {
+	if (!cov.enabled) return "off";
+	if (!tool.coverage) return `off (${tool.name} collects no coverage)`;
+	return `on (${cov.metrics})`;
 }

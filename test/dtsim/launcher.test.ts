@@ -123,7 +123,9 @@ const tagged = defineLauncher({
 		const ws = await makeWorkspace(
 			withTask(
 				'{ launcher: LsfLauncher({ queue: "normal" }), maxSlots: 2, maxCompiles: 1 }',
-			).replace("tools: [VcsTool()],", "tools: [VcsTool()],\n\twave: true,"),
+			)
+				.replace("tools: [VcsTool()],", "tools: [VcsTool()],\n\twave: true,")
+				.replace("tools: [VcsTool()],", "tools: [VcsTool()],\n\tcov: true,"),
 		);
 		const result = await runDtsim(ws, ["run", "test_hello_world", "-s", "5"], {
 			DTSIM_TASK_TYPE: "lsf",
@@ -145,6 +147,38 @@ const tagged = defineLauncher({
 		const verdi = found.find((f) => f.endsWith("bjob_verdi")) as string;
 		const verdiText = await Bun.file(join(ws.dir, verdi)).text();
 		expect(verdiText.trimEnd().endsWith(" &")).toBe(true);
+		// The coverage viewer gets a wrapper like run_verdi does.
+		const covViewer = found.find((f) => f.endsWith("bjob_verdi_cov"));
+		expect(covViewer).toBeDefined();
+		expect(
+			(await Bun.file(join(ws.dir, covViewer as string)).text()).trimEnd(),
+		).toMatch(/'bash' '[^']*\/run_verdi_cov' &$/);
+	});
+
+	test("lsf: coverage merge scripts get bjob_ wrappers; nothing is submitted", async () => {
+		const ws = await makeWorkspace(
+			withTask(
+				'{ launcher: LsfLauncher({ queue: "normal" }), maxSlots: 2, maxCompiles: 1 }',
+			).replace("tools: [VcsTool()],", "tools: [VcsTool()],\n\tcov: true,"),
+		);
+		const log = join(ws.dir, "launch.log");
+		const result = await runDtsim(ws, ["regr", "base"], {
+			DTSIM_TASK_TYPE: "lsf",
+			DTSIM_MOCK_LAUNCH_LOG: log,
+		});
+		expect(result.code).toBe(0);
+		// dtsim submits only compiles and sims; merging is the user's call.
+		expect(await Bun.file(log).text()).not.toContain("cov_merge");
+		expect(result.stdout).toContain("bjob_cov_merge / bjob_cov_merge_all");
+		const regDir = join(ws.out, "regression");
+		const wrappers = [...new Bun.Glob("**/bjob_cov_merge*").scanSync(regDir)];
+		expect(wrappers.filter((f) => f.endsWith("bjob_cov_merge"))).toHaveLength(
+			3,
+		);
+		const all = await Bun.file(join(regDir, "bjob_cov_merge_all")).text();
+		expect(all).toMatch(
+			/'-J' 'cov_merge_all' .*'bash' '[^']*\/run_cov_merge_all'/,
+		);
 	});
 
 	test("local bypasses the wrapper scripts", async () => {

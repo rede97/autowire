@@ -2,7 +2,6 @@
 // objects tagged with `kind`. Never use instanceof: the bundle and the
 // materialized .dtsim/dsl copy may both be loaded in one process.
 
-export { covFromEnv, RUN_ENV } from "./env.ts";
 export {
 	type VcsBaseOpts,
 	type VcsDebugAccess,
@@ -54,6 +53,13 @@ export type CaseOpts = {
 	 *  Inherited. With `wave` on, all three are part of the compile key: the
 	 *  dump is compiled in (debug access, --trace-fst, the scope). */
 	waveScope?: string;
+	/** Code coverage on/off (default: Workspace `cov`). Inherited. With it
+	 *  on, it and `covMetrics` are part of the compile key (coverage is
+	 *  compiled in). Only backends with `coverage` collect it (VcsTool). */
+	cov?: boolean;
+	/** Coverage metrics, in the backend's syntax (VCS `-cm`, default
+	 *  "line+cond+fsm+tgl+branch+assert"). Inherited. */
+	covMetrics?: string;
 	/** Filelists (paths relative to dt/config), appended to the workspace's
 	 *  and the parent's. dtsim never reads them: each reaches the tool as -f,
 	 *  which runs in the project root. */
@@ -191,6 +197,8 @@ export type CaseContext = {
 		top: string;
 		/** Waveform dump: the case's `wave`, else the workspace's. */
 		wave: WaveSpec;
+		/** Coverage: the case's `cov` / `covMetrics`, else the workspace's. */
+		cov: CovSpec;
 	};
 	/** The isolated environment the tool command of this phase receives. */
 	env: Readonly<Record<string, string>>;
@@ -296,6 +304,11 @@ export type WorkspaceOpts = {
 	waveDepth?: number;
 	/** Default dump scope. Default: each case's top. */
 	waveScope?: string;
+	/** Coverage of every case that does not set its own `cov`. Default false. */
+	cov?: boolean;
+	/** Default coverage metrics (VCS `-cm`). Default
+	 *  "line+cond+fsm+tgl+branch+assert". */
+	covMetrics?: string;
 	/** Filelists every case compiles (paths relative to dt/config, `${...}`
 	 *  allowed); cases append theirs. Default: none. */
 	filelists?: readonly string[];
@@ -341,8 +354,26 @@ export type Prepared = {
 
 /** A case's resolved waveform dump. `scope` defaults to the case's top. */
 export type WaveSpec = { enabled: boolean; depth: number; scope: string };
-/** Coverage switch ($DTSIM_COV*; read with covFromEnv()). */
-export type CovSpec = { enabled: boolean; metrics: string; merge: boolean };
+/** A case's resolved coverage setting. */
+export type CovSpec = { enabled: boolean; metrics: string };
+
+/** One build's coverage merge (SimTool.coverage.merge). */
+export type CovMergeContext = {
+	/** The build's compile dir (where its coverage database lives). */
+	dir: string;
+	/** The cases that ran on this build. */
+	caseIds: readonly string[];
+	/** The build's coverage setting. */
+	cov: CovSpec;
+};
+
+/** The regression-wide merge (SimTool.coverage.mergeAll). */
+export type CovMergeAllContext = {
+	/** The regression dir. */
+	regDir: string;
+	/** Compile dirs of every build with coverage on. */
+	builds: readonly string[];
+};
 
 export type ToolContext = {
 	phase: "compile" | "sim";
@@ -356,6 +387,8 @@ export type ToolContext = {
 		top: string;
 		/** Waveform dump: the case's `wave`, else the workspace's. */
 		wave: WaveSpec;
+		/** Coverage: the case's `cov` / `covMetrics`, else the workspace's. */
+		cov: CovSpec;
 	};
 	dir: string;
 	compileDir: string;
@@ -398,6 +431,8 @@ export type CompileKeyInput = {
 	top: string;
 	/** Waveform dump (already in `base`). */
 	wave: WaveSpec;
+	/** Coverage (already in `base` when on and the backend has `coverage`). */
+	cov: CovSpec;
 };
 
 export type SimTool = {
@@ -429,6 +464,20 @@ export type SimTool = {
 	 *  which `$SEED` is the seed (`run_sim -s <seed>` overrides it). Default
 	 *  `+ntb_random_seed=$SEED`. */
 	seedArg?: string;
+	/** Coverage support. Without it a case's `cov` is ignored and the Run /
+	 *  Regression tables say so. dtsim never merges: it writes each merge
+	 *  command into a run script (compile env) plus a cluster submit wrapper
+	 *  (bjob_ / srun_), and prints the databases and scripts at the end. */
+	coverage?: {
+		/** Where a build's coverage database is (VCS: `<dir>/simv.vdb`). */
+		db: (dir: string) => string;
+		/** Merge one build's seed coverage: written as `<build>/run_cov_merge`. */
+		merge: (ctx: CovMergeContext) => string[];
+		/** Merge every coverage build of a regression: written as
+		 *  `<regression>/run_cov_merge_all` (extra arguments are passed on).
+		 *  Builds with different defines may not merge meaningfully. */
+		mergeAll?: (ctx: CovMergeAllContext) => string[];
+	};
 	/** Write tool-specific helper files (dump.tcl, run_verdi, ...). */
 	writeAux?: (ctx: ToolContext) => void;
 	compile: (ctx: ToolContext) => Prepared;
@@ -485,8 +534,9 @@ function needString(what: string, v: unknown): string {
 	return v;
 }
 
-/** `top` / `waveScope` must be names, `wave` a boolean, `waveDepth` a whole
- *  number. Shared by case options and the Workspace. */
+/** `top` / `waveScope` must be names, `wave` / `cov` booleans, `waveDepth` a
+ *  whole number, `covMetrics` a non-empty string. Shared by case options and
+ *  the Workspace. */
 function needTopWave(
 	what: string,
 	opts: {
@@ -494,16 +544,20 @@ function needTopWave(
 		wave?: unknown;
 		waveDepth?: unknown;
 		waveScope?: unknown;
+		cov?: unknown;
+		covMetrics?: unknown;
 	},
 ): void {
-	for (const key of ["top", "waveScope"] as const) {
+	for (const key of ["top", "waveScope", "covMetrics"] as const) {
 		const v = opts[key];
 		if (v !== undefined && (typeof v !== "string" || v.length === 0)) {
-			throw new Error(`dtsim: ${what}.${key} must be a non-empty name`);
+			throw new Error(`dtsim: ${what}.${key} must be a non-empty string`);
 		}
 	}
-	if (opts.wave !== undefined && typeof opts.wave !== "boolean") {
-		throw new Error(`dtsim: ${what}.wave must be a boolean`);
+	for (const key of ["wave", "cov"] as const) {
+		if (opts[key] !== undefined && typeof opts[key] !== "boolean") {
+			throw new Error(`dtsim: ${what}.${key} must be a boolean`);
+		}
 	}
 	const d = opts.waveDepth;
 	if (d !== undefined && (!Number.isInteger(d) || (d as number) < 0)) {

@@ -44,7 +44,14 @@ Tools, top, wave and coverage (config-owned)
   Wave files are <case id>.fsdb (VCS) / <case id>.fst (Verilator) in each seed
   dir. run_verdi uses ${output_dir}/${DTSIM_CASE}.fsdb; bjob_verdi/srun_verdi end
   in & to return immediately (compile/sim wrappers still wait).
-  Coverage: DTSIM_COV / DTSIM_COV_METRICS / DTSIM_COV_MERGE.
+  cov (default false) and covMetrics (VCS -cm syntax, default
+  line+cond+fsm+tgl+branch+assert) work like wave: Workspace defaults, case
+  override, in the compile key when on. Only backends with `coverage` collect
+  it (VCS); Verilator ignores cov. dtsim never merges: VCS writes per build
+  run_verdi_cov + run_cov_merge (urg -> merge.vdb, urgReport) and per
+  regression run_cov_merge_all; cluster launchers add bjob_/srun_ wrappers.
+  At the end a Coverage table lists each database and the merge scripts.
+  No DTSIM_COV* env vars; a --cov flag is a config's registered COV option.
 
 Agent workflow
   1. dtsim list / dtsim groups / dtsim plan <group>: see what exists, no run.
@@ -65,11 +72,13 @@ DSL (import from ./.dtsim/dsl/index.ts)
             listed by `dtsim env`; flags are Commander option specs, set
             before the factory runs (read them inside it). `set(value)` maps
             the parsed value to the env var.
-            opts: tools, top, wave, waveDepth, waveScope, filelists, output,
-            seeds, grader, bareDefaults, env, task, hooks, groups, cases.
+            opts: tools, top, wave, waveDepth, waveScope, cov, covMetrics,
+            filelists, output, seeds, grader, bareDefaults, env, task, hooks,
+            groups, cases.
   tools     [VcsTool({ ntbOpts, flags, command, casePlusarg })
             | VerilatorTool({ mdir, main, command })
-            | defineTool({ name, passthrough, compile, simulate, seedArg, ... }), ...];
+            | defineTool({ name, passthrough, compile, simulate, seedArg,
+                coverage: { db, merge, mergeAll }, ... }), ...];
             casePlusarg (default "TEST") sends +TEST=<case>; false sends none.
             Case toolOptions override these per key.
   filelists dtsim never reads them: each is -f <abs path>, compiled with the
@@ -93,7 +102,8 @@ DSL (import from ./.dtsim/dsl/index.ts)
             export top-level cases (alone or in an exported array / Set / Map).
             opts: defines, compileArgs, simArgs, env
             ({ value, scope: "sim" } keeps it out of the build), uvm, toolOptions,
-            top, wave, waveDepth, waveScope, filelists, grader, random, owner,
+            top, wave, waveDepth, waveScope, cov, covMetrics, filelists,
+            grader, random, owner,
             abstract (base used only for
             derivation; never run, left out of * and <base>.* hits), tools:
             ["verilator"] (runs only there; regr / plan skip it elsewhere),

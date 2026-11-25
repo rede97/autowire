@@ -6,8 +6,11 @@
 // - the factory (arg 2) computes the options from the mode (`run` / `regr`):
 //   read env, pick seeds, waves and slots. dtsim then auto-fallbacks the tool
 //   (probe) and probes the launcher.
-// `top` and `wave` / `waveDepth` / `waveScope` are workspace defaults every
-// case inherits; a case overrides them (cases/chip.ts has its own top).
+// `top`, `wave` / `waveDepth` / `waveScope` and `cov` / `covMetrics` are
+// workspace defaults every case inherits; a case overrides them
+// (cases/chip.ts has its own top). With --cov a run ends with a Coverage
+// table: each build's simv.vdb and its run_cov_merge script (dtsim merges
+// nothing).
 // The tools are fakes from ../bin (run.sh puts them first on PATH; the LSF
 // launcher goes through the fake bsub). Repo demos import the DSL source;
 // `docs unpack` rewrites the import to the .dtsim/dsl copy dtsim writes.
@@ -54,6 +57,7 @@ export default Workspace(
 			flags: "--wave",
 			desc: "dump waveforms",
 		},
+		{ name: "COV", values: "0|1", default: "0", flags: "--cov", desc: "collect code coverage" },
 		{ name: "SEEDS", flags: "--seeds <list>", desc: "comma-separated seeds" },
 		{ name: "RANDOM", flags: "--random <n>", desc: "N random seeds" },
 		{
@@ -70,6 +74,7 @@ export default Workspace(
 			process.env.WAVE === undefined
 				? mode === "run"
 				: ["1", "true", "on", "yes"].includes(process.env.WAVE.toLowerCase()),
+		cov: process.env.COV === "1",
 		seeds: seedsFromEnv(),
 		filelists: ["file.lst"],
 		bareDefaults: {
