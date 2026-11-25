@@ -359,11 +359,14 @@ function emitFsm(f: Fsm): string[] {
 			}
 			case "dff":
 				if (p.place === "port") ports.push(["output", p, p.name, p.group]);
+				// A write-only external register (e.g. an RWW field) has no _val input.
 				else
 					ports.push(
 						["output", one, `${p.name}_set`, p.group],
 						["output", p, `${p.name}_next`],
-						["input", p, `${p.name}_val`],
+						...(p.read
+							? [["input", p, `${p.name}_val`] as [string, PortTy, string]]
+							: []),
 					);
 		}
 	}

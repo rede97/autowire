@@ -27,7 +27,8 @@ const DEMOS = [
 ];
 const USER_PKGS = [join(demo, "rtl/dump_pkg.sv")];
 
-/** Paths the doc examples do not reach: trap, private Dff with reset, and-or next, const wire, bits. */
+/** Paths the doc examples do not reach: trap, private Dff with reset, and-or next, const wire,
+ *  bits, a write-only external Dff (no _val port). */
 const EDGES = `@Fsm
 async edges({
   // inputs
@@ -36,6 +37,7 @@ async edges({
   // outputs
   mode = Dff(4),
   halt = Output(1),
+  seen_wr = Dff(1, { external: true }),
 }) {
   const wr = (cmd.bits(7, 4) === 0xa) & (cmd.bits(3, 0) !== 0);
   const seen = Dff(1, { reset: 1 });
@@ -49,6 +51,7 @@ async edges({
       mode.set(5);
       if (seen.val) continue;
       halt.pulse();
+      seen_wr.set(1);
       FATAL: await ALWAYS_0.wait(1);
     }
   }
