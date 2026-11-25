@@ -193,7 +193,7 @@ function fillUnit(unit: Unit, file: File) {
 			src.fail(decl.superClass, "an fsm class cannot extend");
 		if (!decl.id) return src.fail(decl, "the class needs a name");
 		if (kind === "SvEnum") {
-			const t = svEnum(src, decl, deco, unit.abs);
+			const t = svEnum(src, decl, deco, unit.abs, docComment(src, stmt));
 			for (const o of unit.ownEnums)
 				if (o.pkg === t.pkg && o.name === t.name)
 					src.fail(decl, `${t.pkg}::${t.name} is declared twice`);
@@ -462,8 +462,7 @@ export function reservedName(name: string): boolean {
 		name === "clk" ||
 		name === "rst_n" ||
 		name.startsWith("state_") ||
-		name.startsWith("move_") ||
-		name.startsWith("leave_") ||
+		name === "action" ||
 		name.startsWith("fn_")
 	);
 }
@@ -871,6 +870,7 @@ function svEnum(
 	decl: ClassDeclaration,
 	deco: Expression | undefined,
 	abs: string,
+	comment: string[],
 ): EnumType {
 	const cls = decl.id?.name ?? "";
 	const shape =
@@ -946,6 +946,7 @@ function svEnum(
 		pkg,
 		width: width ?? need,
 		members,
+		comment,
 		node: decl,
 		src,
 		abs,
@@ -970,6 +971,17 @@ function docComment(src: Src, node: Node): string[] {
 				.replace(/^ /, "")
 				.trimEnd(),
 		);
+	// `/** Text` with continuation lines ` *  more`: the continuation indent only
+	// aligns with the text after `/** `, so it is dropped (deeper indents stay relative).
+	if (lines[0]?.trim()) {
+		const rest = lines.slice(1).filter((l) => l.trim() !== "");
+		const cut = Math.min(...rest.map((l) => l.length - l.trimStart().length));
+		if (rest.length > 0 && cut > 0)
+			for (let i = 1; i < lines.length; i++)
+				lines[i] = (lines[i] as string).slice(
+					Math.min(cut, lines[i]?.length ?? 0),
+				);
+	}
 	while (lines.length > 0 && lines[0]?.trim() === "") lines.shift();
 	while (lines.length > 0 && lines.at(-1)?.trim() === "") lines.pop();
 	return lines;

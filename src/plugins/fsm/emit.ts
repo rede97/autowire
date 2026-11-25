@@ -63,11 +63,15 @@ const range = (w: number) => (w === 1 ? "" : `[${w - 1}:0]`);
 const ors = (sigs: string[]) => [...new Set(sigs)].join(" | ");
 const paren = (s: string) => (/[ ]/.test(s) ? `(${s})` : s);
 
-function nextState(f: Fsm): string[] {
+/** The control signals live in one packed struct, `action` (§4). */
+const act = (s: Signal) => `action.${s.name}`;
+
+/** Next state and the control signals; `order` lists the struct members. */
+function nextState(f: Fsm): { lines: string[]; order: string[] } {
 	const order: string[] = [];
 	const note = (s: Signal) => {
 		if (!order.includes(s.name)) order.push(s.name);
-		return asg(s.name, "1'b1");
+		return asg(act(s), "1'b1");
 	};
 	const tree = (t: Tree): St[] => {
 		if (t.k === "leaf")
@@ -111,17 +115,19 @@ function nextState(f: Fsm): string[] {
 	}
 	const out = ["  always_comb begin"];
 	printSts(
-		[asg("state_next", "state_val"), ...order.map((n) => asg(n, "1'b0"))],
+		[
+			asg("state_next", "state_val"),
+			...(order.length > 0 ? [asg("action", "'0")] : []),
+		],
 		"    ",
 		out,
 	);
 	out.push("    unique case (state_val)", ...items, "      default:");
 	out.push(`        state_next = ${f.entry.member};`, "    endcase", "  end");
-	return out;
+	return { lines: out, order };
 }
 
-const siteSig = (f: Fsm, a: Action) =>
-	ors((f.drive.get(a) ?? []).map((s) => s.name));
+const siteSig = (f: Fsm, a: Action) => ors((f.drive.get(a) ?? []).map(act));
 
 /** Priority-free and-or select of the written values; 0 when no site fires (§6.1, §6.5). */
 function andOr(f: Fsm, ty: Ty, sites: Action[]): string {
@@ -132,7 +138,7 @@ function andOr(f: Fsm, ty: Ty, sites: Action[]): string {
 		const v = a.value;
 		if (v.value === 0n) continue;
 		if (width === 1 && v.value === 1n) {
-			ones.push(...(f.drive.get(a) ?? []).map((s) => s.name));
+			ones.push(...(f.drive.get(a) ?? []).map(act));
 			continue;
 		}
 		const s = siteSig(f, a);
@@ -324,11 +330,20 @@ function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
 					? `${s.member} = ${bits}'b${(1n << BigInt(i)).toString(2).padStart(bits, "0")}`
 					: s.member,
 	);
+	const { lines: comb, order } = nextState(f);
 	const pkg = [
 		`package ${n}_pkg;`,
 		`  typedef enum logic [${bits - 1}:0] {`,
 		...members.map((m, i) => `    ${m}${i + 1 < members.length ? "," : ""}`),
 		`  } ${st};`,
+		...(order.length > 0
+			? [
+					"",
+					"  typedef struct packed {",
+					...order.map((m) => `    logic ${m};`),
+					`  } ${n}_action_t;`,
+				]
+			: []),
 		"endpackage",
 	];
 	const out = [
@@ -345,10 +360,6 @@ function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
 				? enumText(t.enum)
 				: `logic${rw > 0 ? ` ${range(t.width).padEnd(rw)}` : ""}`,
 	);
-	const comb = nextState(f);
-	const ctl = comb
-		.slice(2)
-		.flatMap((l) => /^ {4}(\S+)\s+= 1'b0;$/.exec(l)?.[1] ?? []);
 	const one: Ty = { width: 1 };
 	const data: [Ty, string][] = [
 		...f.chans.flatMap((c): [Ty, string][] => [
@@ -363,7 +374,7 @@ function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
 		.filter(([t]) => t.width === 1 && !t.enum)
 		.map(([, name]) => name);
 	const decls: [string, string][] = [[st, "state_val, state_next"]];
-	if (ctl.length > 0) decls.push(["logic", ctl.join(", ")]);
+	if (order.length > 0) decls.push([`${n}_action_t`, "action"]);
 	if (narrow.length > 0) decls.push(["logic", narrow.join(", ")]);
 	for (const [t, name] of data)
 		if (t.enum) decls.push([enumText(t.enum), name]);
@@ -394,7 +405,12 @@ function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
 	out.push(...dr);
 	if (f.options.exportState) {
 		if (dr.length > 0) out.push("");
-		out.push(...exportState(f, ctl));
+		out.push(
+			"  // exportState",
+			`  assign state_set_o  = ${order.length > 0 ? "|action" : "1'b0"};`,
+			"  assign state_next_o = state_next;",
+			"  assign state_val_o  = state_val;",
+		);
 	}
 	out.push("endmodule");
 	const wrap = f.options.wrap ? emitWrap(f, f.options.wrap, ports, bits) : [];
@@ -507,34 +523,6 @@ function emitWrap(
 	return out;
 }
 
-/** state_val_o / state_set_o / state_next_o: enum members re-selected from comparisons
- *  and moves, never state_val itself (§6.5). */
-function exportState(f: Fsm, ctl: string[]): string[] {
-	const byMove = new Map(f.states.map((s) => [`move_to_${s.name}`, s.member]));
-	const moves = ctl.filter((n) => byMove.has(n));
-	const w = Math.max(...f.states.map((s) => s.member.length + 1), 8) + 1;
-	return [
-		"  // exportState: enum members selected by comparisons, never state_val itself",
-		"  always_comb begin",
-		"    unique case (state_val)",
-		...f.states.map(
-			(s) => `      ${`${s.member}:`.padEnd(w)}state_val_o = ${s.member};`,
-		),
-		`      ${"default:".padEnd(w)}state_val_o = ${f.entry.member};`,
-		"    endcase",
-		"  end",
-		`  assign state_set_o = ${moves.length > 0 ? moves.join(" | ") : "1'b0"};`,
-		"  always_comb begin",
-		"    state_next_o = state_val_o;",
-		...moves.flatMap((m) => [
-			`    if (${m}) begin`,
-			`      state_next_o = ${byMove.get(m)};`,
-			"    end",
-		]),
-		"  end",
-	];
-}
-
 export function emitGroup(
 	g: { name: string; comment: string[]; fsms: Fsm[]; enums: EnumType[] },
 	file: string,
@@ -548,15 +536,20 @@ export function emitGroup(
 	const pkgs = [...new Set(g.enums.map((t) => t.pkg))];
 	for (const p of pkgs) {
 		out.push(`package ${p};`);
-		for (const t of g.enums.filter((x) => x.pkg === p)) {
-			const ms = [...t.members.values()];
-			out.push(`  typedef enum logic [${t.width - 1}:0] {`);
-			for (const [i, m] of ms.entries())
-				out.push(
-					`    ${m.sv} = ${t.width}'d${m.value}${i + 1 < ms.length ? "," : ""}`,
-				);
-			out.push(`  } ${t.name};`);
-		}
+		g.enums
+			.filter((x) => x.pkg === p)
+			.forEach((t, j) => {
+				// Enums are separated by a blank line; the class doc comment leads each.
+				if (j > 0) out.push("");
+				out.push(...t.comment.map((l) => (l === "" ? "  //" : `  // ${l}`)));
+				const ms = [...t.members.values()];
+				out.push(`  typedef enum logic [${t.width - 1}:0] {`);
+				for (const [i, m] of ms.entries())
+					out.push(
+						`    ${m.sv} = ${t.width}'d${m.value}${i + 1 < ms.length ? "," : ""}`,
+					);
+				out.push(`  } ${t.name};`);
+			});
 		out.push("endpackage", "");
 	}
 	// Packages first (every module's types are declared before any module),

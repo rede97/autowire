@@ -1,5 +1,5 @@
 // Expand each state's exit paths into a decision tree (§3.2, §3.6) and pick
-// the control signal that drives every action (move_to_T / leave_S / per edge).
+// the control signal that drives every action (enter_T / leave_S / A_to_B / keep_S).
 
 import type { Node } from "@babel/types";
 import { type Body, unread } from "./cfg.ts";
@@ -192,16 +192,15 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 		const t = exact(into);
 		const l = t ? undefined : exact(out);
 		if (t) {
-			drive.set(a, [
-				sig(`move_to_${t.name}`, "move", into.get(t) as Set<Edge>),
-			]);
+			drive.set(a, [sig(`enter_${t.name}`, "enter", into.get(t) as Set<Edge>)]);
 			continue;
 		}
 		if (l) {
 			drive.set(a, [sig(`leave_${l.name}`, "leave", out.get(l) as Set<Edge>)]);
 			continue;
 		}
-		// Greedy cover: whole move_to_T, then whole leave_S, then per-edge signals.
+		// Greedy cover: whole enter_T, then whole leave_S, then per-edge signals
+		// (A_to_B; keep_S for the self-loop S -> S; _<k> when parallel edges differ).
 		const rest = new Set(on);
 		const chosen: Signal[] = [];
 		const take = (s: Signal) => {
@@ -211,7 +210,7 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 		for (const s of states) {
 			const set = into.get(s) as Set<Edge>;
 			if (set.size > 0 && subset(set, rest))
-				take(sig(`move_to_${s.name}`, "move", set));
+				take(sig(`enter_${s.name}`, "enter", set));
 		}
 		for (const s of states) {
 			const set = out.get(s) as Set<Edge>;
@@ -221,18 +220,21 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 		for (const e of [...rest]) {
 			if (!rest.has(e)) continue;
 			const pair = edges.filter((x) => x.from === e.from && x.to === e.to);
-			const base = `move_${e.from.name}_to_${e.to.name}`;
+			const base =
+				e.from === e.to
+					? `keep_${e.from.name}`
+					: `${e.from.name}_to_${e.to.name}`;
 			if (pair.every((x) => rest.has(x)))
 				take(sig(base, "edge", new Set(pair)));
 			else take(sig(`${base}_${pair.indexOf(e)}`, "edge", new Set([e])));
 		}
 		drive.set(a, chosen);
 	}
-	// exportState: state_next_o selects the target member from move_to_<T> (§6.5).
+	// exportState: state_set_o = |action, so every move has a member (enter_<T>) (§6.5).
 	if (m.options.exportState)
 		for (const s of states) {
 			const set = into.get(s) as Set<Edge>;
-			if (set.size > 0) sig(`move_to_${s.name}`, "move", set);
+			if (set.size > 0) sig(`enter_${s.name}`, "enter", set);
 		}
 	checkValues(src, m, states);
 	const onEdge = new Map<Edge, Signal[]>(edges.map((e) => [e, []]));

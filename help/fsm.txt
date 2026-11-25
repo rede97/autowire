@@ -14,7 +14,8 @@ Source (.mjs, never executed; the compiler reads the AST)
   @SvEnum({ pkg: "my_pkg", name?, prefix?, width? }) export class Op { static IDLE = 0; static GO = 1; }
                        an SV typedef enum in package my_pkg (emitted into this file's .sv);
                        Input(Op) / Output(Op) / Dff(Op) / PushPort({ op: Op, ... }) are typed,
-                       Op.GO is my_pkg::OP_GO; enum values only compare (===, !==) and select (?:)
+                       Op.GO is my_pkg::OP_GO; enum values only compare (===, !==) and select (?:);
+                       the class /** */ comment is copied above the typedef, enums 1 blank line apart
   One @FsmGroup class per file → plugins_dir/fsm/<Class>.sv; any @FsmPort classes
   @FsmGroup({ file: "dphy_rdi_sm" })   writes plugins_dir/fsm/dphy_rdi_sm.sv instead;
                        stems are unique per workspace, case-insensitive; aw_dff is reserved
@@ -23,14 +24,18 @@ Source (.mjs, never executed; the compiler reads the AST)
                        enum members LPDDRPHY_<STATE>; omit stateEncoding to let synthesis pick
   @Fsm({ stateValues: { IDLE: 0, RUN: 2 } })   explicit member values, every state, fits the
                        binary width; excludes stateEncoding
-  @Fsm({ exportState: true })   outputs state_set_o / state_next_o / state_val_o (the state
-                       type), e.g. for a regfile RO field; selected from comparisons, never state_val
+  @Fsm({ exportState: true })   outputs state_set_o = |action, state_next_o = state_next,
+                       state_val_o = state_val (e.g. for a regfile RO field); leave unused ones open
   @Fsm({ stateType: "my_state_e" })   state enum type in <module>_pkg, one member per line;
                        default <module>_state_e
   @Fsm({ wrap: true | "name" })   also emits module <name>_wrap (or "name"): same ports, enum
                        ports (the state type too) as logic vectors, enum inputs cast in; for
                        the connector, which reads logic ports only
   File order: @SvEnum packages, every <module>_pkg, the modules, then the _wrap modules
+  Control signals: members of the packed struct action (<module>_action_t in <module>_pkg):
+                       enter_<T> every edge into T, leave_<S> every edge out of S,
+                       <A>_to_<B> one edge, keep_<S> the self-loop S -> S (not S_to_S);
+                       the comb block defaults action = '0
   undecorated method   sub-FSM, inlined at each call: no module, no start / done
   Ports: one destructured parameter, defaults declare them:
     x = Input(N)   y = Output(N) (y.pulse(v) on the move, 0 otherwise)

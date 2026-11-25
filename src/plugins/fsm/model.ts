@@ -37,6 +37,8 @@ export interface EnumType {
 	width: number;
 	/** JS member → SV enum member and value, declaration order. */
 	members: Map<string, { sv: string; value: bigint }>;
+	/** The class doc comment, copied above the SV typedef (§2.8). */
+	comment: string[];
 	node: Node;
 	src: Src;
 	/** Absolute path of the declaring file, whose output holds the package. */
@@ -257,7 +259,7 @@ export type Action =
 	  };
 
 export interface State {
-	/** UPPER_SNAKE name from the label (or <prefix>S<index>); used in move_to_* / leave_*. */
+	/** UPPER_SNAKE name from the label (or <prefix>S<index>); used in enter_* / leave_*. */
 	name: string;
 	/** enum member: name with the @Fsm statePrefix. */
 	member: string;
@@ -339,7 +341,7 @@ export type Tree =
 /** A move-like control signal: high on exactly the cycles one of `edges` is taken. */
 export interface Signal {
 	name: string;
-	kind: "move" | "leave" | "edge";
+	kind: "enter" | "leave" | "edge";
 	edges: Set<Edge>;
 }
 

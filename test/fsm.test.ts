@@ -195,3 +195,30 @@ test("@FsmGroup({ file }) names the output; two groups on one stem fail", () => 
 		rmSync(ws, { recursive: true, force: true });
 	}
 }, 60_000);
+
+test("an action only on the self-loop S -> S is driven by action.keep_S", async () => {
+	const sv = await compileBody(`@Fsm
+async keep_ctl({
+  go = Input(1),
+  again = Input(1),
+  a = Output(1),
+  b = Output(1),
+}) {
+  while (true) {
+    IDLE: await go.wait(1);
+    b.pulse();
+    while (true) {
+      Run: await go.wait(0);
+      if (again) {
+        a.pulse();
+        continue;
+      }
+      break;
+    }
+  }
+}`);
+	expect(sv).toContain("    logic keep_RUN;\n");
+	expect(sv).toMatch(/assign a = action\.keep_RUN;/);
+	expect(sv).toMatch(/assign b = action\.leave_IDLE;/);
+	expect(sv).not.toContain("RUN_to_RUN");
+});
