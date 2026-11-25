@@ -70,6 +70,33 @@ DSL 只有三层概念，其余写法都能展开成它们（**决定**）：
 | `Caller(this.sub, {...})` | 一个生成的服务进程（在里面平铺展开 `sub`）、一个 `Instance`、两个 channel，调用点是两个 push / pop 状态（§5.4） |
 | `Promise.all` | 同一进程里的几个握手在一个 join 状态里并行进行（§6.3） |
 
+### 1.2 一个进程的逻辑架构
+
+每个 `@Fsm` 模块（一个进程）生成后都是同一个形状（**决定**）：一个 Mealy 机，状态由主状态寄存器和各 `Dff` 组成。
+
+```text
+(state_next, action) = f(state_val, input, dff)                  always_comb : comb_state
+state_val'           = state_next                                always_ff   : ff_state
+dff'                 = set(action) ? next(action, input, dff) : dff
+                                                                  always_ff   : ff_<reg>
+output               = g(state_val, action, input, dff)          assign / always_comb : comb_<x>
+```
+
+- **一个状态寄存器**：拍平展开的子状态机、接口方法的状态都并进调用方的同一个 enum（§5.1），只有一个 `state_val`，位宽 ⌈log2(总状态数)⌉（§6.5）。子状态机不另占一组位，不是手写状态机常见的「主状态位 + 子状态位」。代价是每个调用点复制一份被调用方的状态，状态数线性增长、位宽只按对数增长；被调用方的私有 `Dff` 每个调用点各一份，互斥调用点之间的寄存器复用是 P3（§10）。
+- **`action` 是边**：`action`（packed struct `<模块名>_action_t`）只由 `comb_state` 里的分支写出，每个成员在对应的 move 那一拍为 1（`enter_T` / `leave_S` / `A_to_B` / `keep_S`，§3.6）。段里的动作都挂在边上：`Dff` 写入用 `set = action 的或`，脉冲输出与 `action` 相与。
+- **`state_val` 只做常量比较**：只出现在 `case` 和 `state_val == 常量` 里，不做位选、不做算术，综合器可以重编码（§6.5）。
+- **输出按依赖分类**：
+
+  | 输出 | 依赖 | 性质 |
+  |---|---|---|
+  | `x.pulse()` / `x.pulse(v)` | `action`，`v` 可读 input / dff | Mealy：input 到输出可有组合路径 |
+  | push `vld`、pop `rdy` | 只看 `state_val` | Moore：不组合依赖对端，两个进程直连不成环（§6.2） |
+  | push 的数据字段 | `case (state_val)` 选值（`comb_<端口>_<字段>`），值可读 input / dff | 按状态选择 |
+  | `Dff(N)` 端口 | 寄存器本身 | 寄存器输出 |
+  | `exportState` | `state_set_o = \|action`，`state_next_o` / `state_val_o` 直接接 | 观测（§6.5） |
+
+- **进程之间**只经端口和 channel 通信（§5.3），每个进程内部仍是上面的形状。
+
 ## 2. 信号模型
 
 信号不是 `int` / `string` / 数组这样的值类型，而是带方向、每拍都有值的线。作者不拿值做 JS 计算，只用它组合出新信号、等待它到达某个值，或拿它做分支条件。

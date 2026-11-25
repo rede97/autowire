@@ -2,6 +2,16 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.7] - 2026-11-26
+
+- **破坏性：fsm 不再生成 `aw_dff`**：状态寄存器和每个 `Dff` 都直接展开成模块内的 `always_ff`（块名 `ff_state` / `ff_<寄存器>`），`plugin fsm run` 不再写 `aw_dff.sv`；filelist 里的 `aw_dff.sv` 条目要删掉。所有 `always` 块都带块名（`comb_state`、`ff_state`、`ff_<寄存器>`、`comb_<端口>_<字段>`），`comb_` / `ff_` 成为保留前缀。删除未实现的 `@Fsm({ stateReg })` 选项。
+- **破坏性：fsm 控制信号进 `action` struct 并改名**：move / leave 信号是 `<模块名>_pkg` 里 packed struct `<模块名>_action_t` 的成员，次态块缺省 `action = '0;`。命名为 `enter_T`（进入 T 的所有边）、`leave_S`（离开 S 的所有边）、`A_to_B`（单边）、`keep_S`（自环）；`action` 是保留名。`exportState` 直接导出：`state_set_o = |action`、`state_next_o = state_next`、`state_val_o = state_val`，面向 Synopsys / Cadence 的状态机识别。
+- **破坏性：fsm 状态类型改名**：状态 enum 缺省是 `<模块名>_state_e`（`@Fsm({ stateType })` 可指定），成员每行一个；生成文件先列全部 package，再列模块，最后是 `_wrap` 封装模块。
+- **fsm 新选项**：`@FsmGroup({ file })` 指定输出文件名（工作区内不区分大小写唯一）；`@Fsm({ wrap })` 另生成端口全为 `logic` 的 `<模块名>_wrap`，给连线器用；`[plugins.fsm] dir` 把输出写进 RTL 树。
+- **fsm 新写法**：`try { Escape(c); ... } catch { ... }` 与 `throw Raise()`；`@Fsm({ exportState, stateValues })`；`@SvEnum` 枚举类型，class 上的 `/** */` 注释搬到 `typedef` 上方，相邻 enum 之间空一行。按状态取不同值的 push 数据字段生成 `case (state_val)`。只写不读的 `external` Dff 不再生成 `_val` 输入。
+- **文档**：[`docs/state/async-fsm.md`](docs/state/async-fsm.md) 新增 §1.2「一个进程的逻辑架构」：`(state_next, action) = f(state, input, dff)`，`dff' = set(action) ? next : dff`，`output = g(state, action, input, dff)`；拍平的子状态共用一个按对数位宽编码的状态寄存器。
+- **修复：dtsim 重跑按本次日志判分**：编译和仿真每步开始前清空 `compile.log` / `sim.log`；以前同一目录重跑时日志追加，旧的 PASS 会让失败的重跑判成 PASS。
+
 ## [2.9.6] - 2026-11-25
 
 - **破坏性：LSF 提交脚本改名 `bsub_*`**：`bjob_compile` / `bjob_sim` / `bjob_verdi` / `bjob_verdi_cov` / `bjob_cov_merge` / `bjob_cov_merge_all` 改为 `bsub_*`（与命令同名，Slurm 仍是 `srun_*`）；`LsfLauncher` 的 `scriptPrefix` 改为 `"bsub"`。
