@@ -148,7 +148,12 @@ export function parseSynthetic(src: Src, from: Unit): Unit {
 function fillUnit(unit: Unit, file: File) {
 	const src: Src = unit.src;
 	let groupDecl:
-		| { decl: ClassDeclaration; outer: Node; exported: boolean }
+		| {
+				decl: ClassDeclaration;
+				outer: Node;
+				exported: boolean;
+				deco: Expression | undefined;
+		  }
 		| undefined;
 	for (const stmt of file.program.body) {
 		if (stmt.type === "ImportDeclaration") continue;
@@ -178,11 +183,11 @@ function fillUnit(unit: Unit, file: File) {
 		if (
 			decos.length !== 1 ||
 			(kind !== "FsmGroup" && kind !== "FsmPort" && kind !== "SvEnum") ||
-			(kind !== "SvEnum" && deco?.type === "CallExpression")
+			(kind === "FsmPort" && deco?.type === "CallExpression")
 		)
 			src.fail(
 				decl,
-				"a class needs exactly one decorator: @FsmGroup, @FsmPort or @SvEnum({...})",
+				"a class needs exactly one decorator: @FsmGroup[({ file })], @FsmPort or @SvEnum({...})",
 			);
 		if (decl.superClass)
 			src.fail(decl.superClass, "an fsm class cannot extend");
@@ -211,10 +216,16 @@ function fillUnit(unit: Unit, file: File) {
 			continue;
 		}
 		if (groupDecl) src.fail(stmt, "one @FsmGroup class per file");
-		groupDecl = { decl, outer: stmt, exported };
+		groupDecl = { decl, outer: stmt, exported, deco };
 	}
 	if (groupDecl) {
-		const g = group(unit, groupDecl.decl, groupDecl.outer, groupDecl.exported);
+		const g = group(
+			unit,
+			groupDecl.decl,
+			groupDecl.outer,
+			groupDecl.exported,
+			groupDecl.deco,
+		);
 		unit.group = g;
 		unit.groups.set(g.name, g);
 		if (groupDecl.exported) unit.exports.set(g.name, g);
@@ -263,10 +274,13 @@ function group(
 	decl: ClassDeclaration,
 	outer: Node,
 	exported: boolean,
+	deco: Expression | undefined,
 ): Group {
 	const src: Src = unit.src;
+	const name = decl.id?.name ?? "";
 	const g: Group = {
-		name: decl.id?.name ?? "",
+		name,
+		file: deco ? groupFile(src, deco, name) : name,
 		comment: docComment(src, outer),
 		exported,
 		methods: [],
@@ -295,7 +309,7 @@ function group(
 			node: m,
 			name,
 			comment: docComment(src, m),
-			options: d0 ? fsmOptions(src, d0.expression, unit.builtins) : {},
+			options: d0 ? fsmOptions(src, d0.expression, unit.builtins, name) : {},
 			sub: !d0,
 			params,
 			ports,
@@ -307,10 +321,42 @@ function group(
 	return g;
 }
 
+/** `@FsmGroup({ file: "stem" })`: the output file stem, default the class name. */
+function groupFile(src: Src, e: Expression, name: string): string {
+	if (e.type !== "CallExpression") return name;
+	const [a0, a1] = e.arguments;
+	const fail = (n: Node) =>
+		src.fail(n, '@FsmGroup takes no argument or { file: "stem" }');
+	if (a1) return fail(a1);
+	if (!a0) return name;
+	if (a0.type !== "ObjectExpression") return fail(a0);
+	let file = name;
+	for (const p of a0.properties) {
+		if (
+			p.type !== "ObjectProperty" ||
+			p.computed ||
+			p.key.type !== "Identifier" ||
+			p.key.name !== "file"
+		)
+			return fail(p);
+		const v = p.value;
+		if (v.type !== "StringLiteral" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(v.value))
+			return src.fail(
+				v,
+				'file is a file stem string of letters, digits and _, e.g. "dphy_rdi_sm"',
+			);
+		if (v.value === "aw_dff")
+			return src.fail(v, "aw_dff is the shared Dff file; pick another stem");
+		file = v.value;
+	}
+	return file;
+}
+
 function fsmOptions(
 	src: Src,
 	e: Expression,
 	builtins: Map<string, string>,
+	name: string,
 ): FsmOptions {
 	if (e.type === "Identifier" && builtins.get(e.name) === "Fsm") return {};
 	if (
@@ -377,6 +423,25 @@ function fsmOptions(
 				values.set(q.key.name, BigInt(q.value.value));
 			}
 			out.stateValues = { values, node: v };
+		} else if (key === "wrap") {
+			if (v.type === "BooleanLiteral") {
+				if (v.value) out.wrap = `${name}_wrap`;
+			} else if (v.type === "StringLiteral") {
+				checkSvId(src, v, v.value, "wrap module name");
+				out.wrap = v.value;
+			} else
+				return src.fail(
+					v,
+					'wrap is true (module <name>_wrap) or a module name string, e.g. "dphy_rdi_sm_top"',
+				);
+		} else if (key === "stateType") {
+			if (v.type !== "StringLiteral")
+				return src.fail(
+					v,
+					'stateType is an SV type name string, e.g. "rdi_sm_state_e"',
+				);
+			checkSvId(src, v, v.value, "state type name");
+			out.stateType = v.value;
 		} else if (key === "stateReg") {
 			notYet(src, p, "@Fsm option stateReg (§6.5)");
 		} else {

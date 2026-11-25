@@ -475,6 +475,30 @@ const files: [string, string, Record<string, string>, string][] = [
 		},
 		"import cycle",
 	],
+	[
+		"@FsmGroup file is not a stem",
+		`@FsmGroup({ file: "a/b" })\nclass G {\n${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n}\n`,
+		{},
+		"file is a file stem string",
+	],
+	[
+		"@FsmGroup takes only file",
+		`@FsmGroup({ name: "g" })\nclass G {\n${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }")}\n}\n`,
+		{},
+		'@FsmGroup takes no argument or { file: "stem" }',
+	],
+	[
+		"wrap is not a name",
+		`@FsmGroup\nclass G {\n${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }").replace("@Fsm", "@Fsm({ wrap: 1 })")}\n}\n`,
+		{},
+		"wrap is true (module <name>_wrap) or a module name string",
+	],
+	[
+		"wrap takes the module's own name",
+		`@FsmGroup\nclass G {\n${fsm("while (true) { S: await (go & b).wait(1); x.pulse(); d.set(1); }").replace("@Fsm", '@Fsm({ wrap: "f" })')}\n}\n`,
+		{},
+		"module f is generated twice in this group",
+	],
 ];
 
 describe("source-level errors", () => {

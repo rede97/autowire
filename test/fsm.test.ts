@@ -58,7 +58,7 @@ describe("doc examples: generated SV equals the doc", () => {
 			const sv = dsl.whole
 				? await compileText(dsl.text, more())
 				: await compileBody(dsl.text);
-			expect(sv).toContain(docModule(name));
+			for (const u of docModule(name)) expect(sv).toContain(u);
 		});
 
 	test("demo/state CounterCtl is the §7.1 full file", async () => {
@@ -85,7 +85,8 @@ describe("doc examples: generated SV equals the doc", () => {
 	for (const [file, names] of demos)
 		test(`demo/state/fsm/${file}.mjs carries the doc modules`, async () => {
 			const sv = (await compileDemo(`fsm/${file}.mjs`)).sv;
-			for (const n of names) expect(sv).toContain(docModule(n));
+			for (const n of names)
+				for (const u of docModule(n)) expect(sv).toContain(u);
 		});
 });
 
@@ -146,6 +147,50 @@ test("[plugins.fsm] dir moves the fsm output into the RTL tree", () => {
 		expect(r.exitCode, r.stderr.toString()).toBe(0);
 		expect(existsSync(join(ws, "rtl/fsm/CmdCtl.sv"))).toBe(true);
 		expect(existsSync(join(ws, "gen/plugins/fsm"))).toBe(false);
+	} finally {
+		rmSync(ws, { recursive: true, force: true });
+	}
+}, 60_000);
+
+test("@FsmGroup({ file }) names the output; two groups on one stem fail", () => {
+	const ws = mkdtempSync(join(tmpdir(), "aw-fsm-file-"));
+	const run = () =>
+		Bun.spawnSync({
+			cmd: [
+				"bun",
+				join(root, "index.ts"),
+				"plugin",
+				"fsm",
+				"run",
+				"--workspace",
+				ws,
+			],
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+	try {
+		cpSync(join(demo, "autowire.toml"), join(ws, "autowire.toml"));
+		cpSync(join(demo, "fsm"), join(ws, "fsm"), { recursive: true });
+		const cmd = join(ws, "fsm/cmd_ctl.mjs");
+		const text = readFileSync(cmd, "utf8");
+		const named = (stem: string) =>
+			writeFileSync(
+				cmd,
+				text.replace(
+					"@FsmGroup\nexport class CmdCtl",
+					`@FsmGroup({ file: "${stem}" })\nexport class CmdCtl`,
+				),
+			);
+		named("cmd_ctl");
+		const ok = run();
+		expect(ok.exitCode, ok.stderr.toString()).toBe(0);
+		const out = join(ws, "gen/plugins/fsm");
+		expect(existsSync(join(out, "cmd_ctl.sv"))).toBe(true);
+		expect(existsSync(join(out, "CmdCtl.sv"))).toBe(false);
+		named("counterctl");
+		const bad = run();
+		expect(bad.exitCode).not.toBe(0);
+		expect(bad.stderr.toString()).toContain("both write");
 	} finally {
 		rmSync(ws, { recursive: true, force: true });
 	}

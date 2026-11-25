@@ -27,8 +27,8 @@ endmodule
 `;
 
 export interface CompiledGroup {
-	/** @FsmGroup class name: the output file stem. */
-	name: string;
+	/** Output file stem (`@FsmGroup({ file })`, default the class name). */
+	file: string;
 	sv: string;
 	/** Absolute paths of the groups this one instantiates (other files). */
 	instantiates: string[];
@@ -154,11 +154,13 @@ export async function compileFsm(
 	const shared: Shared = { used: new Set(), results: new Map() };
 	const fsms: Fsm[] = [];
 	const instantiates = new Set<string>();
-	const modules = new Map<string, string>();
+	const modules = new Set<string>();
 	const add = (f: Fsm, node: Node) => {
-		if (modules.has(f.name))
-			src.fail(node, `module ${f.name} is generated twice in this group`);
-		modules.set(f.name, f.name);
+		for (const name of [f.name, f.options.wrap ?? []].flat()) {
+			if (modules.has(name))
+				src.fail(node, `module ${name} is generated twice in this group`);
+			modules.add(name);
+		}
 		fsms.push(f);
 	};
 	for (const m of g.methods) {
@@ -179,7 +181,7 @@ export async function compileFsm(
 			if (m.sub && !shared.used.has(m.node))
 				src.fail(m.node.key, `sub-FSM ${m.name} is never called (§5)`);
 	return {
-		name: g.name,
+		file: g.file,
 		sv: emitGroup(
 			{ name: g.name, comment: g.comment, fsms, enums: unit.ownEnums },
 			src.file,
@@ -238,13 +240,15 @@ export async function generateAll(
 				);
 			pkgs.set(p, file);
 		}
-		const prev = groups.get(g.name);
+		// Keyed case-insensitively: Windows and macOS file systems fold case.
+		const key = g.file.toLowerCase();
+		const prev = groups.get(key);
 		if (prev)
 			throw new Error(
-				`fsm: @FsmGroup ${g.name} is defined in both ${prev} and ${file}`,
+				`fsm: ${prev} and ${file} both write ${g.file}.sv; set @FsmGroup({ file }) apart`,
 			);
-		groups.set(g.name, file);
-		outputs.push({ path: join(dir, `${g.name}.sv`), text: g.sv });
+		groups.set(key, file);
+		outputs.push({ path: join(dir, `${g.file}.sv`), text: g.sv });
 	}
 	await mkdir(dir, { recursive: true });
 	const paths: string[] = [];

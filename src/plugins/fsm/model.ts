@@ -353,6 +353,10 @@ export interface FsmOptions {
 	stateValues?: { values: Map<string, bigint>; node: Node };
 	/** Output ports state_set_o / state_next_o / state_val_o. */
 	exportState?: boolean;
+	/** Module name of a logic-typed wrapper (enum ports as logic vectors). */
+	wrap?: string;
+	/** State enum type name in <module>_pkg; default <module>_state_e. */
+	stateType?: string;
 }
 
 /** How a state leaves: its escapes first (higher priority), then its own condition. */
@@ -431,6 +435,8 @@ export interface FsmMethod {
 
 export interface Group {
 	name: string;
+	/** Output file stem: `@FsmGroup({ file })`, default the class name. */
+	file: string;
 	comment: string[];
 	exported: boolean;
 	methods: FsmMethod[];

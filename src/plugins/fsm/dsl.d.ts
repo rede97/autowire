@@ -60,11 +60,23 @@ export interface FsmOptions {
 	statePrefix?: string;
 	stateEncoding?: "binary" | "onehot";
 	exportState?: boolean;
+	/** Also emit a wrapper module (true: <name>_wrap) whose enum ports (the state type too) are logic. */
+	wrap?: boolean | string;
+	/** State enum type name in <module>_pkg; default <module>_state_e. */
+	stateType?: string;
 	stateValues?: Record<string, number>;
 	stateReg?: "always_ff" | "dff";
 }
 
+export interface FsmGroupOptions {
+	/** Output file stem in plugins_dir/fsm/; default the class name. */
+	file?: string;
+}
+
 export declare function FsmGroup<T>(cls: T, ctx?: unknown): T;
+export declare function FsmGroup(
+	options: FsmGroupOptions,
+): <T>(cls: T, ctx?: unknown) => T;
 export declare function FsmPort<T>(cls: T, ctx?: unknown): T;
 export declare function Fsm<T>(method: T, ctx?: unknown): T;
 export declare function Fsm(

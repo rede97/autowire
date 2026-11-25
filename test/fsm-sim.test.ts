@@ -5,7 +5,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AW_DFF_SV } from "../src/plugins/fsm/generate.ts";
-import { compileBody, compileDemo, demo } from "./fixtures/fsm/compile.ts";
+import {
+	compileBody,
+	compileDemo,
+	compileText,
+	demo,
+} from "./fixtures/fsm/compile.ts";
 import {
 	verilatorLint,
 	verilatorSim,
@@ -57,6 +62,27 @@ async edges({
   }
 }`;
 
+/** @Fsm({ wrap }): enum input / output and state_t outputs become logic on the wrapper. */
+const WRAP = `@SvEnum({ pkg: "op_pkg", width: 2 })
+class Op { static IDLE = 0; static GO = 1; static STOP = 2; }
+@FsmGroup
+class G {
+  @Fsm({ wrap: true, exportState: true })
+  async w({
+    op = Input(Op),
+    o = Output(Op),
+    n = Output(3),
+  }) {
+    while (true) {
+      S: await (op === Op.GO).wait(1);
+      T: await (op === Op.STOP).wait(1);
+      o.pulse(Op.STOP);
+      n.pulse(5);
+    }
+  }
+}
+`;
+
 /** throw Raise() (§3.7): no doc example; the raising segment and the catch entry share a move. */
 const RAISE = `@Fsm
 async raise_ctl({
@@ -99,6 +125,7 @@ describe("verilator", () => {
 			const units: [string, string][] = [
 				["edges", await compileBody(EDGES)],
 				["raise_ctl", await compileBody(RAISE)],
+				["w_wrap", await compileText(WRAP)],
 			];
 			for (const f of DEMOS) {
 				const sv = (await compileDemo(`fsm/${f}.mjs`)).sv;

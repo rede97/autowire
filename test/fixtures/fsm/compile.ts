@@ -53,10 +53,16 @@ export function docDsl(name: string): { text: string; whole: boolean } {
 	return { text: b, whole: b.includes("class ") };
 }
 
-export function docModule(name: string): string {
+/** The doc's SV for `name` as its units (each package ... endpackage, each
+ *  commented module ... endmodule). A generated file puts every package first,
+ *  so a doc block that shows one module's package next to the module is checked
+ *  unit by unit. */
+export function docModule(name: string): string[] {
 	const sv = docSv.find((b) => b.startsWith(`package ${name}_pkg;`));
 	if (!sv) throw new Error(`doc has no SV for ${name}`);
-	return sv;
+	return sv
+		.split(/\n\n(?=(?:\/\/.*\n)*(?:package|module) )/)
+		.map((u) => (u.endsWith("\n") ? u : `${u}\n`));
 }
 
 export async function compileDemo(file: string) {

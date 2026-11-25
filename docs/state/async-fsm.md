@@ -158,7 +158,7 @@ export class MsgCtl {
 }
 ```
 
-- `@FsmGroup` 标记一组状态机，一个 class 生成一个 `.sv` 文件。class 上的 `/** … */` 是文件级业务注释（§7.1）。
+- `@FsmGroup` 标记一组状态机，一个 class 生成一个 `.sv` 文件，文件名缺省是 class 名（`CounterCtl.sv`）。要沿用 RTL 树已有的命名，在装饰器里写文件名：`@FsmGroup({ file: "dphy_rdi_sm" })` 生成 `dphy_rdi_sm.sv`。文件名和 module 名（方法名）、package 名（`@SvEnum`）一样写在源码里，`autowire.toml` 的 `[fsm.<id>]` 只登记源文件，与 Wishbone 的 `Regfile("name", ...)` 决定输出名一致。`file` 只能由字母、数字和 `_` 组成，`aw_dff` 保留给参考 DFF；同一工作区里两个组的 `file` 相同（不区分大小写，Windows / macOS 文件系统不分大小写）时报错。class 上的 `/** … */` 是文件级业务注释（§7.1）。
 - `@Fsm` 标记对外的顶层状态机，方法名就是生成的 `module` 名。选项写在装饰器参数里：`@Fsm({ exportState: true })`（§6.5）。
 - 不带装饰器的 async 方法是组内子状态机，调用时平铺展开（§5）；`@Fsm` 方法只能用 `Instance(...)` 例化（§5.3）。
 - 参数必须是一个对象解构模式，每个属性都写默认值，默认值是端口声明。属性名就是 SV 端口名。默认值不是运行时语义：源码从不执行（§8.2），编译器只从 AST 读出方向和位宽。
@@ -251,7 +251,10 @@ endpackage
 
 ```systemverilog
 package cmp_fsm_pkg;
-  typedef enum logic [0:0] {IDLE, HOLD} state_t;
+  typedef enum logic [0:0] {
+    IDLE,
+    HOLD
+  } cmp_fsm_state_e;
 endpackage
 
 module cmp_fsm
@@ -268,10 +271,10 @@ module cmp_fsm
   output logic [7:0] mag,
   output logic       alarm
 );
-  state_t     state_val, state_next;
-  logic       move_to_HOLD;
-  logic       fn_lt_s8_0;
-  logic [7:0] fn_abs8_0;
+  cmp_fsm_state_e state_val, state_next;
+  logic           move_to_HOLD;
+  logic           fn_lt_s8_0;
+  logic [7:0]     fn_abs8_0;
 
   assign fn_lt_s8_0 = num_pkg::lt_s8(err, limit);
   assign fn_abs8_0  = num_pkg::abs8(err);
@@ -415,7 +418,11 @@ export class CfgLoad {
 
 ```systemverilog
 package cfg_load_pkg;
-  typedef enum logic [1:0] {IDLE, LO_WAIT, HI_WAIT} state_t;
+  typedef enum logic [1:0] {
+    IDLE,
+    LO_WAIT,
+    HI_WAIT
+  } cfg_load_state_e;
 endpackage
 
 // Loads two config registers after go.
@@ -437,8 +444,8 @@ module cfg_load
   output logic [15:0] lo,
   output logic [15:0] hi
 );
-  state_t state_val, state_next;
-  logic   move_to_LO_WAIT, move_to_HI_WAIT, move_to_IDLE;
+  cfg_load_state_e state_val, state_next;
+  logic            move_to_LO_WAIT, move_to_HI_WAIT, move_to_IDLE;
 
   always_comb begin
     state_next      = state_val;
@@ -585,7 +592,11 @@ package cmd_pkg;
 endpackage
 
 package cmd_post_pkg;
-  typedef enum logic [1:0] {IDLE, SEND, FLUSH} state_t;
+  typedef enum logic [1:0] {
+    IDLE,
+    SEND,
+    FLUSH
+  } cmd_post_state_e;
 endpackage
 
 module cmd_post
@@ -606,8 +617,8 @@ module cmd_post
   output cmd_pkg::cmd_e last,
   output cmd_pkg::cmd_e sent
 );
-  state_t state_val, state_next;
-  logic   move_to_SEND, leave_SEND, leave_FLUSH;
+  cmd_post_state_e state_val, state_next;
+  logic            move_to_SEND, leave_SEND, leave_FLUSH;
 
   always_comb begin
     state_next   = state_val;
@@ -727,33 +738,37 @@ stateDiagram-v2
 
 ```systemverilog
 package fsm_drive_signal_pkg;
-  typedef enum logic [1:0] {IDLE, SEND_MSG, MSG_SENT} state_t;
+  typedef enum logic [1:0] {
+    IDLE,
+    SEND_MSG,
+    MSG_SENT
+  } fsm_drive_signal_state_e;
 endpackage
 
 module fsm_drive_signal
   import fsm_drive_signal_pkg::*;
 (
   // clock and reset
-  input  logic       clk,
-  input  logic       rst_n,
+  input  logic                    clk,
+  input  logic                    rst_n,
   // conditions
-  input  logic       cond_init,
-  input  logic       cond_a,
+  input  logic                    cond_init,
+  input  logic                    cond_a,
   // FIFO send ports
-  output logic       fifo_a_vld,
-  input  logic       fifo_a_rdy,
-  output logic [7:0] fifo_a_data,
-  output logic       fifo_b_vld,
-  input  logic       fifo_b_rdy,
-  output logic [7:0] fifo_b_data,
+  output logic                    fifo_a_vld,
+  input  logic                    fifo_a_rdy,
+  output logic [7:0]              fifo_a_data,
+  output logic                    fifo_b_vld,
+  input  logic                    fifo_b_rdy,
+  output logic [7:0]              fifo_b_data,
   // exportState
-  output logic       state_set_o,
-  output state_t     state_next_o,
-  output state_t     state_val_o
+  output logic                    state_set_o,
+  output fsm_drive_signal_state_e state_next_o,
+  output fsm_drive_signal_state_e state_val_o
 );
-  state_t state_val, state_next;
-  logic   move_to_SEND_MSG, move_to_MSG_SENT, move_to_IDLE, join_SEND_MSG;
-  logic   a_done, a_fin_val, b_done, b_fin_val;
+  fsm_drive_signal_state_e state_val, state_next;
+  logic                    move_to_SEND_MSG, move_to_MSG_SENT, move_to_IDLE, join_SEND_MSG;
+  logic                    a_done, a_fin_val, b_done, b_fin_val;
 
   assign join_SEND_MSG = (a_done | a_fin_val) & (b_done | b_fin_val);
 
@@ -826,7 +841,7 @@ endmodule
 
 | DSL | SV |
 |---|---|
-| `IDLE:` / `SendMsg:` / `MsgSent:` 标签 | `state_t` 成员 `IDLE` / `SEND_MSG` / `MSG_SENT`：标签转成大写下划线（§3.5） |
+| `IDLE:` / `SendMsg:` / `MsgSent:` 标签 | 状态类型 `fsm_drive_signal_state_e` 的成员 `IDLE` / `SEND_MSG` / `MSG_SENT`：标签转成大写下划线（§3.5） |
 | `await cond_init.wait(1)` 在 IDLE | 次态块的 `IDLE` 分支：`if (cond_init)` 里同时写 `state_next = SEND_MSG` 和 `move_to_SEND_MSG = 1'b1` |
 | 段内 `fifo_a.push(0x00)` | 停在 `SEND_MSG` 期间 `fifo_a_vld = 1`，握手过的分支由 `a_fin_val` 停发（§6.2、§6.3） |
 | `await Promise.all([a_done, b_done])` | `join_SEND_MSG` 与 `a_fin_val` / `b_fin_val`（§6.3） |
@@ -863,7 +878,7 @@ ES 标签还能挂在循环和块上。编译器按**标签挂在什么语句上
 
 | 标签挂在 | 含义 | 生成 FSM 状态 | `break` / `continue` 能否指向它 |
 |---|---|---|---|
-| 以产生状态的 `await` 开头的语句 | 状态名 | 是，`state_t` 的成员 | 不能，ES 语法禁止（见下） |
+| 以产生状态的 `await` 开头的语句 | 状态名 | 是，状态类型（`<模块名>_state_e`）的成员 | 不能，ES 语法禁止（见下） |
 | `while` / `do…while` | 循环名 | 否 | `break` 跳到循环之后，`continue` 回到循环条件（§3.6.1） |
 | `{ … }` 块 | 块名 | 否 | `break` 跳到块之后（§3.6.1） |
 | 其他语句 | 编译期报错 | — | — |
@@ -948,7 +963,12 @@ stateDiagram-v2
 
 ```systemverilog
 package burst_ctl_pkg;
-  typedef enum logic [1:0] {IDLE, FETCH, BEAT, ACK} state_t;
+  typedef enum logic [1:0] {
+    IDLE,
+    FETCH,
+    BEAT,
+    ACK
+  } burst_ctl_state_e;
 endpackage
 
 module burst_ctl
@@ -969,8 +989,8 @@ module burst_ctl
   output logic beat_ack,
   input  logic ack
 );
-  state_t state_val, state_next;
-  logic   move_to_FETCH, leave_BEAT;
+  burst_ctl_state_e state_val, state_next;
+  logic             move_to_FETCH, leave_BEAT;
 
   always_comb begin
     state_next    = state_val;
@@ -1080,7 +1100,12 @@ async scan_ctl({
 
 ```systemverilog
 package scan_ctl_pkg;
-  typedef enum logic [1:0] {IDLE, ROW, COL, REPORT} state_t;
+  typedef enum logic [1:0] {
+    IDLE,
+    ROW,
+    COL,
+    REPORT
+  } scan_ctl_state_e;
 endpackage
 
 module scan_ctl
@@ -1102,8 +1127,8 @@ module scan_ctl
   // result
   output logic found
 );
-  state_t state_val, state_next;
-  logic   move_to_REPORT;
+  scan_ctl_state_e state_val, state_next;
+  logic            move_to_REPORT;
 
   always_comb begin
     state_next     = state_val;
@@ -1230,7 +1255,13 @@ stateDiagram-v2
 
 ```systemverilog
 package work_ctl_pkg;
-  typedef enum logic [2:0] {IDLE, WORK0, WORK1, RECOVERY, FATAL} state_t;
+  typedef enum logic [2:0] {
+    IDLE,
+    WORK0,
+    WORK1,
+    RECOVERY,
+    FATAL
+  } work_ctl_state_e;
 endpackage
 
 module work_ctl
@@ -1252,8 +1283,8 @@ module work_ctl
   output logic clr,
   output logic halt
 );
-  state_t state_val, state_next;
-  logic   move_to_FATAL, move_to_RECOVERY;
+  work_ctl_state_e state_val, state_next;
+  logic            move_to_FATAL, move_to_RECOVERY;
 
   always_comb begin
     state_next       = state_val;
@@ -1375,7 +1406,11 @@ async soft_rst_ctl({
 
 ```systemverilog
 package soft_rst_ctl_pkg;
-  typedef enum logic [1:0] {IDLE, RUN, RESET} state_t;
+  typedef enum logic [1:0] {
+    IDLE,
+    RUN,
+    RESET
+  } soft_rst_ctl_state_e;
 endpackage
 
 module soft_rst_ctl
@@ -1393,8 +1428,8 @@ module soft_rst_ctl
   output logic clean_start,
   input  logic clean_done
 );
-  state_t state_val, state_next;
-  logic   move_to_RESET, move_to_RUN, move_RUN_to_IDLE;
+  soft_rst_ctl_state_e state_val, state_next;
+  logic                move_to_RESET, move_to_RUN, move_RUN_to_IDLE;
 
   always_comb begin
     state_next       = state_val;
@@ -1528,7 +1563,14 @@ stateDiagram-v2
 
 ```systemverilog
 package err_ctl_pkg;
-  typedef enum logic [2:0] {IDLE, WORK0, WORK1, CLEAN2, CLEAN1, CLEAN0} state_t;
+  typedef enum logic [2:0] {
+    IDLE,
+    WORK0,
+    WORK1,
+    CLEAN2,
+    CLEAN1,
+    CLEAN0
+  } err_ctl_state_e;
 endpackage
 
 module err_ctl
@@ -1555,8 +1597,8 @@ module err_ctl
   output logic c1_start,
   output logic c2_start
 );
-  state_t state_val, state_next;
-  logic   move_to_CLEAN2, move_to_CLEAN1, move_to_CLEAN0;
+  err_ctl_state_e state_val, state_next;
+  logic           move_to_CLEAN2, move_to_CLEAN1, move_to_CLEAN0;
 
   always_comb begin
     state_next     = state_val;
@@ -1701,7 +1743,11 @@ export class StepCtl {
 
 ```systemverilog
 package step_ctl_pkg;
-  typedef enum logic [1:0] {STEP_A, STEP_B_BUSY, STEP_C} state_t;
+  typedef enum logic [1:0] {
+    STEP_A,
+    STEP_B_BUSY,
+    STEP_C
+  } step_ctl_state_e;
 endpackage
 
 module step_ctl
@@ -1719,8 +1765,8 @@ module step_ctl
   output logic b_cnt_clr,
   output logic b_send_vld
 );
-  state_t state_val, state_next;
-  logic   move_to_STEP_B_BUSY, leave_STEP_B_BUSY;
+  step_ctl_state_e state_val, state_next;
+  logic            move_to_STEP_B_BUSY, leave_STEP_B_BUSY;
 
   always_comb begin
     state_next          = state_val;
@@ -1921,7 +1967,11 @@ stateDiagram-v2
 
 ```systemverilog
 package dump_check_pkg;
-  typedef enum logic [1:0] {IDLE, SCAN_ISSUE, SCAN_WAIT_ACK} state_t;
+  typedef enum logic [1:0] {
+    IDLE,
+    SCAN_ISSUE,
+    SCAN_WAIT_ACK
+  } dump_check_state_e;
 endpackage
 
 module dump_check
@@ -1945,15 +1995,15 @@ module dump_check
   input  logic        rd_ack,
   input  logic [31:0] rd_data
 );
-  state_t      state_val, state_next;
-  logic        leave_IDLE, move_to_SCAN_WAIT_ACK, leave_SCAN_WAIT_ACK, move_to_IDLE;
-  logic [6:0]  fn_inc7_0;
-  logic [6:0]  scan_hits_next;
-  logic [6:0]  fn_inc7_1;
-  logic [31:0] fn_add32_0;
-  logic [31:0] scan_addr_val;
-  logic [6:0]  scan_idx_val;
-  logic [6:0]  scan_hits_val;
+  dump_check_state_e state_val, state_next;
+  logic              leave_IDLE, move_to_SCAN_WAIT_ACK, leave_SCAN_WAIT_ACK, move_to_IDLE;
+  logic [6:0]        fn_inc7_0;
+  logic [6:0]        scan_hits_next;
+  logic [6:0]        fn_inc7_1;
+  logic [31:0]       fn_add32_0;
+  logic [31:0]       scan_addr_val;
+  logic [6:0]        scan_idx_val;
+  logic [6:0]        scan_hits_val;
 
   assign fn_inc7_0      = dump_pkg::inc7(scan_idx_val);
   assign scan_hits_next = (rd_data == cfg_pattern) ? fn_inc7_1 : scan_hits_val;
@@ -2134,7 +2184,12 @@ export class DumpSvc {
 
 ```systemverilog
 package dump_server_pkg;
-  typedef enum logic [1:0] {CMD, SCAN_ISSUE, SCAN_WAIT_ACK, RSP} state_t;
+  typedef enum logic [1:0] {
+    CMD,
+    SCAN_ISSUE,
+    SCAN_WAIT_ACK,
+    RSP
+  } dump_server_state_e;
 endpackage
 
 // One scan per request: pops the pattern, pushes the hit count.
@@ -2161,17 +2216,17 @@ module dump_server
   input  logic        rd_ack,
   input  logic [31:0] rd_data
 );
-  state_t      state_val, state_next;
-  logic        leave_CMD, move_to_SCAN_WAIT_ACK, leave_SCAN_WAIT_ACK, move_to_RSP;
-  logic [6:0]  fn_inc7_0;
-  logic [6:0]  scan_hits_next;
-  logic [6:0]  fn_inc7_1;
-  logic [31:0] fn_add32_0;
-  logic [31:0] pattern_val;
-  logic [6:0]  count_val;
-  logic [31:0] scan_addr_val;
-  logic [6:0]  scan_idx_val;
-  logic [6:0]  scan_hits_val;
+  dump_server_state_e state_val, state_next;
+  logic               leave_CMD, move_to_SCAN_WAIT_ACK, leave_SCAN_WAIT_ACK, move_to_RSP;
+  logic [6:0]         fn_inc7_0;
+  logic [6:0]         scan_hits_next;
+  logic [6:0]         fn_inc7_1;
+  logic [31:0]        fn_add32_0;
+  logic [31:0]        pattern_val;
+  logic [6:0]         count_val;
+  logic [31:0]        scan_addr_val;
+  logic [6:0]         scan_idx_val;
+  logic [6:0]         scan_hits_val;
 
   assign fn_inc7_0      = dump_pkg::inc7(scan_idx_val);
   assign scan_hits_next = (rd_data == pattern_val) ? fn_inc7_1 : scan_hits_val;
@@ -2245,7 +2300,11 @@ endmodule
 
 ```systemverilog
 package dump_client_pkg;
-  typedef enum logic [1:0] {IDLE, REQ, RSP} state_t;
+  typedef enum logic [1:0] {
+    IDLE,
+    REQ,
+    RSP
+  } dump_client_state_e;
 endpackage
 
 // Software front end: each check sends one request to the server.
@@ -2270,11 +2329,11 @@ module dump_client
   input  logic        rd_ack,
   input  logic [31:0] rd_data
 );
-  state_t      state_val, state_next;
-  logic        move_to_IDLE;
-  logic        req_vld, req_rdy, rsp_vld, rsp_rdy;
-  logic [31:0] req_data;
-  logic [6:0]  rsp_data;
+  dump_client_state_e state_val, state_next;
+  logic               move_to_IDLE;
+  logic               req_vld, req_rdy, rsp_vld, rsp_rdy;
+  logic [31:0]        req_data;
+  logic [6:0]         rsp_data;
 
   always_comb begin
     state_next   = state_val;
@@ -2464,7 +2523,13 @@ async reg_mgr_reg({
 
 ```systemverilog
 package reg_mgr_pkg;
-  typedef enum logic [2:0] {IDLE, RD_REQ, RD_RSP, WR_REQ, WR_RSP} state_t;
+  typedef enum logic [2:0] {
+    IDLE,
+    RD_REQ,
+    RD_RSP,
+    WR_REQ,
+    WR_RSP
+  } reg_mgr_state_e;
 endpackage
 
 // Reads the status register, then writes it back to the control register.
@@ -2486,12 +2551,12 @@ module reg_mgr
   input  logic        bus_ack,
   input  logic [31:0] bus_rdata
 );
-  state_t      state_val, state_next;
-  logic        move_to_WR_REQ, move_to_IDLE;
-  logic        reg_req_vld, reg_req_rdy, reg_req_we, reg_rsp_vld, reg_rsp_rdy;
-  logic [7:0]  reg_req_addr;
-  logic [31:0] reg_req_wdata;
-  logic [31:0] reg_rsp_data;
+  reg_mgr_state_e state_val, state_next;
+  logic           move_to_WR_REQ, move_to_IDLE;
+  logic           reg_req_vld, reg_req_rdy, reg_req_we, reg_rsp_vld, reg_rsp_rdy;
+  logic [7:0]     reg_req_addr;
+  logic [31:0]    reg_req_wdata;
+  logic [31:0]    reg_rsp_data;
 
   always_comb begin
     state_next     = state_val;
@@ -2565,7 +2630,12 @@ endmodule
 
 ```systemverilog
 package reg_mgr_reg_pkg;
-  typedef enum logic [1:0] {IDLE, LOAD, RUN_WAIT, DONE} state_t;
+  typedef enum logic [1:0] {
+    IDLE,
+    LOAD,
+    RUN_WAIT,
+    DONE
+  } reg_mgr_reg_state_e;
 endpackage
 
 // Caller server of reg_access: one call per request (generated, §5.4).
@@ -2592,12 +2662,12 @@ module reg_mgr_reg
   input  logic        rsp_rdy,
   output logic [31:0] rsp_data
 );
-  state_t      state_val, state_next;
-  logic        move_to_LOAD, move_to_RUN_WAIT, move_to_DONE;
-  logic        arg_we_val;
-  logic [7:0]  arg_addr_val;
-  logic [31:0] arg_wdata_val;
-  logic [31:0] result_val;
+  reg_mgr_reg_state_e state_val, state_next;
+  logic               move_to_LOAD, move_to_RUN_WAIT, move_to_DONE;
+  logic               arg_we_val;
+  logic [7:0]         arg_addr_val;
+  logic [31:0]        arg_wdata_val;
+  logic [31:0]        result_val;
 
   always_comb begin
     state_next       = state_val;
@@ -2729,7 +2799,10 @@ async act_demo({
 
 ```systemverilog
 package act_demo_pkg;
-  typedef enum logic [0:0] {IDLE, RUN} state_t;
+  typedef enum logic [0:0] {
+    IDLE,
+    RUN
+  } act_demo_state_e;
 endpackage
 
 module act_demo
@@ -2745,8 +2818,8 @@ module act_demo
   output logic cnt_clr,
   output logic active
 );
-  state_t state_val, state_next;
-  logic   move_to_RUN, move_to_IDLE;
+  act_demo_state_e state_val, state_next;
+  logic            move_to_RUN, move_to_IDLE;
 
   always_comb begin
     state_next   = state_val;
@@ -2818,7 +2891,10 @@ async msg_fwd({
 
 ```systemverilog
 package msg_fwd_pkg;
-  typedef enum logic [0:0] {IDLE, FWD} state_t;
+  typedef enum logic [0:0] {
+    IDLE,
+    FWD
+  } msg_fwd_state_e;
 endpackage
 
 module msg_fwd
@@ -2838,8 +2914,8 @@ module msg_fwd
   output logic       wr_en,
   output logic [7:0] wr_data
 );
-  state_t state_val, state_next;
-  logic   move_to_FWD, move_to_IDLE;
+  msg_fwd_state_e state_val, state_next;
+  logic           move_to_FWD, move_to_IDLE;
 
   always_comb begin
     state_next   = state_val;
@@ -2983,7 +3059,10 @@ async reg_demo({
 
 ```systemverilog
 package reg_demo_pkg;
-  typedef enum logic [0:0] {IDLE, CHECK} state_t;
+  typedef enum logic [0:0] {
+    IDLE,
+    CHECK
+  } reg_demo_state_e;
 endpackage
 
 module reg_demo
@@ -2999,8 +3078,8 @@ module reg_demo
   output logic [7:0] mode_next,
   input  logic [7:0] mode_val
 );
-  state_t state_val, state_next;
-  logic   move_to_CHECK;
+  reg_demo_state_e state_val, state_next;
+  logic            move_to_CHECK;
 
   always_comb begin
     state_next    = state_val;
@@ -3046,7 +3125,7 @@ state.next = 目标状态
 2. 次态和 move 在同一个 `always_comb` 里（**决定**）：先写缺省值 `state_next = state_val;` 和每个有消费者的 `move_to_S = 1'b0;`，再 `unique case (state_val)`；每个分支 `if (条件) begin state_next = 常量; move_to_S = 1'b1; end`。离开条件只写一次，次态和 move 不会写出两份可能不一致的条件。**每个 `if` / `else if` / `else` 分支都写 `begin` / `end`**，哪怕里面只有一条赋值（决定）；`case` 分支本身不加。[INFERENCE] 这不改变 `state_next` 那棵 mux 树（叶子仍是常量或 `state_val`），move 成了由同一组状态比较选出的控制输出，按 Yosys 文档的识别条件不受影响；未实测（§10）。
 3. `state_val` 只出现在 `case` 和 `state_val == 常量` 里；move 不再单独写成 `(state_val == S) & cond`。
 4. `state_val` 是 enum 类型，不接模块输出口，也不做位选。
-5. 状态定义放在该状态机的 package 里：`typedef enum logic [W-1:0] {IDLE, SEND_MSG, MSG_SENT} state_t;`。成员名由状态标签转成大写下划线（`SendMsg` → `SEND_MSG`，§3.5），写了 `statePrefix` 时再加前缀（见下）。W = ⌈log2(状态数)⌉，至少 1。**缺省不写数值**，实际编码由综合器在识别出状态机后决定；`stateEncoding` 可以改成显式的二进制或 one-hot（见下）。enum 成员顺序按源码中状态出现的顺序，入口状态排第一（被调用方是隐式 `IDLE`，§5）。
+5. 状态定义放在该状态机的 package `<模块名>_pkg` 里，类型名缺省是 `<模块名>_state_e`（`@Fsm({ stateType })` 可指定），成员每行一个：`typedef enum logic [W-1:0] { IDLE, SEND_MSG, MSG_SENT } fsm_drive_signal_state_e;`。成员名由状态标签转成大写下划线（`SendMsg` → `SEND_MSG`，§3.5），写了 `statePrefix` 时再加前缀（见下）。W = ⌈log2(状态数)⌉，至少 1。**缺省不写数值**，实际编码由综合器在识别出状态机后决定；`stateEncoding` 可以改成显式的二进制或 one-hot（见下）。enum 成员顺序按源码中状态出现的顺序，入口状态排第一（被调用方是隐式 `IDLE`，§5）。
 
 不写数值时，仿真按 IEEE 1800 的规则取隐式值：第一个成员为 0，其后依次加 1。综合器重编码（例如 Yosys `fsm_recode` 改成 one-hot）只改变内部状态寄存器的位型，RTL 里的比较和赋值都写成 enum 成员名，不受影响。生成的 RTL 不得出现状态的数字字面量，也不得对 `state_val` 做算术或位选，否则重编码会改变行为（检查器之外由生成器保证）。
 
@@ -3067,8 +3146,12 @@ state.next = 目标状态
 | | `"onehot"` | 写出 one-hot 数值 `IDLE = 3'b001, ...`，W = 状态数 |
 | `stateReg`（未实现） | `"always_ff"`（缺省） | 主状态按上面第 1-5 条生成在本模块内 |
 | | `"dff"` | 主状态是 `aw_dff` 实例；放弃工具识别，现阶段不推荐 |
-| `exportState` | `true` | 模块多出输出口 `state_set_o` / `state_next_o` / `state_val_o`，类型 `state_t`（DFF 接口形状，三个都是输出），端口组标题为 `// exportState` |
+| `exportState` | `true` | 模块多出输出口 `state_set_o` / `state_next_o` / `state_val_o`，类型是该状态机的状态类型（DFF 接口形状，三个都是输出），端口组标题为 `// exportState` |
+| `stateType` | SV 类型名字符串 | 状态 enum 的类型名，缺省 `<模块名>_state_e`；它与成员一起放在 `<模块名>_pkg` 里 |
 | `stateValues` | enum 成员名 → 数值 | 逐个写出数值，位宽同 `"binary"`。必须列全全部状态、互不相同、放得进 W 位，与 `stateEncoding` 互斥，由检查器检查 |
+| `wrap` | `true` 或模块名字符串 | 多生成一个封装模块（`true` 时名为 `<模块名>_wrap`）：端口名、方向、顺序和分组与原模块相同，`@SvEnum` 类型和状态类型的端口都改成同宽的 `logic [W-1:0]`；内部只例化原模块（`u_<模块名>`），enum 输入用 `pkg::name'(x)` 转回枚举，输出直接连。给只认 `logic` 端口的工具（目前的连线器）用，原模块不变，EDA 照旧从原模块识别状态机。封装模块名与组里其他模块重名时报错 |
+
+**文件内顺序（决定）**：先是 `@SvEnum` 的 package，再是组里每个状态机的 `<模块名>_pkg`，然后是各 `module`，最后是各 `_wrap` 封装模块；每类按方法在 class 里出现的顺序。文档示例按模块成对给出 package 和 module，内容与生成文件中对应的段相同。
 
 DSL（前缀加 one-hot）：
 
@@ -3097,7 +3180,11 @@ async phy_init({
 
 ```systemverilog
 package phy_init_pkg;
-  typedef enum logic [2:0] {LPDDRPHY_IDLE = 3'b001, LPDDRPHY_CALIB = 3'b010, LPDDRPHY_READY = 3'b100} state_t;
+  typedef enum logic [2:0] {
+    LPDDRPHY_IDLE = 3'b001,
+    LPDDRPHY_CALIB = 3'b010,
+    LPDDRPHY_READY = 3'b100
+  } phy_init_state_e;
 endpackage
 
 module phy_init
@@ -3113,8 +3200,8 @@ module phy_init
   input  logic cal_done,
   output logic cal_req
 );
-  state_t state_val, state_next;
-  logic   move_to_CALIB, move_to_READY, move_to_IDLE;
+  phy_init_state_e state_val, state_next;
+  logic            move_to_CALIB, move_to_READY, move_to_IDLE;
 
   always_comb begin
     state_next    = state_val;
@@ -3153,7 +3240,7 @@ module phy_init
 endmodule
 ```
 
-`stateEncoding: "binary"` 时只有 enum 定义变化：`typedef enum logic [1:0] {LPDDRPHY_IDLE = 2'd0, LPDDRPHY_CALIB = 2'd1, LPDDRPHY_READY = 2'd2} state_t;`。
+`stateEncoding: "binary"` 时只有 enum 定义变化：成员写成 `LPDDRPHY_IDLE = 2'd0,`、`LPDDRPHY_CALIB = 2'd1,`、`LPDDRPHY_READY = 2'd2`，每行一个。
 
 - one-hot 的 `default` 分支照常生成：非 one-hot 的位型（例如上电毛刺）回到入口。
 - 显式数值只固定 enum 成员的值，也就是仿真值和导出口的值。综合时内部寄存器是否仍被重编码取决于工具设置（例如 Yosys 的 `fsm -norecode`、`fsm_encoding` 属性；各工具属性名不同，生成器不写），不由本 DSL 控制。
@@ -3197,27 +3284,31 @@ async phy_mon({
 
 ```systemverilog
 package phy_mon_pkg;
-  typedef enum logic [1:0] {IDLE = 2'd0, CALIB = 2'd2, READY = 2'd3} state_t;
+  typedef enum logic [1:0] {
+    IDLE = 2'd0,
+    CALIB = 2'd2,
+    READY = 2'd3
+  } phy_mon_state_e;
 endpackage
 
 module phy_mon
   import phy_mon_pkg::*;
 (
   // clock and reset
-  input  logic   clk,
-  input  logic   rst_n,
+  input  logic           clk,
+  input  logic           rst_n,
   // control
-  input  logic   start,
+  input  logic           start,
   // calibration
-  input  logic   cal_done,
-  output logic   cal_req,
+  input  logic           cal_done,
+  output logic           cal_req,
   // exportState
-  output logic   state_set_o,
-  output state_t state_next_o,
-  output state_t state_val_o
+  output logic           state_set_o,
+  output phy_mon_state_e state_next_o,
+  output phy_mon_state_e state_val_o
 );
-  state_t state_val, state_next;
-  logic   move_to_CALIB, move_to_READY, move_to_IDLE;
+  phy_mon_state_e state_val, state_next;
+  logic           move_to_CALIB, move_to_READY, move_to_IDLE;
 
   always_comb begin
     state_next    = state_val;
@@ -3288,9 +3379,9 @@ endmodule
 
 | DSL | SV |
 |---|---|
-| `@FsmGroup class G` | 一个 `.sv` 文件，内含组里每个状态机的 `package <方法名>_pkg` + `module <方法名>` |
+| `@FsmGroup class G` | 一个 `.sv` 文件（`G.sv`，或 `@FsmGroup({ file })` 指定的名字），内含组里每个状态机的 `package <方法名>_pkg` + `module <方法名>` |
 | `@Fsm` 方法 `m` | `package m_pkg`（状态 enum）+ `module m`；子状态机不生成模块（§5） |
-| 状态标签 `S:` | `state_t` 的成员，标签转大写下划线（§3.5），可加 `statePrefix`；缺省不写数值，`stateEncoding` 可选二进制或 one-hot（§6.5） |
+| 状态标签 `S:` | 状态类型 `<模块名>_state_e`（或 `stateType`）的成员，标签转大写下划线（§3.5），可加 `statePrefix`；缺省不写数值，`stateEncoding` 可选二进制或 one-hot（§6.5） |
 | 进入 `S` 的 move | `logic move_to_S`，只在有消费者时生成（§4） |
 | 解构参数里的端口 | 同名端口；`PushPort(N)` 展开为 `<name>_vld` 出 / `<name>_rdy` 入 / `<name>_data` 出，`PopPort(N)` 方向相反；`Dff(N)` 是输出口 `<name>`（`aw_dff` 的 `val`）；`Dff(N, { external: true })` 展开为 `<name>_set` / `<name>_next` / `<name>_val`；接口 `new C(...)` 展开为 `<name>_<字段>` |
 | 端口参数里独占一行的 `//` 注释 | SV 端口表里同位置的分组标题；生成器另加 `// clock and reset`（§2.2） |
@@ -3315,6 +3406,63 @@ endmodule
 
 ```systemverilog
 // Generated by autowire fsm (CounterCtl). Do not edit: SoT is fsm/counter_ctl.mjs.
+
+// Counter control blocks.
+
+package act_demo_pkg;
+  typedef enum logic [0:0] {
+    IDLE,
+    RUN
+  } act_demo_state_e;
+endpackage
+
+// Counter control.
+// Clears the counter on go and holds active high until stop.
+module act_demo
+  import act_demo_pkg::*;
+(
+  // clock and reset
+  input  logic clk,
+  input  logic rst_n,
+  // host control
+  input  logic go,
+  input  logic stop,
+  // counter
+  output logic cnt_clr,
+  output logic active
+);
+  act_demo_state_e state_val, state_next;
+  logic            move_to_RUN, move_to_IDLE;
+
+  always_comb begin
+    state_next   = state_val;
+    move_to_RUN  = 1'b0;
+    move_to_IDLE = 1'b0;
+    unique case (state_val)
+      IDLE:
+        if (go) begin
+          state_next  = RUN;
+          move_to_RUN = 1'b1;
+        end
+      RUN:
+        if (stop) begin
+          state_next   = IDLE;
+          move_to_IDLE = 1'b1;
+        end
+      default:
+        state_next = IDLE;
+    endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) state_val <= IDLE;
+    else        state_val <= state_next;
+
+  assign cnt_clr = move_to_RUN;                                 // cnt_clr.pulse()
+  aw_dff u_active (.clk, .rst_n,
+    .set(move_to_RUN | move_to_IDLE),                           // active.set(1) / active.set(0)
+    .next(move_to_RUN), .val(active));
+endmodule
 ```
 
 括号里是 `@FsmGroup` 的 class 名，`SoT is` 后是 DSL 源文件相对工作区的路径。生成物要改，就改 `.mjs` 再重新生成。落地时把输出目录加进 `AGENTS.md` 的「Generated and MUST NOT be hand-edited」清单（输出目录见 §11）。
@@ -3370,7 +3518,10 @@ export class CounterCtl {
 // Counter control blocks.
 
 package act_demo_pkg;
-  typedef enum logic [0:0] {IDLE, RUN} state_t;
+  typedef enum logic [0:0] {
+    IDLE,
+    RUN
+  } act_demo_state_e;
 endpackage
 
 // Counter control.
@@ -3388,8 +3539,8 @@ module act_demo
   output logic cnt_clr,
   output logic active
 );
-  state_t state_val, state_next;
-  logic   move_to_RUN, move_to_IDLE;
+  act_demo_state_e state_val, state_next;
+  logic            move_to_RUN, move_to_IDLE;
 
   always_comb begin
     state_next   = state_val;
@@ -3522,7 +3673,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 | `Instance`：只写在 `@Fsm` 顶部，目标是 `@Fsm` 方法；端口连全；`Output` 只被实例驱动，不再 `pulse()`；同组内无例化环 | §5.3 |
 | `Caller`：只写在 `@Fsm` 顶部，目标是子状态机；没绑定的端口只能是 `Input`；被调用方端口名不占 `req` / `rsp` / `result` / `arg_*`；调用带标签，参数键齐全、不读 `let`；无返回值时不写 `r =` | §5.4 |
 | 消息：字段名唯一、不叫 `vld` / `rdy`；`push` 给齐全部字段；record 消息只读 `r.<字段>`；`pop` 出来的字段都要被读 | §6.2 |
-| `@Fsm({...})` 的选项名和取值（`stateReg`、`exportState`、`stateValues`）；`Dff` 的选项（`reset`、`external`，两者不能同时出现） | §2.2、§6.5 |
+| `@Fsm({...})` 的选项名和取值（`stateReg`、`exportState`、`stateValues`）；`@FsmGroup({...})` 只认 `file`，取值是文件名字符串；`Dff` 的选项（`reset`、`external`，两者不能同时出现） | §2.2、§6.5 |
 | `SvPackage(...)` 是模块顶层 `const`，参数是字面量；调用的实参个数、位宽与声明一致 | §2.3 |
 | 子集：拒绝闭包捕获可变变量、内建方法与 `this.方法名`、`组.方法名`、接口方法以外的任意 JS 调用、动态属性 | §8.2 |
 

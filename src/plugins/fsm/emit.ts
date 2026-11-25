@@ -303,8 +303,13 @@ function topOrs(s: string): string[] {
 	return out;
 }
 
-function emitFsm(f: Fsm): string[] {
+/** The state enum type: `@Fsm({ stateType })`, default `<module>_state_e`. */
+export const stateType = (f: Fsm) => f.options.stateType ?? `${f.name}_state_e`;
+
+/** One state machine: its package, its module and the optional logic-port wrapper. */
+function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
 	const n = f.name;
+	const st = stateType(f);
 	const enc = f.options.stateEncoding;
 	const count = f.states.length;
 	const bits =
@@ -319,91 +324,32 @@ function emitFsm(f: Fsm): string[] {
 					? `${s.member} = ${bits}'b${(1n << BigInt(i)).toString(2).padStart(bits, "0")}`
 					: s.member,
 	);
-	const out = [
+	const pkg = [
 		`package ${n}_pkg;`,
-		`  typedef enum logic [${bits - 1}:0] {${members.join(", ")}} state_t;`,
+		`  typedef enum logic [${bits - 1}:0] {`,
+		...members.map((m, i) => `    ${m}${i + 1 < members.length ? "," : ""}`),
+		`  } ${st};`,
 		"endpackage",
-		"",
+	];
+	const out = [
 		...f.comment.map((l) => (l === "" ? "//" : `// ${l}`)),
 		`module ${n}`,
 		`  import ${n}_pkg::*;`,
 		"(",
 	];
-	// [dir, type ("state": state_t), name, group header lines printed above the port]
-	type PortTy = Ty | "state";
-	const one: Ty = { width: 1 };
-	const ports: [string, PortTy, string, string[]?][] = [
-		["input", one, "clk", ["clock and reset"]],
-		["input", one, "rst_n"],
-	];
-	for (const p of f.ports) {
-		switch (p.k) {
-			case "input":
-			case "output":
-				ports.push([p.k, p, p.name, p.group]);
-				break;
-			case "push":
-			case "pop": {
-				const [o, i] =
-					p.k === "push" ? ["output", "input"] : ["input", "output"];
-				ports.push(
-					[o, one, `${p.name}_vld`, p.group],
-					[i, one, `${p.name}_rdy`],
-					...p.msg.fields.map((m): [string, PortTy, string] => [
-						o,
-						m,
-						`${p.name}_${m.name}`,
-					]),
-				);
-				break;
-			}
-			case "dff":
-				if (p.place === "port") ports.push(["output", p, p.name, p.group]);
-				// A write-only external register (e.g. an RWW field) has no _val input.
-				else
-					ports.push(
-						["output", one, `${p.name}_set`, p.group],
-						["output", p, `${p.name}_next`],
-						...(p.read
-							? [["input", p, `${p.name}_val`] as [string, PortTy, string]]
-							: []),
-					);
-		}
-	}
-	if (f.options.exportState)
-		ports.push(
-			["output", one, "state_set_o", ["exportState"]],
-			["output", "state", "state_next_o"],
-			["output", "state", "state_val_o"],
-		);
-	// The author's ports never sit under a generated group without their own header.
-	const firstUser = ports[2];
-	if (firstUser && !firstUser[3]) firstUser[3] = ["ports"];
-	const plain = (t: PortTy) => (t === "state" || t.enum ? undefined : t.width);
-	const rw = Math.max(
-		...ports.map(([, t]) => {
-			const w = plain(t);
-			return w === undefined ? 0 : range(w).length;
-		}),
-	);
-	const typeOf = (t: PortTy) =>
+	const ports = portList(f);
+	printPorts(out, ports, (t, rw) =>
 		t === "state"
-			? "state_t"
+			? st
 			: t.enum
 				? enumText(t.enum)
-				: `logic${rw > 0 ? ` ${range(t.width).padEnd(rw)}` : ""}`;
-	const pw = Math.max(...ports.map(([, t]) => typeOf(t).length));
-	for (const [i, [dir, t, name, group]] of ports.entries()) {
-		for (const g of group ?? []) out.push(g === "" ? "  //" : `  // ${g}`);
-		out.push(
-			`  ${dir.padEnd(6)} ${typeOf(t).padEnd(pw)} ${name}${i + 1 < ports.length ? "," : ""}`,
-		);
-	}
-	out.push(");");
+				: `logic${rw > 0 ? ` ${range(t.width).padEnd(rw)}` : ""}`,
+	);
 	const comb = nextState(f);
 	const ctl = comb
 		.slice(2)
 		.flatMap((l) => /^ {4}(\S+)\s+= 1'b0;$/.exec(l)?.[1] ?? []);
+	const one: Ty = { width: 1 };
 	const data: [Ty, string][] = [
 		...f.chans.flatMap((c): [Ty, string][] => [
 			[one, `${c.name}_vld`],
@@ -416,7 +362,7 @@ function emitFsm(f: Fsm): string[] {
 	const narrow = data
 		.filter(([t]) => t.width === 1 && !t.enum)
 		.map(([, name]) => name);
-	const decls: [string, string][] = [["state_t", "state_val, state_next"]];
+	const decls: [string, string][] = [[st, "state_val, state_next"]];
 	if (ctl.length > 0) decls.push(["logic", ctl.join(", ")]);
 	if (narrow.length > 0) decls.push(["logic", narrow.join(", ")]);
 	for (const [t, name] of data)
@@ -451,6 +397,113 @@ function emitFsm(f: Fsm): string[] {
 		out.push(...exportState(f, ctl));
 	}
 	out.push("endmodule");
+	const wrap = f.options.wrap ? emitWrap(f, f.options.wrap, ports, bits) : [];
+	return { pkg, mod: out, wrap };
+}
+
+/** A port row type: a signal type, or "state" for the module's state enum. */
+type PortTy = Ty | "state";
+/** [dir, type, name, group header lines printed above the port] */
+type PortRow = [string, PortTy, string, string[]?];
+
+function portList(f: Fsm): PortRow[] {
+	const one: Ty = { width: 1 };
+	const ports: PortRow[] = [
+		["input", one, "clk", ["clock and reset"]],
+		["input", one, "rst_n"],
+	];
+	for (const p of f.ports) {
+		switch (p.k) {
+			case "input":
+			case "output":
+				ports.push([p.k, p, p.name, p.group]);
+				break;
+			case "push":
+			case "pop": {
+				const [o, i] =
+					p.k === "push" ? ["output", "input"] : ["input", "output"];
+				ports.push(
+					[o, one, `${p.name}_vld`, p.group],
+					[i, one, `${p.name}_rdy`],
+					...p.msg.fields.map((m): PortRow => [o, m, `${p.name}_${m.name}`]),
+				);
+				break;
+			}
+			case "dff":
+				if (p.place === "port") ports.push(["output", p, p.name, p.group]);
+				// A write-only external register (e.g. an RWW field) has no _val input.
+				else
+					ports.push(
+						["output", one, `${p.name}_set`, p.group],
+						["output", p, `${p.name}_next`],
+						...(p.read ? [["input", p, `${p.name}_val`] as PortRow] : []),
+					);
+		}
+	}
+	if (f.options.exportState)
+		ports.push(
+			["output", one, "state_set_o", ["exportState"]],
+			["output", "state", "state_next_o"],
+			["output", "state", "state_val_o"],
+		);
+	// The author's ports never sit under a generated group without their own header.
+	const firstUser = ports[2];
+	if (firstUser && !firstUser[3]) firstUser[3] = ["ports"];
+	return ports;
+}
+
+/** Port declarations and `);`. `typeOf` gets the widest plain-logic range text width. */
+function printPorts(
+	out: string[],
+	ports: PortRow[],
+	typeOf: (t: PortTy, rw: number) => string,
+) {
+	const plain = (t: PortTy) => (t === "state" || t.enum ? undefined : t.width);
+	const rw = Math.max(
+		...ports.map(([, t]) => {
+			const w = plain(t);
+			return w === undefined ? 0 : range(w).length;
+		}),
+	);
+	const pw = Math.max(...ports.map(([, t]) => typeOf(t, rw).length));
+	for (const [i, [dir, t, name, group]] of ports.entries()) {
+		for (const g of group ?? []) out.push(g === "" ? "  //" : `  // ${g}`);
+		out.push(
+			`  ${dir.padEnd(6)} ${typeOf(t, rw).padEnd(pw)} ${name}${i + 1 < ports.length ? "," : ""}`,
+		);
+	}
+	out.push(");");
+}
+
+/** `@Fsm({ wrap })`: the same ports, every enum (the state type too) as a logic vector, for
+ *  tools that read plain logic ports only. Enum inputs are cast on the way in. */
+function emitWrap(
+	f: Fsm,
+	name: string,
+	ports: PortRow[],
+	bits: number,
+): string[] {
+	const width = (t: PortTy) =>
+		t === "state" ? bits : t.enum ? t.enum.width : t.width;
+	const out = [
+		`// ${name}: ${f.name} with its enum ports as logic vectors.`,
+		`module ${name}`,
+		"(",
+	];
+	const rw = Math.max(...ports.map(([, t]) => range(width(t)).length));
+	printPorts(
+		out,
+		ports,
+		(t) => `logic${rw > 0 ? ` ${range(width(t)).padEnd(rw)}` : ""}`,
+	);
+	const conn = ports.slice(2);
+	const w = Math.max(...conn.map(([, , n]) => n.length));
+	out.push(`  ${f.name} u_${f.name} (`, "    .clk, .rst_n,");
+	for (const [i, [dir, t, n]] of conn.entries()) {
+		const e = dir === "input" && t !== "state" ? castTo(t, n) : n;
+		out.push(`    .${n.padEnd(w)} (${e})${i + 1 < conn.length ? "," : ""}`);
+	}
+	out.push("  );", "endmodule");
 	return out;
 }
 
@@ -506,9 +559,17 @@ export function emitGroup(
 		}
 		out.push("endpackage", "");
 	}
-	g.fsms.forEach((f, i) => {
+	// Packages first (every module's types are declared before any module),
+	// then the state machines, then their logic-port wrappers.
+	const parts = g.fsms.map(emitFsm);
+	const blocks = [
+		...parts.map((p) => p.pkg),
+		...parts.map((p) => p.mod),
+		...parts.flatMap((p) => (p.wrap.length > 0 ? [p.wrap] : [])),
+	];
+	blocks.forEach((b, i) => {
 		if (i > 0) out.push("");
-		out.push(...emitFsm(f));
+		out.push(...b);
 	});
 	return `${out.join("\n")}\n`;
 }

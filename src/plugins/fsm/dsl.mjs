@@ -17,8 +17,9 @@ function signal() {
 	return c;
 }
 
-export function FsmGroup(cls) {
-	return cls;
+/** `@FsmGroup` or `@FsmGroup({ file })`. */
+export function FsmGroup(target) {
+	return typeof target === "function" ? target : (c) => c;
 }
 
 export function FsmPort(cls) {
