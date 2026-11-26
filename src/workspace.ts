@@ -660,6 +660,8 @@ export interface FsmSource {
 	id: string;
 	/** Absolute path to the .mjs */
 	mjs: string;
+	/** split = true: one .sv per module (with its wrapper) instead of one per group. */
+	split: boolean;
 }
 
 function parseFsmSources(
@@ -674,12 +676,16 @@ function parseFsmSources(
 			throw new Error(
 				`autowire.toml: [fsm.${id}] mjs= is required (path to the DSL .mjs)`,
 			);
-		const extra = Object.keys(raw).filter((k) => k !== "mjs");
+		const extra = Object.keys(raw).filter((k) => k !== "mjs" && k !== "split");
 		if (extra.length > 0)
 			throw new Error(
-				`autowire.toml: [fsm.${id}] unknown key ${extra.join(", ")} (only mjs=)`,
+				`autowire.toml: [fsm.${id}] unknown key ${extra.join(", ")} (only mjs=, split=)`,
 			);
-		out.push({ id, mjs: rel(raw.mjs) });
+		if (raw.split !== undefined && typeof raw.split !== "boolean")
+			throw new Error(
+				`autowire.toml: [fsm.${id}] split= is true (one .sv per module) or false`,
+			);
+		out.push({ id, mjs: rel(raw.mjs), split: raw.split === true });
 	}
 	out.sort((a, b) => a.id.localeCompare(b.id));
 	return out;

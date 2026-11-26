@@ -355,10 +355,15 @@ export interface FsmOptions {
 	stateValues?: { values: Map<string, bigint>; node: Node };
 	/** Output ports state_set_o / state_next_o / state_val_o. */
 	exportState?: boolean;
+	/** Output port action_o (the <module>_action_t struct, every enter_<S> included). */
+	exportAction?: boolean;
 	/** Module name of a logic-typed wrapper (enum ports as logic vectors). */
 	wrap?: string;
-	/** State enum type name in <module>_pkg; default <module>_state_e. */
+	/** State enum type name; default <module>_state_e. */
 	stateType?: string;
+	/** Package for the state enum and the action struct: an @SvEnum package of this
+	 *  file or an imported one; default <module>_pkg in this file. */
+	pkg?: { name: string; node: Node };
 }
 
 /** How a state leaves: its escapes first (higher priority), then its own condition. */

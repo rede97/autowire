@@ -1612,8 +1612,12 @@ module soft_rst_ctl
   always_ff @(posedge clk or negedge rst_n) begin : ff_active
     if (!rst_n) begin
       active <= 1'b0;
-    end else if (action.enter_RUN | action.RUN_to_IDLE | action.enter_RESET) begin
-      active <= action.enter_RUN;
+    end else begin
+      unique case (1'b1)
+        action.enter_RUN:                       active <= 1'b1;
+        action.RUN_to_IDLE, action.enter_RESET: active <= 1'b0;
+        default:                                ;
+      endcase
     end
   end
   // clean_start.pulse()
@@ -3200,8 +3204,12 @@ module act_demo
   always_ff @(posedge clk or negedge rst_n) begin : ff_active
     if (!rst_n) begin
       active <= 1'b0;
-    end else if (action.enter_RUN | action.enter_IDLE) begin
-      active <= action.enter_RUN;
+    end else begin
+      unique case (1'b1)
+        action.enter_RUN:  active <= 1'b1;
+        action.enter_IDLE: active <= 1'b0;
+        default:           ;
+      endcase
     end
   end
 endmodule
@@ -3321,7 +3329,7 @@ endmodule
 |---|---|
 | `wr_data.pulse(0xa5)` | 字面量按 `wr_data` 的位宽写成 `8'ha5`，是 `action.enter_FWD` 那一行的值 |
 | `wr_data.pulse(rx_err ? 0xee : rx_msg)` | `?:` 原样生成 SV 的 `?:`，是 `action.enter_IDLE` 那一行的值 |
-| 两处写入 | 多位且值不同：`always_comb : comb_wr_data` 里 `unique case (1'b1)`，每个 move 一行（两个 move 互斥），`default` 为 0；1 位输出或只有一个值时仍是一条 `assign`（OR，或与 move 相与） |
+| 两处写入 | 多位且值不同：`always_comb : comb_wr_data` 里 `unique case (1'b1)`，每个写入值一行，写同一个值的 move 合并成这一行的多个 case 项（move 互斥），`default` 为 0；1 位输出或只有一个值时仍是一条 `assign`（OR，或与 move 相与） |
 
 ### 6.2 push / pop：握手是一个等待状态
 
@@ -3401,7 +3409,7 @@ DFF 按下面的模板展开，`x` 是寄存器名，`RST` 是复位值，`set` 
 ```
 
 - **块名（决定）**：每个 `always` 块都有块名：`comb_state`、`ff_state`、`ff_<寄存器名>`，以及按状态取值的 push 字段 `comb_<端口>_<字段>`（§6.2）。块名与信号同在模块作用域里，所以作者的名字不能以 `comb_` / `ff_` 开头，与 `state_`、`fn_` 一样是保留前缀（检查器报错）。
-- 多个 move 写同一个 DFF：move 互斥，只有一个写入值（或 1 位寄存器）时按上面的模板写，`set` 是这些 move 的或，1 位的 `next` 是与-或；`set` 写成一行超过 100 列时，每个 `|` 项一行。多位寄存器有两个以上不同写入值时不写 `set`：`else` 分支里是 `unique case (1'b1)`，每个 move 一行写 `x <= v`，`default: ;` 保持。`external` 寄存器的多位 `<名字>_next` 同理生成 `always_comb : comb_<名字>_next`。
+- 多个 move 写同一个 DFF：move 互斥。只有一个写入值时按上面的模板写，`set` 是这些 move 的或，写成一行超过 100 列时每个 `|` 项一行。有两个以上不同写入值时（1 位寄存器也一样）不写 `set`：`else` 分支里是 `unique case (1'b1)`，每个写入值一行 `x <= v`，写同一个值的 move 合并成这一行的多个 case 项，`default: ;` 保持。`external` 寄存器同理：只有一个写入值时是 `<名字>_set` / `<名字>_next` 两条 `assign`；两个以上时合成一个 `always_comb : comb_<名字>`，先写 `<名字>_set = 1'b0`、`<名字>_next = 0`，再 `unique case (1'b1)`，每个写入值一个 `begin` / `end` 同时写 `_set = 1'b1` 和 `_next = v`，同值的 move 同样合并。
 - 复位与仓库现有 RTL 一致：`negedge rst_n` 异步低有效。复位值写在 `Dff(N, { reset: v })`，缺省 0；enum 寄存器的复位值写成成员名（没有这个值的成员时写 `pkg::name'(v)`）。`external: true` 时复位值由寄存器的拥有者决定，不能写 `reset`。
 - 寄存器写成端口时（`Dff(N)`），`x` 就是输出口；方法体私有的 `Dff` 写到 `<名字>_val`。
 
@@ -3522,7 +3530,9 @@ state.next = 目标状态
 | | `"binary"` | 按声明顺序写出 `IDLE = 2'd0, ...`，W = ⌈log2(状态数)⌉ |
 | | `"onehot"` | 写出 one-hot 数值 `IDLE = 3'b001, ...`，W = 状态数 |
 | `exportState` | `true` | 模块多出输出口 `state_set_o` / `state_next_o` / `state_val_o`，类型是该状态机的状态类型（DFF 接口形状，三个都是输出），端口组标题为 `// exportState` |
-| `stateType` | SV 类型名字符串 | 状态 enum 的类型名，缺省 `<模块名>_state_e`；它与成员一起放在 `<模块名>_pkg` 里 |
+| `exportAction` | `true` | 模块多出输出口 `action_o`，类型是 `<模块名>_action_t`（`assign action_o = action;`），端口组标题为 `// exportAction`。导出后 struct 里一定有每个有入边的状态的 `enter_<S>`，即使模块内部没有用到（与 `exportState` 相同），外部按状态名取 `action_o.enter_<S>` 不会因为改动 DSL 动作而消失；`leave_*` / `<A>_to_<B>` / `keep_*` 只在内部用到时存在，外部不要依赖。`wrap` 里它是同宽的 `logic` 向量，成员按 struct 声明顺序从高位排起。缺省不导出 |
+| `stateType` | SV 类型名字符串 | 状态 enum 的类型名，缺省 `<模块名>_state_e`；它与成员一起放在状态机的 package 里（见 `pkg`） |
+| `pkg` | `@SvEnum` package 名字符串 | 状态 enum 和 `<模块名>_action_t` 放进这个 package，不生成 `<模块名>_pkg`，模块改为 `import <pkg>::*`。缺省（不写）时仍是同一个 `.sv` 里的 `<模块名>_pkg`。这个 package 必须由本文件或它 import 的文件用 `@SvEnum` 声明；类型写在那个文件的 package 里，排在 `@SvEnum` 之后，每台状态机前有一行 `// <模块名>: state enum and action struct`。package 里的名字（枚举成员、类型名）重名时报错，所以几台状态机共用一个 package 时各写一个 `statePrefix`。`plugin fsm run --only <id>` 仍编译全部源，并重写被它写入类型的那个文件 |
 | `stateValues` | enum 成员名 → 数值 | 逐个写出数值，位宽同 `"binary"`。必须列全全部状态、互不相同、放得进 W 位，与 `stateEncoding` 互斥，由检查器检查 |
 | `wrap` | `true` 或模块名字符串 | 多生成一个封装模块（`true` 时名为 `<模块名>_wrap`）：端口名、方向、顺序和分组与原模块相同，`@SvEnum` 类型和状态类型的端口都改成同宽的 `logic [W-1:0]`；内部只例化原模块（`u_<模块名>`），enum 输入用 `pkg::name'(x)` 转回枚举，输出直接连。给只认 `logic` 端口的工具（目前的连线器）用，原模块不变，EDA 照旧从原模块识别状态机。封装模块名与组里其他模块重名时报错 |
 
@@ -3620,8 +3630,12 @@ module phy_init
   always_ff @(posedge clk or negedge rst_n) begin : ff_ready
     if (!rst_n) begin
       ready <= 1'b0;
-    end else if (action.enter_READY | action.enter_IDLE) begin
-      ready <= action.enter_READY;
+    end else begin
+      unique case (1'b1)
+        action.enter_READY: ready <= 1'b1;
+        action.enter_IDLE:  ready <= 1'b0;
+        default:            ;
+      endcase
     end
   end
   // cal_req.pulse()
@@ -3852,8 +3866,12 @@ module act_demo
   always_ff @(posedge clk or negedge rst_n) begin : ff_active
     if (!rst_n) begin
       active <= 1'b0;
-    end else if (action.enter_RUN | action.enter_IDLE) begin
-      active <= action.enter_RUN;
+    end else begin
+      unique case (1'b1)
+        action.enter_RUN:  active <= 1'b1;
+        action.enter_IDLE: active <= 1'b0;
+        default:           ;
+      endcase
     end
   end
 endmodule
@@ -3976,8 +3994,12 @@ module act_demo
   always_ff @(posedge clk or negedge rst_n) begin : ff_active
     if (!rst_n) begin
       active <= 1'b0;
-    end else if (action.enter_RUN | action.enter_IDLE) begin
-      active <= action.enter_RUN;
+    end else begin
+      unique case (1'b1)
+        action.enter_RUN:  active <= 1'b1;
+        action.enter_IDLE: active <= 1'b0;
+        default:           ;
+      endcase
     end
   end
 endmodule
@@ -4127,7 +4149,7 @@ tsc 不能在类型层面重载运算符，§2.1 的写法过不了类型检查�
 |---|---|
 | 命令 | `plugin fsm run`，与 `plugin wishbone run` 同为类型 A 插件；`--force` 全部重写，缺省增量写（[cli.md](../cli.md)） |
 | 输出 | `plugins_dir/fsm/<class 名>.sv`（一个 `@FsmGroup` 一个文件），没有共用的模板文件；按 [workspace/toml.md](../workspace/toml.md) 只写 `plugins_dir/<plugin-id>/`。这些文件是分析输入叶子，进分析 filelist |
-| DSL 入口 | `[fsm.<id>] mjs = "<相对工作区的 .mjs>"`，只有这一个键；两个源定义同名 class 报错 |
+| DSL 入口 | `[fsm.<id>] mjs = "<相对工作区的 .mjs>"`，可选 `split = true`：每个模块（连同它的 `<模块名>_pkg` 和 `_wrap`）写成 `<模块名>.sv`，文件头和组注释每个文件一份，组自己的 `@SvEnum` package 仍写在 `<file>.sv`（没有时不生成）；缺省一个组一个文件。所有输出文件名在工作区内不区分大小写唯一；两个源定义同名 class 报错 |
 | import 路径 | 内建名从 `.autowire/dsl/fsm/dsl.mjs` 导入，与 wishbone 一样由 `src/cli/pack.ts` 打包、每次 `plugin fsm run` 重新物化（自愈缓存）；`dsl.mjs` 只含空实现，另带 `dsl.d.ts` 给编辑器补全 |
 | 解析器 | `@babel/parser` 写死版本，懒加载（§8.2） |
 | 生成物登记 | 输出目录加进 `AGENTS.md` 的「Generated and MUST NOT be hand-edited」清单 |

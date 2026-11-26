@@ -61,12 +61,12 @@ async edges({
   }
 }`;
 
-/** @Fsm({ wrap }): enum input / output and state_t outputs become logic on the wrapper. */
+/** @Fsm({ wrap }): enum input / output, state_t and action_t outputs become logic on the wrapper. */
 const WRAP = `@SvEnum({ pkg: "op_pkg", width: 2 })
 class Op { static IDLE = 0; static GO = 1; static STOP = 2; }
 @FsmGroup
 class G {
-  @Fsm({ wrap: true, exportState: true })
+  @Fsm({ wrap: true, exportState: true, exportAction: true })
   async w({
     op = Input(Op),
     o = Output(Op),

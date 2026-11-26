@@ -398,6 +398,10 @@ function fsmOptions(
 			if (v.type !== "BooleanLiteral")
 				return src.fail(v, "exportState is true or false");
 			if (v.value) out.exportState = true;
+		} else if (key === "exportAction") {
+			if (v.type !== "BooleanLiteral")
+				return src.fail(v, "exportAction is true or false");
+			if (v.value) out.exportAction = true;
 		} else if (key === "stateValues") {
 			if (v.type !== "ObjectExpression")
 				return src.fail(
@@ -441,6 +445,14 @@ function fsmOptions(
 				);
 			checkSvId(src, v, v.value, "state type name");
 			out.stateType = v.value;
+		} else if (key === "pkg") {
+			if (v.type !== "StringLiteral")
+				return src.fail(
+					v,
+					'pkg is the name of an @SvEnum package, e.g. "dphy_rdi_fsm_pkg"',
+				);
+			checkSvId(src, v, v.value, "package name");
+			out.pkg = { name: v.value, node: v };
 		} else {
 			src.fail(p, `unknown @Fsm option ${key}`);
 		}
@@ -461,6 +473,7 @@ export function reservedName(name: string): boolean {
 		name === "rst_n" ||
 		name.startsWith("state_") ||
 		name === "action" ||
+		name === "action_o" ||
 		name.startsWith("comb_") ||
 		name.startsWith("ff_") ||
 		name.startsWith("fn_")

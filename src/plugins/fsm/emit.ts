@@ -14,6 +14,7 @@ import type {
 	Tree,
 	Ty,
 } from "./model.ts";
+import { FsmError } from "./source.ts";
 
 /** SV type of an @SvEnum value (§2.8). */
 const enumText = (t: EnumType) => `${t.pkg}::${t.name}`;
@@ -172,9 +173,10 @@ function nextState(f: Fsm): { lines: string[]; order: string[] } {
 
 const siteSig = (f: Fsm, a: Action) => ors((f.drive.get(a) ?? []).map(act));
 
-/** A multi-bit target (wider than 1 bit, or an enum) written with two or more different values. */
-const caseSelect = (ty: Ty, sites: Action[], keepZero: boolean) =>
-	(ty.width > 1 || ty.enum !== undefined) &&
+/** Written with two or more different values: a Dff at any width, an Output only when
+ *  wider than 1 bit or an enum (a 1-bit pulse stays an OR). */
+const caseSelect = (ty: Ty, sites: Action[], keepZero: boolean, dff = false) =>
+	(dff || ty.width > 1 || ty.enum !== undefined) &&
 	new Set(
 		sites
 			.filter((a) => keepZero || a.value.value !== 0n)
@@ -182,36 +184,55 @@ const caseSelect = (ty: Ty, sites: Action[], keepZero: boolean) =>
 	).size > 1;
 
 /** `unique case (1'b1)` over the sites' control signals (exclusive: one move per cycle);
- *  `dflt` null leaves the target unchanged. Long item lists go one signal per line. */
+ *  `dflt` null leaves the target unchanged. Long item lists go one signal per line; a
+ *  row of several statements is a `begin` / `end` block. */
 function siteCase(
 	f: Fsm,
 	sites: Action[],
 	keepZero: boolean,
-	stmt: (v: string) => string,
+	stmt: (v: string) => string[],
 	dflt: string | null,
 	ind: string,
 ): string[] {
-	const rows = sites
-		.filter((a) => keepZero || a.value.value !== 0n)
-		.map((a): [string[], string] => [
-			[...new Set((f.drive.get(a) ?? []).map(act))],
-			stmt(svText(a.value.sv)),
-		]);
+	// Moves that write the same value share one row (items in first-write order).
+	const byValue = new Map<string, string[]>();
+	for (const a of sites) {
+		if (!keepZero && a.value.value === 0n) continue;
+		const v = svText(a.value.sv);
+		const items = byValue.get(v) ?? [];
+		for (const s of (f.drive.get(a) ?? []).map(act))
+			if (!items.includes(s)) items.push(s);
+		byValue.set(v, items);
+	}
+	const rows = [...byValue].map(([v, items]): [string[], string[]] => [
+		items,
+		stmt(v),
+	]);
 	// The default row: hold (`;`) or the zero value.
-	rows.push([["default"], dflt ?? ";"]);
+	rows.push([["default"], [dflt ?? ";"]]);
 	const label = (items: string[]) =>
 		items[0] === "default" ? "default:" : `${items.join(", ")}:`;
-	const tall = rows.some(([items]) => label(items).length > 48);
+	const tall = rows.some(
+		([items, body]) => label(items).length > 48 || body.length > 1,
+	);
 	const w = Math.max(...rows.map(([items]) => label(items).length));
 	const out = [`${ind}unique case (1'b1)`];
-	for (const [items, s] of rows)
-		if (!tall || s === ";")
-			out.push(`${ind}  ${tall ? label(items) : label(items).padEnd(w)} ${s}`);
-		else {
-			for (const [i, it] of items.entries())
-				out.push(`${ind}  ${it}${i + 1 < items.length ? "," : ":"}`);
-			out.push(`${ind}    ${s}`);
+	for (const [items, body] of rows) {
+		const [one] = body;
+		if (!tall || one === ";") {
+			out.push(
+				`${ind}  ${tall ? label(items) : label(items).padEnd(w)} ${body.join(" ")}`,
+			);
+			continue;
 		}
+		const many = body.length > 1;
+		for (const [i, it] of items.entries())
+			out.push(
+				`${ind}  ${it}${i + 1 < items.length ? "," : many ? ": begin" : ":"}`,
+			);
+		for (const l of body) out.push(`${ind}    ${l}`);
+		if (many) out.push(`${ind}  end`);
+	}
 	out.push(`${ind}endcase`);
 	return out;
 }
@@ -232,7 +253,7 @@ function combCase(
 			f,
 			sites,
 			keepZero,
-			(v) => `${lhs} = ${v};`,
+			(v) => [`${lhs} = ${v};`],
 			`${lhs} = ${constOf(ty, 0n)};`,
 			"    ",
 		),
@@ -343,26 +364,44 @@ function drivers(f: Fsm): string[] {
 		if (p.k === "push" || p.k === "pop") items.push(...hsDrivers(p));
 		if (p.k !== "dff") continue;
 		if (p.place === "external") {
+			if (caseSelect(p, p.sites, true, true)) {
+				// One block drives both ports: each move sets the register to its value.
+				const s = `${p.name}_set`;
+				const n = `${p.name}_next`;
+				const w = Math.max(s.length, n.length);
+				items.push({
+					k: "raw",
+					lines: [
+						...above(texts(p.sites)),
+						`  always_comb begin : comb_${p.name}`,
+						`    ${s.padEnd(w)} = 1'b0;`,
+						`    ${n.padEnd(w)} = ${constOf(p, 0n)};`,
+						...siteCase(
+							f,
+							p.sites,
+							true,
+							(v) => [`${s.padEnd(w)} = 1'b1;`, `${n.padEnd(w)} = ${v};`],
+							null,
+							"    ",
+						),
+						"  end",
+					],
+				});
+				continue;
+			}
 			items.push({
 				k: "asg",
 				lhs: `${p.name}_set`,
 				rhs: set(p.sites),
 				c: texts(p.sites),
 			});
-			items.push(
-				caseSelect(p, p.sites, true)
-					? {
-							k: "raw",
-							lines: combCase(f, `${p.name}_next`, p, p.sites, true),
-						}
-					: { k: "asg", lhs: `${p.name}_next`, rhs: nextExpr(f, p) },
-			);
+			items.push({ k: "asg", lhs: `${p.name}_next`, rhs: nextExpr(f, p) });
 			continue;
 		}
 		const q = valName(p);
 		items.push({
 			k: "raw",
-			lines: caseSelect(p, p.sites, true)
+			lines: caseSelect(p, p.sites, true, true)
 				? [
 						...above(texts(p.sites)),
 						`  always_ff @(posedge clk or negedge rst_n) begin : ff_${p.name}`,
@@ -373,7 +412,7 @@ function drivers(f: Fsm): string[] {
 							f,
 							p.sites,
 							true,
-							(v) => `${q} <= ${v};`,
+							(v) => [`${q} <= ${v};`],
 							null,
 							"      ",
 						),
@@ -445,8 +484,19 @@ function topOrs(s: string): string[] {
 /** The state enum type: `@Fsm({ stateType })`, default `<module>_state_e`. */
 export const stateType = (f: Fsm) => f.options.stateType ?? `${f.name}_state_e`;
 
-/** One state machine: its package, its module and the optional logic-port wrapper. */
-function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
+/** The state enum and action struct of one state machine, for the package `pkg`. */
+export interface PkgPart {
+	pkg: string;
+	/** Module that declares them. */
+	from: string;
+	/** typedef lines, indented for a package body. */
+	types: string[];
+	/** Package-scope names they declare: enum members and type names. */
+	names: string[];
+}
+
+/** One state machine: its package types, its module and the optional logic-port wrapper. */
+function emitFsm(f: Fsm): { part: PkgPart; mod: string[]; wrap: string[] } {
 	const n = f.name;
 	const st = stateType(f);
 	const enc = f.options.stateEncoding;
@@ -464,8 +514,7 @@ function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
 					: s.member,
 	);
 	const { lines: comb, order } = nextState(f);
-	const pkg = [
-		`package ${n}_pkg;`,
+	const types = [
 		`  typedef enum logic [${bits - 1}:0] {`,
 		...members.map((m, i) => `    ${m}${i + 1 < members.length ? "," : ""}`),
 		`  } ${st};`,
@@ -477,21 +526,33 @@ function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
 					`  } ${n}_action_t;`,
 				]
 			: []),
-		"endpackage",
 	];
+	const pkg = f.options.pkg?.name ?? `${n}_pkg`;
+	const part: PkgPart = {
+		pkg,
+		from: n,
+		types,
+		names: [
+			...f.states.map((s) => s.member),
+			st,
+			...(order.length > 0 ? [`${n}_action_t`] : []),
+		],
+	};
 	const out = [
 		...f.comment.map((l) => (l === "" ? "//" : `// ${l}`)),
 		`module ${n}`,
-		`  import ${n}_pkg::*;`,
+		`  import ${pkg}::*;`,
 		"(",
 	];
 	const ports = portList(f);
 	printPorts(out, ports, (t, rw) =>
 		t === "state"
 			? st
-			: t.enum
-				? enumText(t.enum)
-				: `logic${rw > 0 ? ` ${range(t.width).padEnd(rw)}` : ""}`,
+			: t === "action"
+				? `${n}_action_t`
+				: t.enum
+					? enumText(t.enum)
+					: `logic${rw > 0 ? ` ${range(t.width).padEnd(rw)}` : ""}`,
 	);
 	const one: Ty = { width: 1 };
 	const data: [Ty, string][] = [
@@ -546,13 +607,20 @@ function emitFsm(f: Fsm): { pkg: string[]; mod: string[]; wrap: string[] } {
 			"  assign state_val_o  = state_val;",
 		);
 	}
+	if (f.options.exportAction) {
+		if (dr.length > 0 || f.options.exportState) out.push("");
+		out.push("  // exportAction", "  assign action_o = action;");
+	}
 	out.push("endmodule");
-	const wrap = f.options.wrap ? emitWrap(f, f.options.wrap, ports, bits) : [];
-	return { pkg, mod: out, wrap };
+	const wrap = f.options.wrap
+		? emitWrap(f, f.options.wrap, ports, bits, order.length)
+		: [];
+	return { part, mod: out, wrap };
 }
 
-/** A port row type: a signal type, or "state" for the module's state enum. */
-type PortTy = Ty | "state";
+/** A port row type: a signal type, or "state" / "action" for the module's state enum /
+ *  action struct. */
+type PortTy = Ty | "state" | "action";
 /** [dir, type, name, group header lines printed above the port] */
 type PortRow = [string, PortTy, string, string[]?];
 
@@ -596,6 +664,8 @@ function portList(f: Fsm): PortRow[] {
 			["output", "state", "state_next_o"],
 			["output", "state", "state_val_o"],
 		);
+	if (f.options.exportAction)
+		ports.push(["output", "action", "action_o", ["exportAction"]]);
 	// The author's ports never sit under a generated group without their own header.
 	const firstUser = ports[2];
 	if (firstUser && !firstUser[3]) firstUser[3] = ["ports"];
@@ -608,7 +678,8 @@ function printPorts(
 	ports: PortRow[],
 	typeOf: (t: PortTy, rw: number) => string,
 ) {
-	const plain = (t: PortTy) => (t === "state" || t.enum ? undefined : t.width);
+	const plain = (t: PortTy) =>
+		t === "state" || t === "action" || t.enum ? undefined : t.width;
 	const rw = Math.max(
 		...ports.map(([, t]) => {
 			const w = plain(t);
@@ -625,16 +696,24 @@ function printPorts(
 	out.push(");");
 }
 
-/** `@Fsm({ wrap })`: the same ports, every enum (the state type too) as a logic vector, for
- *  tools that read plain logic ports only. Enum inputs are cast on the way in. */
+/** `@Fsm({ wrap })`: the same ports, every enum (the state type too) and the action struct
+ *  as a logic vector, for tools that read plain logic ports only. Enum inputs are cast on
+ *  the way in. */
 function emitWrap(
 	f: Fsm,
 	name: string,
 	ports: PortRow[],
 	bits: number,
+	actionBits: number,
 ): string[] {
 	const width = (t: PortTy) =>
-		t === "state" ? bits : t.enum ? t.enum.width : t.width;
+		t === "state"
+			? bits
+			: t === "action"
+				? actionBits
+				: t.enum
+					? t.enum.width
+					: t.width;
 	const out = [
 		`// ${name}: ${f.name} with its enum ports as logic vectors.`,
 		`module ${name}`,
@@ -650,53 +729,119 @@ function emitWrap(
 	const w = Math.max(...conn.map(([, , n]) => n.length));
 	out.push(`  ${f.name} u_${f.name} (`, "    .clk, .rst_n,");
 	for (const [i, [dir, t, n]] of conn.entries()) {
-		const e = dir === "input" && t !== "state" ? castTo(t, n) : n;
+		const e =
+			dir === "input" && t !== "state" && t !== "action" ? castTo(t, n) : n;
 		out.push(`    .${n.padEnd(w)} (${e})${i + 1 < conn.length ? "," : ""}`);
 	}
 	out.push("  );", "endmodule");
 	return out;
 }
 
+/** A group's SV files and the package parts it hands to @SvEnum packages of other files.
+ *  One file `stem` by default; with `split` one file per module (its package, module and
+ *  wrapper), and `stem` keeps the group's own @SvEnum packages, if any. */
 export function emitGroup(
 	g: { name: string; comment: string[]; fsms: Fsm[]; enums: EnumType[] },
 	file: string,
-): string {
-	const out = [
+	stem: string,
+	inbound: PkgPart[] = [],
+	split = false,
+): { files: { stem: string; sv: string }[]; outbound: PkgPart[] } {
+	const head = [
 		`// Generated by autowire fsm (${g.name}). Do not edit: SoT is ${file}.`,
 		"",
 	];
 	if (g.comment.length > 0)
-		out.push(...g.comment.map((l) => (l === "" ? "//" : `// ${l}`)), "");
-	const pkgs = [...new Set(g.enums.map((t) => t.pkg))];
-	for (const p of pkgs) {
+		head.push(...g.comment.map((l) => (l === "" ? "//" : `// ${l}`)), "");
+	const out: string[] = [];
+	const fsms = g.fsms.map(emitFsm);
+	const own = new Set(g.enums.map((t) => t.pkg));
+	const shared = [
+		...fsms.map((p) => p.part).filter((p) => own.has(p.pkg)),
+		...inbound,
+	];
+	for (const p of own) {
+		const enums = g.enums.filter((x) => x.pkg === p);
+		const parts = shared.filter((x) => x.pkg === p);
+		// Every name of the package is declared once (statePrefix keeps state members apart).
+		const seen = new Map<string, string>();
+		const claim = (name: string, by: string) => {
+			const prev = seen.get(name);
+			if (prev)
+				throw new FsmError(
+					`fsm: package ${p} declares ${name} twice (${prev} and ${by}); give the state machines a statePrefix`,
+				);
+			seen.set(name, by);
+		};
+		for (const t of enums) {
+			claim(t.name, `@SvEnum ${t.name}`);
+			for (const m of t.members.values()) claim(m.sv, `@SvEnum ${t.name}`);
+		}
+		for (const x of parts) for (const n of x.names) claim(n, x.from);
 		out.push(`package ${p};`);
-		g.enums
-			.filter((x) => x.pkg === p)
-			.forEach((t, j) => {
-				// Enums are separated by a blank line; the class doc comment leads each.
-				if (j > 0) out.push("");
-				out.push(...t.comment.map((l) => (l === "" ? "  //" : `  // ${l}`)));
-				const ms = [...t.members.values()];
-				out.push(`  typedef enum logic [${t.width - 1}:0] {`);
-				for (const [i, m] of ms.entries())
-					out.push(
-						`    ${m.sv} = ${t.width}'d${m.value}${i + 1 < ms.length ? "," : ""}`,
-					);
-				out.push(`  } ${t.name};`);
-			});
+		enums.forEach((t, j) => {
+			// Enums are separated by a blank line; the class doc comment leads each.
+			if (j > 0) out.push("");
+			out.push(...t.comment.map((l) => (l === "" ? "  //" : `  // ${l}`)));
+			const ms = [...t.members.values()];
+			out.push(`  typedef enum logic [${t.width - 1}:0] {`);
+			for (const [i, m] of ms.entries())
+				out.push(
+					`    ${m.sv} = ${t.width}'d${m.value}${i + 1 < ms.length ? "," : ""}`,
+				);
+			out.push(`  } ${t.name};`);
+		});
+		for (const x of parts)
+			out.push("", `  // ${x.from}: state enum and action struct`, ...x.types);
 		out.push("endpackage", "");
 	}
 	// Packages first (every module's types are declared before any module),
 	// then the state machines, then their logic-port wrappers.
-	const parts = g.fsms.map(emitFsm);
-	const blocks = [
-		...parts.map((p) => p.pkg),
-		...parts.map((p) => p.mod),
-		...parts.flatMap((p) => (p.wrap.length > 0 ? [p.wrap] : [])),
+	const local = (p: PkgPart) => p.pkg === `${p.from}_pkg` && !own.has(p.pkg);
+	const pkgBlock = (p: PkgPart) => [
+		`package ${p.pkg};`,
+		...p.types,
+		"endpackage",
 	];
-	blocks.forEach((b, i) => {
-		if (i > 0) out.push("");
-		out.push(...b);
-	});
-	return `${out.join("\n")}\n`;
+	const text = (blocks: string[][], lead: string[]) => {
+		const lines = [...head, ...lead];
+		blocks.forEach((b, i) => {
+			if (i > 0) lines.push("");
+			lines.push(...b);
+		});
+		while (lines.at(-1) === "") lines.pop();
+		return `${lines.join("\n")}\n`;
+	};
+	const files = split
+		? [
+				...(own.size > 0 ? [{ stem, sv: text([], out) }] : []),
+				...fsms.map((p) => ({
+					stem: p.part.from,
+					sv: text(
+						[
+							...(local(p.part) ? [pkgBlock(p.part)] : []),
+							p.mod,
+							...(p.wrap.length > 0 ? [p.wrap] : []),
+						],
+						[],
+					),
+				})),
+			]
+		: [
+				{
+					stem,
+					sv: text(
+						[
+							...fsms.filter((p) => local(p.part)).map((p) => pkgBlock(p.part)),
+							...fsms.map((p) => p.mod),
+							...fsms.flatMap((p) => (p.wrap.length > 0 ? [p.wrap] : [])),
+						],
+						out,
+					),
+				},
+			];
+	const outbound = fsms
+		.map((p) => p.part)
+		.filter((p) => !own.has(p.pkg) && !local(p));
+	return { files, outbound };
 }

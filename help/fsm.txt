@@ -26,8 +26,13 @@ Source (.mjs, never executed; the compiler reads the AST)
                        binary width; excludes stateEncoding
   @Fsm({ exportState: true })   outputs state_set_o = |action, state_next_o = state_next,
                        state_val_o = state_val (e.g. for a regfile RO field); leave unused ones open
+  @Fsm({ exportAction: true })   output action_o (<module>_action_t = the action struct); every
+                       enter_<S> is a member even if unused inside; on the _wrap a logic vector
   @Fsm({ stateType: "my_state_e" })   state enum type in <module>_pkg, one member per line;
                        default <module>_state_e
+  @Fsm({ pkg: "my_pkg", statePrefix: "SM" })   state enum and action struct go into the @SvEnum
+                       package my_pkg (declared in this file or an imported one) instead of
+                       <module>_pkg; names in a shared package must be unique: give each a statePrefix
   @Fsm({ wrap: true | "name" })   also emits module <name>_wrap (or "name"): same ports, enum
                        ports (the state type too) as logic vectors, enum inputs cast in; for
                        the connector, which reads logic ports only
@@ -103,8 +108,9 @@ Output
                                (comb_state, ff_state, ff_<reg>, comb_<push>_<field>)
   every if / else branch is written with begin / end
   each driven assign / Dff always_ff has its DSL action as a // line above it, not at line end
-  a multi-bit Output / Dff written with 2+ different values selects by move: unique case (1'b1)
-                               (comb_<x>, default 0; a Dff case sits in ff_<x>, default holds)
+  an Output wider than 1 bit or any Dff written with 2+ values: unique case (1'b1), one row per value
+                               (Output: comb_<x>, default 0; Dff: in ff_<x>, default holds;
+                               external Dff: comb_<x> drives <x>_set and <x>_next together)
   a group that is instantiated from another file must itself be an [fsm.<id>] source
 
 Not yet (compile error names the feature): push / pop without await (Future),

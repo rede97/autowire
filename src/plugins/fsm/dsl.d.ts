@@ -60,10 +60,14 @@ export interface FsmOptions {
 	statePrefix?: string;
 	stateEncoding?: "binary" | "onehot";
 	exportState?: boolean;
+	/** Output port action_o: the action struct, every enter_<S> included. */
+	exportAction?: boolean;
 	/** Also emit a wrapper module (true: <name>_wrap) whose enum ports (the state type too) are logic. */
 	wrap?: boolean | string;
-	/** State enum type name in <module>_pkg; default <module>_state_e. */
+	/** State enum type name; default <module>_state_e. */
 	stateType?: string;
+	/** @SvEnum package (this file or an imported one) for the state enum and action struct; default <module>_pkg. */
+	pkg?: string;
 	stateValues?: Record<string, number>;
 }
 

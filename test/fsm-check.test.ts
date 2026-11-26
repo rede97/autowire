@@ -394,6 +394,14 @@ const eg = (body: string, head = OP) =>
 /** Whole sources (x.mjs plus imported files) for front-end errors. */
 const files: [string, string, Record<string, string>, string][] = [
 	[
+		"@Fsm({ pkg }) of an unknown package",
+		eg(
+			"while (true) { S: await (go & (i === Op.A)).wait(1); o.pulse(Op.B); }",
+		).replace("@Fsm\n", '@Fsm({ pkg: "nope_pkg" })\n'),
+		{},
+		"pkg nope_pkg is not an @SvEnum package of this file or one it imports",
+	],
+	[
 		"number into an enum output",
 		eg("while (true) { S: await go.wait(1); o.pulse(1); }"),
 		{},

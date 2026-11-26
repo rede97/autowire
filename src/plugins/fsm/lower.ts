@@ -230,8 +230,9 @@ export function lower(src: Src, m: FsmMethod, body: Body): Fsm {
 		}
 		drive.set(a, chosen);
 	}
-	// exportState: state_set_o = |action, so every move has a member (enter_<T>) (§6.5).
-	if (m.options.exportState)
+	// exportState (state_set_o = |action) and exportAction (action_o) need a member for
+	// every move: enter_<T> for each state with an incoming edge, used or not (§6.5).
+	if (m.options.exportState || m.options.exportAction)
 		for (const s of states) {
 			const set = into.get(s) as Set<Edge>;
 			if (set.size > 0) sig(`enter_${s.name}`, "enter", set);

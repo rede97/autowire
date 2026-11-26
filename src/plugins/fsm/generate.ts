@@ -7,7 +7,7 @@ import type { Node } from "@babel/types";
 import { writeIfChanged } from "../../core/write.ts";
 import type { WorkspaceConfig } from "../../workspace.ts";
 import { BodyCompiler, type Shared } from "./cfg.ts";
-import { emitGroup } from "./emit.ts";
+import { emitGroup, type PkgPart } from "./emit.ts";
 import { type Loader, parseUnit } from "./front.ts";
 import { lower } from "./lower.ts";
 import type { Fsm, FsmMethod, Unit } from "./model.ts";
@@ -16,7 +16,16 @@ import { FsmError, Src } from "./source.ts";
 export interface CompiledGroup {
 	/** Output file stem (`@FsmGroup({ file })`, default the class name). */
 	file: string;
+	/** The file without the parts other groups hand to its packages. */
 	sv: string;
+	/** The files (stem, text) with the given parts merged into its @SvEnum packages;
+	 *  `split`: one file per module. */
+	render: (
+		inbound: PkgPart[],
+		split: boolean,
+	) => { stem: string; sv: string }[];
+	/** State enums / action structs of this group that live in another file's package. */
+	outbound: PkgPart[];
 	/** Absolute paths of the groups this one instantiates (other files). */
 	instantiates: string[];
 	/** Absolute paths of the files whose @SvEnum types this one imports. */
@@ -167,12 +176,29 @@ export async function compileFsm(
 		for (const m of g.methods)
 			if (m.sub && !shared.used.has(m.node))
 				src.fail(m.node.key, `sub-FSM ${m.name} is never called (§5)`);
+	// @Fsm({ pkg }) names an @SvEnum package this file declares or imports.
+	const visible = new Set([...unit.enums.values()].map((t) => t.pkg));
+	for (const f of fsms) {
+		const p = f.options.pkg;
+		if (p && !visible.has(p.name))
+			src.fail(
+				p.node,
+				`pkg ${p.name} is not an @SvEnum package of this file or one it imports (§6.5)`,
+			);
+	}
+	const input = {
+		name: g.name,
+		comment: g.comment,
+		fsms,
+		enums: unit.ownEnums,
+	};
+	const first = emitGroup(input, src.file, g.file);
 	return {
 		file: g.file,
-		sv: emitGroup(
-			{ name: g.name, comment: g.comment, fsms, enums: unit.ownEnums },
-			src.file,
-		),
+		sv: first.files[0]?.sv ?? "",
+		render: (inbound, split) =>
+			emitGroup(input, src.file, g.file, inbound, split).files,
+		outbound: first.outbound,
 		instantiates: [...instantiates],
 		enumFiles: [
 			...new Set(
@@ -195,14 +221,10 @@ export async function generateAll(
 	only: string | undefined,
 	force: boolean,
 ): Promise<string[]> {
-	let sources = ws.fsmSources;
-	if (only) {
-		sources = sources.filter((s) => s.id === only);
-		if (sources.length === 0)
-			throw new Error(
-				`fsm: no [fsm.${only}] in autowire.toml (have: ${ws.fsmSources.map((s) => s.id).join(", ")})`,
-			);
-	}
+	if (only && !ws.fsmSources.some((s) => s.id === only))
+		throw new Error(
+			`fsm: no [fsm.${only}] in autowire.toml (have: ${ws.fsmSources.map((s) => s.id).join(", ")})`,
+		);
 	const parsed = new Sources(ws.root, fsmDslPath(ws.root));
 	const norm = (p: string) =>
 		process.platform === "win32" ? p.toLowerCase() : p;
@@ -210,8 +232,14 @@ export async function generateAll(
 	const dir = ws.fsmDir;
 	const groups = new Map<string, string>();
 	const pkgs = new Map<string, string>();
-	const outputs: { path: string; text: string }[] = [];
-	for (const s of sources) {
+	// Every source compiles: @Fsm({ pkg }) parts of one file land in another file's package.
+	const compiled: {
+		id: string;
+		file: string;
+		split: boolean;
+		g: CompiledGroup;
+	}[] = [];
+	for (const s of ws.fsmSources) {
 		const g = await compileFsm(parsed, s.mjs);
 		const file = parsed.file(s.mjs);
 		for (const t of [...g.instantiates, ...g.enumFiles])
@@ -227,15 +255,30 @@ export async function generateAll(
 				);
 			pkgs.set(p, file);
 		}
-		// Keyed case-insensitively: Windows and macOS file systems fold case.
-		const key = g.file.toLowerCase();
-		const prev = groups.get(key);
-		if (prev)
-			throw new Error(
-				`fsm: ${prev} and ${file} both write ${g.file}.sv; set @FsmGroup({ file }) apart`,
-			);
-		groups.set(key, file);
-		outputs.push({ path: join(dir, `${g.file}.sv`), text: g.sv });
+		compiled.push({ id: s.id, file, split: s.split, g });
+	}
+	const parts = compiled.flatMap((c) => c.g.outbound);
+	// --only writes its own files and the files whose packages it feeds.
+	const fed = new Set(
+		compiled
+			.filter((c) => c.id === only)
+			.flatMap((c) => c.g.outbound.map((p) => p.pkg)),
+	);
+	const outputs: { path: string; text: string }[] = [];
+	for (const { id, file, split, g } of compiled) {
+		const inbound = parts.filter((p) => g.packages.includes(p.pkg));
+		for (const f of g.render(inbound, split)) {
+			// Keyed case-insensitively: Windows and macOS file systems fold case.
+			const key = f.stem.toLowerCase();
+			const prev = groups.get(key);
+			if (prev)
+				throw new Error(
+					`fsm: ${prev} and ${file} both write ${f.stem}.sv; set @FsmGroup({ file }) apart`,
+				);
+			groups.set(key, file);
+			if (!only || id === only || g.packages.some((p) => fed.has(p)))
+				outputs.push({ path: join(dir, `${f.stem}.sv`), text: f.sv });
+		}
 	}
 	await mkdir(dir, { recursive: true });
 	const paths: string[] = [];
