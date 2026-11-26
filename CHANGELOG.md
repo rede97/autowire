@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.9] - 2026-11-26
+
+- **合并后的覆盖率有 verdi 脚本可看**：回归目录新增 `run_verdi_cov_all`（打开 `run_cov_merge_all` 写出的 `<regression>/merge.vdb`，还没合并时报错提示先运行 `run_cov_merge_all`），cluster 启动器在旁边写 `bsub_verdi_cov_all` / `srun_verdi_cov_all`（后台运行）。每个编译组的 `run_verdi_cov` 改由 dtsim 和 `run_cov_merge` 一起写：`merge.vdb` 存在时打开它，否则提示还没合并并打开 `simv.vdb`。Coverage 列表新增 `View build` / `View all` 两行，`run` 也列出 `View`。
+- **`SimTool.coverage` 接口**：`merge` / `mergeAll` 改为返回 `{ argv, db }`（命令和它写出的数据库），新增 `view(db)`（查看命令，VCS 为 `verdi -cov -covdir <db>`）；查看脚本由 dtsim 生成，VCS 后端不再自己写 `run_verdi_cov`。
+
 ## [2.9.8] - 2026-11-26
 
 - **fsm 同步辅助方法**：`@FsmGroup` 里不带装饰器、也不带 `async` 的方法是只有动作和分支的同步方法，没有状态；调用写成语句 `this.m({...});`，不写 `await`、不带标签，动作并进调用所在的那一段执行。对它 `await`、把它当值用、交给 `Caller` 或 `Instance` 都在编译期报错。用于把一串固定的寄存器写入收成一个有名字的操作（[`docs/state/async-fsm.md`](docs/state/async-fsm.md) §5）。

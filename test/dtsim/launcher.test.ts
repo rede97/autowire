@@ -169,8 +169,10 @@ const tagged = defineLauncher({
 		});
 		expect(result.code).toBe(0);
 		// dtsim submits only compiles and sims; merging is the user's call.
-		expect(await Bun.file(log).text()).not.toContain("cov_merge");
-		expect(result.stdout).toContain("bsub_cov_merge / bsub_cov_merge_all");
+		expect(await Bun.file(log).text()).not.toMatch(/cov_merge|verdi_cov/);
+		expect(result.stdout).toContain(
+			"bsub_cov_merge / bsub_verdi_cov / bsub_cov_merge_all / bsub_verdi_cov_all",
+		);
 		const regDir = join(ws.out, "regression");
 		const wrappers = [...new Bun.Glob("**/bsub_cov_merge*").scanSync(regDir)];
 		expect(wrappers.filter((f) => f.endsWith("bsub_cov_merge"))).toHaveLength(
@@ -180,6 +182,9 @@ const tagged = defineLauncher({
 		expect(all).toMatch(
 			/'-J' 'cov_merge_all' .*'bash' '[^']*\/run_cov_merge_all'/,
 		);
+		// The merged-all viewer gets a background wrapper like bsub_verdi.
+		const viewAll = await Bun.file(join(regDir, "bsub_verdi_cov_all")).text();
+		expect(viewAll.trimEnd()).toMatch(/'bash' '[^']*\/run_verdi_cov_all' &$/);
 	});
 
 	test("local bypasses the wrapper scripts", async () => {

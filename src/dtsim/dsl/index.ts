@@ -375,6 +375,9 @@ export type CovMergeAllContext = {
 	builds: readonly string[];
 };
 
+/** A coverage merge command and the database it writes. */
+export type CovMerge = { argv: string[]; db: string };
+
 export type ToolContext = {
 	phase: "compile" | "sim";
 	caseId: string;
@@ -465,18 +468,23 @@ export type SimTool = {
 	 *  `+ntb_random_seed=$SEED`. */
 	seedArg?: string;
 	/** Coverage support. Without it a case's `cov` is ignored and the Run /
-	 *  Regression tables say so. dtsim never merges: it writes each merge
-	 *  command into a run script (compile env) plus a cluster submit wrapper
-	 *  (bsub_ / srun_), and prints the databases and scripts at the end. */
+	 *  Regression tables say so. dtsim never merges: it writes each merge and
+	 *  each viewer command into a run script (compile env) plus a cluster
+	 *  submit wrapper (bsub_ / srun_), and prints them at the end. */
 	coverage?: {
 		/** Where a build's coverage database is (VCS: `<dir>/simv.vdb`). */
 		db: (dir: string) => string;
-		/** Merge one build's seed coverage: written as `<build>/run_cov_merge`. */
-		merge: (ctx: CovMergeContext) => string[];
+		/** Merge one build's seed coverage: written as `<build>/run_cov_merge`;
+		 *  `<build>/run_verdi_cov` views its `db` once merged, else the raw db. */
+		merge: (ctx: CovMergeContext) => CovMerge;
 		/** Merge every coverage build of a regression: written as
-		 *  `<regression>/run_cov_merge_all` (extra arguments are passed on).
-		 *  Builds with different defines may not merge meaningfully. */
-		mergeAll?: (ctx: CovMergeAllContext) => string[];
+		 *  `<regression>/run_cov_merge_all` (extra arguments are passed on);
+		 *  `<regression>/run_verdi_cov_all` views its `db`. Builds with
+		 *  different defines may not merge meaningfully. */
+		mergeAll?: (ctx: CovMergeAllContext) => CovMerge;
+		/** Open a coverage database in the GUI (VCS: `verdi -cov -covdir`);
+		 *  dtsim runs it in the background. */
+		view: (db: string) => string[];
 	};
 	/** Write tool-specific helper files (dump.tcl, run_verdi, ...). */
 	writeAux?: (ctx: ToolContext) => void;

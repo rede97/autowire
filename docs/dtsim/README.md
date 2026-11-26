@@ -344,10 +344,12 @@ C++ harness must hand argv to `contextp->commandArgs()` for it to apply.
 The context carries the case's `top`, `wave` and `cov` (`ctx.caseOpts.top`,
 `ctx.caseOpts.wave` = `{ enabled, depth, scope }`, `ctx.caseOpts.cov` =
 `{ enabled, metrics }`). A backend that collects coverage also supplies
-`coverage: { db(dir), merge(ctx), mergeAll?(ctx) }`: where a build's database
-is and the argv of its per-build and regression-wide merge, which dtsim writes
-as scripts and never runs (see [覆盖率](#覆盖率)); without it a case's `cov` is
-ignored and the Run / Regression tables show `off (<tool> collects no coverage)`.
+`coverage: { db(dir), merge(ctx), mergeAll?(ctx), view(db) }`: where a
+build's database is, the per-build and regression-wide merge (`{ argv, db }`:
+the command and the database it writes) and the GUI command for a database.
+dtsim writes them as scripts and never runs them (see [覆盖率](#覆盖率));
+without it a case's `cov` is ignored and the Run / Regression tables show
+`off (<tool> collects no coverage)`.
 
 ### Base flags
 
@@ -437,18 +439,23 @@ demo/soc 用一份配置跑 Verilator（C++ harness）与 VCS（纯 SV aw-tb-mod
 Run / Regression 表的 `Coverage` 行写明 `off (verilator collects no coverage)`。
 
 dtsim 不合并覆盖率。结束时（`run` 与 `regr`）打印 **Coverage** 表：每个编译组的覆盖率数据库位置、
-合并脚本的位置，以及 cluster 启动器下的提交脚本名；由用户自己决定合并哪些、何时合并。
+合并脚本与查看脚本的位置，以及 cluster 启动器下的提交脚本名；由用户自己决定合并哪些、何时合并、合并后看哪份。
 
 VCS 的做法：
 
 - 编译和仿真加 `-cm <metrics>`，数据写进编译目录的 `simv.vdb`，每个 seed 用 `-cm_name <case>_<seed>`。
-- 编译目录写 `run_verdi_cov`（`verdi -cov`，有 `merge.vdb` 时打开它，否则打开 `simv.vdb`）。
-- 每个开了覆盖率、编译成功的编译组写 `run_cov_merge`（`urg -dir simv.vdb -dbname merge.vdb
-  -report urgReport`），`run` 也写一份在用例的编译目录。
-- 回归目录写 `run_cov_merge_all`：一条 `urg` 合并所有覆盖率编译组到 `<regression>/merge.vdb` 与
-  `urgReport`，额外参数原样传给 urg。define 不同的编译组合并不一定有意义。
-- 这些脚本都带编译阶段的环境（exports），和 `run_verdi` 一样，cluster 启动器在旁边写提交脚本：
-  `bsub_verdi_cov` / `bsub_cov_merge` / `bsub_cov_merge_all`（Slurm 为 `srun_*`），local 不写。
+- 每个开了覆盖率、编译成功的编译组（`run` 是用例的编译目录）写一对脚本：
+  - `run_cov_merge`：`urg -dir simv.vdb -dbname merge.vdb -report urgReport`，合并本编译组的 seed。
+  - `run_verdi_cov`：`verdi -cov -covdir`，`merge.vdb` 已存在时打开它，否则提示还没合并并打开 `simv.vdb`。
+- 回归目录再写一对：
+  - `run_cov_merge_all`：一条 `urg` 合并所有覆盖率编译组到 `<regression>/merge.vdb` 与 `urgReport`，
+    额外参数原样传给 urg。define 不同的编译组合并不一定有意义。
+  - `run_verdi_cov_all`：打开 `<regression>/merge.vdb`；还没运行 `run_cov_merge_all` 时报错退出。
+- 这些脚本都带编译阶段的环境（exports），和 `run_verdi` 一样，cluster 启动器在同一目录写提交脚本：
+  `bsub_cov_merge` / `bsub_verdi_cov` / `bsub_cov_merge_all` / `bsub_verdi_cov_all`（Slurm 为 `srun_*`），
+  两个 verdi 提交脚本末尾带 `&`，启动 GUI 后立即返回；local 不写。
+
+典型流程：`run_cov_merge_all`（或 `bsub_cov_merge_all`）合并，再 `run_verdi_cov_all`（或 `bsub_verdi_cov_all`）看合并结果。
 
 命令行开覆盖率：注册 `{ name: "COV", flags: "--cov" }`，回调里写 `cov: process.env.COV === "1"`
 （demo/dtsim、demo/hbm）。

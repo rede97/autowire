@@ -190,9 +190,10 @@ export async function runSingle(
 	const cov = writeCovMerge(ws, c, compileDir, [c.id], `cov_merge_${c.id}`);
 	if (cov) {
 		console.log(
-			pathBlock("Coverage (not merged by dtsim; run the script by hand)", [
+			pathBlock("Coverage (not merged by dtsim; run the scripts by hand)", [
 				["Database", cov.db],
-				["Merge", cov.script],
+				["Merge", cov.merge],
+				["View", `${cov.view} (${cov.merged} once merged)`],
 			]),
 		);
 	}

@@ -142,6 +142,32 @@ describe("regression", () => {
 		});
 		expect(merge.exitCode).toBe(0);
 		expect(existsSync(join(helloBuild, "merge.vdb"))).toBe(true);
+		// run_verdi_cov opens the merged build database once it exists.
+		const viewBuild = Bun.spawnSync(
+			["bash", join(helloBuild, "run_verdi_cov")],
+			{ env: mockEnv() },
+		);
+		expect(viewBuild.stdout.toString()).toMatch(/-covdir \S*merge\.vdb/);
+		// run_verdi_cov_all refuses until run_cov_merge_all has run, then
+		// opens the regression-wide merge.
+		const early = Bun.spawnSync(["bash", join(regDir, "run_verdi_cov_all")], {
+			env: mockEnv(),
+		});
+		expect(early.exitCode).toBe(1);
+		expect(early.stderr.toString()).toContain("run run_cov_merge_all first");
+		expect(
+			Bun.spawnSync(["bash", join(regDir, "run_cov_merge_all")], {
+				env: mockEnv(),
+			}).exitCode,
+		).toBe(0);
+		const viewAll = Bun.spawnSync(["bash", join(regDir, "run_verdi_cov_all")], {
+			env: mockEnv(),
+		});
+		expect(viewAll.exitCode).toBe(0);
+		expect(viewAll.stdout.toString()).toMatch(
+			/-covdir \S*regression[\\/]merge\.vdb/,
+		);
+		expect(result.stdout).toContain("run_verdi_cov_all");
 
 		// The DTSIM_COV environment variable is no longer read.
 		const ignored = await makeWorkspace();

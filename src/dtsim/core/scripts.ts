@@ -95,8 +95,9 @@ export function writeRunCompile(args: {
 
 /**
  * A run script for a backend command dtsim writes outside the compile and
- * sim steps (run_cov_merge, run_cov_merge_all): the resolved env, a cd and
- * the command; `passArgs` appends the script's own arguments.
+ * sim steps (run_cov_merge, run_verdi_cov, ...): the resolved env, a cd and
+ * the command; `passArgs` appends the script's own arguments. `body` replaces
+ * the exec line with shell lines (build them with `shellCommand`).
  */
 export function writeRunScript(args: {
 	dir: string;
@@ -105,7 +106,8 @@ export function writeRunScript(args: {
 	note: string;
 	cwd: string;
 	exports: Record<string, string>;
-	argv: readonly string[];
+	argv?: readonly string[];
+	body?: readonly string[];
 	passArgs?: boolean;
 }): string {
 	const lines = [
@@ -116,13 +118,20 @@ export function writeRunScript(args: {
 			([k, v]) => `export ${k}=${shellQuote(exportValue(k, v))}`,
 		),
 		`cd ${shellQuote(args.cwd)} || exit 1`,
-		`exec ${args.argv.map(shellQuote).join(" ")}${args.passArgs ? ' "$@"' : ""}`,
+		...(args.body ?? [
+			`exec ${shellCommand(args.argv ?? [])}${args.passArgs ? ' "$@"' : ""}`,
+		]),
 		"",
 	];
 	const path = join(args.dir, args.name);
 	writeFileSync(path, lines.join("\n"));
 	chmodSync(path, 0o755);
 	return path;
+}
+
+/** `argv` as one shell command line, every word quoted. */
+export function shellCommand(argv: readonly string[]): string {
+	return argv.map(shellQuote).join(" ");
 }
 
 /**

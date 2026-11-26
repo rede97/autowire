@@ -48,9 +48,10 @@ Tools, top, wave and coverage (config-owned)
   line+cond+fsm+tgl+branch+assert) work like wave: Workspace defaults, case
   override, in the compile key when on. Only backends with `coverage` collect
   it (VCS); Verilator ignores cov. dtsim never merges: VCS writes per build
-  run_verdi_cov + run_cov_merge (urg -> merge.vdb, urgReport) and per
-  regression run_cov_merge_all; cluster launchers add bsub_/srun_ wrappers.
-  At the end a Coverage table lists each database and the merge scripts.
+  run_cov_merge (urg -> merge.vdb, urgReport) + run_verdi_cov (merge.vdb once
+  merged, else simv.vdb), and per regression run_cov_merge_all +
+  run_verdi_cov_all (opens the merged-all merge.vdb); cluster launchers add
+  bsub_/srun_ wrappers. At the end a Coverage list names databases and scripts.
   No DTSIM_COV* env vars; a --cov flag is a config's registered COV option.
 
 Agent workflow

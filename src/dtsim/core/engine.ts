@@ -24,6 +24,7 @@ import { type HookBase, runHooks } from "./hooks.ts";
 import { wrapCommand } from "./launch.ts";
 import { runProcess } from "./run.ts";
 import {
+	shellCommand,
 	writeGitRev,
 	writeResultMarker,
 	writeRunCompile,
@@ -222,34 +223,71 @@ export function writeSubmitWrapper(
 	);
 }
 
+/** What dtsim wrote for one build's coverage. */
+export type CovScripts = {
+	/** The raw (unmerged) database. */
+	db: string;
+	/** The database run_cov_merge writes. */
+	merged: string;
+	/** run_cov_merge. */
+	merge: string;
+	/** run_verdi_cov: the merged database once it exists, else the raw one. */
+	view: string;
+};
+
 /** For a build compiled with coverage on a backend that collects it: writes
- *  `run_cov_merge` (compile env, the backend's merge) and its submit wrapper,
- *  and returns the coverage database and that script. dtsim never runs it;
- *  the user merges by hand. */
+ *  `run_cov_merge` and `run_verdi_cov` (compile env) with their submit
+ *  wrappers. dtsim never runs them; the user merges and views by hand. */
 export function writeCovMerge(
 	ws: ResolvedWorkspace,
 	c: MergedCase,
 	dir: string,
 	caseIds: readonly string[],
 	jobName: string,
-): { db: string; script: string } | undefined {
+): CovScripts | undefined {
 	const backend = ws.tool.coverage;
 	if (!backend || !c.cov.enabled) return undefined;
-	const script = writeRunScript({
+	const exports = childEnv(ws, c, "compile", dir).env;
+	const db = backend.db(toolPath(dir));
+	const merge = backend.merge({ dir: toolPath(dir), caseIds, cov: c.cov });
+	const launch = {
+		phase: "compile" as const,
+		jobName,
+		caseId: c.id,
+		interactive: false,
+	};
+	const mergeScript = writeRunScript({
 		dir,
 		name: "run_cov_merge",
 		note: "merges the coverage of this build's seeds; dtsim does not run it",
 		cwd: dir,
-		exports: childEnv(ws, c, "compile", dir).env,
-		argv: backend.merge({ dir: toolPath(dir), caseIds, cov: c.cov }),
+		exports,
+		argv: merge.argv,
 	});
-	writeSubmitWrapper(ws, dir, "run_cov_merge", {
-		phase: "compile",
-		jobName,
-		caseId: c.id,
-		interactive: false,
+	writeSubmitWrapper(ws, dir, "run_cov_merge", launch);
+	const viewScript = writeRunScript({
+		dir,
+		name: "run_verdi_cov",
+		note: "opens this build's coverage: the run_cov_merge result once it exists, else the unmerged database",
+		cwd: dir,
+		exports,
+		body: [
+			`if [ -e ${shellCommand([merge.db])} ]; then`,
+			`  ${shellCommand(backend.view(merge.db))} &`,
+			"else",
+			`  echo ${shellCommand([`dtsim: ${merge.db} not found (run_cov_merge not run yet); opening the unmerged ${db}`])} >&2`,
+			`  ${shellCommand(backend.view(db))} &`,
+			"fi",
+		],
 	});
-	return { db: backend.db(toolPath(dir)), script };
+	writeSubmitWrapper(
+		ws,
+		dir,
+		"run_verdi_cov",
+		{ ...launch, jobName: jobName.replace(/^cov_merge/, "verdi_cov") },
+		{ background: true },
+	);
+	return { db, merged: merge.db, merge: mergeScript, view: viewScript };
 }
 
 export function childEnv(

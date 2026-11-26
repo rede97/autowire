@@ -26,6 +26,7 @@ import {
 import { type BuildNode, Progress, type TaskNode } from "./progress.ts";
 import {
 	elapsedLine,
+	shellCommand,
 	writeDresultsScript,
 	writeResultMarker,
 	writeRunScript,
@@ -484,10 +485,11 @@ async function finishRegression(
 
 /**
  * Coverage after the sims, for a backend with `coverage`: each build that
- * compiled with coverage on gets `run_cov_merge`, the regression dir gets
- * `run_cov_merge_all` over all of them, each with a submit wrapper. dtsim
- * merges nothing: the rows tell the user where the databases and the merge
- * scripts are. Undefined: no coverage in this regression.
+ * compiled with coverage on gets `run_cov_merge` and `run_verdi_cov`, the
+ * regression dir gets `run_cov_merge_all` over all of them and
+ * `run_verdi_cov_all` for its result, each with a submit wrapper. dtsim
+ * merges nothing: the rows tell the user where the databases and scripts
+ * are. Undefined: no coverage in this regression.
  */
 function coverageScripts(
 	ws: ResolvedWorkspace,
@@ -512,32 +514,62 @@ function coverageScripts(
 		);
 		if (written) rows.push([g.name, written.db]);
 	}
-	rows.push(["Merge build", join(regDir, "compile_*", "run_cov_merge")]);
+	rows.push(
+		["Merge build", join(regDir, "compile_*", "run_cov_merge")],
+		["View build", join(regDir, "compile_*", "run_verdi_cov")],
+	);
+	const prefix = ws.task.launcher.scriptPrefix;
 	if (backend.mergeAll) {
-		const all = writeRunScript({
+		const exports = childEnv(ws, first.representative, "compile", regDir).env;
+		const all = backend.mergeAll({
+			regDir: toolPath(regDir),
+			builds: builds.map((g) => toolPath(g.dir)),
+		});
+		const launch = {
+			phase: "compile" as const,
+			caseId: first.representative.id,
+			interactive: false,
+		};
+		const merge = writeRunScript({
 			dir: regDir,
 			name: "run_cov_merge_all",
 			note: "merges every coverage build; builds with different defines may not merge meaningfully",
 			cwd: regDir,
-			exports: childEnv(ws, first.representative, "compile", regDir).env,
-			argv: backend.mergeAll({
-				regDir: toolPath(regDir),
-				builds: builds.map((g) => toolPath(g.dir)),
-			}),
+			exports,
+			argv: all.argv,
 			passArgs: true,
 		});
 		writeSubmitWrapper(ws, regDir, "run_cov_merge_all", {
-			phase: "compile",
+			...launch,
 			jobName: "cov_merge_all",
-			caseId: first.representative.id,
-			interactive: false,
 		});
-		rows.push(["Merge all", all]);
+		const view = writeRunScript({
+			dir: regDir,
+			name: "run_verdi_cov_all",
+			note: "opens the coverage run_cov_merge_all wrote",
+			cwd: regDir,
+			exports,
+			body: [
+				`if [ ! -e ${shellCommand([all.db])} ]; then`,
+				`  echo ${shellCommand([`dtsim: ${all.db} not found; run run_cov_merge_all first`])} >&2`,
+				"  exit 1",
+				"fi",
+				`${shellCommand(backend.view(all.db))} &`,
+			],
+		});
+		writeSubmitWrapper(
+			ws,
+			regDir,
+			"run_verdi_cov_all",
+			{ ...launch, jobName: "verdi_cov_all" },
+			{ background: true },
+		);
+		rows.push(["Merge all", merge], ["View all", `${view} (${all.db})`]);
 	}
-	if (ws.task.launcher.scriptPrefix) {
+	if (prefix) {
 		rows.push([
 			"Submit",
-			`${ws.task.launcher.scriptPrefix}_cov_merge / ${ws.task.launcher.scriptPrefix}_cov_merge_all beside them`,
+			`${prefix}_cov_merge / ${prefix}_verdi_cov / ${prefix}_cov_merge_all / ${prefix}_verdi_cov_all beside them`,
 		]);
 	}
 	return rows;
