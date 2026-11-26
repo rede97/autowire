@@ -2,6 +2,11 @@
 
 版本号和 GitHub Release 说明以本文件最上面一条 `## [x.y.z] - YYYY-MM-DD` 为准。`package.json` 的 `version` 必须和它相同。`hdxml` 是独立项目（[`rede97/hdxml`](https://github.com/rede97/hdxml)），用自己的版本，本文件只记录 `hdxml-version.txt` 钉的版本变化。
 
+## [2.9.10] - 2026-11-26
+
+- **回归进度条行**：去掉进度条两边的 `[` `]`；格式改为 `running n     mm:ss <进度条> compile x/N sim y/M`。耗时是 `mm:ss`，超过一小时为 `h:mm:ss`，这一行给小时预留三位数字和一个 `:`（未到一小时为空格），后面的列不移动；计数不再补 0，像 `%*d` 一样右对齐到各自上限的位数（running 按 `maxSlots`，compile / sim 按总数）。回归结束后最后一次进度条打印在 Results 树下面、Summary 上面（TTY 上，stderr）。
+- **耗时列**：`run` 与回归树的实时行、完成行恢复为 `mm:ss`，超过一小时才显示小时（不再固定 `hhh:mm:ss`）；回归树里各行按整个回归的耗时对齐。
+
 ## [2.9.9] - 2026-11-26
 
 - **合并后的覆盖率有 verdi 脚本可看**：回归目录新增 `run_verdi_cov_all`（打开 `run_cov_merge_all` 写出的 `<regression>/merge.vdb`，还没合并时报错提示先运行 `run_cov_merge_all`），cluster 启动器在旁边写 `bsub_verdi_cov_all` / `srun_verdi_cov_all`（后台运行）。每个编译组的 `run_verdi_cov` 改由 dtsim 和 `run_cov_merge` 一起写：`merge.vdb` 存在时打开它，否则提示还没合并并打开 `simv.vdb`。Coverage 列表新增 `View build` / `View all` 两行，`run` 也列出 `View`。

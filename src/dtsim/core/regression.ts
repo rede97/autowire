@@ -267,6 +267,7 @@ export async function runRegression(
 			sims: g.cases.flatMap((c) => seedsOf(c).map((s) => simLabel(c, s))),
 		})),
 		opts.plain,
+		ws.task.maxSlots,
 	);
 	const results: SeedResult[] = [];
 	const task = ws.task;
@@ -388,12 +389,13 @@ export async function runRegression(
 		await Promise.race(running);
 	}
 	await Promise.all([...running]);
-	progress.stop();
+	const bar = progress.stop();
 
 	return finishRegression(ws, groups, regDir, results, {
 		t0,
 		compilesFailed,
 		failedBuilds,
+		bar,
 	});
 }
 
@@ -433,10 +435,13 @@ async function finishRegression(
 		t0: number;
 		compilesFailed: number;
 		failedBuilds: ReadonlySet<string>;
+		/** The final progress bar line (TTY only), between Results and Summary. */
+		bar?: string;
 	},
 ): Promise<number> {
 	const text = resultTree(results);
 	console.log(text);
+	if (run.bar) process.stderr.write(`\n${run.bar}\n`);
 	await writeFile(join(regDir, "result.txt"), `${plain(text)}\n`);
 	const dresults = writeDresultsScript(regDir, ws.tool.name);
 

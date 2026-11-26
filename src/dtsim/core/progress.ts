@@ -10,7 +10,7 @@ import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import type { PhaseObserver } from "./engine.ts";
 import { LivePanel } from "./live.ts";
-import { fmtClock } from "./scripts.ts";
+import { fmtElapsed } from "./scripts.ts";
 import { status as colour, fmtSize } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -52,13 +52,17 @@ function pad(text: string, width: number): string {
 	return text + " ".repeat(Math.max(0, width - n));
 }
 
-function elapsed(n: TaskNode): string {
-	if (n.t0 === undefined) return "---:--:--";
-	return fmtClock(((n.t1 ?? Date.now()) - n.t0) / 1000);
+/** `mm:ss`, `h:mm:ss` once past an hour; right-aligned to `width` so the
+ *  rows of one regression keep their columns. */
+function elapsed(n: TaskNode, width: number): string {
+	if (n.t0 === undefined) return "--:--".padStart(width);
+	return fmtElapsed(((n.t1 ?? Date.now()) - n.t0) / 1000).padStart(width);
 }
 
 /** Narrower than this, the bar line is text only. */
 const BAR_MIN = 10;
+/** `hhh:mm:ss`: the bar line's clock field. */
+const CLOCK_W = 9;
 
 /** One bar cell: glyph and paint; runs of equal cells are merged. */
 type Cell = { ch: string; paint: (s: string) => string };
@@ -157,11 +161,14 @@ function logCol(log: string | undefined): string {
 export class Progress {
 	readonly builds: BuildNode[];
 	private readonly t0 = Date.now();
+	/** Width of the `running` count: at most maxSlots tasks run at once. */
+	private readonly slotsWidth: number;
 	private frame = 0;
 	private timer?: Timer;
 	private readonly live?: LivePanel;
 
-	constructor(plan: readonly PlannedBuild[], plain: boolean) {
+	constructor(plan: readonly PlannedBuild[], plain: boolean, maxSlots: number) {
+		this.slotsWidth = String(maxSlots).length;
 		this.builds = plan.map((b) => ({
 			label: `compile ${b.name}`,
 			state: "waiting",
@@ -205,41 +212,50 @@ export class Progress {
 			: node.log
 				? `${chalk.dim(node.log)} ${chalk.bold(`(${size === undefined ? "-" : fmtSize(size)})`)}`
 				: "";
-		const head = `${pad(colour(status), STATUS_W)} ${elapsed(node)}  ${chalk.bold(node.label)}`;
+		const head = `${pad(colour(status), STATUS_W)} ${elapsed(node, this.clockWidth())}  ${chalk.bold(node.label)}`;
 		this.line(where ? `${head}  ${where}` : head);
 	}
 
-	/** Remove the live trees; on a TTY the final bar line stays on screen so
-	 *  the PASS / FAIL proportion is visible after the run. */
-	stop(): void {
+	/** Remove the live trees. On a TTY returns the final bar line, which the
+	 *  caller prints under the results so the PASS / FAIL proportion stays
+	 *  visible after the run. */
+	stop(): string | undefined {
 		clearInterval(this.timer);
 		this.timer = undefined;
-		// persist() erases the frame first; stop() then has nothing to clear.
-		this.live?.persist(this.barLine());
-		this.live?.stop();
+		if (!this.live) return undefined;
+		const bar = this.barLine();
+		this.live.stop();
+		return bar;
 	}
 
-	/** `running nnn hhh:mm:ss [<bar>] compile xxx/NNN sim yyy/MMM`: counts
-	 *  are zero-padded to at least three digits and the clock is fixed
-	 *  width, so the line does not shift while it runs. The bar takes what the
-	 *  terminal leaves (the panel keeps one column free); below BAR_MIN
-	 *  cells it is left out and only the text shows. */
+	/** The run's own elapsed time is the longest, so its width fits every
+	 *  row: the hour column appears for all of them at once. */
+	private clockWidth(): number {
+		return fmtElapsed((Date.now() - this.t0) / 1000).length;
+	}
+
+	/** `running n     mm:ss <bar> compile x/N sim y/M`: the clock is
+	 *  right-aligned to `hhh:mm:ss` (room for the hours left blank) and each
+	 *  count to the digits of its limit (maxSlots, the builds, the sims),
+	 *  like `%*d`, so the line does not shift while it runs. The bar
+	 *  takes what the terminal leaves (the panel keeps one column free);
+	 *  below BAR_MIN cells it is left out and only the text shows. */
 	private barLine(): string {
 		const sims = this.builds.flatMap((b) => b.sims);
 		const count = (list: readonly TaskNode[], s: State) =>
 			list.filter((n) => n.state === s).length;
-		const width = Math.max(3, String(sims.length + this.builds.length).length);
-		const num = (n: number) => String(n).padStart(width, "0");
+		const of = (list: readonly TaskNode[]) =>
+			`${String(count(list, "done")).padStart(String(list.length).length)}/${list.length}`;
 		const running = count(this.builds, "running") + count(sims, "running");
 		const head = chalk.dim(
-			`running ${num(running)} ${fmtClock((Date.now() - this.t0) / 1000)}`,
+			`running ${String(running).padStart(this.slotsWidth)} ${fmtElapsed((Date.now() - this.t0) / 1000).padStart(CLOCK_W)}`,
 		);
-		const tail = `${chalk.bold("compile")} ${num(count(this.builds, "done"))}/${num(this.builds.length)} ${chalk.bold("sim")} ${num(count(sims, "done"))}/${num(sims.length)}`;
+		const tail = `${chalk.bold("compile")} ${of(this.builds)} ${chalk.bold("sim")} ${of(sims)}`;
 		const text = stripVTControlCharacters(`${head} ${tail}`).length;
-		// Beyond that text: "[", "]" and one more space.
-		const room = (process.stderr.columns || 80) - 1 - text - 3;
+		// Beyond that text: one more space.
+		const room = (process.stderr.columns || 80) - 1 - text - 1;
 		if (room < BAR_MIN) return `${head} ${tail}`;
-		return `${head} [${progressBar(this.builds, room)}] ${tail}`;
+		return `${head} ${progressBar(this.builds, room)} ${tail}`;
 	}
 
 	private line(text: string): void {
@@ -252,7 +268,7 @@ export class Progress {
 	}
 
 	private row(first: string, n: TaskNode, labelWidth: number): string {
-		return `${pad(first, STATUS_W)} ${elapsed(n)}  ${chalk.bold(pad(n.label, labelWidth))} ${logCol(n.log)}`.trimEnd();
+		return `${pad(first, STATUS_W)} ${elapsed(n, this.clockWidth())}  ${chalk.bold(pad(n.label, labelWidth))} ${logCol(n.log)}`.trimEnd();
 	}
 
 	private render(): void {

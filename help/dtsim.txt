@@ -132,12 +132,15 @@ Output
   stderr: progress. TTY run: the last liveLines (Workspace, default 10; 0 = last
   line only) lines the compiler / simulator prints, between rules titled with
   the step, read from the child (a PTY on POSIX, pipes on Windows; colour and \r
-  redraws removed), above [spinner] [hhh:mm:ss] [phase] <log> <size>. A failed
+  redraws removed), above [spinner] [mm:ss] [phase] <log> <size>. A failed
   compile / sim (or a sim whose grade fails) leaves them on screen. The submitted
   command shows between two full-width rules titled cmd. regr: live build
-  trees, then `running nnn hhh:mm:ss [bar] compile xxx/NNN sim yyy/MMM` (fixed
-  width; the bar fills the rest, text only below 10 cells; it stays after the
-  run). Bar: each build 1/N, each of its k sims 1/(N·k); compile layer built
+  trees, then `running n     mm:ss <bar> compile x/N sim y/M` (the clock is
+  right-aligned to hhh:mm:ss, hours blank under an hour; counts right-aligned
+  to their limit's digits, running to maxSlots;
+  the bar fills the rest, text only below 10 cells; the final one is printed
+  between Results and Summary). Bar: each build 1/N, each of its k sims
+  1/(N·k); compile layer built
   blue █, build failed grey █, building ░, waiting grey ░; finished sims cover
   it from the left: PASS green █, PASS WITH ERRORS yellow █, other red █, each
   present status at least one cell. Status OK (a compile) is blue, PASS green.

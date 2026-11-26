@@ -92,15 +92,18 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 3. **运行中（TTY）**：stderr 上每个仍在进行的编译组一棵树，多棵并列：编译节点
    `[spinner|状态] [耗时] compile <名字> <日志> <大小>`，子节点是正在跑的 sim（同样的列），
    其余折叠成 `… N waiting, M done`；超过终端高度时只画前面几组并注明还有几组。
-   最后一行是总计和进度条（`running 003 000:00:14 [<进度条>] compile 001/003 sim 002/005`）：
-   计数至少三位补零，耗时固定 `hhh:mm:ss`，运行过程中这一行的文字不会移动。
+   最后一行是总计和进度条（`running 3     00:14 <进度条> compile 1/3 sim  2/12`）：
+   耗时是 `mm:ss`，超过一小时变成 `h:mm:ss`，前面给小时预留三位数字和一个 `:`（未到一小时时为空格），
+   跑到小时级别后面的列也不移动；每个计数像 C 的 `%*d` 一样右对齐到它的上限的位数
+   （running 按 `maxSlots`，compile / sim 按总数），运行过程中这一行的文字不会移动。
    进度条分两层：每个编译组占 1/N，组内每个 sim 占该段的 1/k，所以一组 sim 全部跑完
    正好盖满这一组的长度。编译层从左到右：已编译蓝 `█`、编译失败灰 `█`（这一段作废）、
    编译中默认前景色 `░`、待编译灰 `░`。sim 层从左边盖在已编译区上：PASS 绿 `█`、
    PASS WITH ERRORS 黄 `█`、其他状态红 `█`，未跑完的地方露出编译层。编译失败而跳过的
    sim 不画。格子取整时多出的格子按余数大小分配；只要有一条 PASS / PASS WITH ERRORS / FAIL
    （或其他失败状态），对应颜色至少保留一格，不会因舍入消失。进度条占满文字之外的终端宽度，
-   剩余不足 10 格时只显示文字。回归结束后这一行留在屏幕上，可以直观看到 pass / fail 的比例。
+   剩余不足 10 格时只显示文字。回归结束后最后一次的这一行打印在 Results 树下面、Summary 上面，
+   可以直观看到 pass / fail 的比例（只在 TTY 上，写到 stderr，不进 `result.txt`）。
 4. 每个 compile / sim 完成或失败时在上方留一行：`<状态> <耗时> <compile|sim 名字>  <日志路径> (大小)`，
    像 `echo` 一样整行写出，dtsim 不插换行：长路径由终端软换行，调整窗口后会重新排版，复制时路径完整；编译失败跳过的 sim 写 `skipped: compile failed`。
    非 TTY（`--plain`、管道、LSF / CI 日志）只有这些行。一个用例有多个 seed 时 sim
@@ -120,9 +123,9 @@ verilator --binary --top-module tb_top ...
 %Warning-WIDTH: ...
 - V e r i l a t i o n   R e p o r t: ...
 ─────────────────────────────────────────────────────
-⠹      000:00:07  compile                compile.log     3.3 KiB
-OK     000:00:07  compile                compile.log     3.9 KiB      ← 结束
-PASS   000:00:00  grade
+⠹      00:07  compile                compile.log     3.3 KiB
+OK     00:07  compile                compile.log     3.9 KiB      ← 结束
+PASS   00:00  grade
 ```
 
 - compile / sim 开始时打印日志路径，以及实际提交的命令：命令夹在两条与终端等宽的分割线之间，
@@ -139,7 +142,8 @@ PASS   000:00:00  grade
   `PASS WITH ERRORS` 黄、`FAIL` / `exit N` 红）。sim 的状态是退出码，判定看 grade 行。成功时窗口
   收起；compile / sim 失败时最后的输出连同分割线留在屏幕上，sim 退出码为 0 但 grade 判 FAIL 时
   sim 的输出留在 grade 行上方。
-- 耗时固定 `hhh:mm:ss` 宽度，跑到小时级别也不移动后面的列。大小用二进制单位：`512 B`、`3.3 KiB`、`1.2 MiB`。
+- 耗时是 `mm:ss`，超过一小时才显示小时（`h:mm:ss`）；回归树里所有行按整个回归的耗时对齐，
+  一过一小时一起加上小时一栏。大小用二进制单位：`512 B`、`3.3 KiB`、`1.2 MiB`。
 - Verilator 由 dtsim 写日志：PTY 下写入的是去掉颜色、控制序列和 `\r` 的行；VCS 的 `vcs.log` / `sim.log`
   照旧由 VCS 自己写。
 

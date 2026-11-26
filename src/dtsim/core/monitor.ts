@@ -16,7 +16,7 @@ import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import type { CasePhase, PhaseObserver } from "./engine.ts";
 import { LivePanel } from "./live.ts";
-import { fmtClock } from "./scripts.ts";
+import { fmtElapsed } from "./scripts.ts";
 import { status as colour, fmtSize, titledFrame, titledRules } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -33,8 +33,6 @@ const STATUS_W = 6;
 const PHASE_W = 22;
 const LOG_W = 12;
 const SIZE_W = 10;
-/** Where the phase column starts: status, space, hhh:mm:ss, two spaces. */
-const INDENT = " ".repeat(STATUS_W + 1 + 9 + 2);
 
 type StartInfo = { log?: string; seed?: string; cmd?: readonly string[] };
 type Current = { phase: CasePhase; log?: string; t0: number };
@@ -161,11 +159,15 @@ export class CaseMonitor implements PhaseObserver {
 		return c.phase;
 	}
 
-	/** `<first col> hhh:mm:ss  <phase>  <log> <size>`, columns aligned. */
+	/** `<first col> mm:ss  <phase>  <log> <size>` (`h:mm:ss` past an hour). */
 	private row(first: string, c: Current): string {
-		const elapsed = fmtClock((Date.now() - c.t0) / 1000);
+		const elapsed = this.elapsed(c);
 		const size = c.log ? sizeOf(c.log) : undefined;
 		return `${pad(first, STATUS_W)} ${elapsed}  ${chalk.bold(pad(this.name(c), PHASE_W))} ${logCol(c.log, size)}`.trimEnd();
+	}
+
+	private elapsed(c: Current): string {
+		return fmtElapsed((Date.now() - c.t0) / 1000);
 	}
 
 	/** The output window: the last lines between rules titled with the step. */
@@ -217,9 +219,10 @@ export class CaseMonitor implements PhaseObserver {
 			this.live.render(`${this.window(c)}\n${head}`);
 			return;
 		}
-		// No window: the last line under the phase column (the panel cuts it
-		// to the terminal width).
+		// No window: the last line under the phase column (status, space,
+		// elapsed, two spaces; the panel cuts it to the terminal width).
 		const last = this.recent.at(-1);
-		this.live.render(last ? `${head}\n${INDENT}${chalk.dim(last)}` : head);
+		const indent = " ".repeat(STATUS_W + 1 + this.elapsed(c).length + 2);
+		this.live.render(last ? `${head}\n${indent}${chalk.dim(last)}` : head);
 	}
 }
