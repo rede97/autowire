@@ -200,6 +200,16 @@ export function fmtElapsed(seconds: number): string {
 	return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+/** Fixed-width `hhh:mm:ss` for live columns, so the text beside it does not
+ *  move as a long regression runs (wider only past 999 hours). */
+export function fmtClock(seconds: number): string {
+	const total = Math.max(0, Math.round(seconds));
+	const h = String(Math.floor(total / 3600)).padStart(3, "0");
+	const m = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+	const s = String(total % 60).padStart(2, "0");
+	return `${h}:${m}:${s}`;
+}
+
 /** "elapsed 00:37 (2026-11-18 09:46:09 → 09:46:46)" for the end of a run. */
 export function elapsedLine(t0: number): string {
 	const fmt = (t: number): string =>

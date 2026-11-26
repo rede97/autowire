@@ -13,6 +13,8 @@ import {
 } from "node:fs";
 import { stat } from "node:fs/promises";
 import { delimiter, extname, isAbsolute, resolve } from "node:path";
+import { stripVTControlCharacters } from "node:util";
+import type { Subprocess } from "bun";
 
 const WIN_EXE = [".exe", ".com", ".cmd", ".bat"];
 
@@ -121,7 +123,47 @@ export type RunOpts = {
 	/** Single case only: attach the terminal and handle Ctrl+C here. */
 	interactive: boolean;
 	abort?: AbortSignal;
+	/** Every output line of the child as it arrives (colour, other control
+	 *  bytes and carriage-return redraws removed). */
+	onLine?: (line: string) => void;
+	/** With onLine: run the child on a pseudo-terminal so it flushes line by
+	 *  line, as on a terminal (POSIX only; Windows keeps pipes, since ConPTY
+	 *  re-renders the output). The tee log then gets the cleaned lines. */
+	pty?: boolean;
 };
+
+/** A line as a terminal would leave it: what follows the last carriage
+ *  return, without escape sequences or other control bytes. */
+function cleanLine(raw: string): string {
+	const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+	const visible = line.slice(line.lastIndexOf("\r") + 1);
+	const shown = stripVTControlCharacters(visible);
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: tool output may carry control bytes
+	return shown.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+}
+
+/** Whole output lines out of a byte stream; `end()` flushes a trailing
+ *  partial line. */
+type LineSplitter = { push(chunk: Uint8Array): void; end(): void };
+
+function lineSplitter(emit: (line: string) => void): LineSplitter {
+	const decoder = new TextDecoder();
+	let rest = "";
+	return {
+		push(chunk) {
+			const parts = (rest + decoder.decode(chunk, { stream: true })).split(
+				"\n",
+			);
+			rest = parts.pop() ?? "";
+			for (const part of parts) emit(cleanLine(part));
+		},
+		end() {
+			rest += decoder.decode();
+			if (rest.length > 0) emit(cleanLine(rest));
+			rest = "";
+		},
+	};
+}
 
 export async function runProcess(opts: RunOpts): Promise<number> {
 	if (opts.abort?.aborted) return -15;
@@ -130,22 +172,88 @@ export async function runProcess(opts: RunOpts): Promise<number> {
 		? createWriteStream(opts.captureLog as string, { flags: "a" })
 		: undefined;
 	const argv = resolveCommand(opts.argv, opts.env, opts.cwd);
+	const code =
+		opts.onLine && opts.pty && !opts.interactive && process.platform !== "win32"
+			? await runOnPty(opts, argv, stream, opts.onLine)
+			: await runOnPipes(opts, argv, stream);
+	if (stream) {
+		const closed = Promise.withResolvers<void>();
+		stream.end(() => closed.resolve());
+		await closed.promise;
+	}
+	return code;
+}
+
+/** The child on a pseudo-terminal: one stream, line-buffered like a shell. */
+async function runOnPty(
+	opts: RunOpts,
+	argv: string[],
+	stream: NodeJS.WritableStream | undefined,
+	onLine: (line: string) => void,
+): Promise<number> {
+	const lines = lineSplitter((line) => {
+		stream?.write(`${line}\n`);
+		onLine(line);
+	});
+	const closed = Promise.withResolvers<void>();
+	let proc: Subprocess;
+	try {
+		proc = Bun.spawn(argv, {
+			cwd: opts.cwd,
+			env: opts.env,
+			// Wide enough that the child never wraps a line for the terminal.
+			terminal: {
+				cols: 1000,
+				rows: 50,
+				data: (_t, data) => lines.push(data),
+				exit: () => closed.resolve(),
+			},
+		});
+	} catch (error) {
+		const line = `dtsim: cannot start ${argv[0]}: ${(error as Error).message}`;
+		stream?.write(`${line}\n`);
+		onLine(line);
+		return 127;
+	}
+	const onAbort = (): void => {
+		proc.kill("SIGKILL");
+	};
+	opts.abort?.addEventListener("abort", onAbort, { once: true });
+	await proc.exited;
+	// Output still in the PTY reaches `data` before its stream closes.
+	await Promise.race([closed.promise, Bun.sleep(1000)]);
+	proc.terminal?.close();
+	lines.end();
+	opts.abort?.removeEventListener("abort", onAbort);
+	return proc.exitCode ?? 1;
+}
+
+async function runOnPipes(
+	opts: RunOpts,
+	argv: string[],
+	stream: NodeJS.WritableStream | undefined,
+): Promise<number> {
+	const piped = stream !== undefined || opts.verbose || opts.onLine;
 	const child = spawn(argv[0] as string, argv.slice(1), {
 		cwd: opts.cwd,
 		env: opts.env,
 		stdio: [
 			opts.interactive ? "inherit" : "ignore",
-			capture || opts.verbose ? "pipe" : "ignore",
-			capture || opts.verbose ? "pipe" : "ignore",
+			piped ? "pipe" : "ignore",
+			piped ? "pipe" : "ignore",
 		],
 	});
+	const splitters: LineSplitter[] = [];
 	const forward = (
 		source: NodeJS.ReadableStream | null,
 		target: NodeJS.WritableStream,
 	): void => {
+		const lines = opts.onLine ? lineSplitter(opts.onLine) : undefined;
+		if (lines) splitters.push(lines);
 		source?.on("data", (chunk: Buffer) => {
 			stream?.write(chunk);
 			if (opts.verbose) target.write(chunk);
+			lines?.push(chunk);
 		});
 	};
 	forward(child.stdout, process.stdout);
@@ -181,13 +289,9 @@ export async function runProcess(opts: RunOpts): Promise<number> {
 	});
 	child.on("close", (exitCode: number | null) => resolve(exitCode ?? 1));
 	const code = await promise;
+	for (const lines of splitters) lines.end();
 
 	if (opts.interactive) process.removeListener("SIGINT", onSigint);
 	opts.abort?.removeEventListener("abort", onAbort);
-	if (stream) {
-		const closed = Promise.withResolvers<void>();
-		stream.end(() => closed.resolve());
-		await closed.promise;
-	}
 	return code;
 }

@@ -92,12 +92,15 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 3. **运行中（TTY）**：stderr 上每个仍在进行的编译组一棵树，多棵并列：编译节点
    `[spinner|状态] [耗时] compile <名字> <日志> <大小>`，子节点是正在跑的 sim（同样的列），
    其余折叠成 `… N waiting, M done`；超过终端高度时只画前面几组并注明还有几组。
-   最后一行是进度条和总计（`<进度条>  compile 1/3  sim 2/5  running 3  00:14`）。
+   最后一行是总计和进度条（`running 003 000:00:14 [<进度条>] compile 001/003 sim 002/005`）：
+   计数至少三位补零，耗时固定 `hhh:mm:ss`，运行过程中这一行的文字不会移动。
    进度条分两层：每个编译组占 1/N，组内每个 sim 占该段的 1/k，所以一组 sim 全部跑完
    正好盖满这一组的长度。编译层从左到右：已编译蓝 `█`、编译失败灰 `█`（这一段作废）、
    编译中默认前景色 `░`、待编译灰 `░`。sim 层从左边盖在已编译区上：PASS 绿 `█`、
    PASS WITH ERRORS 黄 `█`、其他状态红 `█`，未跑完的地方露出编译层。编译失败而跳过的
-   sim 不画。宽度取终端剩余列数，10 到 60 格。
+   sim 不画。格子取整时多出的格子按余数大小分配；只要有一条 PASS / PASS WITH ERRORS / FAIL
+   （或其他失败状态），对应颜色至少保留一格，不会因舍入消失。进度条占满文字之外的终端宽度，
+   剩余不足 10 格时只显示文字。回归结束后这一行留在屏幕上，可以直观看到 pass / fail 的比例。
 4. 每个 compile / sim 完成或失败时在上方留一行：`<状态> <耗时> <compile|sim 名字>  <日志路径> (大小)`，
    像 `echo` 一样整行写出，dtsim 不插换行：长路径由终端软换行，调整窗口后会重新排版，复制时路径完整；编译失败跳过的 sim 写 `skipped: compile failed`。
    非 TTY（`--plain`、管道、LSF / CI 日志）只有这些行。一个用例有多个 seed 时 sim
@@ -113,26 +116,35 @@ Status / Seed dir 表，最后一行 `PASS=n FAIL=n` 保持纯文本供脚本 gr
 ── cmd ──────────────────────────────────────────────
 verilator --binary --top-module tb_top ...
 ─────────────────────────────────────────────────────
-⠹      00:07  compile                compile.log     3.3 KiB      ← 运行中
-              <日志最后一行>
-OK     00:07  compile                compile.log     3.9 KiB      ← 结束
-PASS   00:00  grade
+── compile ──────────────────────────────────────────      ← 运行中：最近 liveLines 行输出
+%Warning-WIDTH: ...
+- V e r i l a t i o n   R e p o r t: ...
+─────────────────────────────────────────────────────
+⠹      000:00:07  compile                compile.log     3.3 KiB
+OK     000:00:07  compile                compile.log     3.9 KiB      ← 结束
+PASS   000:00:00  grade
 ```
 
 - compile / sim 开始时打印日志路径，以及实际提交的命令：命令夹在两条与终端等宽的分割线之间，
   上分割线内嵌标题 `cmd`，没有左右边框，便于框选复制；程序名粗体青色，`-` / `+` 开头的选项黄色，其余灰色。
-- 运行中：`[spinner] [已运行时间] [步骤] <日志> <大小>`，下一行是该日志的最后一行（只读
-  文件末尾 4 KB，每 250 ms 刷新）。日志还没落盘
-  或 NFS 还没同步时大小显示 `-`。步骤有 `preCompile`、`compile`、`postCompile`、
-  `preSim`、`sim`、`postSim`、`grade`、`onResult`（不带 seed，seed 在 Run / Summary
-  表里）；hook 步骤只在配置了该阶段的 hook 时出现。
+- 运行中：编译器 / 仿真器打印的最近 `liveLines` 行（Workspace 选项，默认 10，工厂回调里可以按
+  mode 或注册的变量设置）夹在两条分割线之间，上分割线标题是步骤名；下面是
+  `[spinner] [已运行时间] [步骤] <日志> <大小>`。输出直接从子进程取，不读日志：POSIX 上子进程跑在
+  伪终端（PTY）里，和在终端里一样按行刷新；Windows 用管道（ConPTY 会改写输出）。行里的颜色、
+  控制序列和 `\r` 进度重画会去掉，太长的行按终端宽度截断（加 `…`）。`liveLines: 0` 关掉窗口，
+  只在状态行下显示最后一行。日志还没落盘或 NFS 还没同步时大小显示 `-`。步骤有 `preCompile`、
+  `compile`、`postCompile`、`preSim`、`sim`、`postSim`、`grade`、`onResult`（不带 seed，seed 在
+  Run / Summary 表里）；hook 步骤只在配置了该阶段的 hook 时出现。
 - 结束：`[状态] [耗时] [步骤] <日志> <大小>`，状态粗体着色（`OK` 蓝、`PASS` 绿、
-  `PASS WITH ERRORS` 黄、`FAIL` / `exit N` 红）。sim 的状态是退出码，判定看 grade 行。
-- 大小用二进制单位：`512 B`、`3.3 KiB`、`1.2 MiB`。
+  `PASS WITH ERRORS` 黄、`FAIL` / `exit N` 红）。sim 的状态是退出码，判定看 grade 行。成功时窗口
+  收起；compile / sim 失败时最后的输出连同分割线留在屏幕上，sim 退出码为 0 但 grade 判 FAIL 时
+  sim 的输出留在 grade 行上方。
+- 耗时固定 `hhh:mm:ss` 宽度，跑到小时级别也不移动后面的列。大小用二进制单位：`512 B`、`3.3 KiB`、`1.2 MiB`。
+- Verilator 由 dtsim 写日志：PTY 下写入的是去掉颜色、控制序列和 `\r` 的行；VCS 的 `vcs.log` / `sim.log`
+  照旧由 VCS 自己写。
 
-`-v` 在终端上同时显示状态和日志：正在运行的 compile / sim 日志新写入的行实时打印在
-面板上方（像 `tail -f`，直接读日志文件，所以 VCS `-l` 这种工具自己写的日志也能
-跟），面板留在最下面。
+`-v` 在终端上另外把完整输出实时打印在面板上方（同一路子进程输出，不读日志文件），窗口和
+状态行留在最下面。
 
 stderr 不是终端（LSF 日志、管道）或 `--plain` 时输出精简：没有 spinner，命令打印
 成一行 `$ ...`，只有 compile / sim / grade 的开始与结束行，hook 步骤只在失败时出现；

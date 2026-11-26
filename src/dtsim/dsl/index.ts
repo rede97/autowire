@@ -309,6 +309,10 @@ export type WorkspaceOpts = {
 	/** Default coverage metrics (VCS `-cm`). Default
 	 *  "line+cond+fsm+tgl+branch+assert". */
 	covMetrics?: string;
+	/** `dtsim run` on a terminal: the last N lines the compiler / simulator
+	 *  prints, live, between rules under the step's status (a failed step
+	 *  leaves them on screen). 0 turns the window off. Default 10. */
+	liveLines?: number;
 	/** Filelists every case compiles (paths relative to dt/config, `${...}`
 	 *  allowed); cases append theirs. Default: none. */
 	filelists?: readonly string[];
@@ -872,6 +876,12 @@ export function validateWorkspace(opts: WorkspaceOpts): void {
 	}
 	needList("Workspace filelists", opts.filelists);
 	needTopWave("Workspace", opts);
+	if (
+		opts.liveLines !== undefined &&
+		(!Number.isInteger(opts.liveLines) || opts.liveLines < 0)
+	) {
+		throw new Error("dtsim: Workspace.liveLines must be a whole number >= 0");
+	}
 	if (opts.task?.launcher !== undefined) {
 		const ls = opts.task.launcher;
 		for (const l of Array.isArray(ls) ? ls : [ls])

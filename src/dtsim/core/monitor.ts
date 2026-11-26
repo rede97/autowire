@@ -2,35 +2,42 @@
 // compile, postCompile, preSim, sim, postSim, grade, onResult) gets a start
 // line for compile / sim (log location and the submitted command) and an end
 // line for every step (colored status, elapsed time, log size). In between, a
-// spinner shows the running step, its elapsed time and, per log seen so far,
-// the size and last line; "-" means the log is not on disk yet (or NFS has
-// not caught up). Follow mode (`run -v` on a TTY) also prints the running
-// step's new log lines above the panel. Not a TTY (--plain, pipes, LSF
-// logs): the same start / end lines without the spinner.
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+// spinner shows the running step, its elapsed time and log size ("-" while
+// the log is not on disk). The compile / sim output comes straight from the
+// child (a pseudo-terminal on POSIX, pipes on Windows), never from the log
+// file: the last `liveLines` lines show between rules titled with the step,
+// above the spinner row, and a failed step leaves them on screen
+// (liveLines 0: only the last line, under the spinner row). Follow mode
+// (`run -v` on a TTY) also prints every line above the panel. Not a TTY
+// (--plain, pipes, LSF logs): the same start / end lines without the panel.
+import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import type { CasePhase, PhaseObserver } from "./engine.ts";
 import { LivePanel } from "./live.ts";
-import { fmtElapsed } from "./scripts.ts";
-import { status as colour, fmtSize, titledRules } from "./ui.ts";
+import { fmtClock } from "./scripts.ts";
+import { status as colour, fmtSize, titledFrame, titledRules } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const TAIL_BYTES = 4096;
 /** Steps that always get an end line; hook steps only on a TTY or a failure. */
 const MAIN: ReadonlySet<CasePhase> = new Set(["compile", "sim", "grade"]);
+/** Results that close a step without leaving its output window behind. */
+const PASSED: Record<string, true> = {
+	OK: true,
+	PASS: true,
+	"PASS WITH ERRORS": true,
+};
 /** Column widths: status (or spinner), phase, log name, log size. */
 const STATUS_W = 6;
 const PHASE_W = 22;
 const LOG_W = 12;
 const SIZE_W = 10;
-/** Where the phase column starts: status, space, MM:SS, two spaces. */
-const INDENT = " ".repeat(STATUS_W + 1 + 5 + 2);
+/** Where the phase column starts: status, space, hhh:mm:ss, two spaces. */
+const INDENT = " ".repeat(STATUS_W + 1 + 9 + 2);
 
 type StartInfo = { log?: string; seed?: string; cmd?: readonly string[] };
 type Current = { phase: CasePhase; log?: string; t0: number };
-type Tail = { size?: number; line: string };
 
 /** Size of a log, or undefined while it is not visible on disk. */
 function sizeOf(path: string): number | undefined {
@@ -43,19 +50,6 @@ function sizeOf(path: string): number | undefined {
 
 function showSize(size: number | undefined): string {
 	return size === undefined ? "-" : fmtSize(size);
-}
-
-/** Size and last non-empty line, read from the last few KB only. */
-async function tail(path: string): Promise<Tail> {
-	const size = sizeOf(path);
-	if (size === undefined) return { line: "" };
-	const text = await Bun.file(path)
-		.slice(Math.max(0, size - TAIL_BYTES), size)
-		.text();
-	const last = text.split(/\r?\n/).findLast((l) => l.trim().length > 0) ?? "";
-	// biome-ignore lint/suspicious/noControlCharactersInRegex: tool output may carry control bytes
-	const clean = stripVTControlCharacters(last).replace(/[\x00-\x1f\x7f]/g, " ");
-	return { size, line: clean };
 }
 
 /** Pad coloured text to `width` visible columns. */
@@ -88,54 +82,54 @@ function cmdRule(argv: readonly string[]): string {
 
 export class CaseMonitor implements PhaseObserver {
 	private current?: Current;
-	/** Size and last line of the running step's log. */
-	private tailed?: Tail;
+	/** The running step's last output lines (at most max(liveLines, 1)). */
+	private recent: string[] = [];
 	private frame = 0;
-	private timers: Timer[] = [];
+	private timer?: Timer;
+	/** The last sim's output window, for a grade that fails afterwards. */
+	private lastWindow?: string;
 	private readonly live?: LivePanel;
-	/** Follow mode: the running step's log, read up to `offset` so far. */
-	private followed?: {
-		path: string;
-		offset: number;
-		rest: string;
-		decoder: TextDecoder;
-	};
+	/** Child output for the panel; set only on a TTY, so elsewhere the
+	 *  engine leaves the child's streams alone. */
+	readonly output?: (line: string) => void;
+	/** POSIX TTY: the child runs on a pseudo-terminal (line-buffered). */
+	readonly pty: boolean;
 
-	/** `follow` (TTY only): print the running step's log lines above the
-	 *  panel as they land, like `tail -f`. */
+	/** `follow` (TTY only): print every output line above the panel too.
+	 *  `liveLines`: height of the output window (0: last line only). */
 	constructor(
 		plain: boolean,
 		private readonly follow = false,
+		private readonly liveLines = 10,
 	) {
-		if (!plain && process.stderr.isTTY) {
+		const tty = !plain && Boolean(process.stderr.isTTY);
+		this.pty = tty;
+		if (tty) {
 			this.live = new LivePanel();
+			this.output = (line) => {
+				if (this.follow) this.live?.persist(line);
+				this.recent.push(line);
+				const keep = Math.max(1, this.liveLines);
+				if (this.recent.length > keep)
+					this.recent.splice(0, this.recent.length - keep);
+			};
 		}
 	}
 
 	/** A step starts. A step still running before it ended normally. */
 	start(phase: CasePhase, info: StartInfo): void {
 		this.close("OK");
-		if (this.live && this.timers.length === 0) {
-			this.timers = [
-				setInterval(() => this.render(), 100),
-				setInterval(() => void this.refresh(), 250),
-			];
+		if (this.live && this.timer === undefined) {
+			this.timer = setInterval(() => this.render(), 100);
 		}
 		this.current = {
 			phase,
 			t0: Date.now(),
 			...(info.log === undefined ? {} : { log: info.log }),
 		};
-		this.tailed = undefined;
+		this.recent = [];
+		if (phase === "compile" || phase === "sim") this.lastWindow = undefined;
 		if (info.log) {
-			if (this.follow && this.live) {
-				this.followed = {
-					path: info.log,
-					offset: 0,
-					rest: "",
-					decoder: new TextDecoder(),
-				};
-			}
 			this.line(
 				`${chalk.cyan(pad("▶", STATUS_W))} ${chalk.dim("start")}  ${chalk.bold(pad(this.name(this.current), PHASE_W))} ${chalk.dim(info.log)}`,
 			);
@@ -157,8 +151,8 @@ export class CaseMonitor implements PhaseObserver {
 	 *  normally. The next start() brings the panel back. */
 	stop(): void {
 		this.close("OK");
-		for (const t of this.timers) clearInterval(t);
-		this.timers = [];
+		clearInterval(this.timer);
+		this.timer = undefined;
 		this.live?.clear();
 	}
 
@@ -167,10 +161,21 @@ export class CaseMonitor implements PhaseObserver {
 		return c.phase;
 	}
 
-	/** `<first col> MM:SS  <phase>  <log> <size>`, columns aligned. */
-	private row(first: string, c: Current, size: number | undefined): string {
-		const elapsed = fmtElapsed((Date.now() - c.t0) / 1000);
+	/** `<first col> hhh:mm:ss  <phase>  <log> <size>`, columns aligned. */
+	private row(first: string, c: Current): string {
+		const elapsed = fmtClock((Date.now() - c.t0) / 1000);
+		const size = c.log ? sizeOf(c.log) : undefined;
 		return `${pad(first, STATUS_W)} ${elapsed}  ${chalk.bold(pad(this.name(c), PHASE_W))} ${logCol(c.log, size)}`.trimEnd();
+	}
+
+	/** The output window: the last lines between rules titled with the step. */
+	private window(c: Current): string {
+		const width = (process.stderr.columns || 100) - 1;
+		return titledFrame(
+			c.phase,
+			this.recent.map((l) => chalk.dim(l)),
+			width,
+		);
 	}
 
 	/** A permanent line above the panel (or a plain line). */
@@ -180,51 +185,23 @@ export class CaseMonitor implements PhaseObserver {
 	}
 
 	private close(result: string): void {
-		this.drain(true);
 		const c = this.current;
 		this.current = undefined;
 		if (!c) return;
 		// Without a TTY keep it short: hook steps only show when they fail.
 		if (!this.live && !MAIN.has(c.phase) && result === "OK") return;
-		const size = c.log ? sizeOf(c.log) : undefined;
-		this.line(this.row(colour(result), c, size));
-	}
-
-	private async refresh(): Promise<void> {
-		const log = this.current?.log;
-		if (log) this.tailed = await tail(log);
-		this.drain(false);
-	}
-
-	/** Follow mode: print what the log gained since the last call, 1 MB at a
-	 *  time; `final` reads to the end and prints a trailing partial line. */
-	private drain(final: boolean): void {
-		const f = this.followed;
-		if (!f || !this.live) return;
-		for (;;) {
-			const size = sizeOf(f.path);
-			if (size === undefined || size <= f.offset) break;
-			const n = Math.min(size - f.offset, 1024 * 1024);
-			const buf = Buffer.alloc(n);
-			const fd = openSync(f.path, "r");
-			let got = 0;
-			try {
-				got = readSync(fd, buf, 0, n, f.offset);
-			} finally {
-				closeSync(fd);
-			}
-			if (got === 0) break;
-			f.offset += got;
-			const text = f.decoder.decode(buf.subarray(0, got), { stream: true });
-			const lines = (f.rest + text).split(/\r?\n/);
-			f.rest = lines.pop() ?? "";
-			if (lines.length > 0) this.live.persist(lines.join("\n"));
-			if (!final) break;
-		}
-		if (final) {
-			if (f.rest) this.live.persist(f.rest);
-			this.followed = undefined;
-		}
+		const window =
+			this.live && this.liveLines > 0 && this.recent.length > 0
+				? this.window(c)
+				: undefined;
+		this.recent = [];
+		// A failed step keeps its last output on screen, above its end line.
+		// A sim that exited 0 but grades FAIL shows its output above the
+		// grade line instead.
+		const shown = window ?? (c.phase === "grade" ? this.lastWindow : undefined);
+		if (shown && !PASSED[result]) this.line(shown);
+		if (window && c.phase === "sim") this.lastWindow = window;
+		this.line(this.row(colour(result), c));
 	}
 
 	private render(): void {
@@ -235,12 +212,14 @@ export class CaseMonitor implements PhaseObserver {
 			return;
 		}
 		this.frame = (this.frame + 1) % FRAMES.length;
-		const t = this.tailed;
-		const head = this.row(chalk.cyan(FRAMES[this.frame] ?? ""), c, t?.size);
-		// The head already names the log and its size; below it only the
-		// running log's last line, under the phase column (the panel cuts it
+		const head = this.row(chalk.cyan(FRAMES[this.frame] ?? ""), c);
+		if (this.liveLines > 0 && this.recent.length > 0) {
+			this.live.render(`${this.window(c)}\n${head}`);
+			return;
+		}
+		// No window: the last line under the phase column (the panel cuts it
 		// to the terminal width).
-		const line = t?.line ?? "";
-		this.live.render(line ? `${head}\n${INDENT}${chalk.dim(line)}` : head);
+		const last = this.recent.at(-1);
+		this.live.render(last ? `${head}\n${INDENT}${chalk.dim(last)}` : head);
 	}
 }

@@ -6,6 +6,9 @@
 
 - **合并后的覆盖率有 verdi 脚本可看**：回归目录新增 `run_verdi_cov_all`（打开 `run_cov_merge_all` 写出的 `<regression>/merge.vdb`，还没合并时报错提示先运行 `run_cov_merge_all`），cluster 启动器在旁边写 `bsub_verdi_cov_all` / `srun_verdi_cov_all`（后台运行）。每个编译组的 `run_verdi_cov` 改由 dtsim 和 `run_cov_merge` 一起写：`merge.vdb` 存在时打开它，否则提示还没合并并打开 `simv.vdb`。Coverage 列表新增 `View build` / `View all` 两行，`run` 也列出 `View`。
 - **`SimTool.coverage` 接口**：`merge` / `mergeAll` 改为返回 `{ argv, db }`（命令和它写出的数据库），新增 `view(db)`（查看命令，VCS 为 `verdi -cov -covdir <db>`）；查看脚本由 dtsim 生成，VCS 后端不再自己写 `run_verdi_cov`。
+- **`dtsim run` 实时显示编译 / 仿真输出**：终端上 compile / sim 运行时，最近 `liveLines` 行输出（Workspace 新选项，默认 10，`0` 关闭窗口、只在状态行下显示最后一行）夹在标题为步骤名的分割线之间，下面是 spinner 状态行。输出直接取自子进程而不再读日志文件末尾：POSIX 上子进程跑在伪终端里（按行刷新，VCS 实测），Windows 用管道；颜色、控制序列和 `\r` 重画会去掉。成功时窗口收起，compile / sim 失败时最后的输出留在屏幕上，sim 退出码 0 但 grade 判 FAIL 时 sim 的输出留在 grade 行上方。`-v` 的完整输出也改为来自同一路子进程输出。Verilator 的日志在伪终端下写入清理过的行。
+- **回归进度条**：最后一行改为 `running nnn hhh:mm:ss [<进度条>] compile xxx/NNN sim yyy/MMM`，计数至少三位补零、耗时固定 `hhh:mm:ss`，运行中文字不移动；进度条占满剩余终端宽度，不足 10 格时只显示文字。回归结束后这一行留在屏幕上。格子改为整数分配（余数大的先得），只要有 PASS、PASS WITH ERRORS 或失败的 sim，对应颜色至少保留一格，不再因舍入时有时无。
+- **耗时列固定宽度**：`run` 与 `regr` 的实时行与完成行耗时统一为 `hhh:mm:ss`。
 
 ## [2.9.8] - 2026-11-26
 

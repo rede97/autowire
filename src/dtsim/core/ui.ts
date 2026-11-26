@@ -197,11 +197,21 @@ export function titledRules(
 			used += (used > 0 ? 1 : 0) + text.length;
 		}
 	});
-	const g = chalk.gray;
-	const fill = Math.max(0, width - (title.length + 4));
-	const top = `${g("── ")}${chalk.bold(title)}${g(` ${"─".repeat(fill)}`)}`;
 	const body = rows.map((row) =>
 		row.map((p) => paint(p.text, p.index)).join(" "),
 	);
-	return [top, ...body, g("─".repeat(wrapWidth))].join("\n");
+	return titledFrame(title, body, wrapWidth);
+}
+
+/** `lines` between a top rule titled `title` and a bottom rule, both
+ *  `width` columns (the cmd frame); the lines are not wrapped here. */
+export function titledFrame(
+	title: string,
+	lines: readonly string[],
+	width: number,
+): string {
+	const g = chalk.gray;
+	const fill = Math.max(0, width - (title.length + 4));
+	const top = `${g("── ")}${chalk.bold(title)}${g(` ${"─".repeat(fill)}`)}`;
+	return [top, ...lines, g("─".repeat(Math.max(1, width)))].join("\n");
 }

@@ -10,7 +10,7 @@ import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import type { PhaseObserver } from "./engine.ts";
 import { LivePanel } from "./live.ts";
-import { fmtElapsed } from "./scripts.ts";
+import { fmtClock } from "./scripts.ts";
 import { status as colour, fmtSize } from "./ui.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -53,12 +53,12 @@ function pad(text: string, width: number): string {
 }
 
 function elapsed(n: TaskNode): string {
-	if (n.t0 === undefined) return "--:--";
-	return fmtElapsed(((n.t1 ?? Date.now()) - n.t0) / 1000);
+	if (n.t0 === undefined) return "---:--:--";
+	return fmtClock(((n.t1 ?? Date.now()) - n.t0) / 1000);
 }
 
+/** Narrower than this, the bar line is text only. */
 const BAR_MIN = 10;
-const BAR_MAX = 60;
 
 /** One bar cell: glyph and paint; runs of equal cells are merged. */
 type Cell = { ch: string; paint: (s: string) => string };
@@ -72,11 +72,14 @@ const CELL = {
 	waiting: { ch: "░", paint: chalk.gray },
 } satisfies Record<string, Cell>;
 
-/** Regression bar in two layers. Each build owns 1/N of the width; each of
- *  its k sims 1/(N·k). The compile layer, left to right: built, build
- *  failed, building, waiting. Finished sims of built builds cover it from
- *  the left: PASS, PASS WITH ERRORS, then any other status. Sims skipped by
- *  a failed compile are not drawn; their segment stays build-failed. */
+/** Regression bar, left to right: finished sims of built builds (PASS, PASS
+ *  WITH ERRORS, any other status), the rest of the built builds, failed
+ *  builds, building, waiting. Each build owns 1/N of the width and each of
+ *  its k sims 1/(N·k); sims skipped by a failed compile are not drawn (their
+ *  segment stays build-failed). Cells are whole: the largest remainders get
+ *  the leftover cells, and a status with at least one finished sim always
+ *  keeps a cell, so a single FAIL never rounds away (a cell is taken from
+ *  the widest segment). */
 export function progressBar(
 	builds: readonly BuildNode[],
 	width: number,
@@ -104,43 +107,43 @@ export function progressBar(
 			else bad += each;
 		}
 	}
-	const layers: Array<Array<[Cell, number]>> = [
-		[
-			[CELL.pass, pass],
-			[CELL.passWithErrors, warn],
-			[CELL.fail, bad],
-		],
-		[
-			[CELL.built, built],
-			[CELL.buildFailed, failed],
-			[CELL.building, building],
-		],
+	const segments: Array<[Cell, number]> = [
+		[CELL.pass, pass],
+		[CELL.passWithErrors, warn],
+		[CELL.fail, bad],
+		[CELL.built, Math.max(0, built - pass - warn - bad)],
+		[CELL.buildFailed, failed],
+		[CELL.building, building],
 	];
-	const pick = (x: number): Cell => {
-		for (const layer of layers) {
-			let edge = 0;
-			for (const [cell, w] of layer) {
-				edge += w;
-				if (x < edge) return cell;
-			}
-		}
-		return CELL.waiting;
-	};
-	let out = "";
-	let run: Cell | undefined;
-	let len = 0;
-	for (let i = 0; i < width; i++) {
-		// Sample each cell at its centre: cumulative rounding, fixed width.
-		const cell = pick((i + 0.5) / width);
-		if (cell !== run) {
-			if (run) out += run.paint(run.ch.repeat(len));
-			run = cell;
-			len = 0;
-		}
-		len += 1;
+	const used = segments.reduce((s, [, f]) => s + f, 0);
+	segments.push([CELL.waiting, Math.max(0, 1 - used)]);
+	const cells = segments.map(([, f]) => Math.floor(f * width));
+	const order = segments
+		.map(([, f], i) => ({ i, rem: f * width - Math.floor(f * width) }))
+		.sort((a, b) => b.rem - a.rem);
+	let left = width - cells.reduce((s, c) => s + c, 0);
+	for (const { i } of order) {
+		if (left <= 0) break;
+		cells[i] = (cells[i] as number) + 1;
+		left -= 1;
 	}
-	if (run) out += run.paint(run.ch.repeat(len));
-	return out;
+	// PASS / PASS WITH ERRORS / FAIL: present means visible.
+	for (const i of [0, 1, 2]) {
+		if ((segments[i]?.[1] ?? 0) <= 0 || (cells[i] ?? 0) > 0) continue;
+		let donor = -1;
+		for (const [j, c] of cells.entries()) {
+			const keep = j <= 2 && (segments[j]?.[1] ?? 0) > 0 ? 1 : 0;
+			if (c - keep > 0 && (donor < 0 || c > (cells[donor] ?? 0))) donor = j;
+		}
+		if (donor < 0) continue;
+		cells[donor] = (cells[donor] as number) - 1;
+		cells[i] = 1;
+	}
+	return segments
+		.map(([cell], i) =>
+			(cells[i] ?? 0) > 0 ? cell.paint(cell.ch.repeat(cells[i] ?? 0)) : "",
+		)
+		.join("");
 }
 
 /** `sim.log    3.0 KiB` ("-" while the log is not on disk). */
@@ -206,10 +209,37 @@ export class Progress {
 		this.line(where ? `${head}  ${where}` : head);
 	}
 
+	/** Remove the live trees; on a TTY the final bar line stays on screen so
+	 *  the PASS / FAIL proportion is visible after the run. */
 	stop(): void {
 		clearInterval(this.timer);
 		this.timer = undefined;
+		// persist() erases the frame first; stop() then has nothing to clear.
+		this.live?.persist(this.barLine());
 		this.live?.stop();
+	}
+
+	/** `running nnn hhh:mm:ss [<bar>] compile xxx/NNN sim yyy/MMM`: counts
+	 *  are zero-padded to at least three digits and the clock is fixed
+	 *  width, so the line does not shift while it runs. The bar takes what the
+	 *  terminal leaves (the panel keeps one column free); below BAR_MIN
+	 *  cells it is left out and only the text shows. */
+	private barLine(): string {
+		const sims = this.builds.flatMap((b) => b.sims);
+		const count = (list: readonly TaskNode[], s: State) =>
+			list.filter((n) => n.state === s).length;
+		const width = Math.max(3, String(sims.length + this.builds.length).length);
+		const num = (n: number) => String(n).padStart(width, "0");
+		const running = count(this.builds, "running") + count(sims, "running");
+		const head = chalk.dim(
+			`running ${num(running)} ${fmtClock((Date.now() - this.t0) / 1000)}`,
+		);
+		const tail = `${chalk.bold("compile")} ${num(count(this.builds, "done"))}/${num(this.builds.length)} ${chalk.bold("sim")} ${num(count(sims, "done"))}/${num(sims.length)}`;
+		const text = stripVTControlCharacters(`${head} ${tail}`).length;
+		// Beyond that text: "[", "]" and one more space.
+		const room = (process.stderr.columns || 80) - 1 - text - 3;
+		if (room < BAR_MIN) return `${head} ${tail}`;
+		return `${head} [${progressBar(this.builds, room)}] ${tail}`;
 	}
 
 	private line(text: string): void {
@@ -229,19 +259,8 @@ export class Progress {
 		if (!this.live) return;
 		this.frame = (this.frame + 1) % FRAMES.length;
 		const spin = chalk.cyan(FRAMES[this.frame] ?? "");
-		const sims = this.builds.flatMap((b) => b.sims);
 		const count = (list: readonly TaskNode[], s: State) =>
 			list.filter((n) => n.state === s).length;
-		const running = count(this.builds, "running") + count(sims, "running");
-		const counts = `${chalk.bold("compile")} ${count(this.builds, "done")}/${this.builds.length}  ${chalk.bold("sim")} ${count(sims, "done")}/${sims.length}  ${chalk.dim(`running ${running}  ${fmtElapsed((Date.now() - this.t0) / 1000)}`)}`;
-		const room =
-			(process.stderr.columns || 80) -
-			stripVTControlCharacters(counts).length -
-			2;
-		const bar = progressBar(
-			this.builds,
-			Math.min(BAR_MAX, Math.max(BAR_MIN, room)),
-		);
 		const lines: string[] = [];
 		// One row stays free for the bar line below the trees.
 		const max = Math.max(4, (process.stderr.rows || 40) - 3);
@@ -281,7 +300,7 @@ export class Progress {
 		if (shown < active.length) {
 			lines.push(chalk.dim(`… ${active.length - shown} more builds in flight`));
 		}
-		lines.push(`${bar}  ${counts}`);
+		lines.push(this.barLine());
 		this.live.render(lines.join("\n"));
 	}
 }

@@ -95,6 +95,8 @@ export type ResolvedWorkspace = {
 		cov: boolean;
 		covMetrics: string;
 	};
+	/** Workspace `liveLines` (default 10): the `run` output window height. */
+	liveLines: number;
 	bareDefaults?: CaseOpts;
 	passthrough: string[];
 	deny: string[];
@@ -659,6 +661,7 @@ export async function loadWorkspace(opts: {
 		},
 		cases,
 		resolved: new Map(),
+		liveLines: o.liveLines ?? 10,
 		...(o.bareDefaults === undefined ? {} : { bareDefaults: o.bareDefaults }),
 		passthrough: [...(o.env?.passthrough ?? [])],
 		deny,

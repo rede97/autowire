@@ -54,7 +54,23 @@ export type PhaseObserver = {
 		info: { log?: string; seed?: string; cmd?: readonly string[] },
 	): void;
 	end(phase: CasePhase, result: string): void;
+	/** Each line the running compile / sim prints, as it arrives. */
+	output?(line: string): void;
+	/** Run compile / sim on a pseudo-terminal (see RunOpts.pty). */
+	pty?: boolean;
 };
+
+/** RunOpts for a monitor that wants the child's output. */
+function outputOpts(monitor: PhaseObserver | undefined): {
+	onLine?: (line: string) => void;
+	pty?: boolean;
+} {
+	if (!monitor?.output) return {};
+	return {
+		onLine: (line) => monitor.output?.(line),
+		pty: monitor.pty === true,
+	};
+}
 
 /** Report a hook step only when the workspace has hooks for it. */
 function hookStep(
@@ -478,6 +494,7 @@ export async function executeCompile(
 		env: env.env,
 		...(prepared.logMode === "tee" ? { captureLog: prepared.log } : {}),
 		verbose: opts.verbose,
+		...outputOpts(opts.monitor),
 		interactive: false,
 		...(opts.abort === undefined ? {} : { abort: opts.abort }),
 	});
@@ -590,6 +607,7 @@ export async function executeSim(
 		env: env.env,
 		...(prepared.logMode === "tee" ? { captureLog: prepared.log } : {}),
 		verbose: opts.verbose,
+		...outputOpts(opts.monitor),
 		interactive: opts.interactive,
 		...(opts.abort === undefined ? {} : { abort: opts.abort }),
 	});

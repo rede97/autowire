@@ -81,15 +81,15 @@ export async function runSingle(
 	const seeds = seedsFor(c, readSeeds(ws.seeds));
 	const compileDir = caseOutputDir(ws, c.id, opts.label);
 	const tool = ws.tool;
-	// -v on a TTY prints the running log above the live panel (the monitor
-	// follows the log file, so the child's own stream stays quiet); -v
-	// elsewhere streams the child directly. --interactive owns the terminal.
+	// -v on a TTY prints the child's output above the live panel (the panel
+	// reads it from the child, not the log); -v elsewhere streams the child
+	// directly. --interactive owns the terminal.
 	const tty = !opts.plain && Boolean(process.stderr.isTTY);
 	const follow = opts.verbose && tty;
 	const monitor =
 		opts.interactive || (opts.verbose && !tty)
 			? undefined
-			: new CaseMonitor(opts.plain, follow);
+			: new CaseMonitor(opts.plain, follow, ws.liveLines);
 	const engine: EngineOptions = monitor
 		? { ...opts, verbose: opts.verbose && !follow, monitor }
 		: opts;
