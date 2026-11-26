@@ -91,7 +91,7 @@ output               = g(state_val, action, input, dff)          assign / always
   |---|---|---|
   | `x.pulse()` / `x.pulse(v)` | `action`，`v` 可读 input / dff | Mealy：input 到输出可有组合路径 |
   | push `vld`、pop `rdy` | 只看 `state_val` | Moore：不组合依赖对端，两个进程直连不成环（§6.2） |
-  | push 的数据字段 | `case (state_val)` 选值（`comb_<端口>_<字段>`），值可读 input / dff | 按状态选择 |
+  | push 的数据字段 | 按状态取不同值时，与 `vld` 一起在 `comb_<端口>` 的 `case (state_val)` 里选值，值可读 input / dff | 按状态选择 |
   | `Dff(N)` 端口 | 寄存器本身 | 寄存器输出 |
   | `exportState` | `state_set_o = \|action`，`state_next_o` / `state_val_o` 直接接 | 观测（§6.5） |
 
@@ -731,15 +731,15 @@ module cmd_post
   end
 
   // cmd.push({ op: last.val, addr: 0x10 }) / cmd.push({ op: Cmd.FLUSH, addr: 0x10 })
-  assign cmd_vld = (state_val == SEND) | (state_val == FLUSH);
-  always_comb begin : comb_cmd_op
+  always_comb begin : comb_cmd
+    {cmd_vld, cmd_addr} = '0;
+    cmd_op = cmd_pkg::CMD_NOP;
     case (state_val)
-      SEND:    cmd_op = last;
-      FLUSH:   cmd_op = cmd_pkg::CMD_FLUSH;
-      default: cmd_op = cmd_pkg::CMD_NOP;
+      SEND:    begin {cmd_vld, cmd_addr} = {1'b1, 8'h10}; cmd_op = last; end
+      FLUSH:   begin {cmd_vld, cmd_addr} = {1'b1, 8'h10}; cmd_op = cmd_pkg::CMD_FLUSH; end
+      default: ;
     endcase
   end
-  assign cmd_addr = 8'h10;
   // last.set(we ? Cmd.WRITE : Cmd.READ)
   always_ff @(posedge clk or negedge rst_n) begin : ff_last
     if (!rst_n) begin
@@ -2912,24 +2912,12 @@ module reg_mgr
     end
   end
   // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
-  assign reg_req_vld = (state_val == RD_REQ) | (state_val == WR_REQ);
-  always_comb begin : comb_reg_req_addr
+  always_comb begin : comb_reg_req
+    {reg_req_vld, reg_req_addr, reg_req_wdata, reg_req_we} = '0;
     case (state_val)
-      RD_REQ:  reg_req_addr = 8'h10;
-      WR_REQ:  reg_req_addr = 8'h14;
-      default: reg_req_addr = 8'h00;
-    endcase
-  end
-  always_comb begin : comb_reg_req_wdata
-    case (state_val)
-      WR_REQ:  reg_req_wdata = status;
-      default: reg_req_wdata = 32'h00000000;
-    endcase
-  end
-  always_comb begin : comb_reg_req_we
-    case (state_val)
-      WR_REQ:  reg_req_we = 1'b1;
-      default: reg_req_we = 1'b0;
+      RD_REQ:  {reg_req_vld, reg_req_addr, reg_req_wdata, reg_req_we} = {1'b1, 8'h10, 32'h00000000, 1'b0};
+      WR_REQ:  {reg_req_vld, reg_req_addr, reg_req_wdata, reg_req_we} = {1'b1, 8'h14, status, 1'b1};
+      default: ;
     endcase
   end
   // reg.call({ addr: 0x10, wdata: 0, we: 0 }) / reg.call({ addr: 0x14, wdata: status.val, we: 1 })
@@ -3343,7 +3331,7 @@ leave S on x_rdy                    // 握手那一拍离开，执行 S 后面�
 
 `r = await x.pop()` 对称：`x_rdy = state_is_S`，`x_vld` 那一拍离开；`r` 就是 `x_data`，只在离开 S 的那一段有效（§2.4），后面要用就 `Dff.set(r)`。
 
-- 这是唯一由状态译码直接驱动的输出，不违反「停留期间不执行动作」：`vld` / `rdy` 是等待本身，不是段里的动作。几个状态在同一个 channel 端上收发时，`vld` / `rdy` 是这些状态译码的或，`data` 只有一个值时直接接，否则是一个按状态取值的 `always_comb`（块名 `comb_<端口>_<字段>`）：`case (state_val)` 每个状态一行，值为 0 的状态和其余状态走 `default` 的 0。
+- 这是唯一由状态译码直接驱动的输出，不违反「停留期间不执行动作」：`vld` / `rdy` 是等待本身，不是段里的动作。几个状态在同一个 channel 端上收发时，`vld` / `rdy` 是这些状态译码的或，字段都只有一个值时，`vld` 是状态译码的或，字段直接接常量或表达式。有字段按状态取不同值时，整个端口合成一个 `always_comb`（块名 `comb_<端口>`）：先把 `vld` 和字段清零，再 `case (state_val)` 每个状态一行；普通字段与 `vld` 写成一个拼接 `{x_vld, x_a, ...} = {1'b1, a, ...};`，enum 字段单独赋值（拼接是无类型的位，IEEE 1800 §6.19.3 不允许把它直接赋给 enum），这时一行写成 `begin {…} = {…}; x_op = 值; end`；其余状态走 `default: ;`，保持清零值。
 - `vld` / `rdy` 只来自状态寄存器，不组合依赖对端，所以两个这样的状态机直连不会有组合环（§5.3）。
 - 至少一拍：进入 S 的那一拍属于前一个状态（§3.3），握手最早在进入后的下一拍完成。
 - `v` 不是锁存的：它在停留期间每拍都要有值，不能读只在一段内有效的 `let`（检查器报错），需要在进入时定下的值，先 `Dff.set` 再 `push(d.val)`。不做隐式数据寄存器，存储都是作者看得见的。
@@ -3408,7 +3396,7 @@ DFF 按下面的模板展开，`x` 是寄存器名，`RST` 是复位值，`set` 
   end
 ```
 
-- **块名（决定）**：每个 `always` 块都有块名：`comb_state`、`ff_state`、`ff_<寄存器名>`，以及按状态取值的 push 字段 `comb_<端口>_<字段>`（§6.2）。块名与信号同在模块作用域里，所以作者的名字不能以 `comb_` / `ff_` 开头，与 `state_`、`fn_` 一样是保留前缀（检查器报错）。
+- **块名（决定）**：每个 `always` 块都有块名：`comb_state`、`ff_state`、`ff_<寄存器名>`，以及按状态取值的 push 端口 `comb_<端口>`（§6.2）。块名与信号同在模块作用域里，所以作者的名字不能以 `comb_` / `ff_` 开头，与 `state_`、`fn_` 一样是保留前缀（检查器报错）。
 - 多个 move 写同一个 DFF：move 互斥。只有一个写入值时按上面的模板写，`set` 是这些 move 的或，写成一行超过 100 列时每个 `|` 项一行。有两个以上不同写入值时（1 位寄存器也一样）不写 `set`：`else` 分支里是 `unique case (1'b1)`，每个写入值一行 `x <= v`，写同一个值的 move 合并成这一行的多个 case 项，`default: ;` 保持。`external` 寄存器同理：只有一个写入值时是 `<名字>_set` / `<名字>_next` 两条 `assign`；两个以上时合成一个 `always_comb : comb_<名字>`，先写 `<名字>_set = 1'b0`、`<名字>_next = 0`，再 `unique case (1'b1)`，每个写入值一个 `begin` / `end` 同时写 `_set = 1'b1` 和 `_next = v`，同值的 move 同样合并。
 - 复位与仓库现有 RTL 一致：`negedge rst_n` 异步低有效。复位值写在 `Dff(N, { reset: v })`，缺省 0；enum 寄存器的复位值写成成员名（没有这个值的成员时写 `pkg::name'(v)`）。`external: true` 时复位值由寄存器的拥有者决定，不能写 `reset`。
 - 寄存器写成端口时（`Dff(N)`），`x` 就是输出口；方法体私有的 `Dff` 写到 `<名字>_val`。
@@ -3786,7 +3774,7 @@ endmodule
 | 其他寄存器（`Dff`、`fin`） | 一个 `always_ff`，块名 `ff_<名字>`，按 §6.5 的模板展开；私有寄存器写到 `<名字>_val` |
 | 子状态机调用 `L: await this.m({...})` | 被调用方的状态 `<L>_<STATE>`、私有寄存器与线 `<l>_<名字>` 并入本模块（§5） |
 | `Instance(this.m, {...})` | 实例 `u_<模块名>`（第二个起 `u_<模块名>_1`…），端口按对象字面量连接，接口和 channel 端口逐根展开（§5.3） |
-| `const c = Chan(N \| {...})` / push / pop 状态 | `logic c_vld, c_rdy;` 加每个消息字段一根 `c_<字段>`；`c_vld = state_val == S`（几个状态时取或），字段按状态 `case (state_val)`（§6.2） |
+| `const c = Chan(N \| {...})` / push / pop 状态 | `logic c_vld, c_rdy;` 加每个消息字段一根 `c_<字段>`；`c_vld = state_val == S`（几个状态时取或），字段按状态取不同值时与 `vld` 一起在 `comb_<端口>` 的 `case (state_val)` 里（§6.2） |
 | `const reg = Caller(this.sub, {...})` | 模块 `<方法>_reg`（与调用方同文件）、实例 `u_reg`、channel `reg_req_*` / `reg_rsp_*`；调用点状态 `<L>_REQ` / `<L>_RSP`（§5.4） |
 | `if` / `else` 分支 | 每个分支都写 `begin` / `end`（§6.5 第 2 条） |
 | 异常区域 `try { Escape(c) }` | 区域内每个状态分支最前面的 `if (c)`，外层在前（§3.7） |

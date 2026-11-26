@@ -49,6 +49,8 @@ Source (.mjs, never executed; the compiler reads the AST)
     r = Dff(N[, { reset, external }])
     s = PushPort(N) / q = PopPort(N)    <name>_vld / _rdy / _data
     PushPort({ addr: 8, we: 1 })        record message: <name>_addr / _we; {} is a bare token
+                       data that varies by waiting state: comb_<name> case (state_val) sets
+                       {vld, plain fields} = {1'b1, ...}; an enum field is assigned on its own
     p = new Iface(args)                 @FsmPort fields → <name>_<field>
   Port layout: one port per line; a `// title` line above a group of ports is
     copied into the SV port list (with a generated `// clock and reset`)
@@ -105,7 +107,7 @@ Output
                                @FsmGroup({ file }) stem, default the class name; [plugins.fsm] dir =
                                "<workspace-relative dir>" writes there instead (e.g. the RTL tree)
   every Dff / the state register is an inline always_ff; every always block is named
-                               (comb_state, ff_state, ff_<reg>, comb_<push>_<field>)
+                               (comb_state, ff_state, ff_<reg>, comb_<push>)
   every if / else branch is written with begin / end
   each driven assign / Dff always_ff has its DSL action as a // line above it, not at line end
   an Output wider than 1 bit or any Dff written with 2+ values: unique case (1'b1), one row per value

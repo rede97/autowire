@@ -310,34 +310,52 @@ function hsDrivers(p: HsPort): Drv[] {
 		dec.length === 1 ? (dec[0] as string) : dec.map(paren).join(" | ");
 	const c = [...new Set(p.sites.map((s) => s.text))].join(" / ");
 	if (p.k === "pop") return [{ k: "asg", lhs: `${p.name}_rdy`, rhs: held, c }];
-	const data = p.msg.fields.map((f, j): Drv => {
-		const vals = p.sites.map(
-			(s) => s.values[j] ?? { sv: lit(f.width, 0n), width: f.width, value: 0n },
+	const fields = p.msg.fields.map((f, j) => {
+		const vals = p.sites.map((s) =>
+			svText((s.values[j] ?? { sv: lit(f.width, 0n) }).sv),
 		);
-		const texts = vals.map((v) => svText(v.sv));
-		if (new Set(texts).size === 1)
-			return { k: "asg", lhs: `${p.name}_${f.name}`, rhs: texts[0] as string };
-		// One value per waiting state: a case on state_val; 0 is the default.
-		const lhs = `${p.name}_${f.name}`;
-		const rows: [string, string][] = vals.flatMap((v, i): [string, string][] =>
-			v.value === 0n
-				? []
-				: [[`${p.sites[i]?.state.member}:`, texts[i] as string]],
-		);
-		rows.push(["default:", constOf(f, 0n)]);
-		const w = Math.max(...rows.map(([l]) => l.length));
-		return {
+		return { f, lhs: `${p.name}_${f.name}`, vals };
+	});
+	if (fields.every((x) => new Set(x.vals).size === 1))
+		return [
+			{ k: "asg", lhs: `${p.name}_vld`, rhs: held, c },
+			...fields.map(
+				(x): Drv => ({ k: "asg", lhs: x.lhs, rhs: x.vals[0] as string }),
+			),
+		];
+	// The data changes with the waiting state: one case on state_val drives vld and
+	// every field. Plain fields share one concatenation with vld; an enum field is
+	// assigned on its own (a concatenation is untyped bits).
+	const plain = fields.filter((x) => !x.f.enum);
+	const enums = fields.filter((x) => x.f.enum);
+	const lhs = [`${p.name}_vld`, ...plain.map((x) => x.lhs)];
+	const cat = (xs: string[]) =>
+		xs.length === 1 ? xs[0] : `{${xs.join(", ")}}`;
+	const row = (i: number) => {
+		const s = [
+			`${cat(lhs)} = ${cat(["1'b1", ...plain.map((x) => x.vals[i] as string)])};`,
+			...enums.map((x) => `${x.lhs} = ${x.vals[i]};`),
+		];
+		return s.length === 1 ? (s[0] as string) : `begin ${s.join(" ")} end`;
+	};
+	const labels = p.sites.map((s) => `${s.state.member}:`);
+	const w = Math.max(8, ...labels.map((l) => l.length));
+	return [
+		{
 			k: "raw",
 			lines: [
-				`  always_comb begin : comb_${lhs}`,
+				...above(c),
+				`  always_comb begin : comb_${p.name}`,
+				`    ${cat(lhs)} = ${lhs.length === 1 ? "1'b0" : "'0"};`,
+				...enums.map((x) => `    ${x.lhs} = ${constOf(x.f, 0n)};`),
 				"    case (state_val)",
-				...rows.map(([l, t]) => `      ${l.padEnd(w)} ${lhs} = ${t};`),
+				...labels.map((l, i) => `      ${l.padEnd(w)} ${row(i)}`),
+				`      ${"default:".padEnd(w)} ;`,
 				"    endcase",
 				"  end",
 			],
-		};
-	});
-	return [{ k: "asg", lhs: `${p.name}_vld`, rhs: held, c }, ...data];
+		},
+	];
 }
 
 function drivers(f: Fsm): string[] {
