@@ -74,6 +74,7 @@
 |---|---|---|
 | [skills/autowire-soc-integration.md](./skills/autowire-soc-integration.md) | demo/soc 集成 / 验证 / MCP 调试 | 实战手册 |
 | [skills/cdp-debug.md](./skills/cdp-debug.md) | CDP 无头浏览器驱动 connect 页面（步骤和坑） | 实战手册 |
+| [skills/fsm-ip-integration.md](./skills/fsm-ip-integration.md) | 用 fsm DSL 写 IP 控制状态机：源码组织、共用 package、`_wrap` 与 regfile 对接、拆进程、命名、验证与坑（UCIe RDI 迁移） | 实战手册 |
 
 ## 不做
 

@@ -1,6 +1,6 @@
 # async/await 状态机 DSL 设计（草案）
 
-> 状态：**部分落地**。`plugin fsm run` 已编译：状态、分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、`@SvEnum` 枚举类型、子状态机平铺展开与 `return` 结果、`push` / `pop`（含多字段消息）与 `Chan`、`Instance` 例化、`Caller`、`@FsmPort` 接口、跨文件 import、`try` / `Escape` / `Raise` 异常区域、`@Fsm({ statePrefix, stateEncoding, stateValues, exportState })`（`help fsm`，示例 `demo/state/`）。还没有实现：不带 `await` 的 push / pop（Future）、`Promise.all`，用到时编译期报「not implemented yet」。
+> 状态：**部分落地**。`plugin fsm run` 已编译：状态、分支、`while` / `do…while` / `break` / `continue`、`pulse`（含多位）、`Dff`、`const` / `let` 绑定、`?:`、`bits`、`SvPackage` 用户函数、`@SvEnum` 枚举类型、子状态机平铺展开与 `return` 结果、只有动作的同步方法、`push` / `pop`（含多字段消息）与 `Chan`、`Instance` 例化、`Caller`、`@FsmPort` 接口、跨文件 import、`try` / `Escape` / `Raise` 异常区域、`@Fsm({ statePrefix, stateEncoding, stateValues, stateType, pkg, exportState, exportAction, wrap })`、`@FsmGroup({ file })`、`[fsm.<id>] split`（`help fsm`，示例 `demo/state/`）。还没有实现：不带 `await` 的 push / pop（Future）、`Promise.all`，用到时编译期报「not implemented yet」。在真实 IP 里的组织方式与坑见 [`../skills/fsm-ip-integration.md`](../skills/fsm-ip-integration.md)。
 > 来源：初稿 `demo/state/demo.md` 与值模型试验 `demo/state/demo.ts`，已并入本文后删除；原文见 git 提交 `21cb9ca`。本文是这套设计的唯一来源。
 > 初稿没说清的地方标为「决定」（本文给出的取舍）或「开放」（§10，需作者拍板）。
 > 作者源码是 **ECMAScript**（`.mjs`），不是 TypeScript：一组状态机写成带 `@FsmGroup` 的 class，对外的状态机是带 `@Fsm` 的 async 方法，端口是方法的解构参数（§2.2）；状态名用原生标签语句（§3.5）。选型理由见 §8.2。

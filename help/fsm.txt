@@ -118,3 +118,4 @@ Output
 Not yet (compile error names the feature): push / pop without await (Future),
 Promise.all, connecting an external Dff port of an instance.
 Errors: <file>:<line>:<col>: <message>. Demo: demo/state (bun ../../index.ts plugin fsm run).
+Using it for a real IP (layout, shared package, _wrap + regfile, naming, tests): docs/skills/fsm-ip-integration.md.
